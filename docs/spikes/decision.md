@@ -13,7 +13,7 @@
 | A — rendering | pass (no split lines in 60 layouts); parity across engines deferred | `a-rendering.md` |
 | B — input | Pass through a native `NSEvent` bridge: wheel (I1) 81/81 rolls, trackpad (I2, I3, I5) 73/73 gestures with no momentum turns, activating click (I11). The WebView alone cannot classify the device. Scripted gestures not run. | `b-input.md` |
 | C — accessibility | Pass on macOS: VoiceOver reads continuously and the page follows. foliate does not report the move, so the adapter must detect it, snap to whole pages and update the location (X3). NVDA deferred. | `c-accessibility.md` |
-| D — engine fidelity | 4/5 pass; **page turns that cross a chapter fail (p95 27 ms against 16 ms)** | `d-engine-fidelity.md` |
+| D — engine fidelity | Pass. Chapter-crossing turns (27–57 ms) fixed in Phase 2 by pre-laid-out neighbour views: p95 1 ms (D-D1) | `d-engine-fidelity.md` |
 | E — content isolation | pass with a design change (every probe blocked); **the §7.1 sandbox design fails on WebKit** | `e-content-isolation.md` |
 | F — persistence and search | pass (write p95 < 0.1 ms, 200/200 crash runs, search p95 114 ms) | `f-persistence-and-search.md` |
 

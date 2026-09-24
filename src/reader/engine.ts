@@ -7,6 +7,9 @@
 // - every foliate link event is cancelled and routed by the app (N10);
 // - one column below the spread breakpoint (L8);
 // - page turns queue at most one pending turn (I6) instead of being dropped;
+// - D-D1: the previous and next sections are laid out ahead in hidden views, so
+//   a turn across a chapter boundary is a swap, not a load (Spike D: loading in
+//   the turn took p95 27–57 ms against a 16 ms budget);
 // - scrolls the engine did not make (VoiceOver, X3) are detected, snapped to a
 //   whole page and reported as a location change.
 
@@ -24,7 +27,7 @@ export interface ReaderLocation {
   sectionCount: number
   /** Label of the current table-of-contents entry. */
   chapterLabel: string
-  /** Minutes left in this section at foliate's default pace (B2 replaces the pace). */
+  /** Characters left in this section (B2 turns them into minutes). */
   sectionCharsLeft: number
   /** Page within the section (1-based) and the section's page count, when laid out. */
   page?: number
@@ -41,10 +44,20 @@ export interface LinkEvent {
 
 type Listener<T> = (value: T) => void
 
+/** A hidden view parked at a neighbouring section, ready to be swapped in. */
+interface Neighbour {
+  view: View
+  /** The section it shows, or -1 while loading / unused. */
+  index: number
+  ready: Promise<void>
+}
+
 export class ReaderEngine {
-  readonly view: View
   #host: HTMLElement
   #book: Book | null = null
+  #current: View
+  #next: Neighbour
+  #prev: Neighbour
   #relocate = new Set<Listener<ReaderLocation>>()
   #link = new Set<Listener<LinkEvent>>()
   #key = new Set<Listener<KeyboardEvent>>()
@@ -54,32 +67,28 @@ export class ReaderEngine {
   #layout: Layout | null = null
   #lastPage = -1
   #watchTimer = 0
+  /** Recent engine events, for diagnosing view swaps. */
+  #trail: string[] = []
+  #note(e: string) {
+    this.#trail.push(
+      `${Math.round(performance.now())} ${e} views=${this.#views()
+        .map((v) => this.#indexOf(v))
+        .join(',')}`,
+    )
+    if (this.#trail.length > 30) this.#trail.shift()
+  }
 
   constructor(host: HTMLElement) {
     this.#host = host
-    this.view = document.createElement('foliate-view') as View
-    Object.assign(this.view.style, { position: 'absolute', display: 'block' })
-    // S12: foliate-js hides the pointer over the page after inactivity.
-    this.view.setAttribute('autohide-cursor', '')
-    host.append(this.view)
-    this.view.addEventListener('relocate', (e) => this.#onRelocate((e as CustomEvent).detail))
-    this.view.addEventListener('external-link', (e) => {
-      e.preventDefault()
-      const href = String((e as CustomEvent<{ href_: string }>).detail.href_)
-      this.#link.forEach((l) => l({ href, external: true }))
-    })
-    this.view.addEventListener('link', (e) => {
-      // Internal links are allowed to navigate, but the app hears about them first (N1, N10).
-      const href = String((e as CustomEvent<{ href: string }>).detail.href)
-      if (/^\s*javascript:/i.test(href)) {
-        e.preventDefault()
-        return
-      }
-      this.#link.forEach((l) => l({ href, external: false }))
-    })
-    this.view.addEventListener('load', (e) =>
-      this.#onLoad((e as CustomEvent<{ doc: Document }>).detail.doc),
-    )
+    this.#current = this.#createView()
+    this.#next = { view: this.#createView(), index: -1, ready: Promise.resolve() }
+    this.#prev = { view: this.#createView(), index: -1, ready: Promise.resolve() }
+    this.#show(this.#current)
+  }
+
+  /** The visible view. */
+  get view(): View {
+    return this.#current
   }
 
   get book(): Book | null {
@@ -102,14 +111,14 @@ export class ReaderEngine {
     return () => this.#key.delete(l)
   }
 
-  /** Focus the page (the book text), e.g. when a layer closes (S5). */
-  focusPage() {
-    this.view.renderer?.focusView?.()
-  }
-
   onLink(l: Listener<LinkEvent>) {
     this.#link.add(l)
     return () => this.#link.delete(l)
+  }
+
+  /** Focus the page (the book text), e.g. when a layer closes (S5). */
+  focusPage() {
+    this.#current.renderer?.focusView?.()
   }
 
   async open(file: File, start?: { cfi?: string }): Promise<Book> {
@@ -122,31 +131,206 @@ export class ReaderEngine {
         .then((data) => transformContent(data, type))
         .catch(() => '') // a damaged resource must not break the section (E3)
     })
-    await this.view.open(book)
     this.#book = book
-    this.#configureRenderer()
+    // One book, three views: the visible one and its two neighbours (D-D1).
+    for (const view of [this.#current, this.#next.view, this.#prev.view]) {
+      await view.open(book)
+      this.#configureRenderer(view)
+    }
     // N3: new books open at the bodymatter landmark, not the cover.
-    await this.view.init(start?.cfi ? { lastLocation: start.cfi } : { showTextStart: true })
+    await this.#current.init(start?.cfi ? { lastLocation: start.cfi } : { showTextStart: true })
+    this.#prepareNeighbours()
     return book
   }
 
-  /** Place the page box and tell the paginator its geometry (L1–L3, L8). */
+  /** Place the page box and tell the paginators their geometry (L1–L3, L8). */
   applyLayout(layout: Layout, styles: string) {
     this.#layout = layout
     this.#styles = styles
-    Object.assign(this.view.style, {
-      left: `${layout.viewLeft}px`,
-      top: `${layout.top}px`,
-      width: `${layout.viewWidth}px`,
-      height: `${layout.pageHeight}px`,
-    })
-    // foliate-js creates its paginator in open(); until then the layout waits.
-    if (this.view.renderer) this.#configureRenderer()
+    for (const view of this.#views()) {
+      Object.assign(view.style, {
+        left: `${layout.viewLeft}px`,
+        top: `${layout.top}px`,
+        width: `${layout.viewWidth}px`,
+        height: `${layout.pageHeight}px`,
+      })
+      // foliate-js creates its paginator in open(); until then the layout waits.
+      if (view.renderer) this.#configureRenderer(view)
+    }
+    // Reflow moves the neighbours' last and first pages: park them again.
+    if (this.#book) this.#prepareNeighbours(true)
   }
 
-  #configureRenderer() {
+  setStyles(styles: string) {
+    this.#styles = styles
+    for (const view of this.#views()) view.renderer?.setStyles?.(styles)
+  }
+
+  /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
+  turn(dir: Turn): Promise<void> {
+    if (this.#turning) {
+      this.#pending = dir
+      return this.#turning
+    }
+    this.#turning = this.#turnNow(dir).finally(() => {
+      this.#turning = null
+      const pending = this.#pending
+      this.#pending = null
+      if (pending) void this.turn(pending)
+    })
+    return this.#turning
+  }
+
+  async goTo(target: string | number) {
+    this.#note(`goTo ${target}`)
+    const result = await this.#current.goTo(target)
+    this.#prepareNeighbours()
+    return result
+  }
+
+  async goToFraction(fraction: number) {
+    await this.#current.goToFraction(fraction)
+    this.#prepareNeighbours()
+  }
+
+  async goToTextStart() {
+    await this.#current.goToTextStart()
+    this.#prepareNeighbours()
+  }
+
+  async nextSection() {
+    await this.#current.renderer.nextSection()
+    this.#prepareNeighbours()
+  }
+
+  async prevSection() {
+    await this.#current.renderer.prevSection()
+    this.#prepareNeighbours()
+  }
+
+  get location(): ReaderLocation | null {
+    const l = this.#current.lastLocation
+    return l
+      ? this.#toLocation(this.#current, l as unknown as Record<string, unknown>, 'navigation')
+      : null
+  }
+
+  /**
+   * X3 (Spike C): VoiceOver scrolls the paginator to follow its cursor, and
+   * foliate-js neither notices nor snaps to a page. While a screen reader runs,
+   * watch the page and report the move.
+   */
+  watchExternalScroll(on: boolean) {
+    cancelAnimationFrame(this.#watchTimer)
+    if (!on) return
+    const tick = () => {
+      const view = this.#current
+      const r = view.renderer
+      const page = r?.page ?? -1
+      if (this.#lastPage !== -1 && page !== this.#lastPage && !this.#turning) {
+        void r.goTo({
+          index: r.getContents()[0]?.index,
+          anchor: (page - 1) / Math.max(1, r.pages - 2),
+        })
+        const l = view.lastLocation
+        if (l)
+          this.#relocate.forEach((f) =>
+            f(this.#toLocation(view, l as unknown as Record<string, unknown>, 'external')),
+          )
+      }
+      this.#lastPage = page
+      this.#watchTimer = requestAnimationFrame(tick)
+    }
+    this.#watchTimer = requestAnimationFrame(tick)
+  }
+
+  close() {
+    cancelAnimationFrame(this.#watchTimer)
+    for (const view of this.#views()) {
+      // foliate-js throws when closing a view that never showed a section
+      // (a neighbour of a very short book); remove it regardless.
+      try {
+        if (this.#indexOf(view) >= 0) view.close()
+      } catch (e) {
+        console.warn('closing a reader view failed', e)
+      }
+      view.remove()
+    }
+    this.#book?.destroy?.()
+    this.#host.replaceChildren()
+  }
+
+  /** Diagnostics for the end-to-end tests. */
+  debug() {
+    return {
+      trail: [...this.#trail],
+      views: this.#views().map((v) => ({
+        index: this.#indexOf(v),
+        renderer: !!v.renderer,
+        connected: v.isConnected,
+      })),
+      linear: (this.#book?.sections ?? []).map((s) => s.linear ?? ''),
+      next: this.#next.index,
+      prev: this.#prev.index,
+    }
+  }
+
+  // ---------------------------------------------------------------- internals
+
+  #views(): View[] {
+    return [this.#current, this.#next.view, this.#prev.view]
+  }
+
+  #createView(): View {
+    const view = document.createElement('foliate-view') as View
+    Object.assign(view.style, {
+      position: 'absolute',
+      display: 'block',
+      visibility: 'hidden',
+      pointerEvents: 'none',
+    })
+    // S12: foliate-js hides the pointer over the page after inactivity.
+    view.setAttribute('autohide-cursor', '')
+    // Hidden views stay out of the accessibility tree (visibility: hidden) and the tab order.
+    view.setAttribute('inert', '')
+    this.#host.append(view)
+    view.addEventListener('relocate', (e) => {
+      if (view === this.#current) this.#onRelocate(view, (e as CustomEvent).detail)
+    })
+    view.addEventListener('external-link', (e) => {
+      e.preventDefault()
+      const href = String((e as CustomEvent<{ href_: string }>).detail.href_)
+      this.#link.forEach((l) => l({ href, external: true }))
+    })
+    view.addEventListener('link', (e) => {
+      // Internal links navigate, but the app hears about them first (N1, N10).
+      const href = String((e as CustomEvent<{ href: string }>).detail.href)
+      if (/^\s*javascript:/i.test(href)) {
+        e.preventDefault()
+        return
+      }
+      this.#link.forEach((l) => l({ href, external: false }))
+      // The jump happens in the visible view; the neighbours follow afterwards.
+      queueMicrotask(() => setTimeout(() => this.#prepareNeighbours(), 300))
+    })
+    view.addEventListener('load', (e) =>
+      this.#onLoad(view, (e as CustomEvent<{ doc: Document }>).detail.doc),
+    )
+    return view
+  }
+
+  #show(view: View) {
+    for (const v of this.#views()) {
+      const visible = v === view
+      v.style.visibility = visible ? 'visible' : 'hidden'
+      v.style.pointerEvents = visible ? '' : 'none'
+      v.toggleAttribute('inert', !visible)
+    }
+  }
+
+  #configureRenderer(view: View) {
     const layout = this.#layout
-    const r = this.view.renderer
+    const r = view.renderer
     if (!layout || !r) return
     r.setAttribute('flow', 'paginated')
     r.setAttribute('margin', '0px')
@@ -162,77 +346,92 @@ export class ReaderEngine {
     r.setStyles(this.#styles)
   }
 
-  setStyles(styles: string) {
-    this.#styles = styles
-    this.view.renderer?.setStyles?.(styles)
+  #currentIndex(): number {
+    return this.#current.renderer?.getContents()[0]?.index ?? -1
   }
 
-  /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
-  turn(dir: Turn): Promise<void> {
-    if (this.#turning) {
-      this.#pending = dir
-      return this.#turning
-    }
-    this.#turning = (dir === 'next' ? this.view.next() : this.view.prev()).finally(() => {
-      this.#turning = null
-      const pending = this.#pending
-      this.#pending = null
-      if (pending) void this.turn(pending)
-    })
-    return this.#turning
+  /** The next linear section after `index` in `dir` (foliate skips linear="no"), or -1. */
+  #adjacent(index: number, dir: 1 | -1): number {
+    const sections = this.#book?.sections ?? []
+    for (let i = index + dir; i >= 0 && i < sections.length; i += dir)
+      if (sections[i].linear !== 'no') return i
+    return -1
   }
 
-  goTo(target: string | number) {
-    return this.view.goTo(target)
-  }
-
-  goToFraction(fraction: number) {
-    return this.view.goToFraction(fraction)
-  }
-
-  get location(): ReaderLocation | null {
-    const l = this.view.lastLocation
-    return l ? this.#toLocation(l as unknown as Record<string, unknown>, 'navigation') : null
-  }
-
-  /**
-   * X3 (Spike C): VoiceOver scrolls the paginator to follow its cursor, and
-   * foliate-js neither notices nor snaps to a page. While a screen reader runs,
-   * watch the page and report the move.
-   */
-  watchExternalScroll(on: boolean) {
-    cancelAnimationFrame(this.#watchTimer)
-    if (!on) return
-    const tick = () => {
-      const r = this.view.renderer
-      const page = r?.page ?? -1
-      if (this.#lastPage !== -1 && page !== this.#lastPage && !this.#turning) {
-        // Snap to the whole page foliate is now on, then report the location.
-        void r.goTo({
-          index: this.view.renderer.getContents()[0]?.index,
-          anchor: (page - 1) / Math.max(1, r.pages - 2),
-        })
-        const l = this.view.lastLocation
-        if (l)
-          this.#relocate.forEach((f) =>
-            f(this.#toLocation(l as unknown as Record<string, unknown>, 'external')),
-          )
+  /** Park the hidden views at the first page of the next section and the last page of the previous one. */
+  #prepareNeighbours(force = false) {
+    const index = this.#currentIndex()
+    if (index < 0) return
+    const park = (n: Neighbour, target: number, anchor: number) => {
+      if (target < 0) {
+        n.index = -1
+        return
       }
-      this.#lastPage = page
-      this.#watchTimer = requestAnimationFrame(tick)
+      if (!force && n.index === target && this.#indexOf(n.view) === target) return
+      n.index = -1
+      const view = n.view
+      this.#note(`park ${n === this.#next ? 'next' : 'prev'} -> ${target}`)
+      // foliate-js ignores goTo while a view is locked after a turn, and still
+      // resolves: record what the view actually shows, not what was asked.
+      n.ready = view.renderer
+        .goTo({ index: target, anchor })
+        .then(() => {
+          if (n.view === view) n.index = this.#indexOf(view)
+        })
+        .catch(() => {
+          if (n.view === view) n.index = -1
+        })
     }
-    this.#watchTimer = requestAnimationFrame(tick)
+    park(this.#next, this.#adjacent(index, 1), 0)
+    park(this.#prev, this.#adjacent(index, -1), 1)
   }
 
-  close() {
-    cancelAnimationFrame(this.#watchTimer)
-    this.view.close()
-    this.#book?.destroy?.()
-    this.view.remove()
-    this.#host.replaceChildren()
+  async #turnNow(dir: Turn) {
+    const r = this.#current.renderer
+    if (!r?.getContents().length) {
+      this.#note('turn ignored: the visible view shows nothing')
+      return
+    }
+    const crossing = dir === 'next' ? r.page >= r.pages - 2 : r.page <= 1
+    const target = this.#adjacent(this.#currentIndex(), dir === 'next' ? 1 : -1)
+    const neighbour = dir === 'next' ? this.#next : this.#prev
+    if (
+      crossing &&
+      target >= 0 &&
+      neighbour.index === target &&
+      this.#indexOf(neighbour.view) === target
+    ) {
+      // D-D1: the neighbour is laid out at the right page; swapping is the turn.
+      this.#note(`swap ${dir} to ${target}`)
+      const old = this.#current
+      this.#current = neighbour.view
+      this.#show(this.#current)
+      // The old view becomes the neighbour on the other side, already at the right page.
+      const other = dir === 'next' ? this.#prev : this.#next
+      const recycled = other.view
+      other.view = old
+      other.index =
+        this.#adjacent(target, dir === 'next' ? -1 : 1) === this.#indexOf(old)
+          ? this.#indexOf(old)
+          : -1
+      neighbour.view = recycled
+      neighbour.index = -1
+      const l = this.#current.lastLocation
+      if (l) this.#onRelocate(this.#current, l as unknown as Record<string, unknown>, 'page')
+      // Load the new far neighbour after this frame, off the turn.
+      requestAnimationFrame(() => this.#prepareNeighbours())
+      return
+    }
+    this.#note(`turn ${dir} crossing=${crossing}`)
+    await (dir === 'next' ? this.#current.next() : this.#current.prev())
+    if (crossing) this.#prepareNeighbours()
   }
 
-  #onLoad(doc: Document) {
+  #indexOf(view: View): number {
+    return view.renderer?.getContents()[0]?.index ?? -1
+  }
+
+  #onLoad(view: View, doc: Document) {
     doc.addEventListener('keydown', (e) => this.#key.forEach((l) => l(e)))
     // L12: wide tables and code scroll inside their own box.
     for (const el of doc.querySelectorAll('table, pre')) {
@@ -260,22 +459,30 @@ export class ReaderEngine {
         doc.head?.append(style)
       }
     }
-    if (this.#styles) this.view.renderer?.setStyles?.(this.#styles)
+    if (this.#styles) view.renderer?.setStyles?.(this.#styles)
   }
 
-  #onRelocate(detail: Record<string, unknown>) {
-    this.#lastPage = this.view.renderer?.page ?? -1
-    const loc = this.#toLocation(detail, (detail.reason as ReaderLocation['reason']) ?? 'page')
+  #onRelocate(view: View, detail: Record<string, unknown>, reason?: ReaderLocation['reason']) {
+    this.#lastPage = view.renderer?.page ?? -1
+    const loc = this.#toLocation(
+      view,
+      detail,
+      reason ?? (detail.reason as ReaderLocation['reason']) ?? 'page',
+    )
     this.#relocate.forEach((l) => l(loc))
   }
 
-  #toLocation(d: Record<string, unknown>, reason: ReaderLocation['reason']): ReaderLocation {
+  #toLocation(
+    view: View,
+    d: Record<string, unknown>,
+    reason: ReaderLocation['reason'],
+  ): ReaderLocation {
     const section = (d.section as { current: number; total: number } | undefined) ?? {
       current: 0,
       total: 1,
     }
     const time = d.time as { section?: number } | undefined
-    const r = this.view.renderer
+    const r = view.renderer
     const pages = r && !r.scrolled && r.pages > 2 ? r.pages - 2 : undefined
     return {
       cfi: String(d.cfi ?? ''),

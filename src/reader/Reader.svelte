@@ -316,7 +316,7 @@
         const label = engine.location?.chapterLabel
         messages.push({
           text: label ? t.reader.resumedIn(label) : t.reader.resumed,
-          action: { label: t.reader.goToBeginning, run: () => void engine?.view.goToTextStart() },
+          action: { label: t.reader.goToBeginning, run: () => void engine?.goToTextStart() },
         })
       }
       engine.focusPage()
@@ -348,12 +348,10 @@
       cleanups.push(
         registry.handle('history.back', { run: goBack, enabled: () => history.canGoBack }),
       )
-      cleanups.push(
-        registry.handle('chapter.next', { run: () => void engine?.view.renderer.nextSection?.() }),
-      )
+      cleanups.push(registry.handle('chapter.next', { run: () => void engine?.nextSection() }))
       cleanups.push(
         registry.handle('chapter.previous', {
-          run: () => void engine?.view.renderer.prevSection?.(),
+          run: () => void engine?.prevSection(),
         }),
       )
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))

@@ -368,6 +368,83 @@ export async function spikeE2E(): Promise<SpikeResult> {
   ]
 
   checks.push({
+    id: 'reader-cleanup',
+    description:
+      'Leaving the reader closes the engine and removes its views, even for a short book',
+    run: async () => {
+      await backToLibrary()
+      const leftovers = document.querySelectorAll('foliate-view').length
+      return !reader() && leftovers === 0
+        ? 'ok'
+        : `reader hook ${reader() ? 'still set' : 'cleared'}, ${leftovers} views left`
+    },
+  })
+
+  checks.push({
+    id: 'I6-turn-budget',
+    description: 'Page turns render within a frame: < 16 ms p95, within and across chapters (§6.4)',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby/)
+      const engine = reader()!.engine
+      await engine.goTo(20)
+      await sleep(600)
+      const within: number[] = []
+      const across: number[] = []
+      const wrong: string[] = []
+      for (let i = 0; i < 120; i++) {
+        const prevLoc = loc()!
+        const before = prevLoc.sectionIndex
+        let last = 0
+        const off = engine.onRelocate(() => (last = performance.now()))
+        const t0 = performance.now()
+        await engine.turn('next')
+        off()
+        const now = loc()!
+        const after = now.sectionIndex
+        if (last) (after === before ? within : across).push(last - t0)
+        // Every turn must move forward: the next page, or the first page of the next section.
+        const ok =
+          (after === before && (now.page ?? 0) === (prevLoc.page ?? 0) + 1) ||
+          (after === before + 1 && now.page === 1)
+        if (!ok) wrong.push(`${before}:${prevLoc.page} → ${after}:${now.page}`)
+      }
+      const p95 = (xs: number[]) => {
+        const s = [...xs].sort((a, b) => a - b)
+        return s.length
+          ? Math.round(s[Math.min(s.length - 1, Math.round((s.length - 1) * 0.95))] * 10) / 10
+          : NaN
+      }
+      // Backward: the previous page, or the last page of the previous section.
+      for (let i = 0; i < 60; i++) {
+        const prevLoc = loc()!
+        let last = 0
+        const off = engine.onRelocate(() => (last = performance.now()))
+        const t0 = performance.now()
+        await engine.turn('prev')
+        off()
+        const now = loc()!
+        if (last) (now.sectionIndex === prevLoc.sectionIndex ? within : across).push(last - t0)
+        const ok =
+          (now.sectionIndex === prevLoc.sectionIndex &&
+            (now.page ?? 0) === (prevLoc.page ?? 0) - 1) ||
+          (now.sectionIndex === prevLoc.sectionIndex - 1 && now.page === now.pages)
+        if (!ok)
+          wrong.push(
+            `back ${prevLoc.sectionIndex}:${prevLoc.page} → ${now.sectionIndex}:${now.page}/${now.pages}`,
+          )
+      }
+      const w = p95(within)
+      const a = p95(across)
+      const evidence = `within a chapter p95 ${w} ms (n=${within.length}); across chapters p95 ${a} ms (n=${across.length}); 120 forward + 60 back`
+      log(`I6 budget: ${evidence}`)
+      if (wrong.length)
+        return `${wrong.length} turns landed wrongly: ${wrong.slice(0, 5).join(', ')}; ${evidence}`
+      return w < 16 && a < 16 ? 'ok' : evidence
+    },
+  })
+
+  checks.push({
     id: 'E-hostile-in-product',
     description: 'Hostile book content stays inert in the product reader (Spike E, L14)',
     run: async () => {
@@ -409,7 +486,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
     try {
       evidence = await c.run()
     } catch (e) {
-      evidence = `error: ${e instanceof Error ? e.message : String(e)}`
+      evidence = `error: ${e instanceof Error ? `${e.message} @ ${(e.stack ?? '').split('\n').slice(0, 6).join(' < ')}` : String(e)}`
     }
     log(`${evidence === 'ok' ? 'PASS' : 'FAIL'} ${c.id}: ${evidence}`)
     criteria.push({

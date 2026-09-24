@@ -43,3 +43,18 @@ Evaluate Readium ts-toolkit (the plan's fallback for Spike D) only if the adapte
 
 - Opening the 98 MB book spends about half its time on the whole-file IPC read. L17 (read from the zip on demand) will remove most of that once book content is served by the Rust core.
 - Memory for a large book (§6.4, < 400 MB) was not measured here; it is a Phase 2 budget.
+
+## Follow-up in Phase 2 — D-D1 resolved (2026-09-24)
+
+The ReaderEngine (`src/reader/engine.ts`) now keeps the previous and next sections laid out in two hidden foliate views that share the book. A turn across a chapter boundary swaps which view is visible; the view that falls out of range is re-parked off the turn.
+
+Measured in the product reader by the in-app end-to-end suite (`src/spikes/e2e.ts`, check I6-turn-budget, release build, reference machine):
+
+| | Before (Spike D, spike harness) | Before (product engine, one view) | After (three views) |
+|---|---|---|---|
+| Within a chapter, p95 | 3 ms | 4 ms | 5 ms |
+| Across chapters, p95 | 27 ms | 57 ms | **1 ms** |
+
+All 180 turns (120 forward, 60 back, 27 of them crossing chapters) landed exactly on the next or previous page, or on the first or last page of the neighbouring section. The Readium fallback is not needed.
+
+Lesson from the implementation: foliate-js ignores `goTo` while a view holds its 100 ms post-turn lock and still resolves the promise, so the engine records the section a view actually shows, not the one it asked for.
