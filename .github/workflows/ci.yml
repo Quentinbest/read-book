@@ -35,8 +35,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Oldest supported Linux is Ubuntu 22.04 with WebKitGTK 4.1 (plan D7).
-        os: [macos-latest, windows-latest, ubuntu-22.04]
+        # macOS only for now (owner decision, 2026-09-24). Add windows-latest and
+        # ubuntu-22.04 (WebKitGTK 4.1, plan D7) when those platforms resume.
+        os: [macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
