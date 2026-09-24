@@ -43,6 +43,8 @@ export interface ReaderLocation {
   /** Page within the section (1-based) and the section's page count, when laid out. */
   page?: number
   pages?: number
+  /** Fixed layout (G8): the book pages on screen, 1-based (two in a spread). */
+  fixedPages?: number[]
   /** Page numbers are estimates (a chunked chapter, L16): show “≈”. */
   approximate: boolean
   /** Place within the section, 0–1; set when `approximate` (page/pages then count the laid-out chunk only). */
@@ -80,6 +82,10 @@ type ChunkRequest =
   | { kind: 'fraction'; fraction: number }
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
+/** G8: fixed-layout pages sit inside 64 px margins above and below. */
+const FIXED_VERTICAL_MARGIN = 64
+/** G8, I17: zoom levels for fixed-layout pages, relative to fit. */
+export const ZOOM_LEVELS = [1, 1.5, 2, 3, 4]
 /** B1 idle counting: check for a quiet moment this often, and call it quiet after this long. */
 const COUNT_STEP_MS = 60
 const COUNT_QUIET_MS = 400
@@ -95,6 +101,8 @@ export class ReaderEngine {
   #key = new Set<Listener<KeyboardEvent>>()
   #doc = new Set<Listener<Document>>()
   #chunks = new WeakMap<Document, Chunks>()
+  /** Section index of every loaded document (fixed-layout contents lack it). */
+  #docIndex = new WeakMap<Document, number>()
   #requests = new WeakMap<View, ChunkRequest>()
   #turning: Promise<void> | null = null
   #pending: Turn | null = null
@@ -105,6 +113,8 @@ export class ReaderEngine {
   /** B1: a hidden view that lays out sections in idle time to count their pages. */
   #counter: View | null = null
   #lastInputAt = 0
+  #zoom = 1
+  #fitScale = 1
   /** Recent engine events, for diagnosing view swaps. */
   #trail: string[] = []
 
@@ -157,6 +167,44 @@ export class ReaderEngine {
     return () => this.#link.delete(l)
   }
 
+  /** I17: zoom of a fixed-layout page relative to fit (1 = fit). */
+  get zoom(): number {
+    return this.#zoom
+  }
+
+  /**
+   * I17, G8: zoom fixed-layout pages, keeping the centre of the view in place.
+   * foliate-js takes an absolute scale, so the fit scale is read from the page first.
+   */
+  setZoom(zoom: number) {
+    const r = this.#current.renderer
+    if (!this.fixedLayout || !r) return
+    const next = Math.min(ZOOM_LEVELS[ZOOM_LEVELS.length - 1], Math.max(1, zoom))
+    if (next === this.#zoom) return
+    if (this.#zoom === 1) this.#fitScale = this.#pageScale() ?? this.#fitScale
+    // Keep the point at the centre of the view where it is.
+    const cx = (r.scrollLeft + r.clientWidth / 2) / Math.max(1, r.scrollWidth)
+    const cy = (r.scrollTop + r.clientHeight / 2) / Math.max(1, r.scrollHeight)
+    this.#zoom = next
+    r.setAttribute('zoom', next === 1 ? 'fit-page' : String(this.#fitScale * next))
+    r.scrollLeft = cx * r.scrollWidth - r.clientWidth / 2
+    r.scrollTop = cy * r.scrollHeight - r.clientHeight / 2
+  }
+
+  /** Pan a zoomed page by a distance in screen pixels. */
+  pan(dx: number, dy: number) {
+    const r = this.#current.renderer
+    if (this.#zoom > 1 && r) r.scrollBy(dx, dy)
+  }
+
+  /** The scale foliate-js applied to the current fixed-layout page. */
+  #pageScale(): number | null {
+    const frame = this.#current.renderer?.getContents()[0]?.doc?.defaultView?.frameElement as
+      HTMLElement | null | undefined
+    const m = frame && /scale\(([\d.]+)\)/.exec(frame.style.transform)
+    return m ? Number(m[1]) : null
+  }
+
   /** Focus the page (the book text), e.g. when a layer closes (S5). */
   focusPage() {
     this.#current.renderer?.focusView?.()
@@ -205,17 +253,19 @@ export class ReaderEngine {
     this.#layout = layout
     this.#styles = styles
     for (const view of this.#views()) {
-      // Fixed-layout pages fill the reading area inside the minimum margins (E2; G8 pending).
+      // G8: fixed-layout pages fit the area inside 24 px side and 64 px top and bottom margins.
       const fixed = view.isFixedLayout === true
       Object.assign(view.style, {
         left: `${fixed ? MIN_SIDE_MARGIN : layout.viewLeft}px`,
-        top: `${layout.top}px`,
+        top: `${fixed ? FIXED_VERTICAL_MARGIN : layout.top}px`,
         width: fixed ? `calc(100% - ${2 * MIN_SIDE_MARGIN}px)` : `${layout.viewWidth}px`,
-        height: `${layout.pageHeight}px`,
+        height: fixed ? `calc(100% - ${2 * FIXED_VERTICAL_MARGIN}px)` : `${layout.pageHeight}px`,
       })
       // foliate-js creates its paginator in open(); until then the layout waits.
       if (view.renderer) this.#configureRenderer(view)
     }
+    // A new window size means a new fit: zoom starts again from fit (I17).
+    this.setZoom(1)
     // Reflow moves the neighbours' last and first pages: park them again.
     if (this.#book) this.#prepareNeighbours(true)
   }
@@ -471,7 +521,9 @@ export class ReaderEngine {
   }
 
   #indexOf(view: View): number {
-    return view.renderer?.getContents()[0]?.index ?? -1
+    const c = view.renderer?.getContents()[0]
+    // foliate-js's fixed-layout renderer leaves `index` out of its contents.
+    return c?.index ?? (c?.doc ? this.#docIndex.get(c.doc) : undefined) ?? -1
   }
 
   #currentIndex(): number {
@@ -654,6 +706,8 @@ export class ReaderEngine {
 
   async #turnNow(dir: Turn) {
     if (this.fixedLayout) {
+      // G8: a page turn while zoomed returns to fit.
+      this.setZoom(1)
       await (dir === 'next' ? this.#current.next() : this.#current.prev())
       return
     }
@@ -698,6 +752,7 @@ export class ReaderEngine {
   // ---------------------------------------------------------------- documents and locations
 
   #onLoad(view: View, doc: Document, index: number) {
+    this.#docIndex.set(doc, index)
     // L16: a very long chapter lays out only the chunk it was asked for.
     const size = this.#book?.sections[index]?.size ?? 0
     const request = this.#requests.get(view)
@@ -776,6 +831,14 @@ export class ReaderEngine {
       pages,
       approximate: false,
       reason,
+    }
+    if (view.isFixedLayout && r) {
+      location.fixedPages = r
+        .getContents()
+        .map((x) => (x.doc ? this.#docIndex.get(x.doc) : undefined))
+        .filter((i): i is number => i !== undefined) // a blank half of a spread
+        .map((i) => i + 1)
+        .sort((a, b) => a - b)
     }
     const c = this.#chunksOf(view)
     if (c && pages && page) {

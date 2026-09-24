@@ -15,7 +15,8 @@
   import { initialState, reduce, type ReaderEvent, type ReaderState } from '../lib/reader/state'
   import { t } from '../lib/strings/en'
   import { THEMES, type Theme } from '../lib/theme/tokens'
-  import { ReaderEngine, type ReaderLocation, type Turn } from './engine'
+  import Kbd from '../components/Kbd.svelte'
+  import { ReaderEngine, ZOOM_LEVELS, type ReaderLocation, type Turn } from './engine'
   import { fallBackFailedFonts, literataFaces } from './fonts'
   import { libraryLoader } from './loader'
   import { computeLayout, showLocationLine, type Layout } from './layout'
@@ -89,6 +90,37 @@
   let pageShownAt = performance.now()
   const recentTurns: number[] = []
   let rapidStart: ReaderLocation | null = null
+
+  // ---- fixed-layout zoom (I17, G8): ⌘+ ⌘− ⌘0, pan by scrolling or dragging
+  let zoom = $state(1)
+  let zoomChipShown = $state(false)
+  let zoomChipTimer = 0
+  const ZOOM_CHIP_MS = 2000
+  function setZoom(next: number) {
+    if (!engine?.fixedLayout) return
+    engine.setZoom(next)
+    zoom = engine.zoom
+    zoomChipShown = true
+    clearTimeout(zoomChipTimer)
+    zoomChipTimer = window.setTimeout(() => (zoomChipShown = false), ZOOM_CHIP_MS)
+  }
+  function zoomStep(dir: 1 | -1) {
+    const i = ZOOM_LEVELS.findIndex((z) => z >= zoom - 1e-6)
+    setZoom(ZOOM_LEVELS[Math.max(0, Math.min(ZOOM_LEVELS.length - 1, i + dir))])
+  }
+  /** Drag pans a zoomed page; the pointer is inside the page's frame, so use screen coordinates. */
+  function panByDrag(doc: Document) {
+    let last: { x: number; y: number } | null = null
+    doc.addEventListener('pointerdown', (e) => {
+      if (zoom > 1 && e.button === 0) last = { x: e.screenX, y: e.screenY }
+    })
+    doc.addEventListener('pointermove', (e) => {
+      if (!last || !(e.buttons & 1)) return (last = null)
+      engine?.pan(last.x - e.screenX, last.y - e.screenY)
+      last = { x: e.screenX, y: e.screenY }
+    })
+    doc.addEventListener('pointerup', () => (last = null))
+  }
 
   /** V8: the chrome leaves over --motion-chrome-out (220 ms; shorter with reduced motion). */
   function chromeOut(_node: Element, { from }: { from: number }) {
@@ -165,6 +197,7 @@
   function onRelocate(l: ReaderLocation) {
     const prev = location
     location = l
+    if (engine) zoom = engine.zoom
     // A chunked chapter's page count covers one chunk (L16): it is not the section's.
     if (l.pages && !l.approximate) pages?.count(l.sectionIndex, l.pages)
     // X3: brief page-turn announcements, off when VoiceOver itself moved the page.
@@ -346,6 +379,8 @@
   // ---- location line (L9, B2)
   let locationText = $derived.by(() => {
     if (!location) return ''
+    if (location.fixedPages?.length)
+      return t.reader.fixedPages(location.fixedPages, location.sectionCount)
     const minutes = pace.minutesLeft(location.sectionCharsLeft)
     const chapter = location.chapterLabel
     return [chapter, minutes ? t.reader.minutesLeft(minutes) : null].filter(Boolean).join(' · ')
@@ -378,6 +413,7 @@
       cleanups.push(engine.onKey((e) => onPageKey(e, true)))
       // L15: a book font that fails or takes over 1.5 s falls back to Literata, without a prompt.
       cleanups.push(engine.onDocument((doc) => void fallBackFailedFonts(doc)))
+      cleanups.push(engine.onDocument(panByDrag))
       cleanups.push(
         engine.onLink((link) => {
           if (link.external) {
@@ -405,6 +441,7 @@
       clearTimeout(openingTimer)
       openingShown = false
       rtlBook = engine.rtl
+      zoom = engine.zoom
       pages = new PageCounter(opened.sections.map((s) => (s.linear === 'no' ? 0 : s.size)))
       relayout()
       // N4: resuming deep in a book says where, with a way back to the beginning.
@@ -425,6 +462,8 @@
             .elementFromPoint(payload.x, payload.y)
             ?.closest('.chrome, dialog, .popover')
           if (panel) return
+          // I17: a zoomed page pans with the wheel and two fingers; no page turns.
+          if (engine?.zoom && engine.zoom > 1) return
           const dir = turns.feed(payload)
           if (dir) turn(dir)
         }),
@@ -451,6 +490,11 @@
         }),
       )
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
+      // K8 on a fixed-layout book zooms the page (I17); text size itself arrives with Aa.
+      const fixed = () => engine?.fixedLayout === true
+      cleanups.push(registry.handle('text.larger', { run: () => zoomStep(1), enabled: fixed }))
+      cleanups.push(registry.handle('text.smaller', { run: () => zoomStep(-1), enabled: fixed }))
+      cleanups.push(registry.handle('text.reset', { run: () => setZoom(1), enabled: fixed }))
     })()
 
     const onResize = () => {
@@ -514,6 +558,7 @@
   <button
     class="margin left"
     class:shown={chromeVisible}
+    class:zoomed={zoom > 1}
     style:width="{layout.marginWidth}px"
     aria-label={t.reader.previousPage}
     tabindex="-1"
@@ -535,6 +580,7 @@
   <button
     class="margin right"
     class:shown={chromeVisible}
+    class:zoomed={zoom > 1}
     style:width="{layout.marginWidth}px"
     aria-label={t.reader.nextPage}
     tabindex="-1"
@@ -554,6 +600,12 @@
     >
   </button>
 
+  {#if zoomChipShown}
+    <div class="zoom-chip" role="status">
+      <span>{t.reader.zoomLevel(zoom)}</span>
+      <button type="button" onclick={() => setZoom(1)}>{t.reader.zoomFit}<Kbd keys="⌘0" /></button>
+    </div>
+  {/if}
   {#if chromeVisible}
     <header class="chrome top" data-tauri-drag-region out:chromeOut={{ from: -4 }}>
       <button type="button" class="library" onclick={leave}>
@@ -602,6 +654,45 @@
     background: none;
     cursor: default;
     color: var(--ink-secondary);
+  }
+  /* I17: a zoomed page takes the whole window for panning; keys still turn. */
+  .margin.zoomed {
+    pointer-events: none;
+  }
+  .zoom-chip {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    z-index: 30;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px 4px 16px;
+    border-radius: 22px;
+    /* The message style (M1): ink-coloured, like the selection bar. */
+    background: var(--ink);
+    color: var(--ground);
+    box-shadow: var(--shadow-popover);
+    font: 500 var(--text-body) var(--font-ui);
+  }
+  .zoom-chip button {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 18px;
+    background: none;
+    color: inherit;
+    font-weight: 600;
+    cursor: default;
+  }
+  .zoom-chip button:hover {
+    background: color-mix(in srgb, var(--ground) 14%, transparent);
+  }
+  .zoom-chip :global(kbd) {
+    color: inherit;
+    opacity: 0.75;
+    margin-left: 4px;
   }
   .margin.left {
     left: 0;

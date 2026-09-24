@@ -146,6 +146,12 @@
       "evidence": "ok"
     },
     {
+      "id": "I17-fixed-zoom",
+      "description": "Fixed layout (G8): ⌘+ zooms (chip “150%”), the wheel pans instead of turning, → turns and returns to fit, ⌘0 fits; the line shows real pages",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "L16-long-chapter",
       "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location) and shows “≈” pages",
       "verdict": "pass",
@@ -217,7 +223,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790265609,
+    "time": 1790266243,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

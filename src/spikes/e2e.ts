@@ -547,6 +547,58 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'I17-fixed-zoom',
+    description:
+      'Fixed layout (G8): ⌘+ zooms (chip “150%”), the wheel pans instead of turning, → turns and returns to fit, ⌘0 fits; the line shows real pages',
+    run: async () => {
+      const engine = reader()!.engine
+      const r = engine.view.renderer
+      const zoom = () => engine.zoom
+      const line = document.querySelector('.location-line')?.textContent ?? ''
+      if (!/^Pages? \d+(–\d+)? of \d+$/.test(line)) return `location line “${line}”`
+      const cmd = (code: string, k: string) => keyOnApp(k, { code, metaKey: true })
+      cmd('Equal', '=')
+      await settled(300)
+      const chip = document.querySelector('.zoom-chip span')?.textContent
+      if (zoom() !== 1.5 || chip !== '150%') return `after ⌘+: zoom ${zoom()}, chip “${chip}”`
+      cmd('Equal', '=')
+      await settled(300)
+      if (zoom() !== 2) return `after two ⌘+: zoom ${zoom()}`
+      if (r.scrollWidth <= r.clientWidth && r.scrollHeight <= r.clientHeight)
+        return 'the zoomed page does not overflow the view'
+      // A wheel roll while zoomed pans (native scrolling), and must not turn the page.
+      const before = loc()!.fixedPages?.join()
+      const t0 = performance.now()
+      for (const [i, dy] of [-0.1, -0.9, -3.2].entries())
+        await emit('native-scroll', {
+          precise: false,
+          phase: 0,
+          momentum: 0,
+          dx: 0,
+          dy,
+          x: 640,
+          y: 400,
+          t: t0 + i * 20,
+        })
+      await settled(500)
+      if (loc()!.fixedPages?.join() !== before) return 'a wheel roll turned the zoomed page'
+      const x0 = r.scrollLeft
+      const y0 = r.scrollTop
+      engine.pan(60, 40)
+      if (r.scrollLeft === x0 && r.scrollTop === y0) return 'panning did not move the page'
+      key('ArrowRight')
+      await settled(900)
+      if (loc()!.fixedPages?.join() === before) return '→ did not turn the zoomed page'
+      if (zoom() !== 1) return `after the turn zoom is ${zoom()}, not fit`
+      cmd('Equal', '=')
+      await settled(300)
+      cmd('Digit0', '0')
+      await settled(300)
+      return zoom() === 1 ? 'ok' : `⌘0 left zoom at ${zoom()}`
+    },
+  })
+
+  checks.push({
     id: 'L16-long-chapter',
     description:
       'A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location) and shows “≈” pages',
