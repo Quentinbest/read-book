@@ -81,7 +81,11 @@ type Check = { id: string; description: string; run: () => Promise<string> }
 
 export async function spikeE2E(): Promise<SpikeResult> {
   // Import the test books before the app lists the library.
-  const books = ['standardebooks-moby-dick.epub', 'idpf-regime-anticancer-arabic.epub']
+  const books = [
+    'standardebooks-moby-dick.epub',
+    'idpf-regime-anticancer-arabic.epub',
+    'hostile-content.epub',
+  ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
   )
@@ -362,6 +366,42 @@ export async function spikeE2E(): Promise<SpikeResult> {
       run: () => turnBy(() => click('.margin.left'), 'next'),
     },
   ]
+
+  checks.push({
+    id: 'E-hostile-in-product',
+    description: 'Hostile book content stays inert in the product reader (Spike E, L14)',
+    run: async () => {
+      await invoke('spike_canary_clear')
+      await backToLibrary()
+      await openFromLibrary(/Hostile/)
+      const engine = reader()!.engine
+      const marks: string[] = []
+      let overlay = 'not found'
+      for (let i = 0; i < (engine.book?.sections.length ?? 0); i++) {
+        if (engine.book!.sections[i].linear === 'no') continue
+        await engine.goTo(i)
+        await sleep(i === 1 ? 3500 : 1200) // the network section has a 3 s meta refresh
+        const doc = engine.view.renderer.getContents()[0]?.doc
+        if (!doc) continue
+        for (const id of ['p-jslink', 'n-link', 'f-blank', 'p-form-button'])
+          (doc.getElementById(id) as HTMLElement | null)?.click()
+        await sleep(300)
+        const mark = doc.documentElement.getAttribute('data-pwned')
+        if (mark) marks.push(mark.trim())
+        const fixed = doc.getElementById('o-fixed')
+        if (fixed) overlay = doc.defaultView!.getComputedStyle(fixed).position
+      }
+      await sleep(500)
+      const canary = await invoke<{ ipc: string[]; http: string[] }>('spike_canary_log')
+      const problems = [
+        ...marks.map((m) => `script ran: ${m}`),
+        ...canary.ipc.map((c) => `IPC: ${c}`),
+        ...canary.http.map((c) => `network: ${c}`),
+        ...(overlay === 'static' ? [] : [`overlay position: ${overlay}`]),
+      ]
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
 
   const criteria: Criterion[] = []
   for (const c of checks) {

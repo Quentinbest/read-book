@@ -114,6 +114,12 @@
       "description": "In a right-to-left book, the left margin moves forward",
       "verdict": "pass",
       "evidence": "ok"
+    },
+    {
+      "id": "E-hostile-in-product",
+      "description": "Hostile book content stays inert in the product reader (Spike E, L14)",
+      "verdict": "pass",
+      "evidence": "ok"
     }
   ],
   "raw": {},
@@ -121,7 +127,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790249497,
+    "time": 1790249602,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
