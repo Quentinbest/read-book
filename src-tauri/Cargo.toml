@@ -24,6 +24,7 @@ thiserror = "2"
 quick-xml = "0.42"
 sha2 = "0.11"
 uuid = { version = "1", features = ["v4"] }
+tauri-plugin-dialog = "2"
 
 [features]
 # Phase 0 spike harness (docs/spikes/). Never enabled in product builds.

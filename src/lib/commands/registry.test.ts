@@ -159,3 +159,21 @@ describe('labels', () => {
     expect(chordLabel({ code: 'KeyQ', meta: true }, azerty)).toBe('⌘A')
   })
 })
+
+describe('menu bar model (generated from the registry)', () => {
+  it('lists only commands with handlers, grouped by menu, with accelerators', async () => {
+    const { accelerator, menuModel } = await import('./menu')
+    const r = new CommandRegistry()
+    r.handle('book.open', { run() {} })
+    r.handle('search.previous', { run() {} })
+    r.handle('selection.highlight', { run() {} })
+    r.handle('chapter.next', { run() {} })
+    const model = menuModel(r.available())
+    expect(model.map((m) => m.title)).toEqual(['File', 'Edit', 'Go'])
+    expect(model[0].items).toEqual([{ id: 'book.open', title: 'Open…', accelerator: 'Cmd+O' }])
+    expect(model[1].items.find((i) => i.id === 'search.previous')?.accelerator).toBe('Shift+Cmd+G')
+    expect(model[2].items[0].accelerator).toBe('Alt+Down')
+    expect(accelerator({ code: 'KeyF', meta: true, ctrl: true })).toBe('Ctrl+Cmd+F')
+    expect(accelerator({ code: 'BracketLeft', meta: true })).toBe('Cmd+[')
+  })
+})

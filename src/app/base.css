@@ -1,0 +1,82 @@
+/* Base UI styles (plan V3–V9, X4, X7). Colours come from theme tokens only
+   (src/lib/theme/tokens.ts → CSS custom properties). */
+
+:root {
+  --font-ui: system-ui, -apple-system, 'SF Pro Text', 'Segoe UI Variable', sans-serif;
+  --font-reading: Literata, Georgia, serif;
+  --text-caption: 12px;
+  --text-body: 14px;
+  --text-title: 17px;
+  --radius-control: 6px;
+  --radius-popover: 10px;
+  --radius-sheet: 14px;
+  --hit: 44px;
+  --shadow-popover: 0 8px 28px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 10%);
+  --motion-popover: 140ms;
+  --motion-chrome-in: 160ms;
+  --motion-chrome-out: 220ms;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--ink);
+  font: 400 var(--text-body) / 1.4 var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+/* V7: 2 px accent ring with 2 px offset on :focus-visible, never removed. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* V9: under reduced motion, everything becomes a short fade. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-popover: 100ms;
+    --motion-chrome-in: 100ms;
+    --motion-chrome-out: 100ms;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-property: opacity !important;
+    animation: none !important;
+  }
+}
+
+/* X7: forced colours (Windows high contrast later; also macOS Increase Contrast via system colours). */
+@media (forced-colors: active) {
+  :focus-visible {
+    outline-color: Highlight;
+  }
+}

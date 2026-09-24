@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 /// Covers larger than this are not extracted; the generated cover is used instead.
 const MAX_COVER_BYTES: u64 = 10 << 20;
 
-#[derive(Debug, PartialEq, serde::Serialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum ImportOutcome {
     /// A new book. `damaged` counts unreadable spine items (E3).
