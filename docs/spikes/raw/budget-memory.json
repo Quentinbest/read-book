@@ -5,34 +5,34 @@
       "id": "budget-memory",
       "description": "A 100 MB book after reading 50 pages uses < 400 MB across the app and its WebKit processes (§6.4)",
       "verdict": "pass",
-      "evidence": "after opening 256 MB; after 50 pages 332 MB = linen 52 MB + com.apple.WebKit.WebContent 159 MB + com.apple.WebKit.Networking 43 MB + com.apple.WebKit.GPU 77 MB"
+      "evidence": "after opening 294 MB; after 50 pages 206 MB = linen 48 MB + com.apple.WebKit.WebContent 92 MB + com.apple.WebKit.Networking 25 MB + com.apple.WebKit.GPU 39 MB"
     }
   ],
   "raw": {
     "before": {
       "processes": [
-        "linen 70 MB",
-        "com.apple.WebKit.WebContent 105 MB",
-        "com.apple.WebKit.Networking 53 MB",
-        "com.apple.WebKit.GPU 26 MB"
+        "linen 75 MB",
+        "com.apple.WebKit.WebContent 119 MB",
+        "com.apple.WebKit.Networking 69 MB",
+        "com.apple.WebKit.GPU 28 MB"
       ],
-      "total_mb": 256
+      "total_mb": 294
     },
     "after": {
       "processes": [
-        "linen 52 MB",
-        "com.apple.WebKit.WebContent 159 MB",
-        "com.apple.WebKit.Networking 43 MB",
-        "com.apple.WebKit.GPU 77 MB"
+        "linen 48 MB",
+        "com.apple.WebKit.WebContent 92 MB",
+        "com.apple.WebKit.Networking 25 MB",
+        "com.apple.WebKit.GPU 39 MB"
       ],
-      "total_mb": 332
+      "total_mb": 206
     }
   },
   "info": {
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790261322,
+    "time": 1790265629,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

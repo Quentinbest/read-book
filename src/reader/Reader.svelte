@@ -138,7 +138,16 @@
         }),
     )
     pages?.reset()
+    // B1: count pages at the new layout in idle time; until then numbers show “≈”.
+    stopCounting()
+    const counter = pages
+    if (engine && counter)
+      stopCounting = engine.countPages(
+        (i) => !counter.has(i),
+        (i, n) => counter.count(i, n),
+      )
   }
+  let stopCounting = () => {}
 
   // ---- progress (N5, 1 s debounce, blur, quit)
   let saveTimer = 0
@@ -282,12 +291,13 @@
   /** Book-wide page number (B1); estimated inside a chunked chapter (L16). */
   function pageNumber(l: ReaderLocation | null): { n: number; approximate: boolean } | null {
     if (!l || !pages || !l.page) return null
+    // B1: numbers are estimates until every section's pages are counted.
     if (l.approximate && l.sectionFraction !== undefined) {
       const inSection = pages.pagesIn(l.sectionIndex)
       const page = Math.min(inSection, Math.floor(l.sectionFraction * inSection) + 1)
       return { n: pages.pageNumber(l.sectionIndex, page), approximate: true }
     }
-    return { n: pages.pageNumber(l.sectionIndex, l.page), approximate: false }
+    return { n: pages.pageNumber(l.sectionIndex, l.page), approximate: !pages.exact }
   }
 
   // ---- chrome reveal (S9–S11)
@@ -355,7 +365,13 @@
       engine = new ReaderEngine(host)
       if (testHooks) {
         const e = engine
-        testHooks.reader = { engine: e, location: () => location, history, bookId: book.id }
+        testHooks.reader = {
+          engine: e,
+          location: () => location,
+          history,
+          bookId: book.id,
+          pagesExact: () => pages?.exact ?? false,
+        }
       }
       relayout()
       cleanups.push(engine.onRelocate(onRelocate))
@@ -467,6 +483,7 @@
       cleanups.forEach((c) => c())
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
+      stopCounting()
       engine?.close()
       for (const id of jumpMessages) messages.withdraw(id)
       if (testHooks) testHooks.reader = undefined

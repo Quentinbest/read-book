@@ -17,6 +17,10 @@ export class PageCounter {
     this.#counted.clear()
   }
 
+  has(section: number): boolean {
+    return this.#counted.has(section)
+  }
+
   count(section: number, pages: number) {
     if (pages > 0) this.#counted.set(section, pages)
   }

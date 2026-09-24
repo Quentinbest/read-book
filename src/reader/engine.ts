@@ -80,6 +80,9 @@ type ChunkRequest =
   | { kind: 'fraction'; fraction: number }
 
 const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
+/** B1 idle counting: check for a quiet moment this often, and call it quiet after this long. */
+const COUNT_STEP_MS = 60
+const COUNT_QUIET_MS = 400
 
 export class ReaderEngine {
   #host: HTMLElement
@@ -99,6 +102,9 @@ export class ReaderEngine {
   #layout: Layout | null = null
   #lastPage = -1
   #watchTimer = 0
+  /** B1: a hidden view that lays out sections in idle time to count their pages. */
+  #counter: View | null = null
+  #lastInputAt = 0
   /** Recent engine events, for diagnosing view swaps. */
   #trail: string[] = []
 
@@ -221,6 +227,7 @@ export class ReaderEngine {
 
   /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
   turn(dir: Turn): Promise<void> {
+    this.#lastInputAt = performance.now()
     if (this.#turning) {
       this.#pending = dir
       return this.#turning
@@ -264,6 +271,61 @@ export class ReaderEngine {
     return l
       ? this.#toLocation(this.#current, l as unknown as Record<string, unknown>, 'navigation')
       : null
+  }
+
+  /**
+   * B1: count each section's pages at the current layout in idle time, in a
+   * hidden view, one section at a time; counting waits while pages are turning.
+   * Chunked chapters (L16) are skipped: their pages stay estimates. Returns a
+   * function that stops counting (call it before the layout changes).
+   */
+  countPages(want: (index: number) => boolean, report: (index: number, pages: number) => void) {
+    const book = this.#book
+    if (!book || this.fixedLayout) return () => {}
+    let stopped = false
+    const idle = async () => {
+      // Safari has no requestIdleCallback: wait for a quiet moment instead.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, COUNT_STEP_MS))
+        if (stopped) return
+        if (!this.#turning && performance.now() - this.#lastInputAt > COUNT_QUIET_MS) return
+      }
+    }
+    void (async () => {
+      if (!this.#counter) {
+        const view = this.#createView()
+        this.#counter = view
+        await view.open(book)
+        this.#configureRenderer(view)
+        const layout = this.#layout
+        if (layout)
+          Object.assign(view.style, {
+            left: `${layout.viewLeft}px`,
+            top: `${layout.top}px`,
+            width: `${layout.viewWidth}px`,
+            height: `${layout.pageHeight}px`,
+          })
+      }
+      const view = this.#counter
+      for (let index = 0; index < book.sections.length && !stopped; index++) {
+        const section = book.sections[index]
+        if (section.linear === 'no' || section.size > CHUNK_THRESHOLD_BYTES || !want(index))
+          continue
+        await idle()
+        if (stopped) return
+        try {
+          await view.renderer.goTo({ index, anchor: 0 })
+          await nextFrame()
+        } catch {
+          continue // a damaged section keeps its estimate (E3)
+        }
+        const r = view.renderer
+        if (!stopped && this.#indexOf(view) === index && r.pages > 2) report(index, r.pages - 2)
+      }
+    })()
+    return () => {
+      stopped = true
+    }
   }
 
   /**
@@ -334,7 +396,8 @@ export class ReaderEngine {
   }
 
   #views(): View[] {
-    return [this.#current, this.#next.view, this.#prev.view]
+    const views = [this.#current, this.#next.view, this.#prev.view]
+    return this.#counter ? [...views, this.#counter] : views
   }
 
   #createView(): View {

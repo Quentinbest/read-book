@@ -11,6 +11,8 @@ export interface TestHooks {
     location: () => ReaderLocation | null
     history: LocationHistory
     bookId: string
+    /** B1: whether every section's pages have been counted at this layout. */
+    pagesExact: () => boolean
   }
   messages?: MessageQueue
   /** Set instead of quitting, so the harness can check what was saved (N5). */

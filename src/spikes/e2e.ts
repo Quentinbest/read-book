@@ -287,7 +287,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
         }
         await settled(600)
         const text = hooks.messages?.current?.text ?? ''
-        return /^Back to page \d+/.test(text) ? 'ok' : `message was “${text}”`
+        return /^Back to page ≈?\d+/.test(text) ? 'ok' : `message was “${text}”`
       },
     },
     {
@@ -679,7 +679,30 @@ export async function spikeE2E(): Promise<SpikeResult> {
       key('ArrowRight')
       await settled(600)
       const text = document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
-      return /^Page \d+$/.test(text) ? 'ok' : `live region said “${text}”`
+      // “About page N” until the pages are counted (B1).
+      return /^(About page|Page) \d+$/.test(text) ? 'ok' : `live region said “${text}”`
+    },
+  })
+
+  checks.push({
+    id: 'B1-pages-settle',
+    description:
+      'Page numbers are counted in idle time: “≈” until then, exact “Page N” after, consecutive across a turn',
+    run: async () => {
+      const t0 = performance.now()
+      await waitFor('pages counted', () => reader()!.pagesExact(), 90_000)
+      const took = Math.round(performance.now() - t0)
+      const say = () =>
+        document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
+      key('ArrowRight')
+      await settled(600)
+      const a = say()
+      key('ArrowRight')
+      await settled(600)
+      const b = say()
+      log(`B1: counted in ${took} ms after the check started; then “${a}”, “${b}”`)
+      const [na, nb] = [a, b].map((x) => Number(/^Page (\d+)$/.exec(x)?.[1]))
+      return na && nb === na + 1 ? 'ok' : `announced “${a}” then “${b}”`
     },
   })
 
