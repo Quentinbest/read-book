@@ -67,6 +67,11 @@
     }),
   )
   let location = $state<ReaderLocation | null>(null)
+  /** I15, G8: a right-to-left book fills progress from the right. */
+  let rtlBook = $state(false)
+  /** G8: an open taking over 500 ms shows one “Opening …” line, never a spinner. */
+  let openingShown = $state(false)
+  const OPENING_LINE_AFTER_MS = 500
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
   // Screens 02/03: the window buttons live in the top bar and hide with it.
@@ -84,6 +89,19 @@
   let pageShownAt = performance.now()
   const recentTurns: number[] = []
   let rapidStart: ReaderLocation | null = null
+
+  /** V8: the chrome leaves over --motion-chrome-out (220 ms; shorter with reduced motion). */
+  function chromeOut(_node: Element, { from }: { from: number }) {
+    // WebKit reports the token normalised to seconds (“0.22s”), so read the unit.
+    const token = getComputedStyle(document.documentElement)
+      .getPropertyValue('--motion-chrome-out')
+      .trim()
+    const ms = parseFloat(token) * (token.endsWith('ms') ? 1 : token.endsWith('s') ? 1000 : 1)
+    return {
+      duration: ms || 220,
+      css: (k: number) => `opacity: ${k}; transform: translateY(${(1 - k) * from}px)`,
+    }
+  }
 
   function dispatch(e: ReaderEvent) {
     const { state, effects } = reduce(lanes, e)
@@ -358,10 +376,19 @@
       await writes.idle()
       const saved = await ipc.positionGet(book.id)
       // L17: entries are read from the zip on demand; the book never crosses whole.
+      const openingTimer = window.setTimeout(
+        () => (openingShown = !location),
+        OPENING_LINE_AFTER_MS,
+      )
+      cleanups.push(() => clearTimeout(openingTimer))
+      if (testHooks?.openDelayMs) await new Promise((r) => setTimeout(r, testHooks!.openDelayMs))
       const opened = await engine.open(
         await libraryLoader(book.id),
         saved ? { cfi: saved[0] } : undefined,
       )
+      clearTimeout(openingTimer)
+      openingShown = false
+      rtlBook = engine.rtl
       pages = new PageCounter(opened.sections.map((s) => (s.linear === 'no' ? 0 : s.size)))
       relayout()
       // N4: resuming deep in a book says where, with a way back to the beginning.
@@ -511,7 +538,7 @@
   </button>
 
   {#if chromeVisible}
-    <header class="chrome top" data-tauri-drag-region>
+    <header class="chrome top" data-tauri-drag-region out:chromeOut={{ from: -4 }}>
       <button type="button" class="library" onclick={leave}>
         <Icon name="library" size={18} />{t.reader.library}
       </button>
@@ -519,8 +546,8 @@
         <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
       </div>
     </header>
-    <footer class="chrome bottom">
-      <div class="progress" style:width="{layout.textWidth}px">
+    <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
+      <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
         <div class="track" aria-hidden="true">
           <div class="fill" style:width="{(location?.fraction ?? 0) * 100}%"></div>
         </div>
@@ -530,6 +557,8 @@
         </div>
       </div>
     </footer>
+  {:else if openingShown && !location}
+    <div class="location-line">{t.reader.opening(book.title)}</div>
   {:else if showLocationLine(height) && locationText}
     <div class="location-line" aria-hidden="true">{locationText}</div>
   {/if}
@@ -656,6 +685,13 @@
     height: 4px;
     border-radius: 2px;
     background: color-mix(in srgb, var(--ink-secondary) 45%, var(--ground));
+  }
+  .rtl .track {
+    display: flex;
+    justify-content: flex-end;
+  }
+  .rtl .labels {
+    flex-direction: row-reverse;
   }
   .fill {
     height: 100%;

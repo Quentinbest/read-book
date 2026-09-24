@@ -44,6 +44,8 @@ export const en = {
     pageAnnouncementApprox: (page: number) => `About page ${page}`,
     /** An estimated page number (L16), e.g. in “Back to page ≈312”. */
     approxPage: (page: number) => `≈${page}`,
+    /** G8: shown only when opening takes over 500 ms. */
+    opening: (title: string) => `Opening “${title}”…`,
   },
   messages: {
     region: 'Message',

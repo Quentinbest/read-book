@@ -81,6 +81,18 @@ async function backToLibrary() {
   await settled(300)
 }
 
+/** Reveal the controls the way a reader does: dwell at the top edge (S9). */
+async function showControls() {
+  const area = document.querySelector('.reader')!
+  area.dispatchEvent(new PointerEvent('pointermove', { clientX: 640, clientY: 20, bubbles: true }))
+  await sleep(600) // 150 ms dwell + 160 ms fade in
+}
+
+async function hideControls() {
+  key('Escape', { code: 'Escape' })
+  await sleep(400)
+}
+
 type Check = { id: string; description: string; run: () => Promise<string> }
 
 export async function spikeE2E(): Promise<SpikeResult> {
@@ -380,6 +392,74 @@ export async function spikeE2E(): Promise<SpikeResult> {
       run: () => turnBy(() => click('.margin.left'), 'next'),
     },
   ]
+
+  checks.push({
+    id: 'I15-rtl-progress',
+    description:
+      'In a right-to-left book the progress bar fills from the right and its labels swap sides (G8)',
+    run: async () => {
+      await showControls()
+      try {
+        const track = document.querySelector('.track')!.getBoundingClientRect()
+        const fill = document.querySelector('.fill')!.getBoundingClientRect()
+        const [chapter, progress] = Array.from(document.querySelectorAll('.labels span')).map((e) =>
+          e.getBoundingClientRect(),
+        )
+        if (Math.abs(fill.right - track.right) > 1)
+          return `fill ${Math.round(fill.left)}–${Math.round(fill.right)} in track ${Math.round(track.left)}–${Math.round(track.right)}`
+        return chapter.left > progress.left ? 'ok' : 'the chapter label is not on the right'
+      } finally {
+        await hideControls()
+      }
+    },
+  })
+
+  checks.push({
+    id: 'V8-chrome-out',
+    description: 'The controls leave with a 220 ms fade, not at once (V8)',
+    run: async () => {
+      await showControls()
+      key('Escape', { code: 'Escape' })
+      await sleep(80)
+      const top = document.querySelector<HTMLElement>('.chrome.top')
+      const midway = top ? Number(getComputedStyle(top).opacity) : 1
+      await sleep(300)
+      const gone = !document.querySelector('.chrome.top')
+      if (!top || midway >= 0.95)
+        return `80 ms after Esc the top bar was ${top ? `at opacity ${midway}` : 'already gone'}`
+      return gone ? 'ok' : 'the top bar was still there after 380 ms'
+    },
+  })
+
+  checks.push({
+    id: 'G8-opening-line',
+    description: 'An open over 500 ms shows one “Opening …” line, which the page then replaces',
+    run: async () => {
+      await backToLibrary()
+      hooks.openDelayMs = 900
+      try {
+        const row = await waitFor('row', () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
+            /Moby Dick/.test(b.textContent ?? ''),
+          ),
+        )
+        row.click()
+        await sleep(300)
+        const early = document.querySelector('.location-line')?.textContent ?? ''
+        await sleep(450)
+        const late = document.querySelector('.location-line')?.textContent ?? ''
+        await waitFor('reader location', () => loc()?.pages)
+        await settled(300)
+        const after = document.querySelector('.location-line')?.textContent ?? ''
+        if (early) return `a line showed within 300 ms: “${early}”`
+        if (!/^Opening “Moby Dick”…$/.test(late)) return `at 750 ms the line said “${late}”`
+        if (/^Opening/.test(after)) return 'the opening line stayed after the page appeared'
+        return 'ok'
+      } finally {
+        hooks.openDelayMs = 0
+      }
+    },
+  })
 
   checks.push({
     id: 'L8-spread',
@@ -866,17 +946,6 @@ export async function spikeVisual(): Promise<SpikeResult> {
     await settled(700)
     shots[name] = await invoke<string>('spike_capture', { name })
     log(`captured ${name}`)
-  }
-  const showControls = async () => {
-    const area = document.querySelector('.reader')!
-    area.dispatchEvent(
-      new PointerEvent('pointermove', { clientX: 640, clientY: 20, bubbles: true }),
-    )
-    await sleep(600) // 150 ms dwell + 160 ms fade in
-  }
-  const hideControls = async () => {
-    key('Escape')
-    await sleep(400)
   }
   const openIn = async (theme: string) => {
     await invoke('setting_set', { key: 'theme', value: theme })

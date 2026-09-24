@@ -15,6 +15,8 @@ export interface TestHooks {
   messages?: MessageQueue
   /** Set instead of quitting, so the harness can check what was saved (N5). */
   quitRequested?: boolean
+  /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
+  openDelayMs?: number
 }
 
 export const testHooks: TestHooks | null =
