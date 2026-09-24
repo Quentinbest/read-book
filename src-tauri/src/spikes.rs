@@ -1,0 +1,180 @@
+//! Phase 0 spike harness support (docs/spikes/). Compiled only with `--features spikes`.
+//!
+//! Run with `LINEN_SPIKE=<list>` set: the main window loads `spikes.html?run=<list>`,
+//! the page runs the checks, reports raw results through `spike_report`, and exits.
+//! A canary HTTP server on 127.0.0.1:8765 and the `spike_canary` command record any
+//! request or IPC call that hostile book content manages to make (Spike E).
+
+use serde::Serialize;
+use std::io::{BufRead, BufReader, Write};
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::sync::Mutex;
+use std::time::{Duration, SystemTime};
+use tauri::{ipc::Response, AppHandle, Manager, Runtime};
+
+pub const CANARY_ADDR: &str = "127.0.0.1:8765";
+
+#[derive(Default, Serialize, Clone)]
+pub struct CanaryLog {
+    ipc: Vec<String>,
+    http: Vec<String>,
+}
+
+pub struct SpikeState(Mutex<CanaryLog>);
+
+fn repo_root() -> PathBuf {
+    std::env::var_os("LINEN_REPO")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
+}
+
+fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+}
+
+#[tauri::command]
+fn spike_read_corpus(name: String) -> Result<Response, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid corpus name: {name}"));
+    }
+    for dir in ["corpus/cache", "corpus/generated"] {
+        let path = repo_root().join(dir).join(&name);
+        if path.is_file() {
+            return std::fs::read(&path)
+                .map(Response::new)
+                .map_err(|e| e.to_string());
+        }
+    }
+    Err(format!("not in corpus: {name}"))
+}
+
+#[tauri::command]
+fn spike_canary(state: tauri::State<SpikeState>, id: String, channel: Option<String>) {
+    state
+        .0
+        .lock()
+        .unwrap()
+        .ipc
+        .push(format!("{id} via {}", channel.unwrap_or_default()));
+}
+
+#[tauri::command]
+fn spike_canary_log(state: tauri::State<SpikeState>) -> CanaryLog {
+    state.0.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn spike_canary_clear(state: tauri::State<SpikeState>) {
+    *state.0.lock().unwrap() = CanaryLog::default();
+}
+
+#[tauri::command]
+fn spike_report(name: String, json: String) -> Result<String, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid report name: {name}"));
+    }
+    let dir = repo_root().join("docs/spikes/raw");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{name}.json"));
+    std::fs::write(&path, json).map_err(|e| e.to_string())?;
+    Ok(path.display().to_string())
+}
+
+#[tauri::command]
+fn spike_info() -> serde_json::Value {
+    let plist = "/System/Library/Frameworks/WebKit.framework/Versions/A/Resources/Info.plist";
+    let read = |cmd: &str, args: &[&str]| {
+        std::process::Command::new(cmd)
+            .args(args)
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+    };
+    serde_json::json!({
+        "os": read("sw_vers", &["-productVersion"]),
+        "webkit": read("plutil", &["-extract", "CFBundleVersion", "raw", plist]),
+        "cpu": read("sysctl", &["-n", "machdep.cpu.brand_string"]),
+        "memory_bytes": read("sysctl", &["-n", "hw.memsize"]),
+        "time": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+    })
+}
+
+#[tauri::command]
+fn spike_log(line: String) {
+    eprintln!("{line}");
+}
+
+#[tauri::command]
+fn spike_exit<R: Runtime>(app: AppHandle<R>, code: i32) {
+    app.exit(code);
+}
+
+fn start_canary_server<R: Runtime>(app: AppHandle<R>) {
+    let listener = match TcpListener::bind(CANARY_ADDR) {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("spikes: canary server failed to bind {CANARY_ADDR}: {e}");
+            return;
+        }
+    };
+    std::thread::spawn(move || {
+        for stream in listener.incoming().flatten() {
+            let mut line = String::new();
+            let mut reader = BufReader::new(&stream);
+            let _ = reader.read_line(&mut line);
+            let line = line.trim().to_string();
+            if !line.is_empty() {
+                app.state::<SpikeState>().0.lock().unwrap().http.push(line);
+            }
+            let mut s = &stream;
+            let _ = s.write_all(
+                b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            );
+        }
+    });
+}
+
+pub fn install<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    builder
+        .manage(SpikeState(Mutex::new(CanaryLog::default())))
+        .invoke_handler(tauri::generate_handler![
+            spike_read_corpus,
+            spike_canary,
+            spike_canary_log,
+            spike_canary_clear,
+            spike_report,
+            spike_info,
+            spike_log,
+            spike_exit
+        ])
+}
+
+pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
+    let Ok(run) = std::env::var("LINEN_SPIKE") else {
+        return Ok(());
+    };
+    start_canary_server(app.handle().clone());
+    let window = app
+        .get_webview_window("main")
+        .ok_or("main window missing")?;
+    let url = window.url()?.join(&format!("spikes.html?run={run}"))?;
+    window.navigate(url)?;
+
+    // Automation safety net: never leave a hung harness running.
+    let timeout: u64 = std::env::var("LINEN_SPIKE_TIMEOUT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(1200);
+    let handle = app.handle().clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(timeout));
+        eprintln!("spikes: timed out after {timeout} s");
+        handle.exit(3);
+    });
+    Ok(())
+}

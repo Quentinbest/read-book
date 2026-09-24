@@ -1,0 +1,461 @@
+{
+  "spike": "a-rendering-macos",
+  "criteria": [
+    {
+      "id": "A-no-split-lines",
+      "description": "No clipped or split lines at page boundaries (20 chapters × 3 sizes)",
+      "verdict": "pass",
+      "evidence": "0 line boxes crossing a page edge across 60 chapter layouts"
+    },
+    {
+      "id": "A-measure",
+      "description": "L1 measure 56–74 characters per line (column max-inline-size 539/640/808 px)",
+      "verdict": "fail",
+      "evidence": "58/60 layouts within 56–74 characters per line; range 55–72"
+    },
+    {
+      "id": "A-parity",
+      "description": "Page count per chapter differs by ≤ 2% between WKWebView, WebView2 and WebKitGTK",
+      "verdict": "deferred",
+      "evidence": "macOS-only scope; WKWebView page counts recorded in raw.checks as the baseline"
+    },
+    {
+      "id": "A-screenshots",
+      "description": "Screenshots differ only in font rasterisation across engines",
+      "verdict": "deferred",
+      "evidence": "macOS-only scope"
+    }
+  ],
+  "raw": {
+    "checks": [
+      {
+        "chapter": 4,
+        "fontPx": 16,
+        "pages": 18,
+        "splitLines": 0,
+        "measureCh": 55
+      },
+      {
+        "chapter": 8,
+        "fontPx": 16,
+        "pages": 18,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 15,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 21,
+        "fontPx": 16,
+        "pages": 17,
+        "splitLines": 0,
+        "measureCh": 68
+      },
+      {
+        "chapter": 27,
+        "fontPx": 16,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 33,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 41,
+        "fontPx": 16,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 47,
+        "fontPx": 16,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 56,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 60,
+        "fontPx": 16,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 67
+      },
+      {
+        "chapter": 69,
+        "fontPx": 16,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 79,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 90,
+        "fontPx": 16,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 94,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 99,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 72
+      },
+      {
+        "chapter": 106,
+        "fontPx": 16,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 110,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 124,
+        "fontPx": 16,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 131,
+        "fontPx": 16,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 138,
+        "fontPx": 16,
+        "pages": 11,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 4,
+        "fontPx": 19,
+        "pages": 22,
+        "splitLines": 0,
+        "measureCh": 55
+      },
+      {
+        "chapter": 8,
+        "fontPx": 19,
+        "pages": 21,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 15,
+        "fontPx": 19,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 21,
+        "fontPx": 19,
+        "pages": 21,
+        "splitLines": 0,
+        "measureCh": 68
+      },
+      {
+        "chapter": 27,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 33,
+        "fontPx": 19,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 41,
+        "fontPx": 19,
+        "pages": 11,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 47,
+        "fontPx": 19,
+        "pages": 12,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 56,
+        "fontPx": 19,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 60,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 67
+      },
+      {
+        "chapter": 69,
+        "fontPx": 19,
+        "pages": 11,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 79,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 90,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 94,
+        "fontPx": 19,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 99,
+        "fontPx": 19,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 72
+      },
+      {
+        "chapter": 106,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 68
+      },
+      {
+        "chapter": 110,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 124,
+        "fontPx": 19,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 131,
+        "fontPx": 19,
+        "pages": 6,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 138,
+        "fontPx": 19,
+        "pages": 14,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 4,
+        "fontPx": 24,
+        "pages": 27,
+        "splitLines": 0,
+        "measureCh": 56
+      },
+      {
+        "chapter": 8,
+        "fontPx": 24,
+        "pages": 27,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 15,
+        "fontPx": 24,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 21,
+        "fontPx": 24,
+        "pages": 26,
+        "splitLines": 0,
+        "measureCh": 68
+      },
+      {
+        "chapter": 27,
+        "fontPx": 24,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 33,
+        "fontPx": 24,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 41,
+        "fontPx": 24,
+        "pages": 14,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 47,
+        "fontPx": 24,
+        "pages": 15,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 56,
+        "fontPx": 24,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 60,
+        "fontPx": 24,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 67
+      },
+      {
+        "chapter": 69,
+        "fontPx": 24,
+        "pages": 14,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 79,
+        "fontPx": 24,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 90,
+        "fontPx": 24,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 94,
+        "fontPx": 24,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 99,
+        "fontPx": 24,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 72
+      },
+      {
+        "chapter": 106,
+        "fontPx": 24,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 67
+      },
+      {
+        "chapter": 110,
+        "fontPx": 24,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 69
+      },
+      {
+        "chapter": 124,
+        "fontPx": 24,
+        "pages": 13,
+        "splitLines": 0,
+        "measureCh": 70
+      },
+      {
+        "chapter": 131,
+        "fontPx": 24,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 71
+      },
+      {
+        "chapter": 138,
+        "fontPx": 24,
+        "pages": 17,
+        "splitLines": 0,
+        "measureCh": 70
+      }
+    ]
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "os": "14.6.1",
+    "time": 1790217834,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

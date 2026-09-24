@@ -1,6 +1,16 @@
+pub mod epub;
+pub mod import;
+pub mod store;
+
+#[cfg(feature = "spikes")]
+mod spikes;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default();
+    #[cfg(feature = "spikes")]
+    let builder = spikes::install(builder);
+    builder
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -9,6 +19,8 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            #[cfg(feature = "spikes")]
+            spikes::setup(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())

@@ -27,6 +27,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm check
+      - run: pnpm test
       # Fails when docs/design/text/ no longer matches the design bundles (plan §5, Phase 0).
       - run: pnpm design:check
 

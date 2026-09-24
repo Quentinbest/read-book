@@ -18,3 +18,16 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.6", features = [] }
 tauri-plugin-log = "2"
+zip = { version = "8", default-features = false, features = ["deflate"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
+thiserror = "2"
+quick-xml = "0.42"
+sha2 = "0.11"
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+# Phase 0 spike harness (docs/spikes/). Never enabled in product builds.
+spikes = []
+
+[dev-dependencies]
+tempfile = "3"

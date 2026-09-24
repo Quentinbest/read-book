@@ -2,6 +2,8 @@ import { svelte } from '@sveltejs/vite-plugin-svelte'
 import { defineConfig } from 'vite'
 
 const host = process.env.TAURI_DEV_HOST
+// The Phase 0 spike harness page is built only for spike runs (docs/spikes/).
+const spikes = !!process.env.LINEN_SPIKES
 
 // https://v2.tauri.app/start/frontend/vite/
 export default defineConfig({
@@ -19,7 +21,10 @@ export default defineConfig({
   build: {
     // Minimum WebViews (plan D7): Safari 16 on macOS 13, evergreen WebView2.
     target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari16',
-    minify: !process.env.TAURI_ENV_DEBUG ? 'esbuild' : false,
+    minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
+    rollupOptions: {
+      input: spikes ? { main: 'index.html', spikes: 'spikes.html' } : { main: 'index.html' },
+    },
   },
 })

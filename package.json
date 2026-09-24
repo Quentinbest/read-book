@@ -14,7 +14,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "design:export": "python3 scripts/export-design-text.py",
-    "design:check": "python3 scripts/export-design-text.py --check"
+    "design:check": "python3 scripts/export-design-text.py --check",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -25,13 +26,15 @@
     "eslint": "^10.11.0",
     "eslint-plugin-svelte": "^3.23.0",
     "globals": "^17.12.0",
+    "jsdom": "^30.1.1",
     "prettier": "^3.9.8",
     "prettier-plugin-svelte": "^4.1.1",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",

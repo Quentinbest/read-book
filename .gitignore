@@ -8,7 +8,7 @@ dist
 .idea
 
 # Rust / Tauri
-src-tauri/target
+target/
 src-tauri/gen/schemas
 __pycache__/
 

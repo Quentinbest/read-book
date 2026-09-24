@@ -19,6 +19,7 @@ Tauri IPC. The Spike E harness fails the probe on any of those signals.
 """
 
 import html
+import uuid
 import random
 import re
 import stat
@@ -106,6 +107,8 @@ def write_epub(path: Path, files: dict[str, bytes | str], extra=None, compress_l
 
 def simple_book(path: Path, title: str, chapters: list[tuple[str, str]], *, head: str = "",
                 resources: dict[str, tuple[bytes | str, str]] | None = None, **opf_kw):
+    # A distinct, stable identifier per file unless the caller sets one.
+    opf_kw.setdefault("ident", "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, "linen-corpus:" + path.name)))
     files: dict[str, bytes | str] = {}
     items = []
     spine = []

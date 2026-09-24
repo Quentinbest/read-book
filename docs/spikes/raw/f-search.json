@@ -1,0 +1,262 @@
+{
+  "spike": "f-search",
+  "criteria": [
+    {
+      "id": "F-search-time",
+      "description": "Searching all 135 chapters of Moby-Dick from the cache takes < 300 ms",
+      "verdict": "pass",
+      "evidence": "cold (parse cache + normalise + scan, fresh worker) p95 114 ms over 20 runs; warm scan p95 22 ms"
+    },
+    {
+      "id": "F-quoted-phrase",
+      "description": "Quoted phrases match exactly (F2)",
+      "verdict": "pass",
+      "evidence": "\"Call me Ishmael\" → 1 exact; call me ishmael → 1 folded"
+    },
+    {
+      "id": "F-diacritics",
+      "description": "Diacritic folding (é → e) works on a corpus sample",
+      "verdict": "pass",
+      "evidence": "query \"etait\" in idpf-sous-le-vent.epub matched text containing accented characters (see raw.samples)"
+    },
+    {
+      "id": "F-cjk",
+      "description": "CJK matching works on a corpus sample, from 1 character",
+      "verdict": "pass",
+      "evidence": "queries \"智に働けば\" and \"山\" in idpf-kusamakura-japanese-vertical-writing.epub (see raw.samples)"
+    }
+  ],
+  "raw": {
+    "moby": {
+      "sections": 145,
+      "textChars": 1265344,
+      "extractMs": 146.99999999999636
+    },
+    "firstColdSearch": {
+      "type": "searched",
+      "ms": 4.000000000000014,
+      "results": 1688,
+      "chapters": 120,
+      "firstChapters": [
+        30,
+        31,
+        32
+      ],
+      "samples": [
+        "…Think of that, ye loyal Britons! we [whale]men supply your kings and queens with…",
+        "…said Starbuck, “who is not afraid of a [whale].” By this, he seemed to mean, not only…",
+        "…by a man like Stubb, or almost any other [whale] hunter. Starbuck was no crusader…"
+      ],
+      "query": {
+        "needle": "whale",
+        "exact": false
+      }
+    },
+    "coldSearchMs": {
+      "n": 20,
+      "min": 90,
+      "p50": 94,
+      "p95": 114,
+      "max": 117
+    },
+    "warmSearchMs": {
+      "n": 140,
+      "min": 0,
+      "p50": 1,
+      "p95": 22,
+      "max": 24
+    },
+    "perQuery": {
+      "whale": {
+        "type": "searched",
+        "ms": 1.9999999999999858,
+        "results": 1688,
+        "chapters": 120,
+        "firstChapters": [
+          30,
+          31,
+          32
+        ],
+        "samples": [
+          "…Think of that, ye loyal Britons! we [whale]men supply your kings and queens with…",
+          "…said Starbuck, “who is not afraid of a [whale].” By this, he seemed to mean, not only…",
+          "…by a man like Stubb, or almost any other [whale] hunter. Starbuck was no crusader…"
+        ],
+        "query": {
+          "needle": "whale",
+          "exact": false
+        }
+      },
+      "Queequeg": {
+        "type": "searched",
+        "ms": 0,
+        "results": 252,
+        "chapters": 42,
+        "firstChapters": [
+          32,
+          39,
+          40
+        ],
+        "samples": [
+          "…of them belonged. First of all was [Queequeg], whom Starbuck, the chief mate, had…",
+          "…mate, had selected for his squire. But [Queequeg] is already known. Next was…",
+          "…spices. Such portentous appetites had [Queequeg] and Tashtego, that to fill out the…"
+        ],
+        "query": {
+          "needle": "queequeg",
+          "exact": false
+        }
+      },
+      "the": {
+        "type": "searched",
+        "ms": 24,
+        "results": 19959,
+        "chapters": 143,
+        "firstChapters": [
+          30,
+          31,
+          32
+        ],
+        "samples": [
+          "…Postscript In behalf of [the] dignity of whaling, I would fain advance…",
+          "…It is well known that at [the] coronation of kings and queens, even…",
+          "…a certain curious process of seasoning [the]m for their functions is gone through.…"
+        ],
+        "query": {
+          "needle": "the",
+          "exact": false
+        }
+      },
+      "harpoon": {
+        "type": "searched",
+        "ms": 1,
+        "results": 256,
+        "chapters": 66,
+        "firstChapters": [
+          32,
+          33,
+          37
+        ],
+        "samples": [
+          "…a picked trio of lancers; even as the [harpoon]eers were flingers of javelins. And…",
+          "…accompanied by his boat-steerer or [harpoon]eer, who in certain conjunctures provides…",
+          "…this place we set down who the Pequod’s [harpoon]eers were, and to what headsman each of…"
+        ],
+        "query": {
+          "needle": "harpoon",
+          "exact": false
+        }
+      },
+      "\"Call me Ishmael\"": {
+        "type": "searched",
+        "ms": 0,
+        "results": 1,
+        "chapters": 1,
+        "firstChapters": [
+          6
+        ],
+        "samples": [
+          "…I Loomings [Call me Ishmael]. Some years ago —never mind how long…"
+        ],
+        "query": {
+          "needle": "Call me Ishmael",
+          "exact": true
+        }
+      },
+      "call me ishmael": {
+        "type": "searched",
+        "ms": 0,
+        "results": 1,
+        "chapters": 1,
+        "firstChapters": [
+          6
+        ],
+        "samples": [
+          "…I Loomings [Call me Ishmael]. Some years ago —never mind how long…"
+        ],
+        "query": {
+          "needle": "call me ishmael",
+          "exact": false
+        }
+      },
+      "xyzzy": {
+        "type": "searched",
+        "ms": 1,
+        "results": 0,
+        "chapters": 0,
+        "firstChapters": [],
+        "samples": [],
+        "query": {
+          "needle": "xyzzy",
+          "exact": false
+        }
+      }
+    },
+    "samples": {
+      "idpf-sous-le-vent.epub :: etait": {
+        "type": "searched",
+        "ms": 1,
+        "results": 15,
+        "chapters": 3,
+        "firstChapters": [
+          9,
+          11,
+          12
+        ],
+        "samples": [
+          "…ou Soembava, en définitive, ce n’[était] pas plus extraordinaire que…",
+          "…d’acier se ficherait.Eh bien, ce moment [était] arrivé.Il était revenu, de nuit, dans la…",
+          "…bien, ce moment était arrivé.Il [était] revenu, de nuit, dans la petite classe,…"
+        ],
+        "query": {
+          "needle": "etait",
+          "exact": false
+        }
+      },
+      "idpf-kusamakura-japanese-vertical-writing.epub :: 智に働けば": {
+        "type": "searched",
+        "ms": 1,
+        "results": 1,
+        "chapters": 1,
+        "firstChapters": [
+          2
+        ],
+        "samples": [
+          "一 山路を登りながら、こう考えた。 [智に働けば]角が立つ。情に棹させば流される。意地を通せば窮屈だ。とかくに人の世は住みにくい。…"
+        ],
+        "query": {
+          "needle": "智に働けば",
+          "exact": false
+        }
+      },
+      "idpf-kusamakura-japanese-vertical-writing.epub :: 山": {
+        "type": "searched",
+        "ms": 1,
+        "results": 103,
+        "chapters": 13,
+        "firstChapters": [
+          2,
+          3,
+          4
+        ],
+        "samples": [
+          "一 [山]路を登りながら、こう考えた。 智に働けば角が立つ。情に棹させば流される。意地を通せば窮屈だ。とかくに人の世は住みにくい。…",
+          "…を伏せたような峰が聳えている。杉か檜か分からないが根元から頂きまでことごとく蒼黒い中に、[山]桜が薄赤くだんだらに棚引いて、続ぎ目が確と見えぬくらい靄が濃い。少し手前に禿山が一つ、群を…",
+          "…黒い中に、山桜が薄赤くだんだらに棚引いて、続ぎ目が確と見えぬくらい靄が濃い。少し手前に禿[山]が一つ、群をぬきんでて眉に逼る。禿げた側面は巨人の斧で削り去ったか、鋭どき平面をやけに谷の…"
+        ],
+        "query": {
+          "needle": "山",
+          "exact": false
+        }
+      }
+    }
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "os": "14.6.1",
+    "time": 1790216923,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}
