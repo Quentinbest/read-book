@@ -1,12 +1,12 @@
 # Linen (Quiet EPUB Reader) — implementation plan
 
-Status: draft, revision B (revised after review on 2026-09-24; see §10) · Design source: `docs/design/Quiet EPUB Reader.html` (17 screens)
+Status: draft, revision C (revised after review on 2026-09-24; see §10) · Design source: `docs/design/Quiet EPUB Reader.html` (17 screens)
 
 ## 1. Scope and source of truth
 
 ### 1.1 What the repository contains
 
-`docs/design/Quiet EPUB Reader.html` contains **only the 17 screen boards** (01 Library … 17 Footnote peek · Go to location). It was committed as “add design draft” (`3f5da5e`). No approval record exists in the repository.
+`docs/design/Quiet EPUB Reader.html` contains **only the 17 screen boards** (01 Library … 17 Footnote peek · Go to location). It was committed as “add design draft” (`3f5da5e`). The owner approved the screens and the canvas proposal on 2026-09-24 (`docs/design/APPROVAL.md`).
 
 Behaviour that isn’t visible in a mock comes from the design canvas’s written proposal and system diagrams: reveal rules, input thresholds, the S2 state model, shortcuts, the extension API, permissions and the failure table. **None of these boards are in the repository.** The MVP scope and exclusion lists below also come from that proposal.
 
@@ -14,7 +14,7 @@ Behaviour that isn’t visible in a mock comes from the design canvas’s writte
 
 Before Phase 1 starts:
 
-1. The owner records whether the screens are approved, and whether the written proposal is approved with them (Q1). Record both in `docs/design/APPROVAL.md`: date, approver and revision.
+1. ~~The owner records whether the screens are approved, and whether the written proposal is approved with them (Q1).~~ **Done 2026-09-24:** both are approved; see `docs/design/APPROVAL.md`.
 2. The rules this plan depends on are committed as `docs/spec/behaviour.md`: every row of the rule register (§1.4) marked “canvas”, plus the S2 lane model, the extension manifest and API, the permission list and the failure table. A reviewer compares it against the canvas.
 3. Every value in `docs/spec/behaviour.md` is labelled **approved** or **provisional**. Tests assert approved values. Provisional values live in one config module so tuning them doesn’t touch logic.
 
@@ -35,7 +35,7 @@ In scope, as defined by the canvas proposal:
 - Extension infrastructure, with Markdown Export as the first extension.
 - Command palette.
 
-Explicitly out of scope: sync, accounts, AI, TTS, statistics, store, DRM, collections, a marketplace, phone layouts, and **scripted EPUB content** (book JavaScript never runs; see §6.1). Tablet is out of scope unless Q2 says otherwise; desktop touch (Screen 13 zones on touch-screen laptops) is in scope.
+Explicitly out of scope: sync, accounts, AI, TTS, statistics, store, DRM, collections, a marketplace, phone layouts, and **scripted EPUB content** (book JavaScript never runs; approved 2026-09-24; see §6.1). Tablet (iPad) is out of scope for the first release (Q2, decided 2026-09-24); it is planned for the release after; desktop touch (Screen 13 zones on touch-screen laptops) is in scope.
 
 ### 1.4 Rule register
 
@@ -71,7 +71,7 @@ Each decision has a recommendation. §4 Phase 0 lists the spike that confirms it
 |---|---|---|---|
 | App shell | **Tauri 2** (Rust core, system WebView). Small and fast, fits “lightweight”, and has an iOS/Android path for tablets later. | Electron: one Chromium engine everywhere, but around 10× larger. Switching after Phase 0 means rewriting the Rust core’s Tauri commands, the rusqlite store and the native gesture bridge as Node code, roughly an extra M. | Spikes A, E |
 | EPUB engine | **foliate-js** (claimed MIT; covers pagination, CFI, search, highlight overlay, footnotes and fixed layout; recheck the licence when pinning). Its API is not declared stable, so pin a version and wrap it behind our own `ReaderEngine` interface. | Readium ts-toolkit navigator; epub.js (ageing) | Spikes A, D |
-| UI framework | **TypeScript + Svelte 5** (small runtime, fine-grained updates for a UI that is mostly idle). | React or Solid | Q3. Svelte 5 is the default if Q3 is unanswered when the Phase 0 skeleton starts. |
+| UI framework | **TypeScript + Svelte 5** (small runtime, fine-grained updates for a UI that is mostly idle). | React or Solid | Q3, decided 2026-09-24: Svelte 5. |
 | Persistence | **SQLite** in the Rust core (`rusqlite`), exposed through typed Tauri commands. Book files copied into the app data folder (Screen 12: “Books are copied into your library”). | IndexedDB in the WebView (simpler, but weaker durability and no native backup) | Spike F |
 | Search | In-worker scan over each chapter’s normalised plain text, cached to disk per book. Current chapter first, results streamed. | SQLite FTS5. The trigram tokenizer (SQLite ≥ 3.34) does substring matching, but the index is roughly 3× the text, and CJK and diacritic folding still need our own normalisation. Revisit for library-wide search. | Spike F |
 | Book content isolation | Book documents are served by a custom protocol from the Rust core with a strict CSP, and rendered in iframes that can’t run script and can’t reach IPC (§6.1). | Rendering from blob URLs in the app origin (rejected: shares the origin that holds IPC) | Spike E |
@@ -123,14 +123,16 @@ Relative size: S ≈ days, M ≈ 1–2 weeks, L ≈ 3+ weeks, for one engineer. 
 ### Phase 0 — Spikes and skeleton (M–L)
 
 **Before starting:**
-- D7 decided: minimum OS versions. Recommendation, to confirm: macOS 13+, Windows 10 22H2+ with evergreen WebView2, Ubuntu 22.04+ (WebKitGTK 4.1, which Tauri 2 requires). Record the exact WebView version each spike ran on.
+- D7 is decided (approved 2026-09-24): macOS 13+, Windows 10 22H2+ with evergreen WebView2, Ubuntu 22.04+ (WebKitGTK 4.1, which Tauri 2 requires). Record the exact WebView version each spike ran on.
 - Reference machines named in `docs/spikes/reference-machines.md`: one mid-range machine per OS, plus the oldest supported macOS.
-- Q3 decided, or the Svelte 5 default taken.
+- Q3 is decided (2026-09-24): Svelte 5 and Tauri 2. Tauri still depends on the Phase 0 go/no-go.
 - Test corpus assembled (§5.2).
 
 **Work:**
 - Tauri 2 app on all three OSes; CI builds; lint, format and type-check.
 - Each spike writes `docs/spikes/<letter>-<name>.md` with its method, raw numbers and a pass/fail verdict per criterion.
+
+Pass criteria and fallbacks approved 2026-09-24. Changing a threshold after that needs owner sign-off, recorded in the spike report.
 
 | Spike | Pass criteria (on every reference machine unless stated) | If it fails |
 |---|---|---|
@@ -363,7 +365,7 @@ Measured on the reference machines with release builds; the median and p95 of 20
 - **Links:** external links open in the system browser after a check that they are `http(s)`.
 - **Zip handling:**
   - Reject absolute paths, `..` segments and symlinks.
-  - Proposed limits, tuned after the corpus run: ≤ 10,000 entries, ≤ 1 GB total uncompressed, per-entry compression ratio ≤ 100:1.
+  - Limits (approved 2026-09-24): ≤ 10,000 entries, ≤ 1 GB total uncompressed, per-entry compression ratio ≤ 100:1. If the corpus run shows a legitimate book exceeding them, changing them needs owner sign-off.
   - Stream entries; never extract to disk outside the book’s own cache folder.
 - **XML:** the OPF and navigation parsers reject external entities and cap entity expansion.
 
@@ -392,7 +394,7 @@ Spike G passes when a test extension can’t reach an undeclared host through `f
 | 10 / 14 Themes, Night | 1–2 (Night selection bar in 5) | tokens, theme switching, Night chrome variants |
 | 11 Extensions | 6–7 | Preferences › Extensions, extension host |
 | 12 Empty / error | 1, 3, 5, 7 | EmptyLibrary, DamagedBook, write-failure Retry, ExtensionFailure, MessageQueue |
-| 13 Tablet | 2 (desktop touch); tablet app per Q2 | TouchZones, SwipePager |
+| 13 Tablet | 2 (desktop touch); tablet app after the first release (Q2) | TouchZones, SwipePager |
 | 16 ⌘K | 3 | CommandPalette, command registry |
 | 17 Footnote · Go to | 3 | FootnotePeek, GoToPopover |
 
@@ -415,10 +417,10 @@ Every item has a deadline, set by the phase that consumes it. If an item isn’t
 
 | # | Question | Owner | Decide by | Default if undecided |
 |---|---|---|---|---|
-| Q1 | Is the canvas’s written proposal and system spec (behaviour, shortcuts, extension API) approved along with the 17 screens, or only the screens? Record in `docs/design/APPROVAL.md`. | P | Phase 1 start | none (spec gate) |
-| Q2 | Is tablet (iPad) in the first release, or desktop only with tablet next? Decides whether Tauri mobile work, G9 and T4 belong in the MVP. | P | Phase 2 start | desktop only |
-| Q3 | Svelte, React or Solid? Tauri or Electron (beyond the Phase 0 result)? | T | Phase 0 skeleton | Svelte 5, Tauri 2 |
-| Q4 | For G3: can users edit metadata or not? | P | Phase 6 start | no editing |
+| Q1 | Is the canvas’s written proposal and system spec (behaviour, shortcuts, extension API) approved along with the 17 screens, or only the screens? | P | **Decided 2026-09-24:** approved along with the screens | — |
+| Q2 | Is tablet (iPad) in the first release, or desktop only with tablet next? Decides whether Tauri mobile work, G9 and T4 belong in the MVP. | P | **Decided 2026-09-24:** desktop only; tablet next | — |
+| Q3 | Svelte, React or Solid? Tauri or Electron (beyond the Phase 0 result)? | T | **Decided 2026-09-24:** Svelte 5, Tauri 2 (subject to the Phase 0 go/no-go) | — |
+| Q4 | For G3: can users edit metadata or not? | P | **Decided 2026-09-24:** no metadata editing | — |
 
 ### 9.2 Behaviour that is unspecified or ambiguous
 
@@ -439,13 +441,13 @@ Every item has a deadline, set by the phase that consumes it. If an item isn’t
 
 - **G1** Extension install and permission consent dialog, and the re-prompt when an update asks for more (Phase 7).
 - **G2** Preferences sections other than Extensions: General, Reading, Library, Shortcuts, About (Phase 6).
-- **G3** Book info sheet. The failure table says title and author can be edited there, which contradicts “metadata editing is out of scope” (Q4; Phase 6).
+- **G3** Book info sheet. Metadata is read-only (Q4, decided 2026-09-24). The failure table’s statement that title and author can be edited there is superseded. A read-only sheet still needs a design if it is kept (Phase 6).
 - **G4** Library states: sort menu open, item menu, remove confirmation or Undo (and whether Remove deletes the file), search with no results, importing several or large files, duplicate import, re-importing an updated file (Phase 6; the import-related states by Phase 1 exit).
 - **G5** Panels in Sepia and Night: Navigator, popovers, ⌘K, sheets, library and Preferences (Phase 2 start for reader panels, Phase 6 for the rest).
 - **G6** Windows and Linux window chrome; every mock uses macOS (Phase 1 exit).
 - **G7** Extension surfaces: an extension’s Navigator tab, the Dictionary result inside a peek, the top-bar ⋯ menu (Phase 7).
 - **G8** Reading variants: Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, image lightbox, resume chip in context, “≈” approximate locations (Phase 2 start).
-- **G9** Tablet beyond the tap-zone overlay (only if Q2 puts tablet in the MVP).
+- **G9** Tablet beyond the tap-zone overlay: not needed for the first release (Q2).
 - **G10** The `?` cheat sheet (Phase 3), and loading or progress states for large books (Phase 2).
 
 ### 9.4 Technical assumptions a WebView may not satisfy
@@ -455,7 +457,7 @@ Every item has a deadline, set by the phase that consumes it. If an item isn’t
 | T1 | Trackpad momentum detection | Spike B |
 | T2 | “The visible page follows the screen reader” | Spike C |
 | T3 | Caret browsing with F7: Chromium has it; WKWebView may need our own implementation | Phase 2 start |
-| T4 | iPad edit-menu integration and Apple Pencil need native code on Tauri mobile | only if Q2 = tablet |
+| T4 | iPad edit-menu integration and Apple Pencil need native code on Tauri mobile | not needed for the first release (Q2) |
 | T5 | Platform UI font vs Instrument Sans (used in all 17 screens); license-check bundled fonts (Literata is OFL) | Phase 1 start |
 
 ### 9.5 Product and operations decisions
@@ -468,10 +470,11 @@ Every item has a deadline, set by the phase that consumes it. If an item isn’t
 | D4 | Extension package format, signing, API reference, extension localisation | Phase 7 start |
 | D5 | Accessibility conformance target (recommend WCAG 2.2 AA) | Phase 1 start |
 | D6 | Auto-update mechanism and release cadence | Phase 8 start |
-| D7 | Minimum OS versions (these decide WebView features) | Phase 0 start |
+| D7 | Minimum OS versions (these decide WebView features) | **Decided 2026-09-24:** macOS 13+, Windows 10 22H2+ (evergreen WebView2), Ubuntu 22.04+ |
 
 ## 10. Revision history
 
+- **Revision C (2026-09-24):** owner approved the spike pass criteria and fallbacks, the zip limits, the minimum OS versions (D7) and the rule that book scripts never run. Owner decided Q1 (the canvas proposal is approved with the screens), Q2 (desktop only), Q3 (Svelte 5 + Tauri 2) and Q4 (no metadata editing).
 - **Revision B (2026-09-24):** addressed the plan review.
   - Spec gate and rule register (§1.2, §1.4).
   - Phase 0 spikes D–F added, with numeric pass criteria and fallbacks for every spike.
