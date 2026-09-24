@@ -6,18 +6,21 @@
   import LiveRegion from './components/LiveRegion.svelte'
   import MessageBar from './components/MessageBar.svelte'
   import Library from './app/Library.svelte'
+  import Reader from './reader/Reader.svelte'
   import { importMessages } from './app/importFeedback'
   import { ipc, type Book, type ImportResult } from './app/ipc'
   import { installMenuBar } from './app/menubar'
   import { refreshLayoutLabels } from './app/keyLabels'
   import { applyTheme, type ThemeChoice } from './app/theme'
   import { WriteQueue } from './app/writes'
+  import { testHooks } from './app/testHooks'
   import { isTextField, type KeyContext } from './lib/commands/keys'
   import { CommandRegistry } from './lib/commands/registry'
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings/en'
 
   let books: Book[] = $state([])
+  let reading: Book | null = $state(null)
   let dropActive = $state(false)
   let liveRegion: LiveRegion | undefined = $state()
   let singleKeysEnabled = true
@@ -27,6 +30,7 @@
     announcer: { announce: (text, politeness) => liveRegion?.announce(text, politeness) },
   })
   const writes = new WriteQueue(messages)
+  if (testHooks) testHooks.messages = messages
   const registry = new CommandRegistry()
 
   async function refresh() {
@@ -39,8 +43,29 @@
     showResults(await ipc.libraryImport(epubs))
   }
 
-  function showResults(results: ImportResult[]) {
-    for (const m of importMessages(results)) messages.push(m)
+  function showResults(results: ImportResult[], openSingle = false) {
+    // Opening a book that is already in the library needs no message: it just opens (E8).
+    const shown =
+      openSingle && results.length === 1
+        ? results.filter((r) => r.outcome.kind !== 'alreadyInLibrary')
+        : results
+    for (const m of importMessages(shown)) messages.push(m)
+    void refresh().then(() => {
+      // E8: a single book opened from the OS goes straight to the reader.
+      if (!openSingle || results.length !== 1) return
+      const o = results[0].outcome
+      const id = o.kind === 'rejected' ? null : o.book_id
+      const book = books.find((b) => b.id === id)
+      if (book) openBook(book)
+    })
+  }
+
+  function openBook(book: Book) {
+    reading = book
+  }
+
+  function closeReader() {
+    reading = null
     void refresh()
   }
 
@@ -55,7 +80,7 @@
 
   function keyContext(): KeyContext {
     return {
-      // The reader page arrives in Phase 2; in the library no page has focus.
+      // In the library no page has focus; the reader routes its own page keys.
       pageFocused: false,
       textFieldActive: isTextField(document.activeElement),
       singleKeysEnabled,
@@ -87,14 +112,26 @@
       const srTimer = setInterval(() => void pollScreenReader(), 2000)
       cleanups.push(() => clearInterval(srTimer))
       cleanups.push(registry.handle('book.open', { run: () => void openBookDialog() }))
-      cleanups.push(registry.handle('library.show', { run: () => void refresh() }))
-      await installMenuBar(registry)
       cleanups.push(
-        await listen<ImportResult[]>('os-opened', () => {
-          void ipc.openedTake().then(showResults)
+        registry.handle('library.show', {
+          run: () => (reading ? closeReader() : void refresh()),
         }),
       )
-      showResults(await ipc.openedTake())
+      await installMenuBar(registry)
+      // Later commands (the reader's) join the menu bar as they are registered.
+      let menuTimer = 0
+      cleanups.push(
+        registry.subscribe(() => {
+          clearTimeout(menuTimer)
+          menuTimer = window.setTimeout(() => void installMenuBar(registry), 50)
+        }),
+      )
+      cleanups.push(
+        await listen<ImportResult[]>('os-opened', () => {
+          void ipc.openedTake().then((r) => showResults(r, true))
+        }),
+      )
+      showResults(await ipc.openedTake(), true)
       cleanups.push(
         await getCurrentWebview().onDragDropEvent((e) => {
           if (e.payload.type === 'over' || e.payload.type === 'enter') dropActive = true
@@ -108,13 +145,24 @@
     })()
     return () => cleanups.forEach((c) => c())
   })
-
-  // Exposed for later phases (progress persistence, notes).
-  export { writes }
 </script>
 
 <svelte:window {onkeydown} />
 
-<Library {books} {dropActive} onopen={() => void openBookDialog()} />
+{#if reading}
+  {#key reading.id}
+    <Reader
+      book={reading}
+      {messages}
+      {writes}
+      {registry}
+      screenReader={() => screenReaderRunning}
+      {keyContext}
+      onexit={closeReader}
+    />
+  {/key}
+{:else}
+  <Library {books} {dropActive} onopen={() => void openBookDialog()} onopenbook={openBook} />
+{/if}
 <MessageBar queue={messages} />
 <LiveRegion bind:this={liveRegion} />

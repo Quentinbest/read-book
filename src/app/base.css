@@ -80,3 +80,17 @@ textarea {
     outline-color: Highlight;
   }
 }
+
+/* Literata for UI previews in the app window (book documents get it as a blob URL). */
+@font-face {
+  font-family: Literata;
+  src: url('/fonts/Literata.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: normal;
+}
+@font-face {
+  font-family: Literata;
+  src: url('/fonts/Literata-Italic.ttf') format('truetype');
+  font-weight: 200 900;
+  font-style: italic;
+}

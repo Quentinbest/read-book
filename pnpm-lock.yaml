@@ -14,6 +14,9 @@ importers:
       '@tauri-apps/plugin-dialog':
         specifier: ^2.7.3
         version: 2.7.3
+      '@tauri-apps/plugin-log':
+        specifier: ^2.9.2
+        version: 2.9.2
       foliate-js:
         specifier: github:johnfactotum/foliate-js#78914aef4466eb960965702401634c2cb348e9b1
         version: https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1
@@ -439,6 +442,9 @@ packages:
 
   '@tauri-apps/plugin-dialog@2.7.3':
     resolution: {integrity: sha512-CRgE+7TP4tvq9MjBU6f04NLTFIqVMLKHk3hAqlhil00ngK9ACTrXPH3oHpKMProxILodd3YjBoKbMwSI4IEcfA==, tarball: https://registry.npmmirror.com/@tauri-apps/plugin-dialog/-/plugin-dialog-2.7.3.tgz}
+
+  '@tauri-apps/plugin-log@2.9.2':
+    resolution: {integrity: sha512-QC2uTQyC+4269xawGXzVLDzIvMB2JwzZHd1lg3ltXtXqrauwikqlbNt6Tm3H++1RN0gPtcvp4cBc5bF6u/DUnw==, tarball: https://registry.npmmirror.com/@tauri-apps/plugin-log/-/plugin-log-2.9.2.tgz}
 
   '@tsconfig/svelte@5.0.8':
     resolution: {integrity: sha512-UkNnw1/oFEfecR8ypyHIQuWYdkPvHiwcQ78sh+ymIiYoF+uc5H1UBetbjyqT+vgGJ3qQN6nhucJviX6HesWtKQ==, tarball: https://registry.npmmirror.com/@tsconfig/svelte/-/svelte-5.0.8.tgz}
@@ -1602,6 +1608,10 @@ snapshots:
       '@tauri-apps/cli-win32-x64-msvc': 2.11.5
 
   '@tauri-apps/plugin-dialog@2.7.3':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+
+  '@tauri-apps/plugin-log@2.9.2':
     dependencies:
       '@tauri-apps/api': 2.11.1
 

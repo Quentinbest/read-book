@@ -45,6 +45,12 @@ export function isCommandError(e: unknown): e is CommandError {
 export const ipc = {
   libraryList: () => invoke<Book[]>('library_list'),
   libraryImport: (paths: string[]) => invoke<ImportResult[]>('library_import', { paths }),
+  /** The book file for the reader (library files only). */
+  bookBytes: (bookId: string) => invoke<ArrayBuffer>('book_bytes', { bookId }),
+  bookSettingsGet: (bookId: string) =>
+    invoke<[string, string | null] | null>('book_settings_get', { bookId }),
+  bookSettingsSet: (bookId: string, layoutMode: string, navigatorDocked: string | null) =>
+    invoke<void>('book_settings_set', { bookId, layoutMode, navigatorDocked }),
   positionSave: (bookId: string, cfi: string, fraction: number) =>
     invoke<void>('position_save', { bookId, cfi, fraction }),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),

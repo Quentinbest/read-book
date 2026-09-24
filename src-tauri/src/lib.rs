@@ -15,18 +15,41 @@ pub fn run() {
         .manage(commands::PendingOpens::default());
     #[cfg(feature = "spikes")]
     let builder = spikes::install(builder);
+    // Spike builds serve the product commands too, so the in-app end-to-end tests
+    // can drive the real app (macOS has no WebDriver for Tauri).
+    macro_rules! handler {
+        ($($extra:path),*) => {
+            tauri::generate_handler![
+                commands::library_list,
+                commands::library_import,
+                commands::book_bytes,
+                commands::book_settings_get,
+                commands::book_settings_set,
+                commands::position_save,
+                commands::position_get,
+                commands::setting_get,
+                commands::setting_set,
+                commands::opened_take,
+                native::screen_reader_running,
+                native::keyboard_layout_labels,
+                $($extra),*
+            ]
+        };
+    }
     #[cfg(not(feature = "spikes"))]
-    let builder = builder.invoke_handler(tauri::generate_handler![
-        commands::library_list,
-        commands::library_import,
-        commands::position_save,
-        commands::position_get,
-        commands::setting_get,
-        commands::setting_set,
-        commands::opened_take,
-        native::screen_reader_running,
-        native::keyboard_layout_labels,
-    ]);
+    let builder = builder.invoke_handler(handler!());
+    #[cfg(feature = "spikes")]
+    let builder = builder.invoke_handler(handler!(
+        spikes::spike_read_corpus,
+        spikes::spike_corpus_path,
+        spikes::spike_canary,
+        spikes::spike_canary_log,
+        spikes::spike_canary_clear,
+        spikes::spike_report,
+        spikes::spike_info,
+        spikes::spike_log,
+        spikes::spike_exit
+    ));
     builder
         .setup(|app| {
             if cfg!(debug_assertions) {

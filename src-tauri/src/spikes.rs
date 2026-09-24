@@ -38,7 +38,7 @@ fn valid_name(name: &str) -> bool {
 }
 
 #[tauri::command]
-fn spike_read_corpus(name: String) -> Result<Response, String> {
+pub fn spike_read_corpus(name: String) -> Result<Response, String> {
     if !valid_name(&name) {
         return Err(format!("invalid corpus name: {name}"));
     }
@@ -54,7 +54,7 @@ fn spike_read_corpus(name: String) -> Result<Response, String> {
 }
 
 #[tauri::command]
-fn spike_canary(state: tauri::State<SpikeState>, id: String, channel: Option<String>) {
+pub fn spike_canary(state: tauri::State<SpikeState>, id: String, channel: Option<String>) {
     state
         .0
         .lock()
@@ -64,17 +64,17 @@ fn spike_canary(state: tauri::State<SpikeState>, id: String, channel: Option<Str
 }
 
 #[tauri::command]
-fn spike_canary_log(state: tauri::State<SpikeState>) -> CanaryLog {
+pub fn spike_canary_log(state: tauri::State<SpikeState>) -> CanaryLog {
     state.0.lock().unwrap().clone()
 }
 
 #[tauri::command]
-fn spike_canary_clear(state: tauri::State<SpikeState>) {
+pub fn spike_canary_clear(state: tauri::State<SpikeState>) {
     *state.0.lock().unwrap() = CanaryLog::default();
 }
 
 #[tauri::command]
-fn spike_report(name: String, json: String) -> Result<String, String> {
+pub fn spike_report(name: String, json: String) -> Result<String, String> {
     if !valid_name(&name) {
         return Err(format!("invalid report name: {name}"));
     }
@@ -86,7 +86,7 @@ fn spike_report(name: String, json: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn spike_info() -> serde_json::Value {
+pub fn spike_info() -> serde_json::Value {
     let plist = "/System/Library/Frameworks/WebKit.framework/Versions/A/Resources/Info.plist";
     let read = |cmd: &str, args: &[&str]| {
         std::process::Command::new(cmd)
@@ -105,12 +105,12 @@ fn spike_info() -> serde_json::Value {
 }
 
 #[tauri::command]
-fn spike_log(line: String) {
+pub fn spike_log(line: String) {
     eprintln!("{line}");
 }
 
 #[tauri::command]
-fn spike_exit<R: Runtime>(app: AppHandle<R>, code: i32) {
+pub fn spike_exit<R: Runtime>(app: AppHandle<R>, code: i32) {
     app.exit(code);
 }
 
@@ -140,18 +140,26 @@ fn start_canary_server<R: Runtime>(app: AppHandle<R>) {
 }
 
 pub fn install<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
-    builder
-        .manage(SpikeState(Mutex::new(CanaryLog::default())))
-        .invoke_handler(tauri::generate_handler![
-            spike_read_corpus,
-            spike_canary,
-            spike_canary_log,
-            spike_canary_clear,
-            spike_report,
-            spike_info,
-            spike_log,
-            spike_exit
-        ])
+    builder.manage(SpikeState(Mutex::new(CanaryLog::default())))
+}
+
+/// Absolute path of a corpus file, for importing it through the product commands.
+#[tauri::command]
+pub fn spike_corpus_path(name: String) -> Result<String, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid corpus name: {name}"));
+    }
+    for dir in ["corpus/cache", "corpus/generated"] {
+        let path = repo_root().join(dir).join(&name);
+        if path.is_file() {
+            return Ok(path
+                .canonicalize()
+                .map_err(|e| e.to_string())?
+                .display()
+                .to_string());
+        }
+    }
+    Err(format!("not in corpus: {name}"))
 }
 
 pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {

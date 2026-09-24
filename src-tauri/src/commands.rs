@@ -65,6 +65,13 @@ type CmdResult<T> = Result<T, CommandError>;
 /// Open the store and library under the app data folder
 /// (~/Library/Application Support/app.linen.reader, B3).
 pub fn init<R: Runtime>(app: &tauri::App<R>) -> Result<AppState, Box<dyn std::error::Error>> {
+    // Tests and spikes can point the app at a throwaway data folder.
+    #[cfg(any(debug_assertions, feature = "spikes"))]
+    let root = match std::env::var_os("LINEN_DATA_DIR") {
+        Some(dir) => PathBuf::from(dir),
+        None => app.path().app_data_dir()?,
+    };
+    #[cfg(not(any(debug_assertions, feature = "spikes")))]
     let root = app.path().app_data_dir()?;
     std::fs::create_dir_all(&root)?;
     let store = Store::open(&root.join("linen.db"))?;
@@ -103,6 +110,88 @@ pub fn import_paths(state: &AppState, paths: &[PathBuf]) -> CmdResult<Vec<Import
 pub fn library_import(state: State<AppState>, paths: Vec<String>) -> CmdResult<Vec<ImportResult>> {
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
     import_paths(&state, &paths)
+}
+
+/// The book file's bytes for the reader. Only files inside the library are served.
+#[tauri::command]
+pub fn book_bytes(state: State<AppState>, book_id: String) -> CmdResult<tauri::ipc::Response> {
+    let path: String = state
+        .store
+        .lock()
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT file_path FROM books WHERE id = ?1",
+            [&book_id],
+            |r| r.get(0),
+        )
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?;
+    let path = PathBuf::from(path);
+    let books_dir = state
+        .library
+        .books_dir
+        .canonicalize()
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?;
+    let resolved = path.canonicalize().map_err(|e| CommandError::Failed {
+        message: e.to_string(),
+    })?;
+    if !resolved.starts_with(&books_dir) {
+        return Err(CommandError::Failed {
+            message: "book file is outside the library".into(),
+        });
+    }
+    std::fs::read(&resolved)
+        .map(tauri::ipc::Response::new)
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })
+}
+
+/// Per-book settings (S13): layout mode and the docked Navigator tab.
+#[tauri::command]
+pub fn book_settings_get(
+    state: State<AppState>,
+    book_id: String,
+) -> CmdResult<Option<(String, Option<String>)>> {
+    use rusqlite::OptionalExtension;
+    Ok(state
+        .store
+        .lock()
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT layout_mode, navigator_docked FROM book_settings WHERE book_id = ?1",
+            [&book_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()
+        .map_err(StoreError::from)?)
+}
+
+#[tauri::command]
+pub fn book_settings_set(
+    state: State<AppState>,
+    book_id: String,
+    layout_mode: String,
+    navigator_docked: Option<String>,
+) -> CmdResult<()> {
+    state
+        .store
+        .lock()
+        .unwrap()
+        .conn()
+        .execute(
+            "INSERT INTO book_settings (book_id, layout_mode, navigator_docked) VALUES (?1, ?2, ?3)
+             ON CONFLICT(book_id) DO UPDATE SET layout_mode = excluded.layout_mode,
+             navigator_docked = excluded.navigator_docked",
+            rusqlite::params![book_id, layout_mode, navigator_docked],
+        )
+        .map_err(StoreError::from)?;
+    Ok(())
 }
 
 #[tauri::command]

@@ -57,6 +57,9 @@ declare module 'foliate-js/view.js' {
     readonly pages: number
     readonly size: number
     readonly scrolled: boolean
+    focusView?(): void
+    nextSection(): Promise<void>
+    prevSection(): Promise<void>
   }
 
   export class View extends HTMLElement {

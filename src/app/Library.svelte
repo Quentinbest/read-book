@@ -5,8 +5,17 @@
   import { t } from '../lib/strings/en'
   import type { Book } from './ipc'
 
-  let { books, dropActive, onopen }: { books: Book[]; dropActive: boolean; onopen: () => void } =
-    $props()
+  let {
+    books,
+    dropActive,
+    onopen,
+    onopenbook,
+  }: {
+    books: Book[]
+    dropActive: boolean
+    onopen: () => void
+    onopenbook: (book: Book) => void
+  } = $props()
 
   const progress = (b: Book) =>
     b.finished_at
@@ -34,19 +43,21 @@
     <ul class="list">
       {#each books as book (book.id)}
         <li>
-          <span
-            class="cover"
-            style:background={book.generated_cover_tint ?? 'var(--hairline)'}
-            aria-hidden="true"
-          ></span>
-          <span class="meta">
-            <span class="title">{book.title}</span>
-            <span class="author">{book.authors.join(', ') || t.library.unknownAuthor}</span>
-          </span>
-          {#if book.damaged_items > 0}
-            <span class="damaged">{t.library.damaged(book.damaged_items)}</span>
-          {/if}
-          <span class="progress">{progress(book)}</span>
+          <button type="button" class="row" onclick={() => onopenbook(book)}>
+            <span
+              class="cover"
+              style:background={book.generated_cover_tint ?? 'var(--hairline)'}
+              aria-hidden="true"
+            ></span>
+            <span class="meta">
+              <span class="title">{book.title}</span>
+              <span class="author">{book.authors.join(', ') || t.library.unknownAuthor}</span>
+            </span>
+            {#if book.damaged_items > 0}
+              <span class="damaged">{t.library.damaged(book.damaged_items)}</span>
+            {/if}
+            <span class="progress">{progress(book)}</span>
+          </button>
         </li>
       {/each}
     </ul>
@@ -100,6 +111,16 @@
     border-top: 1px solid var(--hairline);
   }
   li {
+    display: block;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .row {
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: none;
+    text-align: start;
+    cursor: default;
     display: flex;
     align-items: center;
     gap: 16px;

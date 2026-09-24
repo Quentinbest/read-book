@@ -30,6 +30,17 @@ export const en = {
       `“${fileName(path)}” couldn’t be opened · ${reason}`,
     fileFilter: 'EPUB',
   },
+  reader: {
+    library: 'Library',
+    previousPage: 'Previous page',
+    nextPage: 'Next page',
+    minutesLeft: (n: number) => `${n} min left in chapter`,
+    resumedIn: (chapter: string) => `Resumed in ${chapter}`,
+    resumed: 'Resumed where you left off',
+    goToBeginning: 'Go to beginning',
+    backToPage: (page: string) => `Back to page ${page}`,
+    back: 'Back',
+  },
   messages: {
     region: 'Message',
     dismiss: 'Dismiss',

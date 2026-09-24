@@ -11,6 +11,16 @@
         "alwaysOnTop": true,
         "backgroundThrottling": "disabled"
       }
-    ]
+    ],
+    "security": {
+      "capabilities": [
+        "default",
+        {
+          "identifier": "spikes-e2e",
+          "windows": ["main"],
+          "permissions": ["core:window:allow-set-size", "core:window:allow-inner-size"]
+        }
+      ]
+    }
   }
 }

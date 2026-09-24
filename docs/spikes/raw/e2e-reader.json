@@ -1,0 +1,122 @@
+{
+  "spike": "e2e-reader",
+  "criteria": [
+    {
+      "id": "N3-bodymatter",
+      "description": "A new book opens at the bodymatter landmark, not the cover",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I8-keys-next",
+      "description": "→ turns to the next page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I8-keys-prev",
+      "description": "← turns to the previous page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I8-keys-app-focus",
+      "description": "Page keys also work with focus on the app window",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I8-space",
+      "description": "Space turns forward, ⇧Space back",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I8-page-keys",
+      "description": "PgDn / ↓ forward, PgUp / ↑ back",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I11-margins",
+      "description": "Margin clicks turn pages (right = next, left = previous)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I11-activating-click",
+      "description": "The click that activates the window never turns a page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I11-column-click",
+      "description": "A click inside the text column never turns a page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I1-wheel-roll",
+      "description": "One wheel roll (native, not precise) turns one page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I2-I5-trackpad",
+      "description": "One trackpad gesture turns one page; its momentum does not",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I7-rapid-chip",
+      "description": "More than 3 pages in under 1 s offers “Back to page N”",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N1-back",
+      "description": "Back (⌘[) returns to where the rapid turning started",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "progress-saved",
+      "description": "The position is saved within the 1 s debounce",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N5-restore",
+      "description": "Leaving for the library and reopening restores the same place",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "L10-resize",
+      "description": "Resizing the window keeps the reading position on screen",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I15-rtl-keys",
+      "description": "In a right-to-left book, ← turns to the next page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I15-rtl-margin",
+      "description": "In a right-to-left book, the left margin moves forward",
+      "verdict": "pass",
+      "evidence": "ok"
+    }
+  ],
+  "raw": {},
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "os": "14.6.1",
+    "time": 1790249115,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}
