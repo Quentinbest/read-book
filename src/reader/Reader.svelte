@@ -16,7 +16,7 @@
   import { t } from '../lib/strings/en'
   import { THEMES, type Theme } from '../lib/theme/tokens'
   import { ReaderEngine, type ReaderLocation, type Turn } from './engine'
-  import { literataFaces } from './fonts'
+  import { fallBackFailedFonts, literataFaces } from './fonts'
   import { computeLayout, showLocationLine, type Layout } from './layout'
   import { ReadingPace } from './pace'
   import { PageCounter } from './pages'
@@ -30,6 +30,7 @@
     screenReader,
     keyContext,
     onBeforeQuit,
+    announce,
     onexit,
   }: {
     book: Book
@@ -39,6 +40,8 @@
     screenReader: () => boolean
     keyContext: () => KeyContext
     onBeforeQuit: (fn: () => void) => () => void
+    /** Screen-reader announcement (polite), for page turns (X3). */
+    announce: (text: string) => void
     onexit: () => void
   } = $props()
 
@@ -67,6 +70,8 @@
   let chromeVisible = $derived(lanes.chrome === 'controls')
   let height = $state(window.innerHeight)
   let fontPx = 19
+  let edges = { topStart: 0, bottomOff: false }
+  let announceTurns = true
   let fontFaces = ''
   const history = new LocationHistory()
   let pace = new ReadingPace()
@@ -127,6 +132,11 @@
     const prev = location
     location = l
     if (l.pages) pages?.count(l.sectionIndex, l.pages)
+    // X3: brief page-turn announcements, off when VoiceOver itself moved the page.
+    if (announceTurns && l.reason === 'page' && prev && prev.cfi !== l.cfi) {
+      const n = pageLabel(l)
+      if (n) announce(t.reader.pageAnnouncement(n))
+    }
     // B2: a page's dwell time feeds the reading pace.
     const now = performance.now()
     if (prev && prev.cfi !== l.cfi) {
@@ -243,9 +253,22 @@
   // ---- chrome reveal (S9–S11)
   let dwellTimer = 0
   let hideTimer = 0
+  /** S11: in full screen the top zone starts below the menu bar; the bottom zone yields to an auto-hiding Dock. */
+  async function refreshEdges() {
+    try {
+      const e = await ipc.screenEdges()
+      edges = {
+        topStart: e.fullscreen ? e.menu_bar_height : 0,
+        bottomOff: e.dock_edge === 'bottom' && (e.dock_autohide || e.fullscreen),
+      }
+    } catch {
+      // keep the defaults
+    }
+  }
+
   function onPointerMove(e: PointerEvent) {
-    const nearTop = e.clientY <= REVEAL_ZONE
-    const nearBottom = e.clientY >= window.innerHeight - REVEAL_ZONE
+    const nearTop = e.clientY >= edges.topStart && e.clientY <= edges.topStart + REVEAL_ZONE
+    const nearBottom = !edges.bottomOff && e.clientY >= window.innerHeight - REVEAL_ZONE
     clearTimeout(hideTimer)
     if (nearTop || nearBottom) {
       if (!chromeVisible && !dwellTimer)
@@ -284,6 +307,8 @@
     void (async () => {
       theme = await resolveTheme()
       fontPx = Number((await ipc.settingGet('fontPx')) ?? 19) || 19
+      announceTurns = (await ipc.settingGet('pageTurnAnnouncements')) !== 'off'
+      await refreshEdges()
       const savedPace = await ipc.settingGet('readingPace')
       if (savedPace) pace = new ReadingPace(JSON.parse(savedPace))
       fontFaces = await literataFaces()
@@ -295,6 +320,8 @@
       relayout()
       cleanups.push(engine.onRelocate(onRelocate))
       cleanups.push(engine.onKey((e) => onPageKey(e, true)))
+      // L15: a book font that fails or takes over 1.5 s falls back to Literata, without a prompt.
+      cleanups.push(engine.onDocument((doc) => void fallBackFailedFonts(doc)))
       cleanups.push(
         engine.onLink((link) => {
           if (link.external) {
@@ -360,6 +387,7 @@
     const onResize = () => {
       dispatch({ type: 'resize', width: window.innerWidth })
       relayout()
+      void refreshEdges() // entering or leaving full screen resizes the window
     }
     let resizeTimer = 0
     const debouncedResize = () => {
@@ -367,6 +395,8 @@
       resizeTimer = window.setTimeout(onResize, 120) // L10
     }
     const onBlur = () => saveNow()
+    const onFocusEdges = () => void refreshEdges()
+    window.addEventListener('focus', onFocusEdges)
     const offQuit = onBeforeQuit(() => {
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
@@ -379,6 +409,7 @@
       window.removeEventListener('resize', debouncedResize)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('keydown', onKeydown)
+      window.removeEventListener('focus', onFocusEdges)
       offQuit()
       cleanups.forEach((c) => c())
       saveNow()

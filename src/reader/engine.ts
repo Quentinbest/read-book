@@ -61,6 +61,7 @@ export class ReaderEngine {
   #relocate = new Set<Listener<ReaderLocation>>()
   #link = new Set<Listener<LinkEvent>>()
   #key = new Set<Listener<KeyboardEvent>>()
+  #doc = new Set<Listener<Document>>()
   #turning: Promise<void> | null = null
   #pending: Turn | null = null
   #styles = ''
@@ -114,6 +115,12 @@ export class ReaderEngine {
   onKey(l: Listener<KeyboardEvent>) {
     this.#key.add(l)
     return () => this.#key.delete(l)
+  }
+
+  /** Every book document as it loads, in any view (for per-document work such as L15). */
+  onDocument(l: Listener<Document>) {
+    this.#doc.add(l)
+    return () => this.#doc.delete(l)
   }
 
   onLink(l: Listener<LinkEvent>) {
@@ -476,6 +483,7 @@ export class ReaderEngine {
       }
     }
     if (this.#styles && !view.isFixedLayout) view.renderer?.setStyles?.(this.#styles)
+    this.#doc.forEach((l) => l(doc))
   }
 
   #onRelocate(view: View, detail: Record<string, unknown>, reason?: ReaderLocation['reason']) {

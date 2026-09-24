@@ -40,6 +40,7 @@ export const en = {
     goToBeginning: 'Go to beginning',
     backToPage: (page: string) => `Back to page ${page}`,
     back: 'Back',
+    pageAnnouncement: (page: string) => `Page ${page}`,
   },
   messages: {
     region: 'Message',

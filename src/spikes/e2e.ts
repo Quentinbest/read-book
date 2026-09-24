@@ -90,6 +90,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'hostile-content.epub',
     'idpf-page-blanche.epub',
     'long-chapter.epub',
+    'broken-bad-css-and-font.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -423,6 +424,34 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await settled(800)
       const l = loc()!
       return ms < 500 ? 'ok' : `opened in ${ms} ms (${l.pages} pages in the first section)`
+    },
+  })
+
+  checks.push({
+    id: 'X3-announcements',
+    description: 'A page turn is announced briefly to screen readers (“Page N”)',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick/)
+      key('ArrowRight')
+      await settled(600)
+      const text = document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
+      return /^Page \d+$/.test(text) ? 'ok' : `live region said “${text}”`
+    },
+  })
+
+  checks.push({
+    id: 'L15-font-fallback',
+    description: 'A book font that fails to load falls back to Literata without a prompt',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Bad CSS and fonts/)
+      await settled(2200) // the 1.5 s font timeout
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const faces: string[] = []
+      doc.fonts.forEach((f) => faces.push(`${f.family}:${f.status}`))
+      const replaced = faces.some((f) => /Broken.*loaded/.test(f))
+      return replaced ? 'ok' : `faces: ${faces.join(', ')}`
     },
   })
 

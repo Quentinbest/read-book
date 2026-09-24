@@ -34,6 +34,7 @@ pub fn run() {
                 commands::quit_ready,
                 native::screen_reader_running,
                 native::keyboard_layout_labels,
+                native::screen_edges,
                 $($extra),*
             ]
         };

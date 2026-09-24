@@ -167,3 +167,67 @@ mod tests {
         assert!(labels.len() >= 40);
     }
 }
+
+/// T8, S11: where the chrome's reveal zones must give way to the OS.
+#[derive(serde::Serialize)]
+pub struct ScreenEdges {
+    /// The Dock hides itself and slides in at `dock_edge` (bottom zone off when that is the bottom).
+    pub dock_autohide: bool,
+    /// "bottom", "left" or "right".
+    pub dock_edge: String,
+    /// The window is in macOS full screen: the menu bar slides in at the top.
+    pub fullscreen: bool,
+    /// Height of the menu bar in points (the top zone starts below it in full screen).
+    pub menu_bar_height: f64,
+}
+
+#[tauri::command]
+pub fn screen_edges(window: tauri::WebviewWindow) -> ScreenEdges {
+    let fullscreen = window.is_fullscreen().unwrap_or(false);
+    #[cfg(target_os = "macos")]
+    {
+        use objc2::AnyThread;
+        use objc2_foundation::{NSString, NSUserDefaults};
+        let dock = NSUserDefaults::initWithSuiteName(
+            NSUserDefaults::alloc(),
+            Some(&NSString::from_str("com.apple.dock")),
+        );
+        let (autohide, edge) = match dock {
+            Some(d) => (
+                d.boolForKey(&NSString::from_str("autohide")),
+                d.stringForKey(&NSString::from_str("orientation"))
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "bottom".into()),
+            ),
+            None => (false, "bottom".into()),
+        };
+        // The menu bar is 24 pt, or 37 pt on displays with a camera housing; take the safe height.
+        let menu_bar_height = window
+            .current_monitor()
+            .ok()
+            .flatten()
+            .map(|m| {
+                if m.size().height as f64 / m.scale_factor() > 1100.0 {
+                    37.0
+                } else {
+                    24.0
+                }
+            })
+            .unwrap_or(24.0);
+        ScreenEdges {
+            dock_autohide: autohide,
+            dock_edge: edge,
+            fullscreen,
+            menu_bar_height,
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        ScreenEdges {
+            dock_autohide: false,
+            dock_edge: "bottom".into(),
+            fullscreen,
+            menu_bar_height: 0.0,
+        }
+    }
+}

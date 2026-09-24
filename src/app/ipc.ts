@@ -58,6 +58,14 @@ export const ipc = {
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),
   /** Results of files opened from the OS before the UI was listening. */
   openedTake: () => invoke<ImportResult[]>('opened_take'),
+  /** T8, S11: Dock auto-hide and full screen, for the chrome's reveal zones. */
+  screenEdges: () =>
+    invoke<{
+      dock_autohide: boolean
+      dock_edge: string
+      fullscreen: boolean
+      menu_bar_height: number
+    }>('screen_edges'),
   /** N5: saving is done; the app may quit. */
   quitReady: () => invoke<void>('quit_ready'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */

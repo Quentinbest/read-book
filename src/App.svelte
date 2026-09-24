@@ -175,6 +175,7 @@
       screenReader={() => screenReaderRunning}
       {keyContext}
       {onBeforeQuit}
+      announce={(text) => liveRegion?.announce(text, 'polite')}
       onexit={closeReader}
     />
   {/key}
