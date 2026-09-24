@@ -1,0 +1,49 @@
+{
+  "spike": "c-accessibility",
+  "criteria": [
+    {
+      "id": "C-continuous",
+      "description": "VoiceOver reads continuously across 3 page boundaries",
+      "verdict": "pass",
+      "evidence": "observer answer: Yes"
+    },
+    {
+      "id": "C-position-observable",
+      "description": "VoiceOver’s reading position is observable, so the visible page can follow (X3, T2)",
+      "verdict": "pass",
+      "evidence": "3 relocate events while reading; observer says the page followed: Yes"
+    },
+    {
+      "id": "C-nvda",
+      "description": "NVDA",
+      "verdict": "deferred",
+      "evidence": "macOS-only scope"
+    }
+  ],
+  "raw": {
+    "relocations": [
+      {
+        "t": 389,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 389,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 390,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      }
+    ],
+    "continuous": "Yes",
+    "followed": "Yes"
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "os": "14.6.1",
+    "time": 1790243461,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

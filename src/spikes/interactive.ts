@@ -269,10 +269,34 @@ export async function spikeC(): Promise<SpikeResult> {
     const d = (e as CustomEvent<{ cfi: string; reason?: string }>).detail
     relocations.push({ t: Math.round(performance.now()), cfi: d.cfi, reason: d.reason })
   })
+  // What the reader actually sees vs. what foliate believes (run 1 found they can differ):
+  // the book frame's position on screen, the book document's own scroll, and foliate's page.
+  const samples: {
+    t: number
+    frameX: number
+    frameY: number
+    docX: number
+    docY: number
+    page: number
+    cfi?: string
+  }[] = []
+  const sample = () => {
+    const doc = view.renderer.getContents()[0]?.doc
+    const frame = doc?.defaultView?.frameElement?.getBoundingClientRect()
+    samples.push({
+      t: Math.round(performance.now()),
+      frameX: Math.round(frame?.left ?? NaN),
+      frameY: Math.round(frame?.top ?? NaN),
+      docX: Math.round(doc?.scrollingElement?.scrollLeft ?? NaN),
+      docY: Math.round(doc?.scrollingElement?.scrollTop ?? NaN),
+      page: view.renderer.page,
+      cfi: view.lastLocation?.cfi,
+    })
+  }
   const start = await step(
     'VoiceOver: continuous reading (X3)',
-    'Turn on VoiceOver (⌘F5). Move the VoiceOver cursor into the book text, then start reading all (VO + A). Let it read across <b>at least 3 page boundaries</b> (about 3 minutes), then stop it (Control) and press Continue. Press Skip if VoiceOver cannot be used now.',
-    ['Continue', 'Skip'],
+    'Turn on VoiceOver (Fn + ⌘F5, or System Settings › Accessibility). Click in the book text, then press <b>Control + Option + A</b> to read all. When it has started, press <b>Reading started</b> with the mouse. Press Skip if VoiceOver cannot be used now.',
+    ['Reading started', 'Skip'],
   )
   if (start === 'Skip') {
     view.close()
@@ -289,6 +313,16 @@ export async function spikeC(): Promise<SpikeResult> {
       raw: {},
     }
   }
+  const readingFrom = performance.now()
+  sample()
+  const timer = setInterval(sample, 500)
+  await step(
+    'Keep listening',
+    'Let VoiceOver read across <b>at least 3 page boundaries</b> (about 3 minutes). Then stop it (Control) and press Done.',
+    ['Done'],
+  )
+  clearInterval(timer)
+  sample()
   const continuous = await step(
     'Did it read continuously?',
     'Did VoiceOver keep reading past the end of each page without stopping or jumping?',
@@ -300,6 +334,18 @@ export async function spikeC(): Promise<SpikeResult> {
     ['Yes', 'No', 'Not sure'],
   )
   view.close()
+
+  const during = relocations.filter((r) => r.t >= readingFrom)
+  const distinct = new Set(during.map((r) => r.cfi)).size
+  const moved = samples.filter(
+    (x, i) =>
+      i > 0 &&
+      (x.frameX !== samples[i - 1].frameX ||
+        x.frameY !== samples[i - 1].frameY ||
+        x.docX !== samples[i - 1].docX ||
+        x.docY !== samples[i - 1].docY),
+  ).length
+  const pagesSeen = new Set(samples.map((x) => x.page)).size
   return {
     spike: 'c-accessibility',
     criteria: [
@@ -312,12 +358,12 @@ export async function spikeC(): Promise<SpikeResult> {
       {
         id: 'C-position-observable',
         description:
-          'VoiceOver’s reading position is observable, so the visible page can follow (X3, T2)',
-        verdict: relocations.length > 1 ? 'pass' : 'fail',
-        evidence: `${relocations.length} relocate events while reading; observer says the page followed: ${followed}`,
+          'VoiceOver’s reading position is observable to the reader engine, so the visible page can follow (X3, T2)',
+        verdict: distinct >= 3 ? 'pass' : 'fail',
+        evidence: `${during.length} relocate events (${distinct} distinct locations) while VoiceOver read; foliate page numbers seen: ${pagesSeen}; the frame or document moved in ${moved} of ${samples.length} samples; observer says the page followed: ${followed}`,
       },
       { id: 'C-nvda', description: 'NVDA', verdict: 'deferred', evidence: 'macOS-only scope' },
     ],
-    raw: { relocations, continuous, followed },
+    raw: { readingFrom: Math.round(readingFrom), relocations, samples, continuous, followed },
   }
 }
