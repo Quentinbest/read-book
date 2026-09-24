@@ -76,6 +76,8 @@ export const en = {
     'text.larger': 'Larger text',
     'text.smaller': 'Smaller text',
     'text.reset': 'Default text size',
+    'layout.pages': 'Pages Mode',
+    'layout.scroll': 'Scroll Mode',
     'palette.open': 'Command palette',
     'shortcuts.show': 'Keyboard shortcuts',
     'history.back': 'Back',

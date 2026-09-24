@@ -182,6 +182,18 @@
       "evidence": "ok"
     },
     {
+      "id": "B8-scroll-mode",
+      "description": "Scroll mode (B8, G8): keeps the place, scrolls continuously across chapters (with the join), Space = a screen, ↓ = 3 lines, remembered per book",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "real-wheel",
+      "description": "Real macOS scroll events (posted to this app): a wheel notch turns one page in Pages; wheel and trackpad scroll the text in Scroll mode",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "L15-font-fallback",
       "description": "A book font that fails to load falls back to Literata without a prompt",
       "verdict": "pass",
@@ -222,8 +234,9 @@
   "info": {
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
+    "only": null,
     "os": "14.6.1",
-    "time": 1790266243,
+    "time": 1790269089,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

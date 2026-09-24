@@ -716,9 +716,11 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await backToLibrary()
       await openFromLibrary(/one file/i)
       const again = loc()!
-      return compare(again.cfi, saved) === 0
-        ? 'ok'
-        : `saved ${saved}, reopened at ${again.cfi} (${reader()!.engine.debug().chunks[0]})`
+      if (compare(again.cfi, saved) === 0) return 'ok'
+      const stored = await invoke<[string, number] | null>('position_get', {
+        bookId: reader()!.bookId,
+      })
+      return `saved ${saved}, stored ${stored?.[0]}, reopened at ${again.cfi} (${reader()!.engine.debug().chunks[0]}); trail ${reader()!.engine.debug().trail.slice(-8).join(' | ')}`
     },
   })
 
@@ -755,6 +757,132 @@ export async function spikeE2E(): Promise<SpikeResult> {
       log(`B1: counted in ${took} ms after the check started; then “${a}”, “${b}”`)
       const [na, nb] = [a, b].map((x) => Number(/^Page (\d+)$/.exec(x)?.[1]))
       return na && nb === na + 1 ? 'ok' : `announced “${a}” then “${b}”`
+    },
+  })
+
+  checks.push({
+    id: 'B8-scroll-mode',
+    description:
+      'Scroll mode (B8, G8): keeps the place, scrolls continuously across chapters (with the join), Space = a screen, ↓ = 3 lines, remembered per book',
+    run: async () => {
+      const { compare } = await import('foliate-js/epubcfi.js')
+      const engine = reader()!.engine
+      await engine.goToTextStart()
+      await settled(600)
+      const before = loc()!
+      if (!hooks.run?.('layout.scroll')) return 'the Scroll Mode command did not run'
+      await settled(1500)
+      if (engine.mode !== 'scroll') return `mode is ${engine.mode}`
+      const host = engine.view.parentElement!
+      const at = loc()!
+      if (
+        at.sectionIndex !== before.sectionIndex ||
+        Math.abs(at.fraction - before.fraction) > 0.005
+      )
+        return `switching moved the place: ${before.sectionIndex}/${before.fraction} → ${at.sectionIndex}/${at.fraction}`
+      if (engine.debug().slots.length < 2) return `stack: ${JSON.stringify(engine.debug().slots)}`
+      // Down through three chapter joins; the place only ever moves forward.
+      let prev = loc()!
+      let crossings = 0
+      for (let i = 0; i < 600 && crossings < 3; i++) {
+        host.scrollBy(0, 300)
+        await sleep(40)
+        const l = loc()!
+        if (compare(l.cfi, prev.cfi) < 0) return `scrolling down went back: ${prev.cfi} → ${l.cfi}`
+        if (l.sectionIndex !== prev.sectionIndex) {
+          crossings++
+          if (!document.querySelector('.linen-join')) return 'no join between chapters'
+        }
+        prev = l
+      }
+      if (crossings < 3) return `only ${crossings} chapter crossings`
+      const views = engine.debug().slots.length
+      if (views > 3) return `${views} stacked views`
+      // I9: Space moves a screen less the fades and two lines; ↓ moves three lines.
+      await settled(300)
+      const lineHeight = 19 * 1.55
+      let y0 = host.scrollTop
+      key(' ')
+      await settled(300)
+      const screen = host.scrollTop - y0
+      const wantScreen = host.clientHeight - 40 - 88 - 2 * lineHeight
+      if (Math.abs(screen - wantScreen) > 2)
+        return `Space scrolled ${screen} px, expected ${Math.round(wantScreen)}`
+      y0 = host.scrollTop
+      key('ArrowDown')
+      await settled(300)
+      const lines = host.scrollTop - y0
+      if (Math.abs(lines - 3 * lineHeight) > 2)
+        return `↓ scrolled ${lines} px, expected ${Math.round(3 * lineHeight)}`
+      // Back up across a join; the place only moves backward.
+      prev = loc()!
+      const upFrom = prev.sectionIndex
+      for (let i = 0; i < 400 && loc()!.sectionIndex === upFrom; i++) {
+        host.scrollBy(0, -300)
+        await sleep(40)
+        const l = loc()!
+        if (compare(l.cfi, prev.cfi) > 0) return `scrolling up went forward: ${prev.cfi} → ${l.cfi}`
+        prev = l
+      }
+      if (loc()!.sectionIndex >= upFrom) return 'scrolling up did not reach the previous chapter'
+      // Remembered per book (S13), and the place survives reopening.
+      await settled(1200)
+      const saved = loc()!
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick/)
+      await settled(800)
+      const reopened = reader()!.engine
+      if (reopened.mode !== 'scroll') return 'reopened in Pages; the mode was not remembered'
+      if (
+        loc()!.sectionIndex !== saved.sectionIndex ||
+        Math.abs(loc()!.fraction - saved.fraction) > 0.003
+      )
+        return `reopened at ${loc()!.sectionIndex}/${loc()!.fraction}, saved ${saved.sectionIndex}/${saved.fraction}`
+      // And back to Pages at the same place.
+      const s0 = loc()!
+      hooks.run?.('layout.pages')
+      await settled(1500)
+      const mode = () => reopened.mode // read again: the command changed it
+      if (mode() !== 'pages') return 'did not return to Pages'
+      if (loc()!.sectionIndex !== s0.sectionIndex || Math.abs(loc()!.fraction - s0.fraction) > 0.01)
+        return `Pages moved the place: ${s0.sectionIndex}/${s0.fraction} → ${loc()!.sectionIndex}/${loc()!.fraction}`
+      return 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'real-wheel',
+    description:
+      'Real macOS scroll events (posted to this app): a wheel notch turns one page in Pages; wheel and trackpad scroll the text in Scroll mode',
+    run: async () => {
+      const engine = reader()!.engine
+      const wheel = (delta: number, count: number, pixels: boolean) =>
+        invoke('spike_scroll_wheel', { x: 640, y: 400, delta, count, pixels })
+      await settled(1500) // past any wheel cooldown
+      const before = where()
+      await wheel(-1, 1, false)
+      await settled(700)
+      const pageTurned = where() !== before
+      if (!pageTurned) return `a wheel notch in Pages did not turn (${before})`
+      hooks.run?.('layout.scroll')
+      await settled(1500)
+      const host = engine.view.parentElement!
+      let y0 = host.scrollTop
+      await wheel(-3, 6, false)
+      await settled(800)
+      const byWheel = host.scrollTop - y0
+      y0 = host.scrollTop
+      await wheel(-12, 20, true)
+      await settled(800)
+      const byTrackpad = host.scrollTop - y0
+      hooks.run?.('layout.pages')
+      await settled(1200)
+      log(
+        `real wheel: Scroll mode moved ${Math.round(byWheel)} px by wheel, ${Math.round(byTrackpad)} px by trackpad`,
+      )
+      return byWheel > 0 && byTrackpad > 0
+        ? 'ok'
+        : `Scroll mode did not scroll: wheel ${byWheel} px, trackpad ${byTrackpad} px`
     },
   })
 
@@ -945,7 +1073,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   const criteria: Criterion[] = []
+  const only = (await invoke<{ only?: string | null }>('spike_info')).only
   for (const c of checks) {
+    if (only && !new RegExp(only).test(c.id)) continue
     let evidence: string
     try {
       evidence = await c.run()
@@ -1005,8 +1135,15 @@ export async function spikeMemory(): Promise<SpikeResult> {
  * captured from this app's own window only, for the owner's side-by-side review.
  */
 export async function spikeVisual(): Promise<SpikeResult> {
-  const path = await invoke<string>('spike_corpus_path', { name: 'standardebooks-moby-dick.epub' })
-  await invoke('library_import', { paths: [path] })
+  const names = [
+    'standardebooks-moby-dick.epub',
+    'idpf-regime-anticancer-arabic.epub',
+    'idpf-page-blanche.epub',
+  ]
+  const paths = await Promise.all(
+    names.map((name) => invoke<string>('spike_corpus_path', { name })),
+  )
+  await invoke('library_import', { paths })
   const { installThemeCss } = await import('../app/theme')
   await import('../app/base.css')
   installThemeCss()
@@ -1046,6 +1183,45 @@ export async function spikeVisual(): Promise<SpikeResult> {
   }
   await showControls()
   await capture('14-night-controls')
+  await hideControls()
+
+  // G8 (approved designs, docs/design/g8): the same states in the product.
+  await openIn('paper')
+  const w = getCurrentWindow()
+  await w.setSize(new LogicalSize(1680, 1050))
+  await settled(1500)
+  await hideControls()
+  await capture('g8-spread-immersive')
+  await showControls()
+  await capture('g8-spread-controls')
+  await hideControls()
+  await w.setSize(new LogicalSize(1280, 800))
+  await settled(1500)
+  hooks.run?.('layout.scroll')
+  await settled(1500)
+  const host = reader()!.engine.view.parentElement!
+  host.scrollBy(0, 700)
+  await capture('g8-scroll-reading')
+  for (let i = 0; i < 200 && !document.querySelector('.linen-join'); i++) {
+    host.scrollBy(0, 400)
+    await sleep(50)
+  }
+  const join = document.querySelector<HTMLElement>('.linen-join')
+  if (join) host.scrollTop = join.offsetTop - 330
+  await capture('g8-scroll-join')
+  hooks.run?.('layout.pages')
+  await settled(1200)
+  await backToLibrary()
+  await openFromLibrary(/[؀-ۿ]|anticancer|Régime|regime/i)
+  await showControls()
+  await capture('g8-rtl-controls')
+  await hideControls()
+  await backToLibrary()
+  await openFromLibrary(/blanche/i)
+  await capture('g8-fxl-fit')
+  keyOnApp('=', { code: 'Equal', metaKey: true })
+  keyOnApp('=', { code: 'Equal', metaKey: true })
+  await capture('g8-fxl-zoom')
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

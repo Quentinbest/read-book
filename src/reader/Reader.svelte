@@ -16,7 +16,14 @@
   import { t } from '../lib/strings/en'
   import { THEMES, type Theme } from '../lib/theme/tokens'
   import Kbd from '../components/Kbd.svelte'
-  import { ReaderEngine, ZOOM_LEVELS, type ReaderLocation, type Turn } from './engine'
+  import {
+    ReaderEngine,
+    SCROLL_LINES,
+    ZOOM_LEVELS,
+    type ReaderLocation,
+    type ReadingMode,
+    type Turn,
+  } from './engine'
   import { fallBackFailedFonts, literataFaces } from './fonts'
   import { libraryLoader } from './loader'
   import { computeLayout, showLocationLine, type Layout } from './layout'
@@ -54,6 +61,8 @@
   const SAVE_DEBOUNCE_MS = 1000
   const RAPID_TURNS = 3
   const RAPID_WINDOW_MS = 1000
+  /** Scroll mode: one wheel line, as WebKit scrolls it. */
+  const WHEEL_LINE_PX = 40
 
   let area: HTMLElement
   let host: HTMLElement
@@ -68,6 +77,9 @@
     }),
   )
   let location = $state<ReaderLocation | null>(null)
+  /** B8, S13: Pages or Scroll, remembered per book. */
+  let readingMode = $state<ReadingMode>('pages')
+  let navigatorDocked: string | null = null
   /** I15, G8: a right-to-left book fills progress from the right. */
   let rtlBook = $state(false)
   /** G8: an open taking over 500 ms shows one “Opening …” line, never a spinner. */
@@ -156,7 +168,7 @@
       fontPx,
       spacing: 'default',
       // L8, G8: the two-page spread is a Pages-mode layout.
-      allowSpread: true,
+      allowSpread: readingMode === 'pages',
     })
     engine?.applyLayout(
       layout,
@@ -225,6 +237,10 @@
   function turn(dir: Turn) {
     if (!engine || lanes.floating?.kind === 'palette' || lanes.floating?.kind === 'dialog') return
     dispatch({ type: 'pageTurn' })
+    if (readingMode === 'scroll') {
+      void engine.turn(dir) // I9: a screen, not a page; no rapid-turn chip
+      return
+    }
     const now = performance.now()
     // I7: more than 3 pages in under 1 s offers a way back.
     if (!recentTurns.length || now - recentTurns[recentTurns.length - 1] > RAPID_WINDOW_MS)
@@ -289,6 +305,17 @@
       dispatch({ type: 'showChrome' })
       e.preventDefault()
       requestAnimationFrame(() => area.querySelector<HTMLElement>('.chrome button')?.focus())
+      return
+    }
+    // I9: in Scroll mode ↓ ↑ scroll by lines.
+    if (
+      readingMode === 'scroll' &&
+      (e.key === 'ArrowDown' || e.key === 'ArrowUp') &&
+      !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey)
+    ) {
+      e.preventDefault()
+      dispatch({ type: 'pageTurn' })
+      engine?.scrollLines(e.key === 'ArrowDown' ? SCROLL_LINES : -SCROLL_LINES)
       return
     }
     const dir = pageKey(e)
@@ -371,7 +398,8 @@
   let windowJustActivated = false
   /** I11, I15: the left margin goes back, or forward in a right-to-left book. */
   function onMarginClick(side: 'left' | 'right') {
-    if (windowJustActivated) return
+    // G8: in Scroll mode there are no pages to turn.
+    if (windowJustActivated || readingMode === 'scroll') return
     const rtl = engine?.rtl ?? false
     turn((side === 'right') !== rtl ? 'next' : 'prev')
   }
@@ -434,10 +462,15 @@
       )
       cleanups.push(() => clearTimeout(openingTimer))
       if (testHooks?.openDelayMs) await new Promise((r) => setTimeout(r, testHooks!.openDelayMs))
-      const opened = await engine.open(
-        await libraryLoader(book.id),
-        saved ? { cfi: saved[0] } : undefined,
-      )
+      const settings = await ipc.bookSettingsGet(book.id).catch(() => null)
+      if (settings?.[0] === 'scroll') readingMode = 'scroll'
+      navigatorDocked = settings?.[1] ?? null
+      relayout()
+      const opened = await engine.open(await libraryLoader(book.id), {
+        cfi: saved?.[0],
+        mode: readingMode,
+      })
+      readingMode = engine.mode
       clearTimeout(openingTimer)
       openingShown = false
       rtlBook = engine.rtl
@@ -464,6 +497,11 @@
           if (panel) return
           // I17: a zoomed page pans with the wheel and two fingers; no page turns.
           if (engine?.zoom && engine.zoom > 1) return
+          // B8: Scroll mode follows the wheel and trackpad, momentum included.
+          if (readingMode === 'scroll') {
+            engine?.scrollPixels(-(payload.precise ? payload.dy : payload.dy * WHEEL_LINE_PX))
+            return
+          }
           const dir = turns.feed(payload)
           if (dir) turn(dir)
         }),
@@ -490,6 +528,20 @@
         }),
       )
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
+      // B8: Pages and Scroll (the Aa popover's control arrives in Phase 6).
+      const switchMode = async (mode: ReadingMode) => {
+        if (!engine || !(await engine.setMode(mode))) return
+        readingMode = mode
+        relayout()
+        void ipc.bookSettingsSet(book.id, mode, navigatorDocked).catch(() => {})
+      }
+      for (const mode of ['pages', 'scroll'] as const)
+        cleanups.push(
+          registry.handle(`layout.${mode}`, {
+            run: () => void switchMode(mode),
+            enabled: () => readingMode !== mode && engine?.fixedLayout !== true,
+          }),
+        )
       // K8 on a fixed-layout book zooms the page (I17); text size itself arrives with Aa.
       const fixed = () => engine?.fixedLayout === true
       cleanups.push(registry.handle('text.larger', { run: () => zoomStep(1), enabled: fixed }))
@@ -557,6 +609,7 @@
   <!-- Margins: click targets for the previous and next page (I11, S3). -->
   <button
     class="margin left"
+    class:scroll={readingMode === 'scroll'}
     class:shown={chromeVisible}
     class:zoomed={zoom > 1}
     style:width="{layout.marginWidth}px"
@@ -579,6 +632,7 @@
   </button>
   <button
     class="margin right"
+    class:scroll={readingMode === 'scroll'}
     class:shown={chromeVisible}
     class:zoomed={zoom > 1}
     style:width="{layout.marginWidth}px"
@@ -600,6 +654,11 @@
     >
   </button>
 
+  {#if readingMode === 'scroll'}
+    <!-- G8: the text runs under the window edges; the location line sits on the lower fade. -->
+    <div class="fade top-fade" aria-hidden="true"></div>
+    <div class="fade bottom-fade" aria-hidden="true"></div>
+  {/if}
   {#if zoomChipShown}
     <div class="zoom-chip" role="status">
       <span>{t.reader.zoomLevel(zoom)}</span>
@@ -654,6 +713,30 @@
     background: none;
     cursor: default;
     color: var(--ink-secondary);
+  }
+  /* G8 Scroll mode: margins do nothing, and fades cover the window edges. */
+  .margin.scroll {
+    pointer-events: none;
+  }
+  .margin.scroll .chevron {
+    display: none;
+  }
+  .fade {
+    position: absolute;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    pointer-events: none;
+  }
+  .top-fade {
+    top: 0;
+    height: 40px;
+    background: linear-gradient(var(--ground), transparent);
+  }
+  .bottom-fade {
+    bottom: 0;
+    height: 88px;
+    background: linear-gradient(transparent, var(--ground) 55%);
   }
   /* I17: a zoomed page takes the whole window for panning; keys still turn. */
   .margin.zoomed {
@@ -814,6 +897,8 @@
   }
   .location-line {
     position: absolute;
+    /* Above the Scroll-mode fades (G8). */
+    z-index: 6;
     left: 0;
     right: 0;
     bottom: 30px;

@@ -56,6 +56,8 @@ declare module 'foliate-js/view.js' {
     readonly page: number
     readonly pages: number
     readonly size: number
+    /** Length of the laid-out content along the flow (the full height in scrolled flow). */
+    readonly viewSize: number
     /** Scroll offset of the current page, in pixels. */
     readonly start: number
     readonly scrolled: boolean

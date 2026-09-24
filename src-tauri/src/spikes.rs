@@ -101,6 +101,8 @@ pub fn spike_info() -> serde_json::Value {
         "cpu": read("sysctl", &["-n", "machdep.cpu.brand_string"]),
         "memory_bytes": read("sysctl", &["-n", "hw.memsize"]),
         "time": SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs(),
+        // Run only the end-to-end checks whose id matches this pattern (for debugging).
+        "only": std::env::var("LINEN_E2E_ONLY").ok(),
     })
 }
 
@@ -269,4 +271,63 @@ pub fn spike_capture<R: Runtime>(
         return Err(format!("screencapture failed: {status}"));
     }
     Ok(path.display().to_string())
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn CGEventCreateScrollWheelEvent(
+        source: *const std::ffi::c_void,
+        units: u32,
+        wheel_count: u32,
+        wheel1: i32,
+        ...
+    ) -> *mut std::ffi::c_void;
+    fn CGEventSetLocation(event: *mut std::ffi::c_void, point: CGPoint);
+    fn CGEventPostToPid(pid: i32, event: *mut std::ffi::c_void);
+    fn CFRelease(cf: *const std::ffi::c_void);
+}
+
+/// Post real scroll-wheel events to this app only (not the rest of the system), at a
+/// point in the window, so end-to-end tests exercise AppKit and WebKit scrolling.
+/// `pixels`: continuous (trackpad-like) deltas in points; otherwise wheel lines.
+#[tauri::command]
+pub fn spike_scroll_wheel<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    x: f64,
+    y: f64,
+    delta: i32,
+    count: u32,
+    pixels: bool,
+) -> Result<(), String> {
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let origin = window.inner_position().map_err(|e| e.to_string())?;
+    let point = CGPoint {
+        x: origin.x as f64 / scale + x,
+        y: origin.y as f64 / scale + y,
+    };
+    let pid = std::process::id() as i32;
+    std::thread::spawn(move || {
+        for _ in 0..count {
+            // SAFETY: CoreGraphics creates the event; it is posted to this process and released.
+            unsafe {
+                let event =
+                    CGEventCreateScrollWheelEvent(std::ptr::null(), u32::from(!pixels), 1, delta);
+                if event.is_null() {
+                    return;
+                }
+                CGEventSetLocation(event, point);
+                CGEventPostToPid(pid, event);
+                CFRelease(event);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    });
+    Ok(())
 }

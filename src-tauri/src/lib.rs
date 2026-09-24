@@ -56,6 +56,7 @@ pub fn run() {
         spikes::spike_log,
         spikes::spike_memory,
         spikes::spike_capture,
+        spikes::spike_scroll_wheel,
         spikes::spike_exit
     ));
     builder

@@ -141,6 +141,22 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'View',
   },
   {
+    id: 'layout.pages',
+    rule: 'B8',
+    title: t.commands['layout.pages'],
+    section: 'view',
+    palette: true,
+    menu: 'View',
+  },
+  {
+    id: 'layout.scroll',
+    rule: 'B8',
+    title: t.commands['layout.scroll'],
+    section: 'view',
+    palette: true,
+    menu: 'View',
+  },
+  {
     id: 'text.larger',
     rule: 'K8',
     title: t.commands['text.larger'],

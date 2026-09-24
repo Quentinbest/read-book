@@ -32,6 +32,7 @@
   const writes = new WriteQueue(messages)
   if (testHooks) testHooks.messages = messages
   const registry = new CommandRegistry()
+  if (testHooks) testHooks.run = (id) => registry.run(id)
   // N5: work to finish before the app quits (the reader saves its position).
   // Not reactive state: nothing renders from it.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity

@@ -1,3 +1,30 @@
+diff --git a/fixed-layout.js b/fixed-layout.js
+index c582abad1496874a9265cad1ab69e12a475c684d..dd8df3a6e45ea06925aad3ae045b24f2689174e8 100644
+--- a/fixed-layout.js
++++ b/fixed-layout.js
+@@ -55,6 +55,13 @@ export class FixedLayout extends HTMLElement {
+             justify-content: center;
+             align-items: center;
+             overflow: auto;
++            /* Linen (G8): a 4 px seam between the pages of a spread; zoomed pages
++               pan without scroll bars */
++            gap: 4px;
++            scrollbar-width: none;
++        }
++        :host::-webkit-scrollbar {
++            display: none;
+         }`)
+ 
+         this.#observer.observe(this)
+@@ -150,6 +157,8 @@ export class FixedLayout extends HTMLElement {
+                 overflow: 'hidden',
+                 display: 'block',
+                 flexShrink: '0',
++                // Linen (G8): a faint shadow separates white pages from the page ground
++                boxShadow: blank ? 'none' : '0 1px 3px rgb(0 0 0 / 12%)',
+                 marginBlock: 'auto',
+             })
+             if (portrait && frame !== target) {
 diff --git a/paginator.js b/paginator.js
 index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..7794554c6b7df673471f3dfa4210ef6598fea06a 100644
 --- a/paginator.js

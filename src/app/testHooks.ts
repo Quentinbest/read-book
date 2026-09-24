@@ -15,6 +15,8 @@ export interface TestHooks {
     pagesExact: () => boolean
   }
   messages?: MessageQueue
+  /** Run a command as the menu or ⌘K would. */
+  run?: (id: string) => boolean
   /** Set instead of quitting, so the harness can check what was saved (N5). */
   quitRequested?: boolean
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
