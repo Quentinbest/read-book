@@ -58,6 +58,7 @@ declare module 'foliate-js/view.js' {
     readonly size: number
     readonly scrolled: boolean
     focusView?(): void
+    render(): void
     nextSection(): Promise<void>
     prevSection(): Promise<void>
   }
@@ -74,6 +75,7 @@ declare module 'foliate-js/view.js' {
     goToFraction(fraction: number): Promise<void>
     goToTextStart(): Promise<void>
     getCFI(index: number, range: Range): string
+    resolveNavigation(target: string | number | { fraction: number }): unknown
     resolveCFI(cfi: string): { index: number; anchor(doc: Document): Range | Element }
     addAnnotation(annotation: { value: string; color?: string }, remove?: boolean): Promise<unknown>
     deleteAnnotation(annotation: { value: string }): Promise<unknown>
@@ -106,4 +108,11 @@ declare module 'foliate-js/epub.js' {
     })
     init(): Promise<Book>
   }
+}
+
+declare module 'foliate-js/epubcfi.js' {
+  /** Negative, zero or positive as `a` is before, at or after `b`. */
+  export function compare(a: string, b: string): number
+  export function parse(cfi: string): unknown
+  export function toRange(doc: Document, parts: unknown): Range
 }

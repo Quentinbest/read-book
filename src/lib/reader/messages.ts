@@ -124,6 +124,20 @@ export class MessageQueue {
     }
   }
 
+  /**
+   * Remove a message everywhere, including Recently closed, without remembering it:
+   * its action no longer applies (e.g. a Back chip after its book is closed).
+   */
+  withdraw(id: number) {
+    this.#pending = this.#pending.filter((m) => m.id !== id)
+    this.#recentlyClosed = this.#recentlyClosed.filter((m) => m.id !== id)
+    if (this.#current?.id === id) {
+      this.#current = null
+      this.#showNext()
+    }
+    this.#emit()
+  }
+
   /** Run a message's action (from its button, its shortcut or Recently closed) and retire it. */
   act(id: number): boolean {
     const all = [this.#current, ...this.#pending, ...this.#recentlyClosed]

@@ -40,7 +40,10 @@ export const en = {
     goToBeginning: 'Go to beginning',
     backToPage: (page: string) => `Back to page ${page}`,
     back: 'Back',
-    pageAnnouncement: (page: string) => `Page ${page}`,
+    pageAnnouncement: (page: number) => `Page ${page}`,
+    pageAnnouncementApprox: (page: number) => `About page ${page}`,
+    /** An estimated page number (L16), e.g. in “Back to page ≈312”. */
+    approxPage: (page: number) => `≈${page}`,
   },
   messages: {
     region: 'Message',

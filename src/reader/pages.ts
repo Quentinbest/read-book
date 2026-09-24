@@ -35,6 +35,11 @@ export class PageCounter {
     return pages > 0 && chars > 0 ? chars / pages : 2000
   }
 
+  /** Pages in `section`: counted, or estimated from its size. */
+  pagesIn(section: number): number {
+    return this.#pagesOf(section)
+  }
+
   #pagesOf(i: number): number {
     return (
       this.#counted.get(i) ??

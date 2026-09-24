@@ -4,19 +4,29 @@
 // through here: opening, layout, page turns, locations, links and the content
 // hooks. Spike findings built in:
 // - content passes through `transformContent` (per-document CSP, CSS sanitiser);
-// - every foliate link event is cancelled and routed by the app (N10);
+// - every foliate link event is routed by the app (N10);
 // - one column below the spread breakpoint (L8);
 // - page turns queue at most one pending turn (I6) instead of being dropped;
-// - D-D1: the previous and next sections are laid out ahead in hidden views, so
-//   a turn across a chapter boundary is a swap, not a load (Spike D: loading in
-//   the turn took p95 27–57 ms against a 16 ms budget);
+// - D-D1: the previous and next units are laid out ahead in hidden views, so a
+//   turn across a boundary is a swap, not a load;
+// - L16: chapters over ~1 MB are laid out one chunk at a time (see chunks.ts); a
+//   unit is (section, chunk), and chunk boundaries behave like section ones;
 // - scrolls the engine did not make (VoiceOver, X3) are detected, snapped to a
 //   whole page and reported as a location change.
 
 import 'foliate-js/view.js'
 import type { Book, View } from 'foliate-js/view.js'
-import { MIN_SIDE_MARGIN, PAGINATOR_GAP, type Layout } from './layout'
+import {
+  CHUNK_THRESHOLD_BYTES,
+  chunkCount,
+  chunkOf,
+  computeChunks,
+  sectionFraction,
+  showChunk,
+  type Chunks,
+} from './chunks'
 import { transformContent } from './content'
+import { MIN_SIDE_MARGIN, PAGINATOR_GAP, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
 
@@ -33,6 +43,10 @@ export interface ReaderLocation {
   /** Page within the section (1-based) and the section's page count, when laid out. */
   page?: number
   pages?: number
+  /** Page numbers are estimates (a chunked chapter, L16): show “≈”. */
+  approximate: boolean
+  /** Place within the section, 0–1; set when `approximate` (page/pages then count the laid-out chunk only). */
+  sectionFraction?: number
   reason: 'page' | 'navigation' | 'scroll' | 'selection' | 'anchor' | 'snap' | 'external'
 }
 
@@ -45,13 +59,27 @@ export interface LinkEvent {
 
 type Listener<T> = (value: T) => void
 
-/** A hidden view parked at a neighbouring section, ready to be swapped in. */
+/** A place a view can show: a section, and a chunk of it (0 unless chunked; -1 = its last chunk). */
+interface Unit {
+  index: number
+  chunk: number
+}
+
+/** A hidden view parked at a neighbouring unit, ready to be swapped in. */
 interface Neighbour {
   view: View
-  /** The section it shows, or -1 while loading / unused. */
-  index: number
+  unit: Unit | null
   ready: Promise<void>
 }
+
+/** Which chunk a view should lay out when its next section loads. */
+type ChunkRequest =
+  | { kind: 'chunk'; chunk: number }
+  | { kind: 'last' }
+  | { kind: 'node'; node: (doc: Document) => Node | null }
+  | { kind: 'fraction'; fraction: number }
+
+const nextFrame = () => new Promise((r) => requestAnimationFrame(r))
 
 export class ReaderEngine {
   #host: HTMLElement
@@ -63,6 +91,8 @@ export class ReaderEngine {
   #link = new Set<Listener<LinkEvent>>()
   #key = new Set<Listener<KeyboardEvent>>()
   #doc = new Set<Listener<Document>>()
+  #chunks = new WeakMap<Document, Chunks>()
+  #requests = new WeakMap<View, ChunkRequest>()
   #turning: Promise<void> | null = null
   #pending: Turn | null = null
   #styles = ''
@@ -71,20 +101,12 @@ export class ReaderEngine {
   #watchTimer = 0
   /** Recent engine events, for diagnosing view swaps. */
   #trail: string[] = []
-  #note(e: string) {
-    this.#trail.push(
-      `${Math.round(performance.now())} ${e} views=${this.#views()
-        .map((v) => this.#indexOf(v))
-        .join(',')}`,
-    )
-    if (this.#trail.length > 30) this.#trail.shift()
-  }
 
   constructor(host: HTMLElement) {
     this.#host = host
     this.#current = this.#createView()
-    this.#next = { view: this.#createView(), index: -1, ready: Promise.resolve() }
-    this.#prev = { view: this.#createView(), index: -1, ready: Promise.resolve() }
+    this.#next = { view: this.#createView(), unit: null, ready: Promise.resolve() }
+    this.#prev = { view: this.#createView(), unit: null, ready: Promise.resolve() }
     this.#show(this.#current)
   }
 
@@ -159,8 +181,15 @@ export class ReaderEngine {
       for (const view of [this.#next.view, this.#prev.view]) await view.open(book)
     }
     for (const view of this.#views()) if (view.renderer) this.#configureRenderer(view)
-    // N3: new books open at the bodymatter landmark, not the cover.
-    await this.#current.init(start?.cfi ? { lastLocation: start.cfi } : { showTextStart: true })
+    if (start?.cfi) {
+      // Resume: lay out the chunk that holds the saved place (L16).
+      this.#request(this.#current, start.cfi)
+      await this.#current.init({ lastLocation: start.cfi })
+      await this.#settleChunkAnchor(this.#current, start.cfi)
+    } else {
+      // N3: new books open at the bodymatter landmark, not the cover.
+      await this.#current.init({ showTextStart: true })
+    }
     this.#prepareNeighbours()
     return book
   }
@@ -205,16 +234,14 @@ export class ReaderEngine {
     return this.#turning
   }
 
+  /** Go to a CFI, an href or a section index, laying out the chunk that holds it (L16). */
   async goTo(target: string | number) {
     this.#note(`goTo ${target}`)
-    const result = await this.#current.goTo(target)
-    this.#prepareNeighbours()
-    return result
+    await this.#navigate(target)
   }
 
   async goToFraction(fraction: number) {
-    await this.#current.goToFraction(fraction)
-    this.#prepareNeighbours()
+    await this.#navigate({ fraction })
   }
 
   async goToTextStart() {
@@ -223,13 +250,13 @@ export class ReaderEngine {
   }
 
   async nextSection() {
-    await this.#current.renderer.nextSection()
-    this.#prepareNeighbours()
+    const index = this.#adjacent(this.#currentIndex(), 1)
+    if (index >= 0) await this.#navigate(index)
   }
 
   async prevSection() {
-    await this.#current.renderer.prevSection()
-    this.#prepareNeighbours()
+    const index = this.#adjacent(this.#currentIndex(), -1)
+    if (index >= 0) await this.#navigate(index)
   }
 
   get location(): ReaderLocation | null {
@@ -288,18 +315,23 @@ export class ReaderEngine {
   debug() {
     return {
       trail: [...this.#trail],
-      views: this.#views().map((v) => ({
-        index: this.#indexOf(v),
-        renderer: !!v.renderer,
-        connected: v.isConnected,
-      })),
-      linear: (this.#book?.sections ?? []).map((s) => s.linear ?? ''),
-      next: this.#next.index,
-      prev: this.#prev.index,
+      views: this.#views().map((v) => this.#unitOf(v)),
+      chunks: this.#views().map((v) => {
+        const doc = this.#docOf(v)
+        const c = doc ? this.#chunks.get(doc) : undefined
+        return c ? `${c.current + 1}/${chunkCount(c)}` : '-'
+      }),
+      next: this.#next.unit,
+      prev: this.#prev.unit,
     }
   }
 
-  // ---------------------------------------------------------------- internals
+  // ---------------------------------------------------------------- views
+
+  #note(e: string) {
+    this.#trail.push(`${Math.round(performance.now())} ${e}`)
+    if (this.#trail.length > 60) this.#trail.shift()
+  }
 
   #views(): View[] {
     return [this.#current, this.#next.view, this.#prev.view]
@@ -327,19 +359,18 @@ export class ReaderEngine {
       this.#link.forEach((l) => l({ href, external: true }))
     })
     view.addEventListener('link', (e) => {
-      // Internal links navigate, but the app hears about them first (N1, N10).
+      // The engine follows internal links itself, so the target's chunk is laid out
+      // (L16), and the app hears about the jump first (N1, N10).
+      e.preventDefault()
       const href = String((e as CustomEvent<{ href: string }>).detail.href)
-      if (/^\s*javascript:/i.test(href)) {
-        e.preventDefault()
-        return
-      }
+      if (/^\s*javascript:/i.test(href)) return
       this.#link.forEach((l) => l({ href, external: false }))
-      // The jump happens in the visible view; the neighbours follow afterwards.
-      queueMicrotask(() => setTimeout(() => this.#prepareNeighbours(), 300))
+      void this.#navigate(href)
     })
-    view.addEventListener('load', (e) =>
-      this.#onLoad(view, (e as CustomEvent<{ doc: Document }>).detail.doc),
-    )
+    view.addEventListener('load', (e) => {
+      const { doc, index } = (e as CustomEvent<{ doc: Document; index: number }>).detail
+      this.#onLoad(view, doc, index)
+    })
     return view
   }
 
@@ -372,9 +403,32 @@ export class ReaderEngine {
     r.setStyles(this.#styles)
   }
 
-  #currentIndex(): number {
-    return this.#current.renderer?.getContents()[0]?.index ?? -1
+  #docOf(view: View): Document | undefined {
+    return view.renderer?.getContents()[0]?.doc
   }
+
+  #indexOf(view: View): number {
+    return view.renderer?.getContents()[0]?.index ?? -1
+  }
+
+  #currentIndex(): number {
+    return this.#indexOf(this.#current)
+  }
+
+  #unitOf(view: View): Unit | null {
+    const index = this.#indexOf(view)
+    if (index < 0) return null
+    const doc = this.#docOf(view)
+    const c = doc ? this.#chunks.get(doc) : undefined
+    return { index, chunk: c ? c.current : 0 }
+  }
+
+  #chunksOf(view: View): Chunks | undefined {
+    const doc = this.#docOf(view)
+    return doc ? this.#chunks.get(doc) : undefined
+  }
+
+  // ---------------------------------------------------------------- navigation
 
   /** The next linear section after `index` in `dir` (foliate skips linear="no"), or -1. */
   #adjacent(index: number, dir: 1 | -1): number {
@@ -384,33 +438,155 @@ export class ReaderEngine {
     return -1
   }
 
-  /** Park the hidden views at the first page of the next section and the last page of the previous one. */
+  /** The unit after or before the visible one: the next chunk, or the neighbouring section. */
+  #adjacentUnit(dir: 1 | -1): Unit | null {
+    const unit = this.#unitOf(this.#current)
+    if (!unit) return null
+    const c = this.#chunksOf(this.#current)
+    if (c) {
+      const k = unit.chunk + dir
+      if (k >= 0 && k < chunkCount(c)) return { index: unit.index, chunk: k }
+    }
+    const index = this.#adjacent(unit.index, dir)
+    return index < 0 ? null : { index, chunk: dir === 1 ? 0 : -1 }
+  }
+
+  /** Is `view` showing `unit` (chunk -1 = the section's last chunk)? */
+  #shows(view: View, unit: Unit): boolean {
+    const u = this.#unitOf(view)
+    if (!u || u.index !== unit.index) return false
+    if (unit.chunk !== -1) return u.chunk === unit.chunk
+    const c = this.#chunksOf(view)
+    return !c || u.chunk === chunkCount(c) - 1
+  }
+
+  /** Tell `view` which chunk to lay out for `target` when its section loads. */
+  #request(view: View, target: string | number | { fraction: number }) {
+    if (typeof target === 'number') {
+      this.#requests.set(view, { kind: 'chunk', chunk: 0 })
+      return
+    }
+    const resolved = view.resolveNavigation(target) as
+      { index: number; anchor?: number | ((doc: Document) => Range | Element | null) } | undefined
+    const anchor = resolved?.anchor
+    if (typeof anchor === 'number') {
+      this.#requests.set(view, { kind: 'fraction', fraction: anchor })
+    } else if (typeof anchor === 'function') {
+      this.#requests.set(view, {
+        kind: 'node',
+        node: (doc) => {
+          const a = anchor(doc)
+          // The Range comes from the book's frame, another realm: no `instanceof Range`.
+          return a && 'startContainer' in a ? a.startContainer : a
+        },
+      })
+    }
+  }
+
+  /** Show the chunk `request` asks for in a loaded document; returns the chunk. */
+  #applyRequest(doc: Document, c: Chunks, request: ChunkRequest | undefined): number {
+    let k = 0
+    if (request?.kind === 'chunk') k = Math.min(request.chunk, chunkCount(c) - 1)
+    else if (request?.kind === 'last') k = chunkCount(c) - 1
+    else if (request?.kind === 'node') k = chunkOf(c, request.node(doc))
+    else if (request?.kind === 'fraction') k = this.#chunkAtFraction(c, request.fraction)
+    if (k !== c.current) showChunk(doc, c, k)
+    return k
+  }
+
+  #chunkAtFraction(c: Chunks, fraction: number): number {
+    for (let k = chunkCount(c) - 1; k >= 0; k--) if (sectionFraction(c, k, 0) <= fraction) return k
+    return 0
+  }
+
+  /**
+   * Navigate the visible view to a target. For a chunked section the chunk that
+   * holds the target is laid out first, so foliate never anchors to hidden text.
+   */
+  async #navigate(target: string | number | { fraction: number }) {
+    const view = this.#current
+    const resolved = view.resolveNavigation(target) as { index: number } | undefined
+    if (!resolved) return
+    if (this.#indexOf(view) === resolved.index) {
+      const c = this.#chunksOf(view)
+      if (c) {
+        this.#request(view, target)
+        const doc = this.#docOf(view)!
+        const before = c.current
+        this.#applyRequest(doc, c, this.#requests.get(view))
+        this.#requests.delete(view)
+        if (c.current !== before) view.renderer.render()
+      }
+    } else {
+      this.#request(view, target)
+    }
+    if (typeof target === 'object') {
+      await view.goToFraction(target.fraction)
+    } else {
+      await view.goTo(target)
+    }
+    await this.#settleChunkAnchor(view, target)
+    this.#prepareNeighbours()
+  }
+
+  /** After a fraction jump into a chunked section, anchor within the chunk rather than the section. */
+  async #settleChunkAnchor(view: View, target: string | number | { fraction: number }) {
+    if (typeof target !== 'object') return
+    const c = this.#chunksOf(view)
+    if (!c) return
+    const resolved = view.resolveNavigation(target) as { index: number; anchor?: number }
+    const f = typeof resolved?.anchor === 'number' ? resolved.anchor : 0
+    const start = sectionFraction(c, c.current, 0)
+    const end = sectionFraction(c, c.current, 1)
+    const inChunk = end > start ? (f - start) / (end - start) : 0
+    await view.renderer.goTo({ index: resolved.index, anchor: Math.max(0, Math.min(1, inChunk)) })
+  }
+
+  /** Lay out `unit` in `view` at `anchor` (0 = first page, 1 = last page). */
+  async #park(view: View, unit: Unit, anchor: number) {
+    if (this.#indexOf(view) === unit.index) {
+      const c = this.#chunksOf(view)
+      if (c) {
+        const k = unit.chunk === -1 ? chunkCount(c) - 1 : unit.chunk
+        if (k !== c.current) {
+          showChunk(this.#docOf(view)!, c, k)
+          view.renderer.render()
+          await nextFrame()
+        }
+      }
+    } else {
+      this.#requests.set(
+        view,
+        unit.chunk === -1 ? { kind: 'last' } : { kind: 'chunk', chunk: unit.chunk },
+      )
+    }
+    await view.renderer.goTo({ index: unit.index, anchor })
+  }
+
+  /** Park the hidden views at the first page of the next unit and the last page of the previous one. */
   #prepareNeighbours(force = false) {
-    if (this.fixedLayout) return
-    const index = this.#currentIndex()
-    if (index < 0) return
-    const park = (n: Neighbour, target: number, anchor: number) => {
-      if (target < 0) {
-        n.index = -1
+    if (this.fixedLayout || this.#currentIndex() < 0) return
+    const place = (n: Neighbour, unit: Unit | null, anchor: number) => {
+      if (!unit) {
+        n.unit = null
         return
       }
-      if (!force && n.index === target && this.#indexOf(n.view) === target) return
-      n.index = -1
+      if (!force && n.unit && this.#shows(n.view, unit) && n.unit.index === unit.index) return
+      n.unit = null
       const view = n.view
-      this.#note(`park ${n === this.#next ? 'next' : 'prev'} -> ${target}`)
+      this.#note(`park ${n === this.#next ? 'next' : 'prev'} -> ${unit.index}:${unit.chunk}`)
       // foliate-js ignores goTo while a view is locked after a turn, and still
       // resolves: record what the view actually shows, not what was asked.
-      n.ready = view.renderer
-        .goTo({ index: target, anchor })
+      n.ready = this.#park(view, unit, anchor)
         .then(() => {
-          if (n.view === view) n.index = this.#indexOf(view)
+          if (n.view === view && this.#shows(view, unit)) n.unit = unit
         })
         .catch(() => {
-          if (n.view === view) n.index = -1
+          if (n.view === view) n.unit = null
         })
     }
-    park(this.#next, this.#adjacent(index, 1), 0)
-    park(this.#prev, this.#adjacent(index, -1), 1)
+    place(this.#next, this.#adjacentUnit(1), 0)
+    place(this.#prev, this.#adjacentUnit(-1), 1)
   }
 
   async #turnNow(dir: Turn) {
@@ -424,16 +600,16 @@ export class ReaderEngine {
       return
     }
     const crossing = dir === 'next' ? r.page >= r.pages - 2 : r.page <= 1
-    const target = this.#adjacent(this.#currentIndex(), dir === 'next' ? 1 : -1)
+    if (!crossing) {
+      await (dir === 'next' ? this.#current.next() : this.#current.prev())
+      return
+    }
+    const target = this.#adjacentUnit(dir === 'next' ? 1 : -1)
+    if (!target) return // the start or end of the book
     const neighbour = dir === 'next' ? this.#next : this.#prev
-    if (
-      crossing &&
-      target >= 0 &&
-      neighbour.index === target &&
-      this.#indexOf(neighbour.view) === target
-    ) {
+    if (neighbour.unit && this.#shows(neighbour.view, target)) {
       // D-D1: the neighbour is laid out at the right page; swapping is the turn.
-      this.#note(`swap ${dir} to ${target}`)
+      this.#note(`swap ${dir} to ${target.index}:${target.chunk}`)
       const old = this.#current
       this.#current = neighbour.view
       this.#show(this.#current)
@@ -441,28 +617,36 @@ export class ReaderEngine {
       const other = dir === 'next' ? this.#prev : this.#next
       const recycled = other.view
       other.view = old
-      other.index =
-        this.#adjacent(target, dir === 'next' ? -1 : 1) === this.#indexOf(old)
-          ? this.#indexOf(old)
-          : -1
+      other.unit = this.#unitOf(old)
       neighbour.view = recycled
-      neighbour.index = -1
+      neighbour.unit = null
       const l = this.#current.lastLocation
       if (l) this.#onRelocate(this.#current, l as unknown as Record<string, unknown>, 'page')
       // Load the new far neighbour after this frame, off the turn.
       requestAnimationFrame(() => this.#prepareNeighbours())
       return
     }
-    this.#note(`turn ${dir} crossing=${crossing}`)
-    await (dir === 'next' ? this.#current.next() : this.#current.prev())
-    if (crossing) this.#prepareNeighbours()
+    // The neighbour is not ready: lay the unit out now (slower, but correct).
+    this.#note(`turn ${dir} without a ready neighbour`)
+    await this.#park(this.#current, target, dir === 'next' ? 0 : 1)
+    this.#prepareNeighbours()
   }
 
-  #indexOf(view: View): number {
-    return view.renderer?.getContents()[0]?.index ?? -1
-  }
+  // ---------------------------------------------------------------- documents and locations
 
-  #onLoad(view: View, doc: Document) {
+  #onLoad(view: View, doc: Document, index: number) {
+    // L16: a very long chapter lays out only the chunk it was asked for.
+    const size = this.#book?.sections[index]?.size ?? 0
+    const request = this.#requests.get(view)
+    this.#requests.delete(view)
+    if (size > CHUNK_THRESHOLD_BYTES && !view.isFixedLayout) {
+      const c = computeChunks(doc)
+      if (chunkCount(c) > 1) {
+        this.#chunks.set(doc, c)
+        this.#applyRequest(doc, c, request)
+        this.#note(`chunked section ${index}: showing ${c.current + 1}/${chunkCount(c)}`)
+      }
+    }
     doc.addEventListener('keydown', (e) => this.#key.forEach((l) => l(e)))
     // L12: wide tables and code scroll inside their own box.
     for (const el of doc.querySelectorAll('table, pre')) {
@@ -516,7 +700,8 @@ export class ReaderEngine {
     const time = d.time as { section?: number } | undefined
     const r = view.renderer
     const pages = r && !r.scrolled && r.pages > 2 ? r.pages - 2 : undefined
-    return {
+    const page = pages ? Math.min(pages, Math.max(1, r.page)) : undefined
+    const location: ReaderLocation = {
       cfi: String(d.cfi ?? ''),
       fraction: Number(d.fraction ?? 0),
       sectionIndex: section.current,
@@ -524,9 +709,30 @@ export class ReaderEngine {
       chapterLabel: (d.tocItem as { label?: string } | undefined)?.label?.trim() ?? '',
       // foliate's `time.section` is in units of 1600 characters.
       sectionCharsLeft: (time?.section ?? 0) * 1600,
-      page: pages ? Math.min(pages, Math.max(1, r.page)) : undefined,
+      page,
       pages,
+      approximate: false,
       reason,
     }
+    const c = this.#chunksOf(view)
+    if (c && pages && page) {
+      // L16: foliate measures within the laid-out chunk; place it within the section and book.
+      const inChunk = pages > 1 ? (page - 1) / (pages - 1) : 0
+      const f = sectionFraction(c, c.current, inChunk)
+      const totalChars = c.chars.reduce((a, b) => a + b, 0)
+      location.sectionCharsLeft = (1 - f) * totalChars
+      location.fraction = this.#bookFraction(section.current, f)
+      location.approximate = true
+      location.sectionFraction = f
+    }
+    return location
+  }
+
+  /** Book fraction of a place `f` (0–1) through linear section `index`, by section size. */
+  #bookFraction(index: number, f: number): number {
+    const sizes = (this.#book?.sections ?? []).map((s) => (s.linear !== 'no' ? s.size : 0))
+    const total = sizes.reduce((a, b) => a + b, 0) || 1
+    const before = sizes.slice(0, index).reduce((a, b) => a + b, 0)
+    return (before + f * sizes[index]) / total
   }
 }

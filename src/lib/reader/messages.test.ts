@@ -149,3 +149,19 @@ describe('N1 Back history', () => {
     expect(h.peek()?.cfi).toBe('c59')
   })
 })
+
+describe('withdrawing a message whose action no longer applies', () => {
+  it('removes it from the screen, the queue and Recently closed, and shows the next', () => {
+    const { q, advance } = setup()
+    const a = q.push({ text: 'Back to page 3', action: undo() })
+    const b = q.push({ text: 'Back to page 9', action: undo() })
+    q.withdraw(b.id) // showing
+    expect(q.current?.id).toBe(a.id)
+    advance(MESSAGE_TIMEOUT_MS)
+    expect(q.recentlyClosed.map((m) => m.id)).toEqual([a.id])
+    q.withdraw(a.id) // in Recently closed
+    expect(q.current).toBeNull()
+    expect(q.recentlyClosed).toEqual([])
+    expect(q.act(a.id)).toBe(false)
+  })
+})

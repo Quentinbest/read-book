@@ -405,7 +405,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
   checks.push({
     id: 'L16-long-chapter',
     description:
-      'A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)',
+      'A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location) and shows “≈” pages',
     run: async () => {
       await backToLibrary()
       const row = await waitFor('row', () =>
@@ -413,17 +413,116 @@ export async function spikeE2E(): Promise<SpikeResult> {
           /one file/i.test(b.textContent ?? ''),
         ),
       )
+      const previous = reader()?.engine
       const t0 = performance.now()
       row.click()
       for (;;) {
-        if (loc()?.cfi) break
+        // The first laid-out page of the new book (not the previous reader, not a placeholder).
+        if (reader() && reader()!.engine !== previous && loc()?.pages) break
         if (performance.now() - t0 > 10_000) return 'did not open within 10 s'
         await new Promise((r) => requestAnimationFrame(r))
       }
       const ms = Math.round(performance.now() - t0)
+      const first = loc()!
+      log(
+        `L16 open: ${ms} ms; first location page ${first.page}/${first.pages}, approximate ${first.approximate}; views ${JSON.stringify(reader()!.engine.debug())}`,
+      )
       await settled(800)
+      if (ms >= 500) return `opened in ${ms} ms`
+      if (!loc()!.approximate) return 'location not marked approximate'
+      const before = loc()!
+      key('ArrowRight')
+      await settled(600)
+      const said = document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
+      const after = loc()!
+      return /^About page \d+$/.test(said)
+        ? 'ok'
+        : `turn announced as “${said}” (${before.page}/${before.pages} ${before.reason} → ${after.page}/${after.pages} ${after.reason}; message: ${hooks.messages?.current?.text})`
+    },
+  })
+
+  checks.push({
+    id: 'L16-chunk-traversal',
+    description:
+      'Paging through a chunked chapter crosses chunk boundaries forward and back with no skipped or repeated page',
+    run: async () => {
+      const { compare } = await import('foliate-js/epubcfi.js')
+      const engine = reader()!.engine
+      const chunk = () => engine.debug().chunks[0]
+      const start = chunk()
+      let crossings = 0
+      let prev = loc()!
+      for (let i = 0; i < 200 && crossings < 3; i++) {
+        const before = chunk()
+        await engine.turn('next')
+        await settled(60)
+        const l = loc()!
+        if (compare(l.cfi, prev.cfi) <= 0)
+          return `turn ${i}: location did not advance (${prev.cfi} → ${l.cfi})`
+        if (l.fraction < prev.fraction)
+          return `turn ${i}: fraction went back (${prev.fraction} → ${l.fraction})`
+        if (chunk() !== before) {
+          crossings++
+          const [k, n] = before.split('/').map(Number)
+          if (chunk() !== `${k + 1}/${n}`) return `crossed from ${before} to ${chunk()}`
+          if (l.page !== 1) return `crossed into ${chunk()} at page ${l.page}, not 1`
+          // Back across the boundary lands on the previous chunk's last page, then forward again.
+          await engine.turn('prev')
+          await settled(60)
+          const b = loc()!
+          if (chunk() !== before || b.page !== b.pages || compare(b.cfi, prev.cfi) !== 0)
+            return `back across ${chunk()}: page ${b.page}/${b.pages}, ${b.cfi} vs ${prev.cfi}`
+          await engine.turn('next')
+          await settled(60)
+          if (compare(loc()!.cfi, l.cfi) !== 0) return `forward again: ${loc()!.cfi} vs ${l.cfi}`
+        }
+        prev = loc()!
+      }
+      log(
+        `L16 traversal: ${start} → ${chunk()}, ${crossings} crossings; ${engine.debug().trail.slice(-3).join(' | ')}`,
+      )
+      return crossings === 3 ? 'ok' : `only ${crossings} chunk crossings in 200 turns`
+    },
+  })
+
+  checks.push({
+    id: 'L16-deep-jump-restore',
+    description:
+      'A jump to a CFI deep in a chunked chapter shows it, and reopening the book restores it',
+    run: async () => {
+      const { compare } = await import('foliate-js/epubcfi.js')
+      const engine = reader()!.engine
+      const { doc, index } = engine.view.renderer.getContents()[0]
+      const ps = doc.querySelectorAll('p')
+      const target = ps[Math.floor(ps.length * 0.8)]
+      const range = doc.createRange()
+      range.selectNodeContents(target)
+      range.collapse(true)
+      const cfi = engine.view.getCFI(index, range)
+      await engine.goTo(cfi)
+      await settled(600)
+      const shown = engine.view.lastLocation?.range
+      const d = shown?.startContainer.ownerDocument
+      if (d) {
+        const resolved = engine.view.resolveNavigation(cfi) as {
+          anchor: (doc: Document) => Range
+        }
+        const r = resolved.anchor(d)
+        const onPage =
+          shown!.compareBoundaryPoints(Range.START_TO_START, r) <= 0 &&
+          shown!.compareBoundaryPoints(Range.START_TO_END, r) >= 0
+        if (!onPage)
+          return `jumped to ${loc()!.cfi}, target ${cfi} not on the page (${engine.debug().chunks[0]})`
+      }
       const l = loc()!
-      return ms < 500 ? 'ok' : `opened in ${ms} ms (${l.pages} pages in the first section)`
+      if (l.fraction < 0.6 || l.fraction > 0.95) return `fraction ${l.fraction} for a place 80% in`
+      const saved = l.cfi
+      await backToLibrary()
+      await openFromLibrary(/one file/i)
+      const again = loc()!
+      return compare(again.cfi, saved) === 0
+        ? 'ok'
+        : `saved ${saved}, reopened at ${again.cfi} (${reader()!.engine.debug().chunks[0]})`
     },
   })
 
@@ -468,14 +567,17 @@ export async function spikeE2E(): Promise<SpikeResult> {
             /Moby Dick/.test(b.textContent ?? ''),
           ),
         )
+        const previous = reader()?.engine
         const t0 = performance.now()
         row.click()
-        while (!loc()?.cfi) await new Promise((r) => requestAnimationFrame(r))
+        while (!(reader() && reader()!.engine !== previous && loc()?.pages))
+          await new Promise((r) => requestAnimationFrame(r))
         times.push(performance.now() - t0)
         await settled(500)
       }
       times.sort((a, b) => a - b)
       const [median, p95] = [times[2], times[4]].map(Math.round)
+      log(`budget-open: median ${median} ms, p95 ${p95} ms`)
       return p95 < 500 ? 'ok' : `median ${median} ms, p95 ${p95} ms`
     },
   })

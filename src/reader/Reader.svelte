@@ -136,11 +136,15 @@
   function onRelocate(l: ReaderLocation) {
     const prev = location
     location = l
-    if (l.pages) pages?.count(l.sectionIndex, l.pages)
+    // A chunked chapter's page count covers one chunk (L16): it is not the section's.
+    if (l.pages && !l.approximate) pages?.count(l.sectionIndex, l.pages)
     // X3: brief page-turn announcements, off when VoiceOver itself moved the page.
     if (announceTurns && l.reason === 'page' && prev && prev.cfi !== l.cfi) {
-      const n = pageLabel(l)
-      if (n) announce(t.reader.pageAnnouncement(n))
+      const n = pageNumber(l)
+      if (n)
+        announce(
+          n.approximate ? t.reader.pageAnnouncementApprox(n.n) : t.reader.pageAnnouncement(n.n),
+        )
     }
     // B2: a page's dwell time feeds the reading pace.
     const now = performance.now()
@@ -233,16 +237,21 @@
   }
 
   // ---- history (N1, N2)
+  /** Back chips from this session: withdrawn when the book closes (their action needs this reader). */
+  const jumpMessages: number[] = []
   function pushJump(
     from: ReaderLocation,
     source: Parameters<LocationHistory['push']>[0]['source'],
   ) {
     history.push({ cfi: from.cfi, source })
-    const page = pageLabel(from)
-    messages.push({
-      text: page ? t.reader.backToPage(page) : t.reader.back,
+    const page = pageNumber(from)
+    const message = messages.push({
+      text: page
+        ? t.reader.backToPage(page.approximate ? t.reader.approxPage(page.n) : String(page.n))
+        : t.reader.back,
       action: { label: t.reader.back, shortcut: '⌘[', run: () => goBack() },
     })
+    jumpMessages.push(message.id)
   }
 
   function goBack() {
@@ -250,9 +259,15 @@
     if (entry) void engine?.goTo(entry.cfi)
   }
 
-  function pageLabel(l: ReaderLocation | null): string | null {
+  /** Book-wide page number (B1); estimated inside a chunked chapter (L16). */
+  function pageNumber(l: ReaderLocation | null): { n: number; approximate: boolean } | null {
     if (!l || !pages || !l.page) return null
-    return String(pages.pageNumber(l.sectionIndex, l.page))
+    if (l.approximate && l.sectionFraction !== undefined) {
+      const inSection = pages.pagesIn(l.sectionIndex)
+      const page = Math.min(inSection, Math.floor(l.sectionFraction * inSection) + 1)
+      return { n: pages.pageNumber(l.sectionIndex, page), approximate: true }
+    }
+    return { n: pages.pageNumber(l.sectionIndex, l.page), approximate: false }
   }
 
   // ---- chrome reveal (S9–S11)
@@ -337,6 +352,8 @@
           if (location?.cfi) pushJump(location, 'link')
         }),
       )
+      // N5: the last session's save (made as it closed) may still be in flight.
+      await writes.idle()
       const saved = await ipc.positionGet(book.id)
       // L17: entries are read from the zip on demand; the book never crosses whole.
       const opened = await engine.open(
@@ -422,6 +439,7 @@
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
       engine?.close()
+      for (const id of jumpMessages) messages.withdraw(id)
       if (testHooks) testHooks.reader = undefined
       void ipc.setWindowControls(true).catch(() => {})
     }

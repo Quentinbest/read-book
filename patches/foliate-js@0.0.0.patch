@@ -1,0 +1,14 @@
+diff --git a/paginator.js b/paginator.js
+index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..7794554c6b7df673471f3dfa4210ef6598fea06a 100644
+--- a/paginator.js
++++ b/paginator.js
+@@ -97,6 +97,9 @@ const getVisibleRange = (doc, start, end, mapRect) => {
+         const name = node.localName?.toLowerCase()
+         // ignore all scripts, styles, and their children
+         if (name === 'script' || name === 'style') return FILTER_REJECT
++        // Linen (L16): blocks of a chunked chapter hidden with display: none have
++        // empty rects that would read as “on the first page”
++        if (node.nodeType === 1 && node.hasAttribute('data-linen-hidden')) return FILTER_REJECT
+         if (node.nodeType === 1) {
+             const { left, right } = mapRect(node.getBoundingClientRect())
+             // no need to check child nodes if it's completely out of view

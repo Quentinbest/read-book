@@ -123,9 +123,21 @@
     },
     {
       "id": "L16-long-chapter",
-      "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)",
-      "verdict": "fail",
-      "evidence": "opened in 2353 ms (886 pages in the first section)"
+      "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location) and shows “≈” pages",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "L16-chunk-traversal",
+      "description": "Paging through a chunked chapter crosses chunk boundaries forward and back with no skipped or repeated page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "L16-deep-jump-restore",
+      "description": "A jump to a CFI deep in a chunked chapter shows it, and reopening the book restores it",
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "X3-announcements",
@@ -175,7 +187,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790254035,
+    "time": 1790261299,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
