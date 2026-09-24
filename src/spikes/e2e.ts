@@ -40,7 +40,10 @@ async function settled(ms = 450) {
 
 /** Send a key where a real one arrives: the book document while reading (focus is in the text). */
 function key(k: string, opts: KeyboardEventInit = {}) {
-  const doc = hooks.reader?.engine.view.renderer.getContents()[0]?.doc
+  // A fixed-layout spread can hold an empty frame; a reader's focus is in the one with content.
+  const docs = hooks.reader?.engine.view.renderer.getContents().map((c) => c.doc) ?? []
+  const doc =
+    docs.find((d) => d?.body?.textContent?.trim() || d?.body?.querySelector('img, svg')) ?? docs[0]
   const target = opts.metaKey || !doc ? document.body : doc.body
   target.dispatchEvent(
     new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...opts }),
@@ -85,11 +88,20 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'standardebooks-moby-dick.epub',
     'idpf-regime-anticancer-arabic.epub',
     'hostile-content.epub',
+    'idpf-page-blanche.epub',
+    'long-chapter.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
   )
-  await invoke('library_import', { paths })
+  const imported = await invoke<{ path: string; outcome: { kind: string; reason?: string } }[]>(
+    'library_import',
+    { paths },
+  )
+  for (const r of imported)
+    log(
+      `import ${r.path.split('/').pop()}: ${r.outcome.kind}${r.outcome.reason ? ` (${r.outcome.reason})` : ''}`,
+    )
 
   const { installThemeCss } = await import('../app/theme')
   await import('../app/base.css')
@@ -118,7 +130,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       id: 'N3-bodymatter',
       description: 'A new book opens at the bodymatter landmark, not the cover',
       run: async () => {
-        await openFromLibrary(/Moby/)
+        await openFromLibrary(/Moby Dick/)
         const l = loc()!
         return /loomings/i.test(l.chapterLabel) || l.sectionIndex > 2
           ? 'ok'
@@ -312,7 +324,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
         const before = where()
         const cfi = loc()!.cfi
         await backToLibrary()
-        await openFromLibrary(/Moby/)
+        await openFromLibrary(/Moby Dick/)
         return where() === before
           ? 'ok'
           : `was ${before} (${cfi}), reopened at ${where()} (${loc()!.cfi})`
@@ -368,6 +380,53 @@ export async function spikeE2E(): Promise<SpikeResult> {
   ]
 
   checks.push({
+    id: 'E2-fixed-layout',
+    description: 'A fixed-layout book opens and turns pages (one view, scaled to fit)',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/blanche/i)
+      const engine = reader()!.engine
+      if (!engine.fixedLayout) return 'not detected as fixed layout'
+      const views = document.querySelectorAll('foliate-view').length
+      const before = loc()!.fraction
+      key('ArrowRight')
+      await settled(900)
+      const after = loc()!.fraction
+      if (after > before) return 'ok'
+      // Try the engine directly, to tell key routing from page turning.
+      const s0 = JSON.stringify(loc())
+      await engine.turn('next')
+      await settled(900)
+      return `key did not advance (${before} → ${after}); ${views} views; engine.turn: ${s0.slice(0, 160)} → ${JSON.stringify(loc()).slice(0, 160)}; trail ${engine.debug().trail.slice(-4).join(' | ')}`
+    },
+  })
+
+  checks.push({
+    id: 'L16-long-chapter',
+    description:
+      'A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)',
+    run: async () => {
+      await backToLibrary()
+      const row = await waitFor('row', () =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
+          /one file/i.test(b.textContent ?? ''),
+        ),
+      )
+      const t0 = performance.now()
+      row.click()
+      for (;;) {
+        if (loc()?.cfi) break
+        if (performance.now() - t0 > 10_000) return 'did not open within 10 s'
+        await new Promise((r) => requestAnimationFrame(r))
+      }
+      const ms = Math.round(performance.now() - t0)
+      await settled(800)
+      const l = loc()!
+      return ms < 500 ? 'ok' : `opened in ${ms} ms (${l.pages} pages in the first section)`
+    },
+  })
+
+  checks.push({
     id: 'reader-cleanup',
     description:
       'Leaving the reader closes the engine and removes its views, even for a short book',
@@ -385,7 +444,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
     description: 'Page turns render within a frame: < 16 ms p95, within and across chapters (§6.4)',
     run: async () => {
       await backToLibrary()
-      await openFromLibrary(/Moby/)
+      await openFromLibrary(/Moby Dick/)
       const engine = reader()!.engine
       await engine.goTo(20)
       await sleep(600)

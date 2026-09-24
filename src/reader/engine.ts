@@ -15,7 +15,7 @@
 
 import 'foliate-js/view.js'
 import type { Book, View } from 'foliate-js/view.js'
-import { PAGINATOR_GAP, type Layout } from './layout'
+import { MIN_SIDE_MARGIN, PAGINATOR_GAP, type Layout } from './layout'
 import { transformContent } from './content'
 import { PARAGRAPH_SPACING_CSS } from './styles'
 
@@ -95,6 +95,11 @@ export class ReaderEngine {
     return this.#book
   }
 
+  /** A fixed-layout book (E2): one view, pages scaled to fit, no neighbours. */
+  get fixedLayout(): boolean {
+    return this.#current.isFixedLayout === true
+  }
+
   /** The book's page progression is right to left (I15). */
   get rtl(): boolean {
     return this.#book?.dir === 'rtl'
@@ -132,11 +137,13 @@ export class ReaderEngine {
         .catch(() => '') // a damaged resource must not break the section (E3)
     })
     this.#book = book
+    await this.#current.open(book)
     // One book, three views: the visible one and its two neighbours (D-D1).
-    for (const view of [this.#current, this.#next.view, this.#prev.view]) {
-      await view.open(book)
-      this.#configureRenderer(view)
+    // Fixed-layout books use one view; their pages are images of whole spreads.
+    if (!this.fixedLayout) {
+      for (const view of [this.#next.view, this.#prev.view]) await view.open(book)
     }
+    for (const view of this.#views()) if (view.renderer) this.#configureRenderer(view)
     // N3: new books open at the bodymatter landmark, not the cover.
     await this.#current.init(start?.cfi ? { lastLocation: start.cfi } : { showTextStart: true })
     this.#prepareNeighbours()
@@ -148,10 +155,12 @@ export class ReaderEngine {
     this.#layout = layout
     this.#styles = styles
     for (const view of this.#views()) {
+      // Fixed-layout pages fill the reading area inside the minimum margins (E2; G8 pending).
+      const fixed = view.isFixedLayout === true
       Object.assign(view.style, {
-        left: `${layout.viewLeft}px`,
+        left: `${fixed ? MIN_SIDE_MARGIN : layout.viewLeft}px`,
         top: `${layout.top}px`,
-        width: `${layout.viewWidth}px`,
+        width: fixed ? `calc(100% - ${2 * MIN_SIDE_MARGIN}px)` : `${layout.viewWidth}px`,
         height: `${layout.pageHeight}px`,
       })
       // foliate-js creates its paginator in open(); until then the layout waits.
@@ -163,7 +172,7 @@ export class ReaderEngine {
 
   setStyles(styles: string) {
     this.#styles = styles
-    for (const view of this.#views()) view.renderer?.setStyles?.(styles)
+    for (const view of this.#views()) if (!view.isFixedLayout) view.renderer?.setStyles?.(styles)
   }
 
   /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
@@ -332,6 +341,8 @@ export class ReaderEngine {
     const layout = this.#layout
     const r = view.renderer
     if (!layout || !r) return
+    // Fixed layout (E2): foliate-js scales pages to the view; no paginator settings or book styles.
+    if (view.isFixedLayout) return
     r.setAttribute('flow', 'paginated')
     r.setAttribute('margin', '0px')
     // Text width = view width × (1 − 2 × gap): see PAGINATOR_GAP in layout.ts.
@@ -360,6 +371,7 @@ export class ReaderEngine {
 
   /** Park the hidden views at the first page of the next section and the last page of the previous one. */
   #prepareNeighbours(force = false) {
+    if (this.fixedLayout) return
     const index = this.#currentIndex()
     if (index < 0) return
     const park = (n: Neighbour, target: number, anchor: number) => {
@@ -387,6 +399,10 @@ export class ReaderEngine {
   }
 
   async #turnNow(dir: Turn) {
+    if (this.fixedLayout) {
+      await (dir === 'next' ? this.#current.next() : this.#current.prev())
+      return
+    }
     const r = this.#current.renderer
     if (!r?.getContents().length) {
       this.#note('turn ignored: the visible view shows nothing')
@@ -459,7 +475,7 @@ export class ReaderEngine {
         doc.head?.append(style)
       }
     }
-    if (this.#styles) view.renderer?.setStyles?.(this.#styles)
+    if (this.#styles && !view.isFixedLayout) view.renderer?.setStyles?.(this.#styles)
   }
 
   #onRelocate(view: View, detail: Record<string, unknown>, reason?: ReaderLocation['reason']) {

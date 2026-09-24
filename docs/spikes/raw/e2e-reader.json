@@ -116,6 +116,18 @@
       "evidence": "ok"
     },
     {
+      "id": "E2-fixed-layout",
+      "description": "A fixed-layout book opens and turns pages (one view, scaled to fit)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "L16-long-chapter",
+      "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)",
+      "verdict": "fail",
+      "evidence": "opened in 2150 ms (886 pages in the first section)"
+    },
+    {
       "id": "reader-cleanup",
       "description": "Leaving the reader closes the engine and removes its views, even for a short book",
       "verdict": "pass",
@@ -139,7 +151,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790250978,
+    "time": 1790251744,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
