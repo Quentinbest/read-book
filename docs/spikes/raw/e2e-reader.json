@@ -125,7 +125,7 @@
       "id": "L16-long-chapter",
       "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)",
       "verdict": "fail",
-      "evidence": "opened in 2201 ms (886 pages in the first section)"
+      "evidence": "opened in 2353 ms (886 pages in the first section)"
     },
     {
       "id": "X3-announcements",
@@ -175,7 +175,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790252680,
+    "time": 1790254035,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

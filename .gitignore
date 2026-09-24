@@ -18,3 +18,4 @@ corpus/generated/
 test-results
 playwright-report
 dist-spikes/
+docs/visual/diff/

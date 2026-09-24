@@ -17,7 +17,7 @@
 | A 1 MB+ chapter opens within the open-book budget and shows “≈” until pagination completes | **Open**: 2.1–2.2 s against 500 ms | e2e: L16-long-chapter. Needs virtual sections (L16) and the G8 loading-state design |
 | §6.4 budgets that apply from Phase 2 | Open book, reflow, page turn and memory pass; cold start to the last book waits for Phase 6's library (“Resume reading”) | e2e: budget-open (p95 < 500 ms), budget-reflow (< 150 ms), I6-turn-budget (p95 5 ms within and 1 ms across chapters, 180/180 turns exact); memory run: 290–371 MB |
 | Hostile corpus EPUBs still fail as in Spike E | Done | e2e: E-hostile-in-product (no script, IPC or network; the fixed overlay is neutralised) |
-| Visual baselines for Screens 02, 03, 10 and 14 approved | **Needs the owner**: screenshots to be prepared for sign-off | — |
+| Visual baselines for Screens 02, 03, 10 and 14 approved | Done: approved 2026-09-24 | `docs/visual/APPROVAL.md`, `baselines/webkit-19618/`. An independent recapture matches within 0.03% (`tests/visual/compare.mjs`) |
 
 ## Work items
 
@@ -27,7 +27,7 @@
 | Canvas L1–L17 | L1–L15 and L17 done (`layout.ts`, `styles.ts`, `fonts.ts`, `loader.ts`); **L16 open** |
 | Fixed layout (E2) | Basic open and turn; zoom (⌘+, pinch, I17) and the layout design wait for G8 |
 | Immersive state and location line (L9, B2, S12) | Done |
-| Chrome (S9–S11, S15) | Done: edge reveal with dwell, Tab, auto-hide, macOS full-screen and Dock edges (T8). Controls whose features arrive later are hidden. The 220 ms hide animation is still to do |
+| Chrome (S9–S11, S15) | Done: edge reveal with dwell, Tab, auto-hide, macOS full-screen and Dock edges (T8), overlay title bar with the window buttons in the top bar (Screens 02/03). Controls whose features arrive later are hidden. The 220 ms hide animation is still to do |
 | Input router (I1–I15) | Done for keys, wheel and trackpad (native bridge), margins, RTL, turn queue and the rapid-turn chip. **Touch (I12–I14) not applicable on macOS** (no touch screens); deferred with the tablet release |
 | Scroll mode (B8) and the two-page spread (L8, B12) | Layout supports the spread; both wait for the G8 designs |
 | Progress persistence (N4, N5), Back (N1, N2) | Done |
@@ -38,5 +38,5 @@
 
 1. **L16 long chapters:** virtual sections so the first page shows before the whole chapter is laid out, with saved positions staying valid. Engineering plus the G8 loading-state design.
 2. **G8 designs:** Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, image view, loading state and “≈” locations.
-3. **Owner sign-offs:** visual baselines for Screens 02, 03, 10 and 14.
+3. ~~Visual baselines~~: approved 2026-09-24.
 4. **VoiceOver re-check** of the product's X3 sync (about 5 minutes, like Spike C).
