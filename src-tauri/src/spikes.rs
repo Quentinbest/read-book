@@ -186,3 +186,60 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::
     });
     Ok(())
 }
+
+/// `ps` elapsed time `[[dd-]hh:]mm:ss` in seconds.
+fn etime_seconds(s: &str) -> Option<u64> {
+    let (days, rest) = match s.split_once('-') {
+        Some((d, r)) => (d.parse::<u64>().ok()?, r),
+        None => (0, s),
+    };
+    let parts: Vec<u64> = rest
+        .split(':')
+        .map(|p| p.parse().ok())
+        .collect::<Option<_>>()?;
+    let secs = parts.iter().fold(0, |acc, p| acc * 60 + p);
+    Some(days * 86_400 + secs)
+}
+
+/// §6.4 memory budget: resident memory of this app and the WebKit helper
+/// processes it started (WebContent, Networking, GPU run as separate XPC
+/// processes, not children, so they are matched by name and start time).
+#[tauri::command]
+pub fn spike_memory() -> Result<serde_json::Value, String> {
+    let me = std::process::id();
+    let out = std::process::Command::new("ps")
+        .args(["-A", "-o", "pid=,etime=,rss=,comm="])
+        .output()
+        .map_err(|e| e.to_string())?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    let rows: Vec<(u32, u64, u64, String)> = text
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.split_whitespace();
+            let pid = it.next()?.parse().ok()?;
+            let elapsed = etime_seconds(it.next()?)?;
+            let rss = it.next()?.parse().ok()?;
+            let comm = it.collect::<Vec<_>>().join(" ");
+            Some((pid, elapsed, rss, comm))
+        })
+        .collect();
+    let my_age = rows
+        .iter()
+        .find(|r| r.0 == me)
+        .map(|r| r.1)
+        .ok_or("own process not found")?;
+    let mut total_kb = 0u64;
+    let mut parts = Vec::new();
+    for (pid, age, rss, comm) in &rows {
+        let ours = *pid == me || (comm.contains("com.apple.WebKit") && *age <= my_age);
+        if ours {
+            total_kb += rss;
+            parts.push(format!(
+                "{} {} MB",
+                comm.rsplit('/').next().unwrap_or(comm),
+                rss / 1024
+            ));
+        }
+    }
+    Ok(serde_json::json!({ "total_mb": total_kb / 1024, "processes": parts }))
+}

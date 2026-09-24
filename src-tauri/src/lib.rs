@@ -24,6 +24,8 @@ pub fn run() {
                 commands::library_list,
                 commands::library_import,
                 commands::book_bytes,
+                commands::book_entries,
+                commands::book_entry,
                 commands::book_settings_get,
                 commands::book_settings_set,
                 commands::position_save,
@@ -51,6 +53,7 @@ pub fn run() {
         spikes::spike_report,
         spikes::spike_info,
         spikes::spike_log,
+        spikes::spike_memory,
         spikes::spike_exit
     ));
     builder

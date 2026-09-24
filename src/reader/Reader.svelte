@@ -17,6 +17,7 @@
   import { THEMES, type Theme } from '../lib/theme/tokens'
   import { ReaderEngine, type ReaderLocation, type Turn } from './engine'
   import { fallBackFailedFonts, literataFaces } from './fonts'
+  import { libraryLoader } from './loader'
   import { computeLayout, showLocationLine, type Layout } from './layout'
   import { ReadingPace } from './pace'
   import { PageCounter } from './pages'
@@ -333,9 +334,11 @@
         }),
       )
       const saved = await ipc.positionGet(book.id)
-      const bytes = await ipc.bookBytes(book.id)
-      const bookFile = new File([bytes], `${book.id}.epub`, { type: 'application/epub+zip' })
-      const opened = await engine.open(bookFile, saved ? { cfi: saved[0] } : undefined)
+      // L17: entries are read from the zip on demand; the book never crosses whole.
+      const opened = await engine.open(
+        await libraryLoader(book.id),
+        saved ? { cfi: saved[0] } : undefined,
+      )
       pages = new PageCounter(opened.sections.map((s) => (s.linear === 'no' ? 0 : s.size)))
       relayout()
       // N4: resuming deep in a book says where, with a way back to the beginning.

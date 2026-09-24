@@ -125,7 +125,7 @@
       "id": "L16-long-chapter",
       "description": "A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location)",
       "verdict": "fail",
-      "evidence": "opened in 2179 ms (886 pages in the first section)"
+      "evidence": "opened in 2201 ms (886 pages in the first section)"
     },
     {
       "id": "X3-announcements",
@@ -136,6 +136,18 @@
     {
       "id": "L15-font-fallback",
       "description": "A book font that fails to load falls back to Literata without a prompt",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "budget-open",
+      "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "budget-reflow",
+      "description": "Reflow after a resize: < 150 ms from the end of the 120 ms debounce to the page (§6.4)",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -163,7 +175,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790252000,
+    "time": 1790252680,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

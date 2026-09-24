@@ -12,6 +12,8 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, State};
 pub struct AppState {
     pub store: Mutex<Store>,
     pub library: Library,
+    /// L17: the open book's validated archive, read entry by entry (one book open, B7).
+    pub open_book: Mutex<Option<(String, zip::ZipArchive<std::fs::File>)>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -79,6 +81,7 @@ pub fn init<R: Runtime>(app: &tauri::App<R>) -> Result<AppState, Box<dyn std::er
     Ok(AppState {
         store: Mutex::new(store),
         library,
+        open_book: Mutex::new(None),
     })
 }
 
@@ -112,9 +115,9 @@ pub fn library_import(state: State<AppState>, paths: Vec<String>) -> CmdResult<V
     import_paths(&state, &paths)
 }
 
-/// The book file's bytes for the reader. Only files inside the library are served.
-#[tauri::command]
-pub fn book_bytes(state: State<AppState>, book_id: String) -> CmdResult<tauri::ipc::Response> {
+/// The book file inside the library, or an error for anything outside it.
+fn library_book_path(state: &AppState, book_id: &str) -> CmdResult<PathBuf> {
+    let failed = |e: String| CommandError::Failed { message: e };
     let path: String = state
         .store
         .lock()
@@ -122,33 +125,101 @@ pub fn book_bytes(state: State<AppState>, book_id: String) -> CmdResult<tauri::i
         .conn()
         .query_row(
             "SELECT file_path FROM books WHERE id = ?1",
-            [&book_id],
+            [book_id],
             |r| r.get(0),
         )
-        .map_err(|e| CommandError::Failed {
-            message: e.to_string(),
-        })?;
-    let path = PathBuf::from(path);
+        .map_err(|e| failed(e.to_string()))?;
     let books_dir = state
         .library
         .books_dir
         .canonicalize()
-        .map_err(|e| CommandError::Failed {
-            message: e.to_string(),
-        })?;
-    let resolved = path.canonicalize().map_err(|e| CommandError::Failed {
-        message: e.to_string(),
-    })?;
+        .map_err(|e| failed(e.to_string()))?;
+    let resolved = PathBuf::from(path)
+        .canonicalize()
+        .map_err(|e| failed(e.to_string()))?;
     if !resolved.starts_with(&books_dir) {
-        return Err(CommandError::Failed {
-            message: "book file is outside the library".into(),
-        });
+        return Err(failed("book file is outside the library".into()));
     }
-    std::fs::read(&resolved)
+    Ok(resolved)
+}
+
+/// The whole book file (spikes and tests; the reader reads entries on demand, L17).
+#[tauri::command]
+pub fn book_bytes(state: State<AppState>, book_id: String) -> CmdResult<tauri::ipc::Response> {
+    let path = library_book_path(&state, &book_id)?;
+    std::fs::read(&path)
         .map(tauri::ipc::Response::new)
         .map_err(|e| CommandError::Failed {
             message: e.to_string(),
         })
+}
+
+/// Entries larger than this are never sent to the WebView (a single chapter or image).
+const MAX_ENTRY_BYTES: u64 = 256 << 20;
+
+fn with_open_book<T>(
+    state: &AppState,
+    book_id: &str,
+    f: impl FnOnce(&mut zip::ZipArchive<std::fs::File>) -> CmdResult<T>,
+) -> CmdResult<T> {
+    let mut open = state.open_book.lock().unwrap();
+    if open.as_ref().map(|(id, _)| id.as_str()) != Some(book_id) {
+        let path = library_book_path(state, book_id)?;
+        let file = std::fs::File::open(&path).map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?;
+        let mut archive = zip::ZipArchive::new(file).map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?;
+        // The file was validated at import; check again in case it changed on disk.
+        crate::epub::validate_archive(&mut archive).map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?;
+        *open = Some((book_id.to_string(), archive));
+    }
+    f(&mut open.as_mut().unwrap().1)
+}
+
+/// L17: the book's entries and their sizes, so the reader can load them one by one.
+#[tauri::command]
+pub fn book_entries(state: State<AppState>, book_id: String) -> CmdResult<Vec<(String, u64)>> {
+    with_open_book(&state, &book_id, |archive| {
+        let mut out = Vec::with_capacity(archive.len());
+        for i in 0..archive.len() {
+            let entry = archive.by_index_raw(i).map_err(|e| CommandError::Failed {
+                message: e.to_string(),
+            })?;
+            if entry.is_file() {
+                out.push((entry.name().to_string(), entry.size()));
+            }
+        }
+        Ok(out)
+    })
+}
+
+/// L17: one entry of the open book, read from the zip on demand.
+#[tauri::command]
+pub fn book_entry(
+    state: State<AppState>,
+    book_id: String,
+    name: String,
+) -> CmdResult<tauri::ipc::Response> {
+    use std::io::Read;
+    with_open_book(&state, &book_id, |archive| {
+        let failed = |e: String| CommandError::Failed { message: e };
+        let entry = archive
+            .by_name(&name)
+            .map_err(|e| failed(format!("{name}: {e}")))?;
+        if entry.size() > MAX_ENTRY_BYTES {
+            return Err(failed(format!("{name} is too large")));
+        }
+        let mut bytes = Vec::with_capacity(entry.size() as usize);
+        entry
+            .take(MAX_ENTRY_BYTES)
+            .read_to_end(&mut bytes)
+            .map_err(|e| failed(e.to_string()))?;
+        Ok(tauri::ipc::Response::new(bytes))
+    })
 }
 
 /// Per-book settings (S13): layout mode and the docked Navigator tab.

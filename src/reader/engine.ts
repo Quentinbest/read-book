@@ -17,6 +17,7 @@ import 'foliate-js/view.js'
 import type { Book, View } from 'foliate-js/view.js'
 import { MIN_SIDE_MARGIN, PAGINATOR_GAP, type Layout } from './layout'
 import { transformContent } from './content'
+import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
 
 export interface ReaderLocation {
@@ -133,9 +134,16 @@ export class ReaderEngine {
     this.#current.renderer?.focusView?.()
   }
 
-  async open(file: File, start?: { cfi?: string }): Promise<Book> {
-    const { makeBook } = await import('foliate-js/view.js')
-    const book = await makeBook(file)
+  /** Open a book from a file, or (L17) from a loader that reads entries on demand. */
+  async open(source: File | EntryLoader, start?: { cfi?: string }): Promise<Book> {
+    let book: Book
+    if (source instanceof File) {
+      const { makeBook } = await import('foliate-js/view.js')
+      book = await makeBook(source)
+    } else {
+      const { EPUB } = await import('foliate-js/epub.js')
+      book = await new EPUB(source).init()
+    }
     book.transformTarget?.addEventListener('data', (e) => {
       const detail = (e as CustomEvent<{ data: unknown; type: string }>).detail
       const type = detail.type

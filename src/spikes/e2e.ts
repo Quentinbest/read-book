@@ -456,6 +456,61 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'budget-open',
+    description:
+      'Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)',
+    run: async () => {
+      const times: number[] = []
+      for (let i = 0; i < 5; i++) {
+        await backToLibrary()
+        const row = await waitFor('row', () =>
+          Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
+            /Moby Dick/.test(b.textContent ?? ''),
+          ),
+        )
+        const t0 = performance.now()
+        row.click()
+        while (!loc()?.cfi) await new Promise((r) => requestAnimationFrame(r))
+        times.push(performance.now() - t0)
+        await settled(500)
+      }
+      times.sort((a, b) => a - b)
+      const [median, p95] = [times[2], times[4]].map(Math.round)
+      return p95 < 500 ? 'ok' : `median ${median} ms, p95 ${p95} ms`
+    },
+  })
+
+  checks.push({
+    id: 'budget-reflow',
+    description:
+      'Reflow after a resize: < 150 ms from the end of the 120 ms debounce to the page (§6.4)',
+    run: async () => {
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      const engine = reader()!.engine
+      const times: number[] = []
+      for (const width of [1000, 1280, 900, 1200]) {
+        let relocated = 0
+        const off = engine.onRelocate(() => (relocated = performance.now()))
+        const t0 = performance.now()
+        await w.setSize(new LogicalSize(width, size.height / factor))
+        await sleep(900)
+        off()
+        if (relocated) times.push(relocated - t0 - 120)
+      }
+      await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+      await settled(900)
+      const worst = Math.round(Math.max(...times))
+      return times.length === 4 && worst < 150
+        ? 'ok'
+        : `reflow after debounce: ${times.map(Math.round).join(', ')} ms`
+    },
+  })
+
+  // The memory budget runs as its own fresh session: spike 'm' (spikeMemory below).
+
+  checks.push({
     id: 'reader-cleanup',
     description:
       'Leaving the reader closes the engine and removes its views, even for a short book',
@@ -585,4 +640,40 @@ export async function spikeE2E(): Promise<SpikeResult> {
     })
   }
   return { spike: 'e2e-reader', criteria, raw: {} }
+}
+
+/**
+ * §6.4 memory budget, as specified: a fresh session opens the 100 MB book and
+ * reads 50 pages; resident memory of the app and its WebKit processes < 400 MB.
+ */
+export async function spikeMemory(): Promise<SpikeResult> {
+  const path = await invoke<string>('spike_corpus_path', { name: 'large-100mb.epub' })
+  await invoke('library_import', { paths: [path] })
+  const { installThemeCss } = await import('../app/theme')
+  await import('../app/base.css')
+  installThemeCss()
+  document.getElementById('log')!.style.display = 'none'
+  document.getElementById('chrome-top')!.style.display = 'none'
+  const { default: App } = await import('../App.svelte')
+  mount(App, { target: document.getElementById('reader')! })
+  await openFromLibrary(/100 MB/)
+  const before = await invoke<{ total_mb: number; processes: string[] }>('spike_memory')
+  for (let i = 0; i < 50; i++) await reader()!.engine.turn('next')
+  await settled(2000)
+  const after = await invoke<{ total_mb: number; processes: string[] }>('spike_memory')
+  const evidence = `after opening ${before.total_mb} MB; after 50 pages ${after.total_mb} MB = ${after.processes.join(' + ')}`
+  log(`memory: ${evidence}`)
+  return {
+    spike: 'budget-memory',
+    criteria: [
+      {
+        id: 'budget-memory',
+        description:
+          'A 100 MB book after reading 50 pages uses < 400 MB across the app and its WebKit processes (§6.4)',
+        verdict: after.total_mb < 400 ? 'pass' : 'fail',
+        evidence,
+      },
+    ],
+    raw: { before, after },
+  }
 }

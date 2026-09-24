@@ -95,3 +95,15 @@ declare module 'foliate-js/overlayer.js' {
     readonly element: SVGElement
   }
 }
+
+declare module 'foliate-js/epub.js' {
+  import type { Book } from 'foliate-js/view.js'
+  export class EPUB {
+    constructor(loader: {
+      loadText(name: string): Promise<string | null>
+      loadBlob(name: string, type?: string): Promise<Blob | null>
+      getSize(name: string): number
+    })
+    init(): Promise<Book>
+  }
+}
