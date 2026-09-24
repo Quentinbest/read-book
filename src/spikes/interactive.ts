@@ -37,7 +37,7 @@ function panel(): HTMLElement {
 }
 
 /** Show a step and wait for the person to press one of the buttons. */
-function step(
+export function step(
   title: string,
   body: string,
   buttons: string[],

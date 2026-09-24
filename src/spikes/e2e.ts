@@ -8,6 +8,7 @@ import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { mount } from 'svelte'
 import type { TestHooks } from '../app/testHooks'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
+import { step } from './interactive'
 
 const hooks: TestHooks = {}
 ;(globalThis as { __LINEN_E2E__?: TestHooks }).__LINEN_E2E__ = hooks
@@ -850,5 +851,190 @@ export async function spikeVisual(): Promise<SpikeResult> {
       },
     ],
     raw: { shots },
+  }
+}
+
+/**
+ * X3 re-check with VoiceOver in the product (Spike C found the mechanism; this
+ * checks the Reader's handling of it). A person turns VoiceOver on and lets it
+ * read across two page ends and one chapter end; the harness records whether the
+ * location follows, the page snaps to whole pages, progress is saved, and the
+ * app stays quiet about page turns VoiceOver itself makes.
+ */
+export async function spikeX3(): Promise<SpikeResult> {
+  const { compare } = await import('foliate-js/epubcfi.js')
+  const { ipc } = await import('../app/ipc')
+  const path = await invoke<string>('spike_corpus_path', { name: 'standardebooks-moby-dick.epub' })
+  await invoke('library_import', { paths: [path] })
+  const { installThemeCss } = await import('../app/theme')
+  await import('../app/base.css')
+  installThemeCss()
+  document.getElementById('log')!.style.display = 'none'
+  document.getElementById('chrome-top')!.style.display = 'none'
+  const { default: App } = await import('../App.svelte')
+  mount(App, { target: document.getElementById('reader')! })
+  await openFromLibrary(/Moby Dick/)
+  const engine = reader()!.engine
+  const bookId = reader()!.bookId
+
+  // Three pages before the end of a chapter: two page ends, then a chapter end.
+  await engine.goTo(20)
+  await settled(800)
+  for (let i = 0; i < 200 && loc()!.page! < loc()!.pages! - 2; i++) {
+    await engine.turn('next')
+    await settled(40)
+  }
+  await settled(600)
+  const startLoc = loc()!
+  log(`x3 start: section ${startLoc.sectionIndex}, page ${startLoc.page}/${startLoc.pages}`)
+
+  const region = () =>
+    document.querySelector('[role="status"][aria-live="polite"]')?.textContent?.trim() ?? ''
+  const relocations: { t: number; reason: string; cfi: string; section: number; page?: number }[] =
+    []
+  engine.onRelocate((l) =>
+    relocations.push({
+      t: Math.round(performance.now()),
+      reason: l.reason,
+      cfi: l.cfi,
+      section: l.sectionIndex,
+      page: l.page,
+    }),
+  )
+  const samples: {
+    t: number
+    page: number
+    offset: number
+    size: number
+    section: number
+    locPage?: number
+    region: string
+  }[] = []
+  const sample = () => {
+    const r = engine.view.renderer
+    samples.push({
+      t: Math.round(performance.now()),
+      page: r.page,
+      offset: Math.round(r.start % r.size),
+      size: Math.round(r.size),
+      section: loc()?.sectionIndex ?? -1,
+      locPage: loc()?.page,
+      region: region(),
+    })
+  }
+
+  const start = await step(
+    'VoiceOver in the reader (X3), about 5 minutes',
+    'Turn on VoiceOver (System Settings › Accessibility › VoiceOver, or ⌘F5). Wait 3 seconds, then click once in the book text and press <b>Control + Option + A</b> to read all. When it has started reading, press <b>Reading started</b> with the mouse.<br><br>The page is three pages before the end of a chapter.',
+    ['Reading started', 'Skip'],
+  )
+  if (start === 'Skip')
+    return {
+      spike: 'x3-voiceover',
+      criteria: [
+        {
+          id: 'X3-product',
+          description: 'VoiceOver re-check',
+          verdict: 'manual',
+          evidence: 'skipped',
+        },
+      ],
+      raw: {},
+    }
+  const readingFrom = performance.now()
+  const regionBefore = region()
+  const detected = await ipc.screenReaderRunning()
+  sample()
+  const timer = setInterval(sample, 250)
+  await step(
+    'Keep listening',
+    'Let VoiceOver read until it has passed the end of this chapter (about 3–4 minutes), or until it stops. Then stop it (press Control) and press <b>Done</b>.',
+    ['Done'],
+  )
+  clearInterval(timer)
+  sample()
+  const endLoc = loc()!
+  await sleep(1600) // the 1 s save debounce
+  const saved = await ipc.positionGet(bookId)
+  const continuous = await step(
+    'Within the chapter',
+    'Did VoiceOver keep reading past the end of each page, and did the visible page follow it?',
+    ['Yes', 'No', 'Not sure'],
+  )
+  const sliver = await step(
+    'Page edges',
+    'After the page moved, did you ever see part of the neighbouring page at the left or right edge?',
+    ['No', 'Yes', 'Not sure'],
+  )
+  const chapterEnd = await step('Chapter end', 'At the end of the chapter, what happened?', [
+    'Read into the next chapter',
+    'Stopped at the end',
+    'Read other things (menus, labels)',
+    'Did not get there',
+  ])
+
+  const during = relocations.filter((r) => r.t >= readingFrom)
+  const external = during.filter((r) => r.reason === 'external')
+  const ordered = external.every((r, i) => i === 0 || compare(r.cfi, external[i - 1].cfi) > 0)
+  // A page is snapped when its offset is a whole page; allow the 250 ms after a move to settle.
+  const settledSamples = samples.filter((x, i) => i > 1 && x.page === samples[i - 1].page)
+  const unsnapped = settledSamples.filter((x) => x.offset > 1 && x.size - x.offset > 1)
+  const selfAnnounced = [...new Set(samples.map((x) => x.region))].filter(
+    (text) => text !== regionBefore && /page \d+/i.test(text),
+  )
+  const pagesSeen = new Set(samples.map((x) => `${x.section}:${x.page}`)).size
+
+  const criteria: Criterion[] = [
+    {
+      id: 'X3-detected',
+      description: 'The app detects VoiceOver (T6), so the reader follows external scrolls',
+      verdict: detected ? 'pass' : 'fail',
+      evidence: `screen_reader_running = ${detected}`,
+    },
+    {
+      id: 'X3-location-follows',
+      description:
+        'The location follows VoiceOver: the reader reports each page it moves to, in reading order',
+      verdict: external.length >= 2 && ordered ? 'pass' : 'fail',
+      evidence: `${external.length} external relocations (${during.length} in all) while reading, ${ordered ? 'in order' : 'OUT OF ORDER'}; pages seen ${pagesSeen}; from section ${startLoc.sectionIndex} p${startLoc.page} to section ${endLoc.sectionIndex} p${endLoc.page}`,
+    },
+    {
+      id: 'X3-snap',
+      description:
+        'After VoiceOver moves the page, it rests on a whole page (no sliver of the next)',
+      verdict: unsnapped.length === 0 && sliver === 'No' ? 'pass' : 'fail',
+      evidence: `${unsnapped.length} of ${settledSamples.length} settled samples off a page boundary; observer saw a sliver: ${sliver}`,
+    },
+    {
+      id: 'X3-progress-saved',
+      description: 'Progress is saved where VoiceOver stopped (N4)',
+      verdict: saved?.[0] === endLoc.cfi && compare(endLoc.cfi, startLoc.cfi) > 0 ? 'pass' : 'fail',
+      evidence: `saved ${saved?.[0]}; location ${endLoc.cfi}; start ${startLoc.cfi}`,
+    },
+    {
+      id: 'X3-quiet',
+      description: 'The app does not announce page turns that VoiceOver itself makes',
+      verdict: selfAnnounced.length === 0 ? 'pass' : 'fail',
+      evidence: selfAnnounced.length
+        ? `announced: ${selfAnnounced.join(' | ')}`
+        : 'no page announcements while reading',
+    },
+    {
+      id: 'X3-continuous',
+      description: 'VoiceOver reads continuously across page ends and the page follows (observer)',
+      verdict: continuous === 'Yes' ? 'pass' : 'fail',
+      evidence: `observer: ${continuous}`,
+    },
+    {
+      id: 'X3-chapter-end',
+      description: 'What VoiceOver does at the end of a chapter (observer; informs the design)',
+      verdict: chapterEnd === 'Read into the next chapter' ? 'pass' : 'manual',
+      evidence: `observer: ${chapterEnd}; reader ended in section ${endLoc.sectionIndex} (started in ${startLoc.sectionIndex})`,
+    },
+  ]
+  return {
+    spike: 'x3-voiceover',
+    criteria,
+    raw: { readingFrom: Math.round(readingFrom), startLoc, endLoc, relocations, samples },
   }
 }

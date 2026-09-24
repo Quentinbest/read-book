@@ -7,7 +7,7 @@ import { spikeA } from './a-rendering'
 import { log, report, type SpikeResult } from './common'
 import { spikeD, spikeDTurns } from './d-fidelity'
 import { spikeE } from './e-isolation'
-import { spikeE2E, spikeMemory, spikeVisual } from './e2e'
+import { spikeE2E, spikeMemory, spikeVisual, spikeX3 } from './e2e'
 import { spikeF } from './f-search'
 import { spikeB, spikeBTrackpad, spikeC } from './interactive'
 
@@ -23,6 +23,7 @@ const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   b: spikeB,
   bt: spikeBTrackpad,
   c: spikeC,
+  x3: spikeX3,
 }
 
 async function main() {
