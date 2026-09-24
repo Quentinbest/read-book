@@ -10,6 +10,10 @@ for (const theme of ['paper', 'sepia', 'night'] as const) {
     }) => {
       await page.goto(`/gallery.html?theme=${theme}${modal ? '&modal' : ''}`)
       await expect(page.getByRole('heading', { name: 'Component gallery' })).toBeVisible()
+      // Contrast is measured on settled pixels: wait for the popover's fade-in (V8) to finish.
+      await page.waitForFunction(() =>
+        document.getAnimations().every((a) => a.playState === 'finished'),
+      )
       const results = await new AxeBuilder({ page })
         .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
         .analyze()
