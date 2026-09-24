@@ -66,6 +66,8 @@ export const ipc = {
       fullscreen: boolean
       menu_bar_height: number
     }>('screen_edges'),
+  /** Screens 02/03: the window buttons show with the reader's controls. */
+  setWindowControls: (visible: boolean) => invoke<void>('set_window_controls', { visible }),
   /** N5: saving is done; the app may quit. */
   quitReady: () => invoke<void>('quit_ready'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */

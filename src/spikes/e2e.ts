@@ -677,3 +677,76 @@ export async function spikeMemory(): Promise<SpikeResult> {
     raw: { before, after },
   }
 }
+
+/**
+ * Visual baseline candidates (plan §6.1): the product in the states of Screens
+ * 02, 03, 10 and 14 — Moby-Dick chapter 1 at 1280 × 800 in the mock's theme —
+ * captured from this app's own window only, for the owner's side-by-side review.
+ */
+export async function spikeVisual(): Promise<SpikeResult> {
+  const path = await invoke<string>('spike_corpus_path', { name: 'standardebooks-moby-dick.epub' })
+  await invoke('library_import', { paths: [path] })
+  const { installThemeCss } = await import('../app/theme')
+  await import('../app/base.css')
+  installThemeCss()
+  document.getElementById('log')!.style.display = 'none'
+  document.getElementById('chrome-top')!.style.display = 'none'
+  await getCurrentWindow().setSize(new LogicalSize(1280, 800))
+  const { default: App } = await import('../App.svelte')
+  mount(App, { target: document.getElementById('reader')! })
+
+  const shots: Record<string, string> = {}
+  const capture = async (name: string) => {
+    await settled(700)
+    shots[name] = await invoke<string>('spike_capture', { name })
+    log(`captured ${name}`)
+  }
+  const showControls = async () => {
+    const area = document.querySelector('.reader')!
+    area.dispatchEvent(
+      new PointerEvent('pointermove', { clientX: 640, clientY: 20, bubbles: true }),
+    )
+    await sleep(600) // 150 ms dwell + 160 ms fade in
+  }
+  const hideControls = async () => {
+    key('Escape')
+    await sleep(400)
+  }
+  const openIn = async (theme: string) => {
+    await invoke('setting_set', { key: 'theme', value: theme })
+    if (reader()) await backToLibrary()
+    await openFromLibrary(/Moby Dick/)
+    // Chapter 1, first page (Screen 02's state).
+    await reader()!.engine.goTo('chapter-1.xhtml')
+    await settled(900)
+    const m = hooks.messages?.current
+    if (m) hooks.messages!.dismiss(m.id)
+  }
+
+  await openIn('paper')
+  await hideControls()
+  await capture('02-reader-immersive-paper')
+  await showControls()
+  await capture('03-reader-controls-paper')
+  await hideControls()
+  for (const theme of ['sepia', 'night'] as const) {
+    await openIn(theme)
+    await hideControls()
+    await capture(`10-reader-${theme}`)
+  }
+  await showControls()
+  await capture('14-night-controls')
+  await invoke('setting_set', { key: 'theme', value: 'auto' })
+  return {
+    spike: 'visual-candidates',
+    criteria: [
+      {
+        id: 'visual-captured',
+        description: 'Baseline candidates captured',
+        verdict: 'manual',
+        evidence: Object.keys(shots).join(', '),
+      },
+    ],
+    raw: { shots },
+  }
+}

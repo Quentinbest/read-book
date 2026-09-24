@@ -3,5 +3,10 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": ["main"],
-  "permissions": ["core:default", "dialog:allow-open", "log:default"]
+  "permissions": [
+    "core:default",
+    "dialog:allow-open",
+    "log:default",
+    "core:window:allow-start-dragging"
+  ]
 }

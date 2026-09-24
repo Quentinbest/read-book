@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Visual baseline review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Visual baseline review — Phase 2 reader</h1>
+      <p class="lede">
+        Each pair shows the approved mock (left) and the app in the same state (right): Moby-Dick
+        chapter 1 at 1280 × 800 in the mock's theme, captured from the app's own window on the
+        reference Mac (WebKit 19618). Per plan §6.1, you compare them by eye; once you sign off,
+        the app screenshots become the baselines that later changes are checked against.
+      </p>
+      <table>
+        <tr>
+          <th>Tag</th>
+          <th>Meaning</th>
+        </tr>
+        <tr>
+          <td><span class="tag ok">expected</span></td>
+          <td>A deliberate difference: the rules say the book or the reader's data decides it</td>
+        </tr>
+        <tr>
+          <td><span class="tag later">later phase</span></td>
+          <td>The feature is built in a later phase; hidden until then (plan §5)</td>
+        </tr>
+        <tr>
+          <td><span class="tag ask">your call</span></td>
+          <td>A difference that needs your decision before sign-off</td>
+        </tr>
+      </table>
+
+      <h2>Screen 02 — Reader, immersive (Paper)</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>Mock</figcaption>
+          <img src="mocks/02.png" alt="Screen 02 mock" />
+        </figure>
+        <figure>
+          <figcaption>App</figcaption>
+          <img src="app/02-reader-immersive-paper.png" alt="App, immersive, Paper" />
+        </figure>
+      </div>
+      <ul class="notes">
+        <li>
+          Matches: the page fills the window with no title bar or window buttons; the column is at
+          x = 320 and 640 px wide; Literata 19/1.55; hyphenation; location line centred 30 px from
+          the bottom.
+        </li>
+        <li>
+          <span class="tag ok">expected</span>The chapter heading (“I / Loomings”, centred, small
+          caps) and the space above the text come from the book's own CSS (Standard Ebooks); the
+          mock's “CHAPTER 1 / <i>Loomings</i>” is illustrative. The publisher decides structure
+          (L13).
+        </li>
+        <li>
+          <span class="tag ok">expected</span>Location line reads “I: Loomings” (the book's own
+          table of contents) without “· 11 min left in chapter”: minutes appear after 5 minutes of
+          reading (B2).
+        </li>
+      </ul>
+
+      <h2>Screen 03 — Reader, controls visible (Paper)</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>Mock</figcaption>
+          <img src="mocks/03.png" alt="Screen 03 mock" />
+        </figure>
+        <figure>
+          <figcaption>App</figcaption>
+          <img src="app/03-reader-controls-paper.png" alt="App, controls visible, Paper" />
+        </figure>
+      </div>
+      <ul class="notes">
+        <li>
+          Matches: 52 px top bar with the window buttons in it, Library, the centred title; 64 px
+          bottom bar with the progress track and labels; margin chevrons at the same positions.
+        </li>
+        <li>
+          <span class="tag later">later phase</span>Contents (Phase 3), Search (Phase 4), Notes
+          (Phase 5), Aa (Phase 6) and ⋯ (Phase 7) are hidden until their features exist.
+        </li>
+        <li>
+          <span class="tag later">later phase</span>The scrubber's thumb and preview tooltip (N7)
+          and the clickable Go to label (N8) arrive in Phase 3; today the bar shows progress only.
+        </li>
+        <li>
+          <span class="tag ok">expected</span>Title “Moby Dick” and chapter “I: Loomings” come from
+          the book's metadata and table of contents.
+        </li>
+      </ul>
+
+      <h2>Screen 10 — Reading themes</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>Mock (all three themes on one board)</figcaption>
+          <img src="mocks/10.png" alt="Screen 10 mock" />
+        </figure>
+        <figure>
+          <figcaption>App — Paper</figcaption>
+          <img src="app/02-reader-immersive-paper.png" alt="App, Paper" />
+        </figure>
+        <figure>
+          <figcaption>App — Sepia</figcaption>
+          <img src="app/10-reader-sepia.png" alt="App, Sepia" />
+        </figure>
+        <figure>
+          <figcaption>App — Night</figcaption>
+          <img src="app/10-reader-night.png" alt="App, Night" />
+        </figure>
+      </div>
+      <ul class="notes">
+        <li>
+          Matches: the grounds and inks are the approved tokens (V1), checked by the contrast tests.
+        </li>
+        <li>
+          <span class="tag later">later phase</span>The highlights shown on the mock arrive in
+          Phase 5; their colours (with the approved C7 adjustments) are already in the tokens.
+        </li>
+      </ul>
+
+      <h2>Screen 14 — Night, controls (and selection)</h2>
+      <div class="pair">
+        <figure>
+          <figcaption>Mock</figcaption>
+          <img src="mocks/14.png" alt="Screen 14 mock" />
+        </figure>
+        <figure>
+          <figcaption>App — Night, controls visible</figcaption>
+          <img src="app/14-night-controls.png" alt="App, Night, controls visible" />
+        </figure>
+      </div>
+      <ul class="notes">
+        <li>
+          Matches: Night chrome keeps the page colour with the #3A3733 hairline (V2).
+        </li>
+        <li>
+          <span class="tag later">later phase</span>The selection bar and highlights on this board
+          are Phase 5; this baseline covers the chrome only, as plan Phase 2 says.
+        </li>
+      </ul>
+
+      <h2>Your call</h2>
+      <ul class="notes">
+        <li>
+          <span class="tag ask">your call</span>Approve these four as the Phase 2 baselines, with
+          the differences above marked expected or later phase.
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

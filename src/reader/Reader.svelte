@@ -69,6 +69,10 @@
   let location = $state<ReaderLocation | null>(null)
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
+  // Screens 02/03: the window buttons live in the top bar and hide with it.
+  $effect(() => {
+    void ipc.setWindowControls(chromeVisible).catch(() => {})
+  })
   let height = $state(window.innerHeight)
   let fontPx = 19
   let edges = { topStart: 0, bottomOff: false }
@@ -419,6 +423,7 @@
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
       engine?.close()
       if (testHooks) testHooks.reader = undefined
+      void ipc.setWindowControls(true).catch(() => {})
     }
   })
 
@@ -444,25 +449,49 @@
   <!-- Margins: click targets for the previous and next page (I11, S3). -->
   <button
     class="margin left"
+    class:shown={chromeVisible}
     style:width="{layout.marginWidth}px"
     aria-label={t.reader.previousPage}
     tabindex="-1"
     onclick={() => onMarginClick('left')}
   >
-    <span class="chevron" aria-hidden="true">‹</span>
+    <svg
+      class="chevron"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg
+    >
   </button>
   <button
     class="margin right"
+    class:shown={chromeVisible}
     style:width="{layout.marginWidth}px"
     aria-label={t.reader.nextPage}
     tabindex="-1"
     onclick={() => onMarginClick('right')}
   >
-    <span class="chevron" aria-hidden="true">›</span>
+    <svg
+      class="chevron"
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.4"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg
+    >
   </button>
 
   {#if chromeVisible}
-    <header class="chrome top">
+    <header class="chrome top" data-tauri-drag-region>
       <button type="button" class="library" onclick={leave}>
         <Icon name="library" size={18} />{t.reader.library}
       </button>
@@ -514,23 +543,24 @@
   .margin.right {
     right: 0;
   }
-  /* A faint chevron on hover (I11). */
+  /* A faint chevron on hover (I11), and with the controls (Screen 03). */
   .chevron {
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
-    font: 300 28px/1 var(--font-ui);
+    color: #8f877b;
     opacity: 0;
     transition: opacity 160ms;
   }
   .left .chevron {
-    left: 24px;
+    left: 33px;
   }
   .right .chevron {
-    right: 24px;
+    right: 33px;
   }
-  .margin:hover .chevron {
-    opacity: 0.6;
+  .margin:hover .chevron,
+  .margin.shown .chevron {
+    opacity: 1;
   }
   .chrome {
     position: absolute;
@@ -552,7 +582,8 @@
     height: 52px;
     display: flex;
     align-items: center;
-    padding: 0 12px 0 20px;
+    /* The window buttons sit at x = 20 (native), then an 18 px gap (Screen 03). */
+    padding: 0 12px 0 90px;
     border-bottom: 1px solid var(--chrome-hairline);
   }
   .bottom {

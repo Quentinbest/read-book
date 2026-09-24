@@ -25,6 +25,7 @@
         : t.library.percent(b.fraction)
 </script>
 
+<div class="titlebar" data-tauri-drag-region></div>
 <main class="library" class:drop={dropActive}>
   {#if books.length === 0}
     <!-- E9, Screen 12 -->
@@ -65,9 +66,18 @@
 </main>
 
 <style>
+  /* The window's title bar is an overlay (Screens 02/03); this strip keeps it draggable. */
+  .titlebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 52px;
+    z-index: 5;
+  }
   .library {
     min-height: 100vh;
-    padding: 32px 48px;
+    padding: 64px 48px 32px;
   }
   .drop {
     outline: 2px dashed var(--accent);

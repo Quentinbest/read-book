@@ -37,6 +37,7 @@ pub fn run() {
                 native::screen_reader_running,
                 native::keyboard_layout_labels,
                 native::screen_edges,
+                native::set_window_controls,
                 $($extra),*
             ]
         };
@@ -54,6 +55,7 @@ pub fn run() {
         spikes::spike_info,
         spikes::spike_log,
         spikes::spike_memory,
+        spikes::spike_capture,
         spikes::spike_exit
     ));
     builder

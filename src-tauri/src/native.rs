@@ -231,3 +231,30 @@ pub fn screen_edges(window: tauri::WebviewWindow) -> ScreenEdges {
         }
     }
 }
+
+/// Screens 02 and 03: the window buttons sit in the reader's top bar and hide
+/// with it, so the immersive page shows nothing but the book.
+#[tauri::command]
+pub fn set_window_controls(window: tauri::WebviewWindow, visible: bool) {
+    #[cfg(target_os = "macos")]
+    {
+        let Ok(ptr) = window.ns_window() else { return };
+        let ptr = ptr as usize;
+        let _ = window.run_on_main_thread(move || {
+            use objc2_app_kit::{NSWindow, NSWindowButton};
+            // SAFETY: Tauri hands out the window's own NSWindow pointer, used on the main thread.
+            let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+            for kind in [
+                NSWindowButton::CloseButton,
+                NSWindowButton::MiniaturizeButton,
+                NSWindowButton::ZoomButton,
+            ] {
+                if let Some(button) = ns_window.standardWindowButton(kind) {
+                    button.setHidden(!visible);
+                }
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, visible);
+}

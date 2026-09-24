@@ -243,3 +243,30 @@ pub fn spike_memory() -> Result<serde_json::Value, String> {
     }
     Ok(serde_json::json!({ "total_mb": total_kb / 1024, "processes": parts }))
 }
+
+/// Capture this app's own window (and nothing else on screen) to
+/// docs/visual/app/<name>.png, for the visual baselines (plan §6.1).
+#[tauri::command]
+pub fn spike_capture<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    name: String,
+) -> Result<String, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid name: {name}"));
+    }
+    let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
+    // SAFETY: Tauri hands out the window's own NSWindow; windowNumber is a plain getter.
+    let number = unsafe { (*(ptr as *const objc2_app_kit::NSWindow)).windowNumber() };
+    let dir = repo_root().join("docs/visual/app");
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let path = dir.join(format!("{name}.png"));
+    let status = std::process::Command::new("screencapture")
+        .args(["-x", "-o", &format!("-l{number}")])
+        .arg(&path)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("screencapture failed: {status}"));
+    }
+    Ok(path.display().to_string())
+}

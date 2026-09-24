@@ -9,7 +9,13 @@
         "resizable": true,
         "fullscreen": false,
         "alwaysOnTop": true,
-        "backgroundThrottling": "disabled"
+        "backgroundThrottling": "disabled",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": {
+          "x": 20,
+          "y": 25
+        }
       }
     ],
     "security": {
