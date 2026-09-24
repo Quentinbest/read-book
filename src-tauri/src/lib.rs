@@ -79,10 +79,9 @@ pub fn run() {
         .run(|app, event| match event {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             tauri::RunEvent::Opened { urls } => commands::handle_opened(app, urls),
-            tauri::RunEvent::ExitRequested { api, .. } => {
-                if commands::hold_exit_for_save(app) {
-                    api.prevent_exit();
-                }
+            // Hold the first exit request so the reader can save (N5).
+            tauri::RunEvent::ExitRequested { api, .. } if commands::hold_exit_for_save(app) => {
+                api.prevent_exit()
             }
             _ => {}
         });
