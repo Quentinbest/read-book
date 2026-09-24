@@ -9,9 +9,9 @@
     },
     {
       "id": "C-position-observable",
-      "description": "VoiceOver’s reading position is observable, so the visible page can follow (X3, T2)",
-      "verdict": "pass",
-      "evidence": "3 relocate events while reading; observer says the page followed: Yes"
+      "description": "VoiceOver’s reading position is observable to the reader engine, so the visible page can follow (X3, T2)",
+      "verdict": "fail",
+      "evidence": "0 relocate events (0 distinct locations) while VoiceOver read; foliate page numbers seen: 4; the frame or document moved in 3 of 380 samples; observer says the page followed: Yes"
     },
     {
       "id": "C-nvda",
@@ -21,17 +21,3448 @@
     }
   ],
   "raw": {
+    "readingFrom": 173370,
     "relocations": [
       {
-        "t": 389,
+        "t": 781,
         "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
       },
       {
-        "t": 389,
+        "t": 782,
         "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
       },
       {
-        "t": 390,
+        "t": 783,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 40279,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 111309,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      }
+    ],
+    "samples": [
+      {
+        "t": 173375,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 173876,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 174377,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 174921,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 175379,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 175879,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 176380,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 176881,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 177382,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 177883,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 178383,
+        "frameX": 188,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 1,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 178884,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 179385,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 179886,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 180386,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 180887,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 181388,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 181889,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 182390,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 182891,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 183392,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 183892,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 184393,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 184894,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 185395,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 185896,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 186397,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 186898,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 187399,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 187900,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 188400,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 188901,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 189402,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 189903,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 190405,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 190905,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 191406,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 191906,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 192407,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 192909,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 193410,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 193911,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 194412,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 194912,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 195413,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 195914,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 196414,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 196914,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 197415,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 197916,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 198416,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 198917,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 199419,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 199919,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 200420,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 200921,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 201421,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 201922,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 202423,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 202924,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 203425,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 203926,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 204428,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 204928,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 205429,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 205930,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 206430,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 206931,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 207433,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 207933,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 208434,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 208936,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 209437,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 209937,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 210438,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 210939,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 211440,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 211941,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 212442,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 212943,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 213444,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 213944,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 214445,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 214946,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 215447,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 215947,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 216448,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 216949,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 217450,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 217951,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 218451,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 218951,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 219453,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 219953,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 220454,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 220955,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 221456,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 221957,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 222458,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 222961,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 223459,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 223960,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 224461,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 224961,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 225462,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 225964,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 226465,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 226965,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 227465,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 227965,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 228466,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 228967,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 229468,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 229969,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 230469,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 230970,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 231471,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 231972,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 232473,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 232974,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 233474,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 233975,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 234476,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 234977,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 235478,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 235979,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 236480,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 237685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 238685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 239685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 240685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 241704,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 242684,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 243684,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 244685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 245395,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 245895,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 246396,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 246897,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 247398,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 247898,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 248399,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 248900,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 249401,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 249902,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 250403,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 250904,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 251405,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 251906,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 252407,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 252908,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 253409,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 253909,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 254410,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 254911,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 255412,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 255913,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 256414,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 256915,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 257416,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 257916,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 258417,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 258918,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 259419,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 259920,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 260421,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 260922,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 261423,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 261925,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 262424,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 262925,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 263425,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 263926,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 264427,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 264928,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 265430,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 265930,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 266431,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 266932,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 267434,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 267934,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 268435,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 268936,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 269437,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 269937,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 270438,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 270939,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 271440,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 271940,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 272441,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 272942,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 273444,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 273944,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 274445,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 274947,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 275448,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 275949,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 276450,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 276952,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 277452,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 277953,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 278453,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 278954,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 279455,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 279956,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 280461,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 280961,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 281462,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 281963,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 282464,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 282965,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 283466,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 283966,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 284467,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 284968,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 285468,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 285969,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 286470,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 286971,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 287472,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 287973,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 288473,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 288974,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 289475,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 289976,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 290477,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 290978,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 291479,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 291980,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 292481,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 292982,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 293483,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 293983,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 294484,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 294985,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 295486,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 295987,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 296488,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 297684,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 298685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 299685,
+        "frameX": -447,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 2,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 300186,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 300687,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 301187,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 301688,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 302189,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 302690,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 303190,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 303691,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 304193,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 304694,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 305194,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 305695,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 306196,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 306696,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 307197,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 307698,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 308199,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 308700,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 309201,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 309702,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 310202,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 310703,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 311204,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 311705,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 312206,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 312707,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 313208,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 313709,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 314210,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 314711,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 315211,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 315712,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 316213,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 316714,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 317215,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 317716,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 318217,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 318717,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 319217,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 319718,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 320219,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 320720,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 321221,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 321722,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 322223,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 322724,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 323225,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 323725,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 324226,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 324727,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 325228,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 325729,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 326230,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 326731,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 327231,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 327732,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 328232,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 328733,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 329234,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 329735,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 330235,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 330735,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 331236,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 331737,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 332238,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 332739,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 333239,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 333740,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 334241,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 334742,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 335242,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 335743,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 336243,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 336744,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 337245,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 337746,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 338247,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 338748,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 339249,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 339750,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 340251,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 340752,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 341252,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 341753,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 342254,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 342755,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 343256,
+        "frameX": -1084,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 3,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 343757,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 344257,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 344757,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 345258,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 345759,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 346260,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 346760,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 347261,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 347762,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 348263,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 348763,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 349264,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 349765,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 350266,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 350767,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 351268,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 351769,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 352270,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 352770,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 353271,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 353772,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 354274,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 354775,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 355275,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 355776,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 356277,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 356777,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 357278,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 357779,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 358280,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 358781,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 359281,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 359782,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 360282,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 360783,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 361284,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 361784,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 362285,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 362786,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 363287,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 363788,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 364289,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 364790,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 365291,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 365791,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 366292,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 366793,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 367294,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 367795,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 368296,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 368796,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
+      },
+      {
+        "t": 369183,
+        "frameX": -1732,
+        "frameY": 74,
+        "docX": 0,
+        "docY": 0,
+        "page": 4,
         "cfi": "epubcfi(/6/42!/4/2[chapter-15],/2,/4/3:996)"
       }
     ],
@@ -42,7 +3473,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790243461,
+    "time": 1790244131,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

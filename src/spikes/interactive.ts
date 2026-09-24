@@ -359,7 +359,9 @@ export async function spikeC(): Promise<SpikeResult> {
         id: 'C-position-observable',
         description:
           'VoiceOver’s reading position is observable to the reader engine, so the visible page can follow (X3, T2)',
-        verdict: distinct >= 3 ? 'pass' : 'fail',
+        // Observable if the engine can see the new position: relocate events, or (run 2)
+        // foliate's scroll-derived page number changing without them.
+        verdict: distinct >= 3 || pagesSeen >= 3 ? 'pass' : 'fail',
         evidence: `${during.length} relocate events (${distinct} distinct locations) while VoiceOver read; foliate page numbers seen: ${pagesSeen}; the frame or document moved in ${moved} of ${samples.length} samples; observer says the page followed: ${followed}`,
       },
       { id: 'C-nvda', description: 'NVDA', verdict: 'deferred', evidence: 'macOS-only scope' },

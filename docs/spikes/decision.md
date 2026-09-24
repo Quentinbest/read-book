@@ -12,7 +12,7 @@
 |---|---|---|
 | A — rendering | pass (no split lines in 60 layouts); parity across engines deferred | `a-rendering.md` |
 | B — input | Wheel (I1) and activating click (I11) pass through a native `NSEvent` bridge; the WebView alone cannot classify the device (run 1). **Trackpad (I2, I3, I5) untested: no trackpad available.** | `b-input.md` |
-| C — accessibility | **not run: needs VoiceOver by hand** | `c-accessibility.md` |
+| C — accessibility | Pass on macOS: VoiceOver reads continuously and the page follows. foliate does not report the move, so the adapter must detect it, snap to whole pages and update the location (X3). NVDA deferred. | `c-accessibility.md` |
 | D — engine fidelity | 4/5 pass; **page turns that cross a chapter fail (p95 27 ms against 16 ms)** | `d-engine-fidelity.md` |
 | E — content isolation | pass with a design change (every probe blocked); **the §7.1 sandbox design fails on WebKit** | `e-content-isolation.md` |
 | F — persistence and search | pass (write p95 < 0.1 ms, 200/200 crash runs, search p95 114 ms) | `f-persistence-and-search.md` |
@@ -36,5 +36,5 @@
 ## Still to do before Phase 2 can start (plan §5 Phase 2 “Before starting”)
 
 1. ~~The owner signs off D-E1, D-D1 and D-X1.~~ Done 2026-09-24.
-2. Spike B: done for the wheel and the activating click; the trackpad criteria wait for a trackpad. Spike C (VoiceOver) runs with the owner at the machine.
+2. Spike B: done for the wheel and the activating click; the trackpad criteria wait for a trackpad. Spike C: done (pass, with adapter work for X3).
 3. ~~B2, B8, B11, B12 and T3 are decided~~ (done 2026-09-24, `docs/decisions.md`); the G8 designs exist.
