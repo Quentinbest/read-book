@@ -4,6 +4,7 @@
 // shortcut hints. Features register a handler for a command id when they are
 // built; commands without a handler are hidden everywhere.
 
+import { t } from '../strings/en'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
 
 export type CommandSection = 'reading' | 'navigation' | 'search' | 'annotation' | 'view' | 'app'
@@ -36,7 +37,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'chapter.next',
     rule: 'K1',
-    title: 'Next chapter',
+    title: t.commands['chapter.next'],
     section: 'navigation',
     chord: { code: 'ArrowDown', alt: true },
     singleKey: { code: 'BracketRight' },
@@ -46,7 +47,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'chapter.previous',
     rule: 'K1',
-    title: 'Previous chapter',
+    title: t.commands['chapter.previous'],
     section: 'navigation',
     chord: { code: 'ArrowUp', alt: true },
     singleKey: { code: 'BracketLeft' },
@@ -56,7 +57,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'search.open',
     rule: 'K2',
-    title: 'Search in book',
+    title: t.commands['search.open'],
     section: 'search',
     chord: { code: 'KeyF', meta: true },
     palette: true,
@@ -65,7 +66,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'search.next',
     rule: 'K2',
-    title: 'Next result',
+    title: t.commands['search.next'],
     section: 'search',
     chord: { code: 'KeyG', meta: true },
     menu: 'Edit',
@@ -73,7 +74,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'search.previous',
     rule: 'K2',
-    title: 'Previous result',
+    title: t.commands['search.previous'],
     section: 'search',
     chord: { code: 'KeyG', meta: true, shift: true },
     menu: 'Edit',
@@ -81,7 +82,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'navigator.contents',
     rule: 'K3',
-    title: 'Go to chapter…',
+    title: t.commands['navigator.contents'],
     section: 'navigation',
     chord: { code: 'KeyT', meta: true },
     palette: true,
@@ -90,7 +91,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'goto.open',
     rule: 'K4',
-    title: 'Go to location…',
+    title: t.commands['goto.open'],
     section: 'navigation',
     chord: { code: 'KeyJ', meta: true },
     palette: true,
@@ -99,7 +100,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'navigator.notes',
     rule: 'K5',
-    title: 'Highlights and notes',
+    title: t.commands['navigator.notes'],
     section: 'annotation',
     chord: { code: 'KeyA', meta: true, shift: true },
     palette: true,
@@ -108,7 +109,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'selection.highlight',
     rule: 'K6',
-    title: 'Highlight selection',
+    title: t.commands['selection.highlight'],
     section: 'annotation',
     chord: { code: 'KeyH', meta: true, shift: true },
     singleKey: { code: 'KeyH' },
@@ -117,7 +118,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'selection.note',
     rule: 'K6',
-    title: 'Add note to selection',
+    title: t.commands['selection.note'],
     section: 'annotation',
     chord: { code: 'KeyN', meta: true, shift: true },
     singleKey: { code: 'KeyN' },
@@ -126,14 +127,14 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'selection.focusBar',
     rule: 'K7',
-    title: 'Move to selection actions',
+    title: t.commands['selection.focusBar'],
     section: 'annotation',
     chord: { code: 'F6' },
   },
   {
     id: 'reader.caretBrowsing',
     rule: 'K7',
-    title: 'Caret browsing',
+    title: t.commands['reader.caretBrowsing'],
     section: 'reading',
     chord: { code: 'F7' },
     palette: true,
@@ -142,7 +143,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'text.larger',
     rule: 'K8',
-    title: 'Larger text',
+    title: t.commands['text.larger'],
     section: 'view',
     chord: { code: 'Equal', meta: true },
     altChords: [{ code: 'Equal', meta: true, shift: true }],
@@ -152,7 +153,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'text.smaller',
     rule: 'K8',
-    title: 'Smaller text',
+    title: t.commands['text.smaller'],
     section: 'view',
     chord: { code: 'Minus', meta: true },
     palette: true,
@@ -161,7 +162,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'text.reset',
     rule: 'K8',
-    title: 'Default text size',
+    title: t.commands['text.reset'],
     section: 'view',
     chord: { code: 'Digit0', meta: true },
     palette: true,
@@ -170,7 +171,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'palette.open',
     rule: 'K9',
-    title: 'Command palette',
+    title: t.commands['palette.open'],
     section: 'app',
     chord: { code: 'KeyK', meta: true },
     menu: 'View',
@@ -178,7 +179,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'shortcuts.show',
     rule: 'K9',
-    title: 'Keyboard shortcuts',
+    title: t.commands['shortcuts.show'],
     section: 'app',
     singleKey: { code: 'Slash', shift: true },
     palette: true,
@@ -187,7 +188,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'history.back',
     rule: 'K10',
-    title: 'Back',
+    title: t.commands['history.back'],
     section: 'navigation',
     chord: { code: 'BracketLeft', meta: true },
     palette: true,
@@ -196,7 +197,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'library.show',
     rule: 'K11',
-    title: 'Library',
+    title: t.commands['library.show'],
     section: 'app',
     chord: { code: 'KeyL', meta: true },
     palette: true,
@@ -205,7 +206,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'book.open',
     rule: 'K11',
-    title: 'Open…',
+    title: t.commands['book.open'],
     section: 'app',
     chord: { code: 'KeyO', meta: true },
     palette: true,
@@ -214,7 +215,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'window.fullScreen',
     rule: 'K12',
-    title: 'Full screen',
+    title: t.commands['window.fullScreen'],
     section: 'view',
     chord: { code: 'KeyF', meta: true, ctrl: true },
     palette: true,
@@ -223,7 +224,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'edit.undo',
     rule: 'K13',
-    title: 'Undo',
+    title: t.commands['edit.undo'],
     section: 'annotation',
     chord: { code: 'KeyZ', meta: true },
     menu: 'Edit',
@@ -231,7 +232,7 @@ export const CORE_COMMANDS: CommandDef[] = [
   {
     id: 'layer.close',
     rule: 'K14',
-    title: 'Close layer',
+    title: t.commands['layer.close'],
     section: 'reading',
     chord: { code: 'Escape' },
   },

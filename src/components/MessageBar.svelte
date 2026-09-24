@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Message, MessageQueue } from '../lib/reader/messages'
+  import { t } from '../lib/strings/en'
   import Kbd from './Kbd.svelte'
 
   // M1: one message at a time, bottom centre, non-modal. M2: pointer or focus pauses its timer.
@@ -21,7 +22,7 @@
   <div
     class="message"
     role="group"
-    aria-label="Message"
+    aria-label={t.messages.region}
     onpointerenter={() => queue.setPaused('hover', true)}
     onpointerleave={() => queue.setPaused('hover', false)}
     onfocusin={() => queue.setPaused('focus', true)}
@@ -35,8 +36,11 @@
       </button>
     {/if}
     {#if !m.persistent}
-      <button type="button" class="dismiss" aria-label="Dismiss" onclick={() => queue.dismiss(m.id)}
-        >×</button
+      <button
+        type="button"
+        class="dismiss"
+        aria-label={t.messages.dismiss}
+        onclick={() => queue.dismiss(m.id)}>×</button
       >
     {/if}
   </div>

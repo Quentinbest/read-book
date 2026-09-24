@@ -2,29 +2,34 @@
   // Phase 1 library stub (plan: “the stub shows this state or a plain list”).
   // The full library (E6–E8) arrives in Phase 6.
   import Button from '../components/Button.svelte'
+  import { t } from '../lib/strings/en'
   import type { Book } from './ipc'
 
   let { books, dropActive, onopen }: { books: Book[]; dropActive: boolean; onopen: () => void } =
     $props()
 
   const progress = (b: Book) =>
-    b.finished_at ? 'Finished' : b.fraction == null ? 'New' : `${Math.round(b.fraction * 100)}%`
+    b.finished_at
+      ? t.library.finished
+      : b.fraction == null
+        ? t.library.new
+        : t.library.percent(b.fraction)
 </script>
 
 <main class="library" class:drop={dropActive}>
   {#if books.length === 0}
     <!-- E9, Screen 12 -->
     <section class="empty" aria-labelledby="empty-title">
-      <h1 id="empty-title">Your library is empty</h1>
-      <p>Drop EPUB files here, or open one from your computer.</p>
-      <Button variant="primary" shortcut="⌘O" onclick={onopen}>Open a book…</Button>
-      <p class="note">Books are copied into your library and stay on this device.</p>
+      <h1 id="empty-title">{t.library.emptyTitle}</h1>
+      <p>{t.library.emptyBody}</p>
+      <Button variant="primary" shortcut="⌘O" onclick={onopen}>{t.library.openBook}</Button>
+      <p class="note">{t.library.note}</p>
     </section>
   {:else}
     <header>
-      <h1>Library</h1>
-      <span class="count">{books.length} {books.length === 1 ? 'book' : 'books'}</span>
-      <Button shortcut="⌘O" onclick={onopen}>Open…</Button>
+      <h1>{t.library.title}</h1>
+      <span class="count">{t.library.count(books.length)}</span>
+      <Button shortcut="⌘O" onclick={onopen}>{t.library.open}</Button>
     </header>
     <ul class="list">
       {#each books as book (book.id)}
@@ -36,10 +41,10 @@
           ></span>
           <span class="meta">
             <span class="title">{book.title}</span>
-            <span class="author">{book.authors.join(', ') || 'Unknown author'}</span>
+            <span class="author">{book.authors.join(', ') || t.library.unknownAuthor}</span>
           </span>
           {#if book.damaged_items > 0}
-            <span class="damaged">{book.damaged_items} damaged</span>
+            <span class="damaged">{t.library.damaged(book.damaged_items)}</span>
           {/if}
           <span class="progress">{progress(book)}</span>
         </li>

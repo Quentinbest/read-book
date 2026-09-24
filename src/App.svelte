@@ -15,6 +15,7 @@
   import { isTextField, type KeyContext } from './lib/commands/keys'
   import { CommandRegistry } from './lib/commands/registry'
   import { MessageQueue } from './lib/reader/messages'
+  import { t } from './lib/strings/en'
 
   let books: Book[] = $state([])
   let dropActive = $state(false)
@@ -47,7 +48,7 @@
     const picked = await openDialog({
       multiple: true,
       directory: false,
-      filters: [{ name: 'EPUB', extensions: ['epub'] }],
+      filters: [{ name: t.import.fileFilter, extensions: ['epub'] }],
     })
     if (picked) await importPaths(Array.isArray(picked) ? picked : [picked])
   }

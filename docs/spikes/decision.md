@@ -4,7 +4,7 @@
 
 - **Date:** 2026-09-24
 - **Machine:** Apple M2, macOS 14.6.1, WebKit 19618.3.11.11.5 (`reference-machines.md`)
-- **Status:** awaiting owner sign-off
+- **Status:** GO approved by the owner on 2026-09-24, with D-E1, D-D1 and D-X1 as recommended
 
 ## Spike verdicts
 
@@ -35,6 +35,6 @@
 
 ## Still to do before Phase 2 can start (plan §5 Phase 2 “Before starting”)
 
-1. The owner signs off D-E1, D-D1 and D-X1 (or chooses the plan's fallbacks).
+1. ~~The owner signs off D-E1, D-D1 and D-X1.~~ Done 2026-09-24.
 2. Spikes B and C run with the owner at the machine.
-3. B2, B8, B11, B12 and T3 are decided; the G8 designs exist.
+3. ~~B2, B8, B11, B12 and T3 are decided~~ (done 2026-09-24, `docs/decisions.md`); the G8 designs exist.

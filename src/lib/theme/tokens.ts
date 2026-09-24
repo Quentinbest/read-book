@@ -30,7 +30,7 @@ const LIGHT_HIGHLIGHTS: Theme['highlight'] = {
   rose: { tint: '#EFCACA', underline: '#B0474A' },
 }
 
-// PROVISIONAL (G5): S4 draws highlights on Paper only. Reusing the Paper tints on
+// Approved 2026-09-24 (C7): S4 draws highlights on Paper only. Reusing the Paper tints on
 // Sepia leaves rose text at 8.6:1, under X1's 9:1, so Sepia uses the Paper tints
 // at 75% over the Sepia ground; underlines are unchanged.
 const SEPIA_HIGHLIGHTS: Theme['highlight'] = {
@@ -40,7 +40,7 @@ const SEPIA_HIGHLIGHTS: Theme['highlight'] = {
   rose: { tint: '#F0D1CC', underline: '#B0474A' },
 }
 
-// PROVISIONAL (G5): the Paper outline #A0705A is 2.9:1 on Sepia, under 3:1; this
+// Approved 2026-09-24 (C7): the Paper outline #A0705A is 2.9:1 on Sepia, under 3:1; this
 // darker outline gives 3.9:1, close to the 3.8:1 that F5 states.
 const SEPIA_SEARCH: Theme['search'] = {
   tint: 'rgba(140,74,47,.12)',
@@ -89,7 +89,7 @@ export const THEMES: Record<ThemeName, Theme> = {
     accent: '#D39A73',
     hairline: '#2E2C29',
     chromeHairline: '#3A3733',
-    // PROVISIONAL (conflict C7, docs/decisions.md): S4 draws Night tints at 16%
+    // Approved 2026-09-24 (C7, docs/decisions.md): S4 draws Night tints at 16%
     // alpha, which leaves highlighted text at 8.2–8.8:1, under X1's 9:1. At 11%
     // every colour reaches ≥ 9.2:1. Underline colours are as approved.
     highlight: {
@@ -98,8 +98,8 @@ export const THEMES: Record<ThemeName, Theme> = {
       blue: { tint: 'rgba(128,170,214,.11)', underline: '#80AAD6' },
       rose: { tint: 'rgba(226,142,142,.11)', underline: '#E28E8E' },
     },
-    // PROVISIONAL: the design shows search marks on light themes only (G5).
-    // Derived from the Night accent with the same structure.
+    // Approved 2026-09-24 (C7): the design shows search marks on light themes
+    // only; Night's are derived from the Night accent with the same structure.
     search: {
       tint: 'rgba(211,154,115,.14)',
       outline: '#B98664',

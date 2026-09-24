@@ -5,10 +5,11 @@
 // `saveFailed` stays queued and raises one persistent “Couldn't save notes to
 // disk · Retry” message; Retry re-sends everything pending, in order.
 
+import { t } from '../lib/strings/en'
 import { isCommandError } from './ipc'
 import type { MessageQueue } from '../lib/reader/messages'
 
-export const SAVE_FAILED_TEXT = 'Couldn’t save notes to disk'
+export const SAVE_FAILED_TEXT = t.messages.saveFailed
 
 interface Pending {
   key: string
@@ -80,7 +81,7 @@ export class WriteQueue {
       text: SAVE_FAILED_TEXT,
       politeness: 'assertive',
       persistent: true,
-      action: { label: 'Retry', run: () => void this.retry() },
+      action: { label: t.messages.retry, run: () => void this.retry() },
     })
     this.#failureMessageId = m.id
   }

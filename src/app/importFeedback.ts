@@ -1,10 +1,8 @@
-// Messages for import outcomes. PROVISIONAL wording: the import states are part
-// of the missing G4 designs (plan §10.4).
+// Messages for import outcomes (wording in the catalogue; PROVISIONAL until G4).
 
-import type { ImportResult } from './ipc'
+import { t } from '../lib/strings/en'
 import type { MessageInput } from '../lib/reader/messages'
-
-const fileName = (path: string) => path.split('/').pop() ?? path
+import type { ImportResult } from './ipc'
 
 export function importMessages(results: ImportResult[]): MessageInput[] {
   const out: MessageInput[] = []
@@ -12,21 +10,21 @@ export function importMessages(results: ImportResult[]): MessageInput[] {
     switch (outcome.kind) {
       case 'imported':
         if (outcome.damaged > 0)
-          out.push({
-            text: `“${outcome.title}” was added · ${outcome.damaged} damaged ${outcome.damaged === 1 ? 'chapter' : 'chapters'}`,
-          })
+          out.push({ text: t.import.addedDamaged(outcome.title, outcome.damaged) })
         break
       case 'alreadyInLibrary':
-        out.push({ text: `“${fileName(path)}” is already in your library` })
+        out.push({ text: t.import.alreadyInLibrary(path) })
         break
       case 'replaced':
-        out.push({ text: `“${outcome.title}” was updated from a newer file` })
+        out.push({ text: t.import.replaced(outcome.title) })
         break
       case 'rejected':
         out.push({
-          text: outcome.hostile
-            ? `“${fileName(path)}” couldn’t be opened safely and wasn’t added`
-            : `“${fileName(path)}” couldn’t be opened · ${outcome.reason}`,
+          text: outcome.drm
+            ? t.import.drm(path)
+            : outcome.hostile
+              ? t.import.hostile(path)
+              : t.import.rejected(path, outcome.reason),
           politeness: 'assertive',
         })
         break

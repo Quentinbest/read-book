@@ -32,7 +32,11 @@ pub enum ImportOutcome {
         damaged: usize,
     },
     /// Not imported. `reason` is shown on the E3 card or as the hostile-file message.
-    Rejected { reason: String, hostile: bool },
+    Rejected {
+        reason: String,
+        hostile: bool,
+        drm: bool,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -149,6 +153,7 @@ pub fn import_book(
         Err(r) => {
             return Ok(ImportOutcome::Rejected {
                 hostile: hostile(&r),
+                drm: matches!(r, Rejection::Drm(_)),
                 reason: r.to_string(),
             })
         }
@@ -156,6 +161,7 @@ pub fn import_book(
     if package.spine.is_empty() {
         return Ok(ImportOutcome::Rejected {
             hostile: false,
+            drm: false,
             reason: "none of the book's chapters could be opened".into(),
         });
     }
@@ -446,6 +452,47 @@ mod tests {
             ImportOutcome::Imported { .. }
         ));
         assert_eq!(store.books().unwrap().len(), 2);
+    }
+
+    /// B9: DRM-protected files are detected and not added.
+    #[test]
+    fn drm_protected_books_are_rejected_as_drm() {
+        let Some(src) = corpus("broken-no-toc.epub") else {
+            return;
+        };
+        let (dir, mut store, lib) = setup();
+        let dst = dir.path().join("drm.epub");
+        let mut input = zip::ZipArchive::new(std::fs::File::open(&src).unwrap()).unwrap();
+        let mut out = zip::ZipWriter::new(std::fs::File::create(&dst).unwrap());
+        for i in 0..input.len() {
+            let mut e = input.by_index(i).unwrap();
+            let name = e.name().to_string();
+            let mut data = Vec::new();
+            e.read_to_end(&mut data).unwrap();
+            out.start_file(name, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            out.write_all(&data).unwrap();
+        }
+        out.start_file(
+            "META-INF/encryption.xml",
+            zip::write::SimpleFileOptions::default(),
+        )
+        .unwrap();
+        out.write_all(br#"<encryption xmlns="urn:oasis:names:tc:opendocument:xmlns:container" xmlns:enc="http://www.w3.org/2001/04/xmlenc#"><enc:EncryptedData><enc:EncryptionMethod Algorithm="http://www.w3.org/2001/04/xmlenc#aes128-cbc"/><enc:CipherData><enc:CipherReference URI="OEBPS/chapter-1.xhtml"/></enc:CipherData></enc:EncryptedData></encryption>"#).unwrap();
+        out.finish().unwrap();
+        let outcome = import_book(&mut store, &lib, &dst).unwrap();
+        assert!(
+            matches!(
+                outcome,
+                ImportOutcome::Rejected {
+                    drm: true,
+                    hostile: false,
+                    ..
+                }
+            ),
+            "{outcome:?}"
+        );
+        assert!(store.books().unwrap().is_empty());
     }
 
     #[test]
