@@ -8,4 +8,20 @@ WKWebView's wheel events carry no gesture or momentum phase. Scripted gestures w
 
 ## What is needed from the owner
 
-About 15 minutes at the reference machine with its trackpad, running a harness page, planned for the next step. The page counts page turns per gesture and records wheel deltas, so the momentum tail can be analysed. If the WebView alone cannot separate momentum, the fallback is the native bridge (`NSEvent` `phase` and `momentumPhase` through a local event monitor in the Rust core), measured against the same bar.
+About 15 minutes at the reference machine with its trackpad. The page counts page turns per gesture and records wheel deltas, so the momentum tail can be analysed. If the WebView alone cannot separate momentum, the fallback is the native bridge (`NSEvent` `phase` and `momentumPhase` through a local event monitor in the Rust core), measured against the same bar.
+
+## How to run it (about 15 minutes)
+
+```sh
+scripts/run-spikes.sh b
+```
+
+A window opens with Moby-Dick and an instruction panel on the right:
+
+1. 25 vertical swipes;
+2. 25 horizontal swipes;
+3. 10 quick swipes started during the previous swipe's coast;
+4. 20 mouse-wheel notches (optional);
+5. one window-activating click.
+
+The panel shows the page turns detected. The results, including every raw wheel event for tuning the provisional thresholds in `src/lib/input/wheel.ts`, go to `raw/b-input.json`.
