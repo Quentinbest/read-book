@@ -9,6 +9,7 @@
   import { importMessages } from './app/importFeedback'
   import { ipc, type Book, type ImportResult } from './app/ipc'
   import { installMenuBar } from './app/menubar'
+  import { refreshLayoutLabels } from './app/keyLabels'
   import { applyTheme, type ThemeChoice } from './app/theme'
   import { WriteQueue } from './app/writes'
   import { isTextField, type KeyContext } from './lib/commands/keys'
@@ -19,6 +20,7 @@
   let dropActive = $state(false)
   let liveRegion: LiveRegion | undefined = $state()
   let singleKeysEnabled = true
+  let screenReaderRunning = false
 
   const messages = new MessageQueue({
     announcer: { announce: (text, politeness) => liveRegion?.announce(text, politeness) },
@@ -56,7 +58,7 @@
       pageFocused: false,
       textFieldActive: isTextField(document.activeElement),
       singleKeysEnabled,
-      screenReaderRunning: false, // T6: native detection is wired in keys.ts once available
+      screenReaderRunning,
       modalOpen: document.querySelector('dialog[open]') !== null,
     }
   }
@@ -72,6 +74,17 @@
       applyTheme(((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto')
       singleKeysEnabled = (await ipc.settingGet('singleKeyShortcuts')) !== 'off'
       await refresh()
+      // T6: VoiceOver has no web-visible signal; ask the core, and keep asking.
+      const pollScreenReader = async () => {
+        screenReaderRunning = await ipc.screenReaderRunning()
+      }
+      await pollScreenReader()
+      await refreshLayoutLabels()
+      const onFocus = () => void refreshLayoutLabels()
+      window.addEventListener('focus', onFocus)
+      cleanups.push(() => window.removeEventListener('focus', onFocus))
+      const srTimer = setInterval(() => void pollScreenReader(), 2000)
+      cleanups.push(() => clearInterval(srTimer))
       cleanups.push(registry.handle('book.open', { run: () => void openBookDialog() }))
       cleanups.push(registry.handle('library.show', { run: () => void refresh() }))
       await installMenuBar(registry)

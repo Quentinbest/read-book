@@ -70,8 +70,11 @@ const US_LABELS: Record<string, string> = {
   Period: '.',
 }
 
+/** Keys whose labels are symbolic in the design (⌘+ ⌘−), whatever the layout prints. */
+const SYMBOLIC = new Set(['Equal', 'Minus'])
+
 export function keyLabel(code: string, layout?: ReadonlyMap<string, string>): string {
-  const native = layout?.get(code)
+  const native = SYMBOLIC.has(code) ? undefined : layout?.get(code)
   if (native) return native.length === 1 ? native.toUpperCase() : native
   if (code in US_LABELS) return US_LABELS[code]
   const m = /^(Key|Digit)(.)$/.exec(code)

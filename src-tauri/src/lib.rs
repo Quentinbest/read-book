@@ -1,6 +1,7 @@
 pub mod commands;
 pub mod epub;
 pub mod import;
+pub mod native;
 pub mod store;
 
 #[cfg(feature = "spikes")]
@@ -22,6 +23,8 @@ pub fn run() {
         commands::setting_get,
         commands::setting_set,
         commands::opened_take,
+        native::screen_reader_running,
+        native::keyboard_layout_labels,
     ]);
     builder
         .setup(|app| {

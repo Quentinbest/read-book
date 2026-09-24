@@ -155,8 +155,12 @@ describe('labels', () => {
   })
 
   it('prefers native layout labels for the same physical key (T7)', () => {
-    const azerty = new Map([['KeyQ', 'a']])
+    const azerty = new Map([
+      ['KeyQ', 'a'],
+      ['Equal', '='],
+    ])
     expect(chordLabel({ code: 'KeyQ', meta: true }, azerty)).toBe('⌘A')
+    expect(chordLabel({ code: 'Equal', meta: true }, azerty)).toBe('⌘+')
   })
 })
 

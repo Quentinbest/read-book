@@ -43,8 +43,8 @@
     background: var(--accent);
     color: var(--ground);
   }
+  /* Full strength: a dimmed hint fails contrast on Sepia (axe, X1). */
   .primary :global(kbd) {
     color: inherit;
-    opacity: 0.8;
   }
 </style>

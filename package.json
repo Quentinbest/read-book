@@ -15,10 +15,13 @@
     "format:check": "prettier --check .",
     "design:export": "python3 scripts/export-design-text.py",
     "design:check": "python3 scripts/export-design-text.py --check",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:integration": "playwright test"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.63.0",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@tauri-apps/cli": "^2.11.5",
     "@tsconfig/svelte": "^5.0.8",

@@ -67,3 +67,17 @@ jobs:
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build app
         run: pnpm tauri build --debug --no-bundle
+
+  integration:
+    name: Integration tests (Chromium, WebKit)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install chromium webkit
+      - run: pnpm test:integration
