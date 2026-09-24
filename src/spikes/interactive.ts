@@ -1,7 +1,8 @@
 // Interactive spikes B (input) and C (VoiceOver): a person follows on-screen steps.
 
 import type { View } from 'foliate-js/view.js'
-import { WheelTurns, isNotchedWheel, type WheelSample } from '../lib/input/wheel'
+import { NativeTurns, type NativeScroll } from '../lib/input/native'
+import { WheelTurns, type WheelSample } from '../lib/input/wheel'
 import { log, openView, type Criterion, type SpikeResult } from './common'
 
 function panel(): HTMLElement {
@@ -62,12 +63,19 @@ function onWheel(view: View, handler: (e: WheelEvent) => void) {
 }
 
 export async function spikeB(): Promise<SpikeResult> {
+  const { listen } = await import('@tauri-apps/api/event')
   const { view } = await openView('standardebooks-moby-dick.epub', { width: 1000 })
   await view.goTo(20)
-  const detector = new WheelTurns()
+  const native = new NativeTurns()
+  const dom = new WheelTurns()
   let phase = 'idle'
-  const samples: (WheelSample & { phase: string; notched: boolean })[] = []
-  const turns: Record<string, number> = {}
+  const nativeSamples: (NativeScroll & { step: string })[] = []
+  const domSamples: (WheelSample & { phase: string })[] = []
+  const turns: Record<string, { next: number; prev: number }> = {}
+  const domTurns: Record<string, number> = {}
+  const count = (id: string) => (turns[id] ??= { next: 0, prev: 0 })
+
+  // The DOM wheel event is only prevented; page turns come from the native stream.
   onWheel(view, (e) => {
     e.preventDefault()
     const s: WheelSample = {
@@ -76,83 +84,148 @@ export async function spikeB(): Promise<SpikeResult> {
       t: e.timeStamp,
       wheelDeltaY: (e as unknown as { wheelDeltaY?: number }).wheelDeltaY,
     }
-    samples.push({ ...s, phase, notched: isNotchedWheel(s) })
-    const turn = detector.feed(s)
+    domSamples.push({ ...s, phase })
+    if (dom.feed(s) && phase !== 'idle') domTurns[phase] = (domTurns[phase] ?? 0) + 1
+  })
+  const unlistenScroll = await listen<NativeScroll>('native-scroll', ({ payload }) => {
+    nativeSamples.push({ ...payload, step: phase })
+    const turn = native.feed(payload)
     if (turn && phase !== 'idle') {
-      turns[phase] = (turns[phase] ?? 0) + 1
+      count(phase)[turn]++
       void (turn === 'next' ? view.next() : view.prev())
     }
   })
+  let lastFocus = -Infinity
+  const onFocus = () => (lastFocus = performance.now())
+  window.addEventListener('focus', onFocus)
+  const clicks: {
+    appActive: boolean
+    keyWindow: boolean
+    msSinceFocus: number
+    hadFocus: boolean
+  }[] = []
+  let pendingDown: { hadFocus: boolean; t: number } | null = null
+  const onDown = () => (pendingDown = { hadFocus: document.hasFocus(), t: performance.now() })
+  window.addEventListener('pointerdown', onDown, true)
+  const unlistenDown = await listen<{ app_active: boolean; key_window: boolean }>(
+    'native-mouse-down',
+    ({ payload }) => {
+      if (phase !== 'click') return
+      setTimeout(() => {
+        clicks.push({
+          appActive: payload.app_active,
+          keyWindow: payload.key_window,
+          msSinceFocus: Math.round((pendingDown?.t ?? performance.now()) - lastFocus),
+          hadFocus: pendingDown?.hadFocus ?? false,
+        })
+      }, 50)
+    },
+  )
 
-  const phases = [
+  const status = (id: string) => () => {
+    const c = turns[id] ?? { next: 0, prev: 0 }
+    return `Turns detected: ${c.next} forward, ${c.prev} back`
+  }
+  const steps = [
     [
-      'vertical',
-      'Trackpad, vertical',
-      'With two fingers, make <b>25 separate swipes up</b> (as if scrolling down), one at a time, letting each one coast to a stop. Then press Done.',
+      'rollsDown',
+      'Wheel: 25 rolls down',
+      'Roll the wheel <b>down (towards you) 25 times</b>, each a short separate roll with a pause in between. Then press Done.',
+      25,
     ],
     [
-      'horizontal',
-      'Trackpad, horizontal',
-      'Make <b>25 separate swipes to the left</b>, one at a time. Then press Done.',
+      'rollsUp',
+      'Wheel: 15 rolls up',
+      'Roll the wheel <b>up 15 times</b>, each a short separate roll. Pages should go back. Then press Done.',
+      15,
     ],
     [
-      'quick',
-      'Quick swipes',
-      'Make <b>10 quick vertical swipes</b>, starting each while the previous one still coasts. Then press Done.',
+      'continuous',
+      'Wheel: continuous roll',
+      'Roll the wheel <b>down continuously for about 2 seconds</b>, once. Then press Done.',
+      0,
     ],
     [
-      'wheel',
-      'Mouse wheel (optional)',
-      'If a notched mouse is attached, roll <b>20 single notches</b> slowly. Otherwise press Skip.',
+      'trackpad',
+      'Trackpad (optional)',
+      'If a trackpad is available, make <b>25 separate two-finger swipes up</b>. Otherwise press Skip.',
+      25,
     ],
   ] as const
-  const expected: Record<string, number> = { vertical: 25, horizontal: 25, quick: 10, wheel: 20 }
   const skipped: string[] = []
-  for (const [id, title, body] of phases) {
+  for (const [id, title, body] of steps) {
     phase = id
     const answer = await step(
       title,
       body,
-      id === 'wheel' ? ['Done', 'Skip'] : ['Done'],
-      () => `Page turns detected: ${turns[id] ?? 0}`,
+      id === 'trackpad' ? ['Done', 'Skip'] : ['Done'],
+      status(id),
     )
     if (answer === 'Skip') skipped.push(id)
     phase = 'idle'
   }
-
-  // I11: the click that activates an inactive window.
-  let activation = null as { hadFocus: boolean; t: number } | null
-  const onDown = () => (activation ??= { hadFocus: document.hasFocus(), t: performance.now() })
-  window.addEventListener('pointerdown', onDown, true)
+  phase = 'click'
   await step(
     'Activating click (I11)',
-    'Switch to another app (⌘Tab), then click once in the <b>right margin of the page</b> to come back. Then press Done.',
+    'Switch to another app (⌘Tab) and back <b>by clicking once in the page’s right margin</b>. Do this <b>3 times</b>. Then press Done.',
     ['Done'],
   )
+  phase = 'idle'
+  unlistenScroll()
+  unlistenDown()
   window.removeEventListener('pointerdown', onDown, true)
+  window.removeEventListener('focus', onFocus)
 
-  const criteria: Criterion[] = (['vertical', 'horizontal', 'quick', 'wheel'] as const).map(
-    (id) => {
-      const got = turns[id] ?? 0
-      const want = expected[id]
-      const skip = skipped.includes(id)
-      return {
-        id: `B-${id}`,
-        description: `${want} ${id} gestures give exactly ${want} page turns`,
-        verdict: skip ? 'manual' : got === want ? 'pass' : 'fail',
-        evidence: skip
-          ? 'skipped (no notched mouse)'
-          : `${got} turns for ${want} gestures (${samples.filter((s) => s.phase === id).length} wheel events recorded)`,
-      }
-    },
-  )
+  const deviceOf = (id: string) => {
+    const xs = nativeSamples.filter((n) => n.step === id)
+    return xs.length
+      ? xs.every((n) => !n.precise)
+        ? 'wheel'
+        : xs.every((n) => n.precise)
+          ? 'precise'
+          : 'mixed'
+      : 'none'
+  }
+  const criteria: Criterion[] = []
+  for (const [id, , , want] of steps) {
+    const c = turns[id] ?? { next: 0, prev: 0 }
+    const events = nativeSamples.filter((n) => n.step === id).length
+    const evidence = `${c.next} forward, ${c.prev} back from ${events} native events (device: ${deviceOf(id)}); the WebView-only detector gave ${domTurns[id] ?? 0}`
+    if (id === 'continuous') {
+      criteria.push({
+        id: 'B-wheel-continuous',
+        description: 'A 2 s continuous roll turns at most one page per 250 ms',
+        verdict: 'manual',
+        evidence,
+      })
+    } else if (id === 'trackpad') {
+      criteria.push({
+        id: 'B-trackpad',
+        description: '25 trackpad swipes give exactly 25 turns, momentum ignored (I2, I5)',
+        verdict: skipped.includes(id)
+          ? 'manual'
+          : c.next === want && c.prev === 0
+            ? 'pass'
+            : 'fail',
+        evidence: skipped.includes(id) ? 'skipped: no trackpad available' : evidence,
+      })
+    } else {
+      const dir = id === 'rollsDown' ? 'next' : 'prev'
+      const other = dir === 'next' ? 'prev' : 'next'
+      criteria.push({
+        id: `B-wheel-${id}`,
+        description: `${want} separate wheel rolls give exactly ${want} turns in the right direction (I1)`,
+        verdict: c[dir] === want && c[other] === 0 ? 'pass' : 'fail',
+        evidence,
+      })
+    }
+  }
+  const activating = clicks.filter((c) => !c.appActive)
   criteria.push({
     id: 'B-activating-click',
     description: 'The window-activating click is distinguishable (I11)',
-    verdict: activation ? (activation.hadFocus ? 'fail' : 'pass') : 'manual',
-    evidence: activation
-      ? `document.hasFocus() at pointerdown: ${activation.hadFocus}`
-      : 'no click recorded',
+    verdict: clicks.length === 0 ? 'manual' : activating.length === clicks.length ? 'pass' : 'fail',
+    evidence: `${clicks.length} clicks recorded; native “app was inactive” on ${activating.length}; ms since window focus: ${clicks.map((c) => c.msSinceFocus).join(', ')}; document.hasFocus(): ${clicks.map((c) => c.hadFocus).join(', ')}`,
   })
   criteria.push({
     id: 'B-scripted',
@@ -163,7 +236,11 @@ export async function spikeB(): Promise<SpikeResult> {
   })
   log('B: done')
   view.close()
-  return { spike: 'b-input', criteria, raw: { turns, expected, skipped, activation, samples } }
+  return {
+    spike: 'b-input',
+    criteria,
+    raw: { turns, domTurns, skipped, clicks, nativeSamples, domSamples },
+  }
 }
 
 export async function spikeC(): Promise<SpikeResult> {

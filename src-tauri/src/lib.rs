@@ -2,6 +2,7 @@ pub mod commands;
 pub mod epub;
 pub mod import;
 pub mod native;
+pub mod native_input;
 pub mod store;
 
 #[cfg(feature = "spikes")]
@@ -39,6 +40,7 @@ pub fn run() {
             use tauri::Manager;
             app.manage(state);
             commands::flush_pending_opens(app.handle());
+            native_input::install(app.handle());
             #[cfg(feature = "spikes")]
             spikes::setup(app)?;
             Ok(())
