@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>G8 design review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      .one {
+        max-width: 1100px;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body>
+<main>
+<h1>G8 reading variants: design proposals (provisional)</h1>
+<p class="lede">Plan §10.4 G8 asks for designs of Scroll mode, the two-page spread, fixed-layout zoom and pan, RTL and vertical writing, the image view, the loading state for large books and “≈” locations. There were none, so these are proposals drawn inside the approved system: the S4 tokens and type, the S3 canvas geometry (the spread uses the engine's own numbers), and the chrome and message designs from Screens 02, 03 and M1. Numbered blue notes explain each choice and are not part of the design; clean copies without notes are next to each image (<code>png/*-clean.png</code>). Click an image for full size.</p>
+<p class="lede">Approving makes these the G8 design: the clean images become the reference, and the features are built to them (Scroll mode, spread and fixed-layout zoom in Phase 2; the image view in Phase 3). Each item can also be approved or changed on its own.</p>
+<table><tr><th>Tag</th><th>Meaning</th></tr>
+<tr><td><span class="tag ok">follows</span></td><td>Taken directly from an approved rule or decision</td></tr>
+<tr><td><span class="tag ask">your call</span></td><td>A choice these proposals make that the rules leave open: approve it or name another</td></tr>
+<tr><td><span class="tag later">later phase</span></td><td>Drawn now, built in a later phase</td></tr></table>
+<h2>1 · Two-page spread (L8, B12)</h2>
+<div class="pair"><figure><figcaption>Immersive, 1680 × 1050</figcaption><a href="png/spread-immersive.png"><img src="png/spread-immersive.png" alt="Immersive, 1680 × 1050" /></a></figure><figure><figcaption>Controls visible</figcaption><a href="png/spread-controls.png"><img src="png/spread-controls.png" alt="Controls visible" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>From 1480 px of width left after a docked Navigator (B12), in Pages mode only. Two 640 px pages, 28 lines each, exactly as the engine computes them today.</li><li><span class="tag ok">follows</span>Margins still turn pages; the chevrons sit at the same 33 px from the window edge.</li><li><span class="tag ask">your call</span>Gutter 48 px (twice the minimum margin) with no rule or shadow between the pages: the spread reads as one sheet, like Screen 02.</li><li><span class="tag ask">your call</span>One location line, centred under the spread; the scrubber spans both pages.</li><li><span class="tag ask">your call</span>A new chapter starts on the next page, left or right, never forced to the right page with a blank left. This keeps page turns even.</li></ul>
+<h2>2 · Scroll mode (B8)</h2>
+<div class="pair"><figure><figcaption>Reading mid-chapter</figcaption><a href="png/scroll-reading.png"><img src="png/scroll-reading.png" alt="Reading mid-chapter" /></a></figure><figure><figcaption>Where two chapters meet</figcaption><a href="png/scroll-join.png"><img src="png/scroll-join.png" alt="Where two chapters meet" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>One continuous scroll per chapter; scrolling on past the end moves into the next chapter (B8). The location line and scrubber show the same book-wide position as in Pages.</li><li><span class="tag ask">your call</span>Text runs under the window edges: a 40 px fade at the top and an 88 px fade at the foot, which carries the location line in the same place as in Pages.</li><li><span class="tag ask">your call</span>Between chapters: 124 px of space and a 48 px hairline, then the next chapter’s own heading. The location line switches chapter when the heading passes the middle of the window.</li><li><span class="tag ask">your call</span>The macOS overlay scrollbar stays, showing the position in the chapter. It appears only while scrolling, as everywhere on macOS.</li><li><span class="tag ask">your call</span>Input in Scroll (Proposal 3): wheel and two fingers scroll natively; ↑ ↓ scroll by 3 lines; Space and ⇧Space by a screen minus two lines; the margins do nothing (there are no pages to turn).</li></ul>
+<h2>3 · Fixed layout: fit and zoom (E2, I17)</h2>
+<div class="pair"><figure><figcaption>Scaled to fit</figcaption><a href="png/fxl-fit.png"><img src="png/fxl-fit.png" alt="Scaled to fit" /></a></figure><figure><figcaption>Zoomed to 200%</figcaption><a href="png/fxl-zoom.png"><img src="png/fxl-zoom.png" alt="Zoomed to 200%" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>Pages scaled to fit, in spreads as the book’s <code>rendition:spread</code> asks; zoom by ⌘+ ⌘− and pinch (Proposal 4).</li><li><span class="tag ask">your call</span>The spread fits inside 24 px side and 64 px top and bottom margins, with a 4 px seam and a faint shadow so white pages separate from the Paper ground.</li><li><span class="tag ask">your call</span>The location line shows print pages exactly (“Pages 12–13 of 32”): fixed-layout pages are real pages, so there is no “≈” here.</li><li><span class="tag ask">your call</span>When zoomed: the wheel, two fingers and dragging pan; ← → and the margins still turn the page and return to fit; ⌘0 returns to fit. The zoom level shows for 2 s in the message style.</li><li><span class="tag later">later phase</span>Pinch needs the native gesture bridge (Spike B has the scroll side of it).</li></ul>
+<h2>4 · Right-to-left books (I15, I16)</h2>
+<div class="one"><figure><figcaption>Arabic book, controls visible</figcaption><a href="png/rtl-controls.png"><img src="png/rtl-controls.png" alt="Arabic book, controls visible" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>The book’s page progression decides direction: the left margin and ← go forward; the UI stays in English (Proposal 4).</li><li><span class="tag ask">your call</span>The progress bar fills from the right, and its two labels swap sides so the chapter sits where reading starts. Book strings (title, chapter) keep their own direction inside the English UI.</li></ul>
+<h2>5 · Vertical writing (I16)</h2>
+<div class="one"><figure><figcaption>Japanese, vertical-rl</figcaption><a href="png/vertical.png"><img src="png/vertical.png" alt="Japanese, vertical-rl" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>Lines run top to bottom and pages right to left; ruby is kept; Pages is the default (Proposal 1 §2).</li><li><span class="tag ask">your call</span>The same 640 × 618 page box as horizontal text, so the canvas and chrome do not move. The line pitch is snapped so the page holds whole lines (here 20 lines of 32 px), the vertical version of “never a half line”.</li><li><span class="tag ask">your call</span>The line length is the page height (about 32 characters at 19 px), with no separate measure setting.</li></ul>
+<h2>6 · Image view (N11, Phase 3)</h2>
+<div class="pair"><figure><figcaption>Paper</figcaption><a href="png/image-view.png"><img src="png/image-view.png" alt="Paper" /></a></figure><figure><figcaption>Night</figcaption><a href="png/image-view-night.png"><img src="png/image-view-night.png" alt="Night" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>Click or double-tap an image to open it; images at Night are dimmed about 10% and never inverted (Proposal 1, 4).</li><li><span class="tag ask">your call</span>The page ground at 97% covers the book, with no dark scrim, so the view stays in the reading theme. The image fits inside 48 px, and its caption comes from the book’s figcaption or alt text.</li><li><span class="tag ask">your call</span>Close (×) top right; zoom − Fit + bottom right, plus ⌘+ ⌘− and pinch; drag pans once the image is larger than the window. Esc or a click outside closes it, and focus returns to the image in the text.</li><li><span class="tag later">later phase</span>Built in Phase 3, as the plan schedules.</li></ul>
+<h2>7 · Opening a large book</h2>
+<div class="one"><figure><figcaption>Open taking over 500 ms</figcaption><a href="png/loading.png"><img src="png/loading.png" alt="Open taking over 500 ms" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>The open budget is 500 ms (§6.4). With chunked long chapters (L16) the reference books open in 90–340 ms, so this state is rare.</li><li><span class="tag ask">your call</span>Nothing for the first 500 ms (no flash). After that, only one line where the location line sits: “Opening “Title”…”. No spinner and no progress bar. The first page replaces it as soon as it is laid out.</li></ul>
+<h2>8 · “≈” locations (B1, L16)</h2>
+<div class="one"><figure><figcaption>An estimated page in the Back chip</figcaption><a href="png/approximate.png"><img src="png/approximate.png" alt="An estimated page in the Back chip" /></a></figure></div>
+<ul class="notes"><li><span class="tag ok">follows</span>Estimated page numbers carry “≈” until pagination settles (B1). This already works in chunked long chapters: “Back to page ≈312”, and VoiceOver says “About page 312”.</li><li><span class="tag ask">your call</span>“≈” goes directly before the number with no space, in the same weight. Nothing else signals counting in progress; the mark simply goes away when counts settle.</li><li><span class="tag ask">your call</span>The same form everywhere a page number appears: the Back chip, Go to (Phase 3) and page announcements. Percentages never carry “≈”, because they are always exact to the character.</li></ul>
+<h2>Your call</h2><ul class="notes">
+<li><span class="tag ask">your call</span>Approve all eight as the G8 design, or name the items (and choices) to change.</li>
+</ul></main></body></html>

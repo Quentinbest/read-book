@@ -37,9 +37,9 @@
 ## Open items and what they need
 
 1. ~~L16 long chapters~~: done (chunked layout). The “≈” visual treatment is part of G8.
-2. **G8 designs:** Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, image view, loading state and “≈” locations.
+2. **G8 designs:** provisional proposals for all eight variants are drawn inside the approved system and await the owner's review: `docs/design/g8/review.html` (frames in `proposals.html`, captured by `tests/visual/capture-g8.mjs`). Scroll mode, the spread and fixed-layout zoom are built once approved.
 3. ~~Visual baselines~~: approved 2026-09-24.
-4. **VoiceOver re-check** of the product's X3 sync (about 5 minutes, like Spike C).
+4. **VoiceOver re-check** of the product's X3 sync: the harness is ready (`scripts/run-spikes.sh x3`, about 5 minutes). It starts three pages before a chapter end and records location, snapping, saving and announcements automatically; the person answers three questions. Results go to `docs/spikes/raw/x3-voiceover.json`.
 
 ## Fixes found by the L16 checks
 

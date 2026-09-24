@@ -1,0 +1,719 @@
+<!doctype html>
+<!--
+  G8 reading variants — PROVISIONAL design proposals (plan §10.4 G8).
+  Drawn with the approved tokens (S4, src/lib/theme/tokens.ts) and canvas
+  geometry (S3, src/reader/layout.ts). Each .frame is captured to a PNG by
+  tests/visual/capture-g8.mjs for the review page (docs/design/g8/review.html).
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>G8 proposals</title>
+    <style>
+      @font-face {
+        font-family: Literata;
+        src: url('../../../public/fonts/Literata.ttf') format('truetype');
+        font-weight: 200 900;
+      }
+      @font-face {
+        font-family: Literata;
+        src: url('../../../public/fonts/Literata-Italic.ttf') format('truetype');
+        font-weight: 200 900;
+        font-style: italic;
+      }
+      :root {
+        --font-ui: system-ui, -apple-system, 'SF Pro Text', sans-serif;
+        --font-reading: Literata, Georgia, serif;
+        --shadow-popover: 0 8px 28px rgb(0 0 0 / 14%), 0 1px 3px rgb(0 0 0 / 10%);
+      }
+      .paper {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --ink-secondary: #6b655c;
+        --accent: #8c4a2f;
+        --hairline: #e4ddd1;
+        --chrome-hairline: #e4ddd1;
+        --chevron: #8f877b;
+      }
+      .sepia {
+        --ground: #f1e6d2;
+        --ink: #3b2f22;
+        --ink-secondary: #6e5e4a;
+        --accent: #8c4a2f;
+        --hairline: #e2d4bc;
+        --chrome-hairline: #e2d4bc;
+        --chevron: #8f877b;
+      }
+      .night {
+        --ground: #1b1a18;
+        --ink: #d9d3c7;
+        --ink-secondary: #9a9387;
+        --accent: #d39a73;
+        --hairline: #2e2c29;
+        --chrome-hairline: #3a3733;
+        --chevron: #8f877b;
+      }
+      body {
+        margin: 0;
+        background: #888;
+      }
+      .frame {
+        position: relative;
+        width: 1280px;
+        height: 800px;
+        overflow: hidden;
+        background: var(--ground);
+        color: var(--ink);
+        font: 400 14px/1.4 var(--font-ui);
+        margin: 40px;
+      }
+      .frame.wide {
+        width: 1680px;
+        height: 1050px;
+      }
+      /* ---- the page (S3): 640 px column at x = 320, y = 88, 21 lines of 29.45 px */
+      .page {
+        position: absolute;
+        left: 320px;
+        top: 88px;
+        width: 640px;
+        height: 618.45px;
+        overflow: hidden;
+        column-width: 640px;
+        column-gap: 48px;
+        column-fill: auto;
+        font: 19px/1.55 var(--font-reading);
+        hyphens: auto;
+        -webkit-hyphens: auto;
+        text-align: justify;
+      }
+      .page p,
+      .scroll p {
+        margin: 0;
+        text-indent: 1em;
+      }
+      .page p.first,
+      .scroll p.first {
+        text-indent: 0;
+      }
+      .heading {
+        text-align: center;
+        font-variant: small-caps;
+        letter-spacing: 0.05em;
+        margin: 0 0 1.55em;
+        text-indent: 0 !important;
+      }
+      .heading b {
+        display: block;
+        font-weight: 400;
+        font-size: 1.2em;
+        font-variant: normal;
+        letter-spacing: 0;
+      }
+      .location-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 30px;
+        text-align: center;
+        font: 12px var(--font-ui);
+        color: var(--ink-secondary);
+      }
+      .chevron {
+        position: absolute;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--chevron);
+      }
+      /* ---- chrome (Screen 03) */
+      .top {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 52px;
+        display: flex;
+        align-items: center;
+        padding: 0 12px 0 90px;
+        border-bottom: 1px solid var(--chrome-hairline);
+        background: var(--ground);
+        z-index: 5;
+      }
+      .lights {
+        position: absolute;
+        left: 20px;
+        top: 20px;
+        display: flex;
+        gap: 8px;
+      }
+      .lights i {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #ff5f57;
+      }
+      .lights i:nth-child(2) {
+        background: #febc2e;
+      }
+      .lights i:nth-child(3) {
+        background: #28c840;
+      }
+      .night .lights i {
+        background: #4a4743;
+      }
+      .library {
+        font: 500 13px var(--font-ui);
+        color: var(--ink-secondary);
+        padding: 0 10px 0 4px;
+      }
+      .title {
+        position: absolute;
+        left: 0;
+        right: 0;
+        text-align: center;
+        font-size: 13px;
+        color: var(--ink-secondary);
+      }
+      .title b {
+        color: var(--ink);
+        font-weight: 600;
+      }
+      .bottom {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-top: 1px solid var(--chrome-hairline);
+        background: var(--ground);
+        z-index: 5;
+      }
+      .progress {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 640px;
+      }
+      .track {
+        position: relative;
+        height: 4px;
+        border-radius: 2px;
+        background: color-mix(in srgb, var(--ink-secondary) 45%, var(--ground));
+      }
+      .fill {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 0;
+        border-radius: 2px;
+        background: var(--accent);
+      }
+      .labels {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--ink-secondary);
+      }
+      /* ---- proposal annotations (not part of the design) */
+      .note {
+        position: absolute;
+        z-index: 50;
+        font: 600 11px/1.3 var(--font-ui);
+        color: #fff;
+        background: #3f6fa8;
+        padding: 3px 7px;
+        border-radius: 4px;
+        max-width: 250px;
+      }
+      .note::before {
+        content: attr(data-n);
+        display: inline-block;
+        min-width: 14px;
+        margin-right: 6px;
+        padding: 0 3px;
+        border-radius: 7px;
+        background: #fff;
+        color: #3f6fa8;
+        text-align: center;
+      }
+      .frame.clean .note {
+        display: none;
+      }
+
+      /* ---- Scroll mode (B8) */
+      .scroll {
+        position: absolute;
+        left: 320px;
+        width: 640px;
+        top: 0;
+        font: 19px/1.55 var(--font-reading);
+        hyphens: auto;
+        -webkit-hyphens: auto;
+        text-align: justify;
+      }
+      .fade-top,
+      .fade-bottom {
+        position: absolute;
+        left: 0;
+        right: 0;
+        z-index: 2;
+        pointer-events: none;
+      }
+      .fade-top {
+        top: 0;
+        height: 40px;
+        background: linear-gradient(var(--ground), transparent);
+      }
+      .fade-bottom {
+        bottom: 0;
+        height: 88px;
+        background: linear-gradient(transparent, var(--ground) 55%);
+      }
+      .scrollbar {
+        position: absolute;
+        right: 3px;
+        width: 7px;
+        border-radius: 4px;
+        background: color-mix(in srgb, var(--ink) 35%, transparent);
+        z-index: 3;
+      }
+      .join {
+        height: 124px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .join span {
+        width: 48px;
+        border-top: 1px solid var(--hairline);
+      }
+
+      /* ---- fixed layout */
+      .fxl {
+        position: absolute;
+        background: #fff;
+        box-shadow: 0 1px 3px rgb(0 0 0 / 12%);
+        overflow: hidden;
+      }
+      .chip {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 4px 8px 4px 16px;
+        border-radius: 22px;
+        background: var(--ink);
+        color: var(--ground);
+        box-shadow: var(--shadow-popover);
+        font-weight: 500;
+        z-index: 6;
+      }
+      .chip button {
+        min-height: 36px;
+        padding: 0 10px;
+        border: 0;
+        border-radius: 18px;
+        background: none;
+        color: inherit;
+        font: 600 14px var(--font-ui);
+      }
+      .chip kbd {
+        font: inherit;
+        opacity: 0.75;
+        margin-left: 4px;
+      }
+      .chip .x {
+        font-weight: 400;
+        font-size: 18px;
+        padding: 0 8px;
+      }
+
+      /* ---- RTL */
+      .page.rtl {
+        direction: rtl;
+        font-family: 'Geeza Pro', 'Noto Naskh Arabic', serif;
+        font-size: 20px;
+        line-height: 1.75;
+        text-align: justify;
+      }
+      .page.rtl p {
+        text-indent: 0;
+        margin-bottom: 0.6em;
+      }
+
+      /* ---- vertical writing */
+      .page.vertical {
+        writing-mode: vertical-rl;
+        font-family: 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+        font-size: 19px;
+        /* 32 px per line: exactly 20 lines across the 640 px page, never a part line */
+        line-height: 32px;
+        text-align: justify;
+        column-width: auto;
+        columns: auto;
+        hyphens: manual;
+      }
+      .page.vertical p {
+        text-indent: 1em;
+      }
+      .page.vertical rt {
+        font-size: 0.5em;
+      }
+
+      /* ---- image view (N11) */
+      .viewer {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        background: color-mix(in srgb, var(--ground) 97%, transparent);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 16px;
+      }
+      .viewer figcaption {
+        font: 14px/1.4 var(--font-ui);
+        color: var(--ink-secondary);
+        max-width: 640px;
+        text-align: center;
+      }
+      .icon-button {
+        position: absolute;
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: grid;
+        place-items: center;
+        color: var(--ink-secondary);
+      }
+      .zoom-group {
+        position: absolute;
+        right: 20px;
+        bottom: 20px;
+        display: flex;
+        gap: 4px;
+        align-items: center;
+        font: 500 12px var(--font-ui);
+        color: var(--ink-secondary);
+      }
+      .zoom-group span {
+        min-width: 44px;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <template id="moby">
+      <p class="first">
+        Call me Ishmael. Some years ago—never mind how long precisely—having little or no money in
+        my purse, and nothing particular to interest me on shore, I thought I would sail about a
+        little and see the watery part of the world. It is a way I have of driving off the spleen
+        and regulating the circulation. Whenever I find myself growing grim about the mouth;
+        whenever it is a damp, drizzly November in my soul; whenever I find myself involuntarily
+        pausing before coffin warehouses, and bringing up the rear of every funeral I meet; and
+        especially whenever my hypos get such an upper hand of me, that it requires a strong moral
+        principle to prevent me from deliberately stepping into the street, and methodically
+        knocking people’s hats off—then, I account it high time to get to sea as soon as I can.
+        This is my substitute for pistol and ball. With a philosophical flourish Cato throws
+        himself upon his sword; I quietly take to the ship. There is nothing surprising in this.
+        If they but knew it, almost all men in their degree, some time or other, cherish very
+        nearly the same feelings towards the ocean with me.
+      </p>
+      <p>
+        There now is your insular city of the Manhattoes, belted round by wharves as Indian isles
+        by coral reefs—commerce surrounds it with her surf. Right and left, the streets take you
+        waterward. Its extreme downtown is the battery, where that noble mole is washed by waves,
+        and cooled by breezes, which a few hours previous were out of sight of land. Look at the
+        crowds of water-gazers there.
+      </p>
+      <p>
+        Circumambulate the city of a dreamy Sabbath afternoon. Go from Corlears Hook to Coenties
+        Slip, and from thence, by Whitehall, northward. What do you see?—Posted like silent
+        sentinels all around the town, stand thousands upon thousands of mortal men fixed in ocean
+        reveries. Some leaning against the spiles; some seated upon the pier-heads; some looking
+        over the bulwarks of ships from China; some high aloft in the rigging, as if striving to
+        get a still better seaward peep. But these are all landsmen; of week days pent up in lath
+        and plaster—tied to counters, nailed to benches, clinched to desks. How then is this? Are
+        the green fields gone? What do they here?
+      </p>
+      <p>
+        But look! here come more crowds, pacing straight for the water, and seemingly bound for a
+        dive. Strange! Nothing will content them but the extremest limit of the land; loitering
+        under the shady lee of yonder warehouses will not suffice. No. They must get just as nigh
+        the water as they possibly can without falling in. And there they stand—miles of
+        them—leagues. Inlanders all, they come from lanes and alleys, streets and avenues—north,
+        east, south, and west. Yet here they all unite. Tell me, does the magnetic virtue of the
+        needles of the compasses of all those ships attract them thither?
+      </p>
+      <p>
+        Once more. Say you are in the country; in some high land of lakes. Take almost any path
+        you please, and ten to one it carries you down in a dale, and leaves you there by a pool
+        in the stream. There is magic in it. Let the most absent-minded of men be plunged in his
+        deepest reveries—stand that man on his legs, set his feet a-going, and he will infallibly
+        lead you to water, if water there be in all that region. Should you ever be athirst in the
+        great American desert, try this experiment, if your caravan happen to be supplied with a
+        metaphysical professor. Yes, as every one knows, meditation and water are wedded for ever.
+      </p>
+      <p>
+        But here is an artist. He desires to paint you the dreamiest, shadiest, quietest, most
+        enchanting bit of romantic landscape in all the valley of the Saco. What is the chief
+        element he employs? There stand his trees, each with a hollow trunk, as if a hermit and a
+        crucifix were within; and here sleeps his meadow, and there sleep his cattle; and up from
+        yonder cottage goes a sleepy smoke. Deep into distant woodlands winds a mazy way, reaching
+        to overlapping spurs of mountains bathed in their hill-side blue. But though the picture
+        lies thus tranced, and though this pine-tree shakes down its sighs like leaves upon this
+        shepherd’s head, yet all were vain, unless the shepherd’s eye were fixed upon the magic
+        stream before him.
+      </p>
+      <p>
+        Why is almost every robust healthy boy with a robust healthy soul in him, at some time or
+        other crazy to go to sea? Why upon your first voyage as a passenger, did you yourself feel
+        such a mystical vibration, when first told that you and your ship were now out of sight of
+        land? Why did the old Persians hold the sea holy? Why did the Greeks give it a separate
+        deity, and own brother of Jove? Surely all this is not without meaning.
+      </p>
+    </template>
+
+    <!-- 1. Two-page spread, immersive (L8, B12): 1680 × 1050, spread from 1480 px of remaining width -->
+    <div class="frame wide paper" id="spread-immersive">
+      <div class="page" data-fill="moby" data-heading="I|Loomings"
+        style="left: 176px; top: 106px; width: 1328px; height: 824.6px; column-width: 640px; column-count: 2"></div>
+      <svg class="chevron" style="left: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <svg class="chevron" style="right: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="m2 2 8 8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <div class="location-line">I: Loomings · 9 min left in chapter</div>
+      <div class="note" data-n="1" style="left: 760px; top: 70px">48 px gutter, no rule</div>
+      <div class="note" data-n="2" style="left: 700px; bottom: 58px">one location line, centred on the spread</div>
+      <div class="note" data-n="3" style="left: 40px; top: 470px">margins = clicks, as in one column</div>
+    </div>
+
+    <!-- 2. Two-page spread with controls -->
+    <div class="frame wide paper" id="spread-controls">
+      <div class="top">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <span class="library">‹ Library</span>
+        <div class="title"><b>Moby Dick</b>&nbsp;· I: Loomings</div>
+      </div>
+      <div class="page" data-fill="moby" data-heading="I|Loomings"
+        style="left: 176px; top: 106px; width: 1328px; height: 824.6px; column-width: 640px; column-count: 2"></div>
+      <svg class="chevron" style="left: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <svg class="chevron" style="right: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="m2 2 8 8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <div class="bottom">
+        <div class="progress" style="width: 1328px">
+          <div class="track"><div class="fill" style="width: 2%"></div></div>
+          <div class="labels"><span>I: Loomings</span><span>2% · 9 min left in chapter</span></div>
+        </div>
+      </div>
+      <div class="note" data-n="1" style="left: 176px; bottom: 70px">the scrubber spans both pages</div>
+    </div>
+
+    <!-- 3. Scroll mode, mid-chapter (B8) -->
+    <div class="frame paper" id="scroll-reading">
+      <div class="scroll" data-fill="moby" style="top: -212px"></div>
+      <div class="fade-top"></div>
+      <div class="fade-bottom"></div>
+      <div class="scrollbar" style="top: 180px; height: 150px"></div>
+      <div class="location-line" style="z-index: 3">I: Loomings · 7 min left in chapter</div>
+      <div class="note" data-n="1" style="left: 980px; top: 12px">40 px fade under the top edge</div>
+      <div class="note" data-n="2" style="left: 980px; top: 250px">macOS overlay scrollbar: position in the chapter</div>
+      <div class="note" data-n="3" style="left: 820px; bottom: 58px">location line on an 88 px fade, as in Pages</div>
+    </div>
+
+    <!-- 4. Scroll mode, the join between two chapters (B8) -->
+    <div class="frame paper" id="scroll-join">
+      <div class="scroll" style="top: -40px">
+        <p class="first" style="text-indent: 1em">
+          Why is almost every robust healthy boy with a robust healthy soul in him, at some time or
+          other crazy to go to sea? Why upon your first voyage as a passenger, did you yourself
+          feel such a mystical vibration, when first told that you and your ship were now out of
+          sight of land? Why did the old Persians hold the sea holy? Why did the Greeks give it a
+          separate deity, and own brother of Jove? Surely all this is not without meaning. And
+          still deeper the meaning of that story of Narcissus, who because he could not grasp the
+          tormenting, mild image he saw in the fountain, plunged into it and was drowned. But that
+          same image, we ourselves see in all rivers and oceans. It is the image of the ungraspable
+          phantom of life; and this is the key to it all.
+        </p>
+        <div class="join"><span></span></div>
+        <p class="heading">II<b>The Carpet-Bag</b></p>
+        <p class="first">
+          I stuffed a shirt or two into my old carpet-bag, tucked it under my arm, and started for
+          Cape Horn and the Pacific. Quitting the good city of old Manhatto, I duly arrived in New
+          Bedford. It was a Saturday night in December. Much was I disappointed upon learning that
+          the little packet for Nantucket had already sailed, and that no way of reaching that
+          place would offer, till the following Monday.
+        </p>
+        <p>
+          As most young candidates for the pains and penalties of whaling stop at this same New
+          Bedford, thence to embark on their voyage, it may as well be related that I, for one,
+          had no idea of so doing. For my mind was made up to sail in no other than a Nantucket
+          craft, because there was a fine, boisterous something about everything connected with
+          that famous old island, which amazingly pleased me.
+        </p>
+      </div>
+      <div class="fade-top"></div>
+      <div class="fade-bottom"></div>
+      <div class="scrollbar" style="top: 560px; height: 90px"></div>
+      <div class="location-line" style="z-index: 3">II: The Carpet-Bag · 12 min left in chapter</div>
+      <div class="note" data-n="1" style="left: 690px; top: 322px">124 px space and a 48 px hairline between chapters</div>
+      <div class="note" data-n="2" style="left: 990px; top: 470px">the next chapter loads as you near the end</div>
+      <div class="note" data-n="3" style="left: 800px; bottom: 58px">the line switches when the heading passes mid-screen</div>
+    </div>
+
+    <!-- 5. Fixed layout, scaled to fit (E2) -->
+    <div class="frame paper" id="fxl-fit">
+      <div class="fxl" style="left: 128px; top: 64px; width: 510px; height: 680px" data-art="left"></div>
+      <div class="fxl" style="left: 642px; top: 64px; width: 510px; height: 680px" data-art="right"></div>
+      <svg class="chevron" style="left: 52px" width="12" height="20" viewBox="0 0 12 20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <svg class="chevron" style="right: 52px" width="12" height="20" viewBox="0 0 12 20"><path d="m2 2 8 8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <div class="location-line">Pages 12–13 of 32</div>
+      <div class="note" data-n="1" style="left: 360px; top: 30px; max-width: 600px">spread per rendition:spread, 4 px seam, pages fit the area inside 24/64 px margins</div>
+      <div class="note" data-n="2" style="left: 560px; bottom: 58px">print pages, exact</div>
+    </div>
+
+    <!-- 6. Fixed layout, zoomed (I17) -->
+    <div class="frame paper" id="fxl-zoom">
+      <div class="fxl" style="left: -380px; top: -300px; width: 1020px; height: 1360px" data-art="left"></div>
+      <div class="fxl" style="left: 648px; top: -300px; width: 1020px; height: 1360px" data-art="right"></div>
+      <div class="chip" style="bottom: 24px">
+        <span>200%</span>
+        <button>Fit <kbd>⌘0</kbd></button>
+      </div>
+      <div class="note" data-n="1" style="left: 560px; bottom: 90px">shown for 2 s after each zoom change</div>
+      <div class="note" data-n="2" style="left: 40px; top: 40px">wheel and two fingers pan; drag pans; no page turns while zoomed</div>
+      <div class="note" data-n="3" style="left: 40px; top: 70px">← → still turn and return to fit</div>
+    </div>
+
+    <!-- 7. RTL book, controls visible (I15, I16) -->
+    <div class="frame paper" id="rtl-controls">
+      <div class="top">
+        <div class="lights"><i></i><i></i><i></i></div>
+        <span class="library">‹ Library</span>
+        <div class="title"><b>البحر</b>&nbsp;· الفصل الأول</div>
+      </div>
+      <div class="page rtl" data-fill="arabic"></div>
+      <svg class="chevron" style="left: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <svg class="chevron" style="right: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="m2 2 8 8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <div class="bottom">
+        <div class="progress">
+          <div class="track"><div class="fill" style="left: auto; right: 0; width: 38%"></div></div>
+          <div class="labels"><span>38% · 6 min left in chapter</span><span>الفصل الأول</span></div>
+        </div>
+      </div>
+      <div class="note" data-n="1" style="left: 20px; top: 330px">left margin = next page</div>
+      <div class="note" data-n="2" style="left: 330px; bottom: 70px">progress fills from the right; labels swap sides</div>
+      <div class="note" data-n="3" style="left: 800px; top: 16px">UI stays English; book strings keep their direction</div>
+    </div>
+
+    <!-- 8. Vertical writing (I16) -->
+    <div class="frame paper" id="vertical">
+      <div class="page vertical" data-fill="japanese"></div>
+      <svg class="chevron" style="left: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="M10 2 2 10l8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <svg class="chevron" style="right: 33px" width="12" height="20" viewBox="0 0 12 20"><path d="m2 2 8 8-8 8" fill="none" stroke="currentColor" stroke-width="1.5" /></svg>
+      <div class="location-line">一 · 4 min left in chapter</div>
+      <div class="note" data-n="1" style="left: 330px; top: 50px">same 640 × 618 page box; lines run top to bottom, pages right to left</div>
+      <div class="note" data-n="2" style="left: 20px; top: 330px">left margin = next page</div>
+      <div class="note" data-n="3" style="left: 990px; top: 390px">ruby kept at half size (見当 けんとう)</div>
+    </div>
+
+    <!-- 9. Image view (N11), Paper -->
+    <div class="frame paper" id="image-view">
+      <div class="page" data-fill="moby" style="opacity: 0.35"></div>
+      <div class="viewer">
+        <div data-art="whale" style="width: 860px; height: 560px"></div>
+        <figcaption>Fig. 3. The sperm whale, from Beale’s <i>Natural History</i> (1839).</figcaption>
+        <div class="icon-button" style="right: 20px; top: 20px">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="m3 3 10 10M13 3 3 13" stroke="currentColor" stroke-width="1.5" /></svg>
+        </div>
+        <div class="zoom-group">
+          <div class="icon-button" style="position: static">−</div>
+          <span>Fit</span>
+          <div class="icon-button" style="position: static">+</div>
+        </div>
+      </div>
+      <div class="note" data-n="1" style="left: 1000px; top: 64px">Esc or click outside closes; focus returns to the image</div>
+      <div class="note" data-n="2" style="left: 40px; top: 26px">page ground at 97%; no dark scrim</div>
+      <div class="note" data-n="3" style="left: 1000px; bottom: 70px">⌘+ ⌘− pinch; drag pans when larger than the window</div>
+      <div class="note" data-n="4" style="left: 520px; bottom: 60px">caption from the book’s figcaption or alt</div>
+    </div>
+
+    <!-- 10. Image view, Night -->
+    <div class="frame night" id="image-view-night">
+      <div class="page" data-fill="moby" style="opacity: 0.35"></div>
+      <div class="viewer">
+        <div data-art="whale" style="width: 860px; height: 560px; filter: brightness(0.9)"></div>
+        <figcaption>Fig. 3. The sperm whale, from Beale’s <i>Natural History</i> (1839).</figcaption>
+        <div class="icon-button" style="right: 20px; top: 20px">
+          <svg width="16" height="16" viewBox="0 0 16 16"><path d="m3 3 10 10M13 3 3 13" stroke="currentColor" stroke-width="1.5" /></svg>
+        </div>
+        <div class="zoom-group">
+          <div class="icon-button" style="position: static">−</div>
+          <span>Fit</span>
+          <div class="icon-button" style="position: static">+</div>
+        </div>
+      </div>
+      <div class="note" data-n="1" style="left: 40px; top: 26px">Night: dimmed 10% as on the page, never inverted</div>
+    </div>
+
+    <!-- 11. Loading a large book -->
+    <div class="frame paper" id="loading">
+      <div class="location-line">Opening “The Complete Works”…</div>
+      <div class="note" data-n="1" style="left: 470px; top: 330px">nothing for the first 500 ms; then only this line, no spinner</div>
+      <div class="note" data-n="2" style="left: 520px; bottom: 58px">the page replaces it as soon as it is laid out</div>
+    </div>
+
+    <!-- 12. “≈” locations in a long chapter -->
+    <div class="frame paper" id="approximate">
+      <div class="page" data-fill="moby"></div>
+      <div class="chip" style="bottom: 24px">
+        <span>Back to page ≈312</span>
+        <button>Back <kbd>⌘[</kbd></button>
+        <button class="x">×</button>
+      </div>
+      <div class="note" data-n="1" style="left: 820px; bottom: 34px">“≈” before an estimated page, no space</div>
+      <div class="note" data-n="2" style="left: 40px; top: 300px">estimates: chunked chapters (L16) and pages not yet counted (B1)</div>
+      <div class="note" data-n="3" style="left: 40px; top: 350px">screen readers hear “About page 312”</div>
+      <div class="note" data-n="4" style="left: 40px; top: 386px">no indicator while counting; “≈” disappears when counts settle</div>
+    </div>
+
+    <script>
+      const text = {
+        arabic: `كان البحر هادئاً في ذلك الصباح، والسماء صافية لا غيم فيها. جلس الرجل على الشاطئ يتأمل الموج وهو يقترب ثم يبتعد، كأنه يحمل رسائل من بلاد بعيدة لا يعرفها أحد. وكان يقول في نفسه إن السفر هو الطريقة الوحيدة لكي يفهم الإنسان العالم ويفهم نفسه.
+وفي المساء عاد إلى بيته الصغير في آخر الشارع، وفتح النافذة المطلة على الميناء. كانت السفن راسية بصمت، وأضواؤها ترتعش فوق الماء. أخرج دفتره القديم وكتب ما رآه في يومه، ثم أطفأ المصباح وجلس في الظلام يستمع إلى صوت البحر.
+لم يكن يعرف متى سيرحل، لكنه كان يعرف أنه سيرحل. فالبحر لا يترك من أحبه، والطريق إلى الأفق يبدأ دائماً بخطوة واحدة على رمل الشاطئ. وفي الصباح التالي نزل إلى الميناء وسأل البحارة عن السفن المسافرة إلى الجنوب.
+قال له أحدهم إن سفينة كبيرة ستبحر بعد أيام قليلة، وإنها تحتاج إلى رجال يعرفون العمل ولا يخافون من الريح. فابتسم الرجل وقال إنه لا يعرف العمل، لكنه لا يخاف من الريح، وإنه مستعد أن يتعلم كل شيء.`,
+        japanese: `吾輩は猫である。名前はまだ無い。
+どこで生れたかとんと<ruby>見当<rt>けんとう</rt></ruby>がつかぬ。何でも薄暗いじめじめした所でニャーニャー泣いていた事だけは記憶している。吾輩はここで始めて人間というものを見た。しかもあとで聞くとそれは書生という人間中で一番<ruby>獰悪<rt>どうあく</rt></ruby>な種族であったそうだ。この書生というのは時々我々を捕えて煮て食うという話である。しかしその当時は何という考もなかったから別段恐しいとも思わなかった。ただ彼の<ruby>掌<rt>てのひら</rt></ruby>に載せられてスーと持ち上げられた時何だかフワフワした感じがあったばかりである。
+掌の上で少し落ちついて書生の顔を見たのがいわゆる人間というものの見始であろう。この時妙なものだと思った感じが今でも残っている。第一毛をもって装飾されべきはずの顔がつるつるしてまるで<ruby>薬缶<rt>やかん</rt></ruby>だ。その後猫にもだいぶ逢ったがこんな<ruby>片輪<rt>かたわ</rt></ruby>には一度も出会わした事がない。`,
+      }
+      const moby = document.getElementById('moby').innerHTML
+      for (const el of document.querySelectorAll('[data-fill]')) {
+        const kind = el.dataset.fill
+        let html = ''
+        if (kind === 'moby') {
+          const [n, title] = (el.dataset.heading || '').split('|')
+          if (n) html += `<p class="heading">${n}<b>${title}</b></p>`
+          html += moby + moby
+        } else {
+          html = text[kind]
+            .split('\n')
+            .map((p) => `<p>${p}</p>`)
+            .join('')
+          html += html
+        }
+        el.innerHTML = html
+      }
+      // Stand-in artwork (not book content): flat shapes in muted colours.
+      const art = {
+        left: `<svg viewBox="0 0 510 680" width="100%" height="100%" preserveAspectRatio="none"><rect width="510" height="680" fill="#e9eef0"/><rect y="440" width="510" height="240" fill="#9fb8c4"/><path d="M0 470 Q120 440 250 470 T510 460 V680 H0Z" fill="#6f93a6"/><circle cx="380" cy="130" r="56" fill="#f2c46d"/><path d="M60 430 h210 l-30 40 h-150z" fill="#8c4a2f"/><rect x="160" y="250" width="6" height="180" fill="#5a3b2c"/><path d="M166 260 L166 410 L280 410Z" fill="#fbf7ef"/><text x="40" y="600" font-family="Georgia" font-size="26" fill="#22303a">The little boat set out at dawn,</text><text x="40" y="636" font-family="Georgia" font-size="26" fill="#22303a">and the sea was very still.</text></svg>`,
+        right: `<svg viewBox="0 0 510 680" width="100%" height="100%" preserveAspectRatio="none"><rect width="510" height="680" fill="#f3ede2"/><path d="M0 380 Q130 330 255 380 T510 370 V680 H0Z" fill="#7fa3b3"/><path d="M110 330 q90 -80 200 -20 q30 20 70 -10 q-10 40 -40 50 q-110 40 -230 -20z" fill="#44586a"/><circle cx="170" cy="310" r="5" fill="#f3ede2"/><path d="M300 250 q10 -40 -10 -70 M300 250 q-20 -30 -50 -40" stroke="#9fb8c4" stroke-width="5" fill="none"/><text x="40" y="560" font-family="Georgia" font-size="26" fill="#22303a">Then, far off, something</text><text x="40" y="596" font-family="Georgia" font-size="26" fill="#22303a">rose out of the water.</text></svg>`,
+        whale: `<svg viewBox="0 0 860 560" width="100%" height="100%"><rect width="860" height="560" fill="#efe8da"/><path d="M90 300 q120 -150 420 -120 q140 14 210 70 q40 -60 90 -70 q-20 60 -30 90 q30 30 60 90 q-60 -10 -100 -40 q-80 90 -260 100 q-240 14 -390 -120z" fill="#5c6670"/><path d="M120 330 q200 70 420 30" stroke="#3f474e" stroke-width="3" fill="none"/><circle cx="190" cy="285" r="7" fill="#efe8da"/><path d="M300 360 q30 60 90 70 q-20 -40 -30 -80z" fill="#4a535b"/><g stroke="#8a7f6c" stroke-width="1" opacity=".5">${Array.from({ length: 30 }, (_, i) => `<line x1="0" y1="${420 + i * 5}" x2="860" y2="${418 + i * 5}"/>`).join('')}</g></svg>`,
+      }
+      for (const el of document.querySelectorAll('[data-art]')) el.innerHTML = art[el.dataset.art]
+    </script>
+  </body>
+</html>
