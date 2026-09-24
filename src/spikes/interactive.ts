@@ -1,7 +1,14 @@
 // Interactive spikes B (input) and C (VoiceOver): a person follows on-screen steps.
 
 import type { View } from 'foliate-js/view.js'
-import { NativeTurns, ROLL_GAP_MS, WHEEL_COOLDOWN_MS, type NativeScroll } from '../lib/input/native'
+import {
+  NativeTurns,
+  PHASE,
+  ROLL_GAP_MS,
+  TURN_DISTANCE_PX,
+  WHEEL_COOLDOWN_MS,
+  type NativeScroll,
+} from '../lib/input/native'
 import { WheelTurns, type WheelSample } from '../lib/input/wheel'
 import { log, openView, type Criterion, type SpikeResult } from './common'
 
@@ -367,5 +374,151 @@ export async function spikeC(): Promise<SpikeResult> {
       { id: 'C-nvda', description: 'NVDA', verdict: 'deferred', evidence: 'macOS-only scope' },
     ],
     raw: { readingFrom: Math.round(readingFrom), relocations, samples, continuous, followed },
+  }
+}
+
+/**
+ * Spike B, trackpad only, without a book (runs on WebKit older than 16.4, where
+ * foliate-js cannot load). Page turns are counted, not shown. Each gesture is
+ * graded from AppKit's phases: a gesture with ≥ 80 px of travel on its axis must
+ * give exactly one turn, and momentum must give none (I2, I3, I5).
+ */
+export async function spikeBTrackpad(): Promise<SpikeResult> {
+  const { listen } = await import('@tauri-apps/api/event')
+  const pad = document.getElementById('reader')!
+  Object.assign(pad.style, {
+    width: '640px',
+    height: '420px',
+    margin: '24px',
+    border: '2px dashed #999',
+    borderRadius: '12px',
+    display: 'grid',
+    placeItems: 'center',
+    font: '600 20px system-ui',
+    color: '#444',
+  })
+  pad.textContent = 'Swipe with the pointer over this area'
+  // Keep the page from scrolling; turns come from the native stream.
+  window.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })
+  const native = new NativeTurns()
+  let phase = 'idle'
+  const samples: (NativeScroll & { step: string })[] = []
+  const turnLog: { t: number; turn: 'next' | 'prev'; step: string }[] = []
+  const unlistenScroll = await listen<NativeScroll>('native-scroll', ({ payload }) => {
+    samples.push({ ...payload, step: phase })
+    const turn = native.feed(payload)
+    if (turn && phase !== 'idle') {
+      turnLog.push({ t: payload.t, turn, step: phase })
+      pad.textContent = `${turnLog.filter((x) => x.step === phase).length} page turns`
+    }
+  })
+  const clicks: { appActive: boolean }[] = []
+  const unlistenDown = await listen<{ app_active: boolean }>('native-mouse-down', ({ payload }) => {
+    if (phase === 'click') clicks.push({ appActive: payload.app_active })
+  })
+  const steps = [
+    [
+      'vertical',
+      'Trackpad: 25 swipes up',
+      'With two fingers, make <b>25 separate swipes up</b> (as if scrolling down a page) over the dashed area, one at a time. Let each one coast to a stop. Then press Done.',
+    ],
+    [
+      'horizontal',
+      'Trackpad: 25 swipes left',
+      'Make <b>25 separate two-finger swipes to the left</b>, one at a time. Then press Done.',
+    ],
+    [
+      'quick',
+      'Trackpad: 10 quick swipes',
+      'Make <b>10 quick swipes up</b>, starting each while the previous one still coasts. Then press Done.',
+    ],
+  ] as const
+  for (const [id, title, body] of steps) {
+    phase = id
+    pad.textContent = '0 page turns'
+    await step(title, body, ['Done'])
+    phase = 'idle'
+  }
+  phase = 'click'
+  await step(
+    'Activating click (I11)',
+    'Switch to another app (⌘Tab) and come back <b>by clicking once in the dashed area</b>. Do this <b>3 times</b>. Then press Done.',
+    ['Done'],
+  )
+  phase = 'idle'
+  unlistenScroll()
+  unlistenDown()
+
+  // Split each step's precise events into gestures: Began (or MayBegin) … Ended/Cancelled.
+  const grade = (id: string) => {
+    const evs = samples.filter((n) => n.step === id && n.precise)
+    const gestures: { start: number; end: number; travel: number }[] = []
+    let cur: {
+      start: number
+      end: number
+      travel: number
+      axis: 'x' | 'y' | null
+      tx: number
+      ty: number
+    } | null = null
+    for (const n of evs) {
+      if (n.momentum) continue
+      if (n.phase & (PHASE.began | PHASE.mayBegin) || !cur) {
+        if (cur) gestures.push(cur)
+        cur = { start: n.t, end: n.t, travel: 0, axis: null, tx: 0, ty: 0 }
+      }
+      cur.end = n.t
+      cur.tx += n.dx
+      cur.ty += n.dy
+      cur.travel = Math.max(Math.abs(cur.tx), Math.abs(cur.ty))
+      if (n.phase & (PHASE.ended | PHASE.cancelled)) {
+        gestures.push(cur)
+        cur = null
+      }
+    }
+    if (cur) gestures.push(cur)
+    const turns = turnLog.filter((x) => x.step === id)
+    const big = gestures.filter((g) => g.travel >= TURN_DISTANCE_PX)
+    // A turn belongs to the gesture whose span contains it.
+    const perGesture = big.map((g) => turns.filter((x) => x.t >= g.start && x.t <= g.end).length)
+    const momentumTurns = turns.filter(
+      (x) => !gestures.some((g) => x.t >= g.start && x.t <= g.end),
+    ).length
+    return {
+      events: evs.length,
+      wheelEvents: samples.filter((n) => n.step === id && !n.precise).length,
+      gestures: gestures.length,
+      bigGestures: big.length,
+      oneTurnEach: perGesture.filter((c) => c === 1).length,
+      turns: turns.length,
+      momentumTurns,
+    }
+  }
+  const results = Object.fromEntries(steps.map(([id]) => [id, grade(id)]))
+  const criteria: Criterion[] = steps.map(([id]) => {
+    const r = results[id]
+    return {
+      id: `B-trackpad-${id}`,
+      description: `Each ${id} trackpad gesture of ≥ 80 px gives exactly one turn; momentum gives none (I2, I3, I5)`,
+      verdict:
+        r.events === 0
+          ? 'manual'
+          : r.oneTurnEach === r.bigGestures && r.turns === r.bigGestures && r.momentumTurns === 0
+            ? 'pass'
+            : 'fail',
+      evidence: `${r.bigGestures} gestures ≥ 80 px (of ${r.gestures}), ${r.oneTurnEach} with exactly one turn, ${r.turns} turns in total, ${r.momentumTurns} during momentum; ${r.events} precise and ${r.wheelEvents} wheel events`,
+    }
+  })
+  const inactive = clicks.filter((c) => !c.appActive).length
+  criteria.push({
+    id: 'B-activating-click',
+    description: 'The window-activating click is distinguishable (I11)',
+    verdict: inactive > 0 ? 'pass' : 'manual',
+    evidence: `${clicks.length} clicks; AppKit reported the app inactive on ${inactive}`,
+  })
+  return {
+    spike: 'b-trackpad',
+    criteria,
+    raw: { results, clicks, samples, turnLog, userAgent: navigator.userAgent },
   }
 }

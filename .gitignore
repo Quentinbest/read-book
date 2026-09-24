@@ -17,3 +17,4 @@ corpus/cache/
 corpus/generated/
 test-results
 playwright-report
+dist-spikes/

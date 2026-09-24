@@ -8,7 +8,7 @@ import { log, report, type SpikeResult } from './common'
 import { spikeD, spikeDTurns } from './d-fidelity'
 import { spikeE } from './e-isolation'
 import { spikeF } from './f-search'
-import { spikeB, spikeC } from './interactive'
+import { spikeB, spikeBTrackpad, spikeC } from './interactive'
 
 const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   a: spikeA,
@@ -17,6 +17,7 @@ const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   e: spikeE,
   f: spikeF,
   b: spikeB,
+  bt: spikeBTrackpad,
   c: spikeC,
 }
 

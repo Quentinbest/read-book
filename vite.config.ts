@@ -20,7 +20,10 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_ENV_*'],
   build: {
     // Minimum WebViews (plan D7): Safari 16 on macOS 13, evergreen WebView2.
-    target: process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari16',
+    // LINEN_BUILD_TARGET overrides for spike bundles run on older WebKit (Spike B on macOS 12).
+    target:
+      process.env.LINEN_BUILD_TARGET ??
+      (process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari16'),
     minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     rollupOptions: {
