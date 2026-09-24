@@ -46,3 +46,5 @@ The owner chose the recommended defaults for the open behaviour questions (plan 
 | T3 | Caret browsing (F7) on WebKit | Our own caret browsing in the book frame: F7 shows a caret, and ⇧ + arrows extend the selection with `Selection.modify`, which WebKit supports. |
 
 Still needed before Phase 2 starts: Spikes B and C (owner at the machine) and the G8 designs (Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, loading state and “≈” locations). G4 (library and import states) is needed by Phase 6, and its import states by Phase 1 exit; the import messages stay provisional until then.
+
+**2026-09-24:** the owner approved the G8 designs (`docs/design/g8/APPROVAL.md`), which closes the last Phase 2 design input.
