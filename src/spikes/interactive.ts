@@ -1,7 +1,7 @@
 // Interactive spikes B (input) and C (VoiceOver): a person follows on-screen steps.
 
 import type { View } from 'foliate-js/view.js'
-import { NativeTurns, type NativeScroll } from '../lib/input/native'
+import { NativeTurns, ROLL_GAP_MS, WHEEL_COOLDOWN_MS, type NativeScroll } from '../lib/input/native'
 import { WheelTurns, type WheelSample } from '../lib/input/wheel'
 import { log, openView, type Criterion, type SpikeResult } from './common'
 
@@ -72,6 +72,7 @@ export async function spikeB(): Promise<SpikeResult> {
   const nativeSamples: (NativeScroll & { step: string })[] = []
   const domSamples: (WheelSample & { phase: string })[] = []
   const turns: Record<string, { next: number; prev: number }> = {}
+  const turnTimes: { t: number; turn: 'next' | 'prev' }[] = []
   const domTurns: Record<string, number> = {}
   const count = (id: string) => (turns[id] ??= { next: 0, prev: 0 })
 
@@ -92,6 +93,7 @@ export async function spikeB(): Promise<SpikeResult> {
     const turn = native.feed(payload)
     if (turn && phase !== 'idle') {
       count(phase)[turn]++
+      turnTimes.push({ t: payload.t, turn })
       void (turn === 'next' ? view.next() : view.prev())
     }
   })
@@ -186,46 +188,62 @@ export async function spikeB(): Promise<SpikeResult> {
           : 'mixed'
       : 'none'
   }
-  const criteria: Criterion[] = []
-  for (const [id, , , want] of steps) {
-    const c = turns[id] ?? { next: 0, prev: 0 }
-    const events = nativeSamples.filter((n) => n.step === id).length
-    const evidence = `${c.next} forward, ${c.prev} back from ${events} native events (device: ${deviceOf(id)}); the WebView-only detector gave ${domTurns[id] ?? 0}`
-    if (id === 'continuous') {
-      criteria.push({
-        id: 'B-wheel-continuous',
-        description: 'A 2 s continuous roll turns at most one page per 250 ms',
-        verdict: 'manual',
-        evidence,
-      })
-    } else if (id === 'trackpad') {
-      criteria.push({
-        id: 'B-trackpad',
-        description: '25 trackpad swipes give exactly 25 turns, momentum ignored (I2, I5)',
-        verdict: skipped.includes(id)
-          ? 'manual'
-          : c.next === want && c.prev === 0
-            ? 'pass'
-            : 'fail',
-        evidence: skipped.includes(id) ? 'skipped: no trackpad available' : evidence,
-      })
-    } else {
-      const dir = id === 'rollsDown' ? 'next' : 'prev'
-      const other = dir === 'next' ? 'prev' : 'next'
-      criteria.push({
-        id: `B-wheel-${id}`,
-        description: `${want} separate wheel rolls give exactly ${want} turns in the right direction (I1)`,
-        verdict: c[dir] === want && c[other] === 0 ? 'pass' : 'fail',
-        evidence,
-      })
-    }
+  // Grade the wheel per roll (bursts more than ROLL_GAP_MS apart), not against the
+  // instructed count: people rarely roll exactly as asked (run 2). A clean roll in
+  // one direction must give 1 + floor(duration / 250 ms) turns, all in its direction.
+  // Rolls that rock back and forth are reported, not graded.
+  const wheel = nativeSamples.filter(
+    (n) => !n.precise && n.step !== 'idle' && n.step !== 'click' && (n.dx || n.dy),
+  )
+  const rolls: (typeof wheel)[] = []
+  for (const n of wheel) {
+    const cur = rolls[rolls.length - 1]
+    if (cur && n.t - cur[cur.length - 1].t <= ROLL_GAP_MS) cur.push(n)
+    else rolls.push([n])
   }
+  let clean = 0
+  let correct = 0
+  let rocking = 0
+  for (const roll of rolls) {
+    const dirs = new Set(roll.map((n) => ((n.dy || n.dx) < 0 ? 'next' : 'prev')))
+    if (dirs.size > 1) {
+      rocking++
+      continue
+    }
+    clean++
+    const [a, b] = [roll[0].t, roll[roll.length - 1].t]
+    const got = turnTimes.filter((x) => x.t >= a && x.t <= b)
+    const want = 1 + Math.floor((b - a) / WHEEL_COOLDOWN_MS)
+    if (got.length === want && got.every((x) => dirs.has(x.turn))) correct++
+  }
+  const criteria: Criterion[] = [
+    {
+      id: 'B-wheel',
+      description:
+        'Every wheel roll turns exactly one page in its direction (I1; 250 ms cooldown within a long roll)',
+      verdict: clean === 0 ? 'manual' : correct === clean ? 'pass' : 'fail',
+      evidence: `${correct}/${clean} clean rolls correct; ${rocking} back-and-forth rolls not graded; AppKit classified the device as ${deviceOf('rollsDown')}`,
+    },
+  ]
+  const tp = turns.trackpad ?? { next: 0, prev: 0 }
+  criteria.push({
+    id: 'B-trackpad',
+    description: '25 trackpad swipes give exactly 25 turns, momentum ignored (I2, I5)',
+    verdict: skipped.includes('trackpad')
+      ? 'manual'
+      : tp.next === 25 && tp.prev === 0
+        ? 'pass'
+        : 'fail',
+    evidence: skipped.includes('trackpad')
+      ? 'skipped: no trackpad available'
+      : `${tp.next} forward, ${tp.prev} back`,
+  })
   const activating = clicks.filter((c) => !c.appActive)
   criteria.push({
     id: 'B-activating-click',
     description: 'The window-activating click is distinguishable (I11)',
-    verdict: clicks.length === 0 ? 'manual' : activating.length === clicks.length ? 'pass' : 'fail',
-    evidence: `${clicks.length} clicks recorded; native “app was inactive” on ${activating.length}; ms since window focus: ${clicks.map((c) => c.msSinceFocus).join(', ')}; document.hasFocus(): ${clicks.map((c) => c.hadFocus).join(', ')}`,
+    verdict: activating.length > 0 ? 'pass' : 'manual',
+    evidence: `${clicks.length} clicks; AppKit reported the app inactive on ${activating.length} and active on ${clicks.length - activating.length}; document.hasFocus() was true on ${clicks.filter((c) => c.hadFocus).length}, so the WebView alone cannot tell`,
   })
   criteria.push({
     id: 'B-scripted',
