@@ -287,6 +287,21 @@ export async function spikeE2E(): Promise<SpikeResult> {
       },
     },
     {
+      id: 'N5-quit-save',
+      description: 'Quitting saves the position at once, inside the 1 s debounce',
+      run: async () => {
+        key('ArrowRight')
+        await sleep(250)
+        const l = loc()!
+        await emit('app-quitting')
+        await waitFor('quit handled', () => hooks.quitRequested, 3000)
+        const saved = await invoke<[string, number] | null>('position_get', {
+          bookId: reader()!.bookId,
+        })
+        return saved?.[0] === l.cfi ? 'ok' : `saved ${saved?.[0]} vs current ${l.cfi}`
+      },
+    },
+    {
       id: 'N5-restore',
       description: 'Leaving for the library and reopening restores the same place',
       run: async () => {

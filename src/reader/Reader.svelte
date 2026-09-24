@@ -29,6 +29,7 @@
     registry,
     screenReader,
     keyContext,
+    onBeforeQuit,
     onexit,
   }: {
     book: Book
@@ -37,6 +38,7 @@
     registry: CommandRegistry
     screenReader: () => boolean
     keyContext: () => KeyContext
+    onBeforeQuit: (fn: () => void) => () => void
     onexit: () => void
   } = $props()
 
@@ -367,6 +369,10 @@
       resizeTimer = window.setTimeout(onResize, 120) // L10
     }
     const onBlur = () => saveNow()
+    const offQuit = onBeforeQuit(() => {
+      saveNow()
+      void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
+    })
     const onKeydown = (e: KeyboardEvent) => onPageKey(e, false)
     window.addEventListener('resize', debouncedResize)
     window.addEventListener('blur', onBlur)
@@ -375,6 +381,7 @@
       window.removeEventListener('resize', debouncedResize)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('keydown', onKeydown)
+      offQuit()
       cleanups.forEach((c) => c())
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))

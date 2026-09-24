@@ -13,6 +13,8 @@ export interface TestHooks {
     bookId: string
   }
   messages?: MessageQueue
+  /** Set instead of quitting, so the harness can check what was saved (N5). */
+  quitRequested?: boolean
 }
 
 export const testHooks: TestHooks | null =

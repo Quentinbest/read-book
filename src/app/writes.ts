@@ -42,6 +42,11 @@ export class WriteQueue {
     return this.#flush()
   }
 
+  /** Resolves when nothing is being written (pending failed writes stay pending). */
+  idle(): Promise<void> {
+    return this.#flushing ?? Promise.resolve()
+  }
+
   /** Retry everything pending (the message's Retry action). */
   retry(): Promise<void> {
     this.#failed = false

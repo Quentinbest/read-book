@@ -12,7 +12,8 @@ mod spikes;
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .manage(commands::PendingOpens::default());
+        .manage(commands::PendingOpens::default())
+        .manage(commands::QuitState::default());
     #[cfg(feature = "spikes")]
     let builder = spikes::install(builder);
     // Spike builds serve the product commands too, so the in-app end-to-end tests
@@ -30,6 +31,7 @@ pub fn run() {
                 commands::setting_get,
                 commands::setting_set,
                 commands::opened_take,
+                commands::quit_ready,
                 native::screen_reader_running,
                 native::keyboard_layout_labels,
                 $($extra),*
@@ -70,12 +72,14 @@ pub fn run() {
         })
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
-        .run(|app, event| {
+        .run(|app, event| match event {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
-            if let tauri::RunEvent::Opened { urls } = event {
-                commands::handle_opened(app, urls);
+            tauri::RunEvent::Opened { urls } => commands::handle_opened(app, urls),
+            tauri::RunEvent::ExitRequested { api, .. } => {
+                if commands::hold_exit_for_save(app) {
+                    api.prevent_exit();
+                }
             }
-            #[cfg(not(any(target_os = "macos", target_os = "ios")))]
-            let _ = (app, event);
+            _ => {}
         });
 }

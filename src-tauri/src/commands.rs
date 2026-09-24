@@ -319,3 +319,35 @@ mod tests {
         );
     }
 }
+
+/// N5: on quit the reader saves its position before the app exits. The core asks
+/// the frontend (`app-quitting`), which saves and calls `quit_ready`; a fallback
+/// timer quits anyway if no answer comes.
+#[derive(Default)]
+pub struct QuitState(pub std::sync::atomic::AtomicBool);
+
+#[tauri::command]
+pub fn quit_ready<R: Runtime>(app: AppHandle<R>) {
+    if let Some(q) = app.try_state::<QuitState>() {
+        q.0.store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+    app.exit(0);
+}
+
+/// Handle an exit request: hold it once so the frontend can save. Returns true
+/// when the exit should be prevented now.
+pub fn hold_exit_for_save<R: Runtime>(app: &AppHandle<R>) -> bool {
+    let Some(q) = app.try_state::<QuitState>() else {
+        return false;
+    };
+    if q.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return false; // already saved (or timed out): let it exit
+    }
+    let _ = app.emit("app-quitting", ());
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        handle.exit(0);
+    });
+    true
+}

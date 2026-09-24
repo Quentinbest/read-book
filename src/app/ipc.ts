@@ -58,6 +58,8 @@ export const ipc = {
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),
   /** Results of files opened from the OS before the UI was listening. */
   openedTake: () => invoke<ImportResult[]>('opened_take'),
+  /** N5: saving is done; the app may quit. */
+  quitReady: () => invoke<void>('quit_ready'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */
   screenReaderRunning: () => invoke<boolean>('screen_reader_running'),
   /** T7: what each physical key prints in the current layout, keyed by KeyboardEvent.code. */

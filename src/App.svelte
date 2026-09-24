@@ -32,6 +32,14 @@
   const writes = new WriteQueue(messages)
   if (testHooks) testHooks.messages = messages
   const registry = new CommandRegistry()
+  // N5: work to finish before the app quits (the reader saves its position).
+  // Not reactive state: nothing renders from it.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const beforeQuit = new Set<() => void>()
+  const onBeforeQuit = (fn: () => void) => {
+    beforeQuit.add(fn)
+    return () => beforeQuit.delete(fn)
+  }
 
   async function refresh() {
     books = await ipc.libraryList()
@@ -133,6 +141,14 @@
       )
       showResults(await ipc.openedTake(), true)
       cleanups.push(
+        await listen('app-quitting', async () => {
+          beforeQuit.forEach((fn) => fn())
+          await writes.idle()
+          if (testHooks) testHooks.quitRequested = true
+          else await ipc.quitReady()
+        }),
+      )
+      cleanups.push(
         await getCurrentWebview().onDragDropEvent((e) => {
           if (e.payload.type === 'over' || e.payload.type === 'enter') dropActive = true
           else if (e.payload.type === 'leave') dropActive = false
@@ -158,6 +174,7 @@
       {registry}
       screenReader={() => screenReaderRunning}
       {keyContext}
+      {onBeforeQuit}
       onexit={closeReader}
     />
   {/key}
