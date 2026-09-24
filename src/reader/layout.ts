@@ -51,6 +51,8 @@ export interface LayoutInput {
 export interface Layout {
   /** Text column width (one page) in px. */
   columnWidth: number
+  /** Width of the text: one page, or two pages and the gutter (L8). */
+  textWidth: number
   /** Measure in ch (L1). */
   measureCh: number
   /** Average characters of text per line (L5). */
@@ -65,6 +67,8 @@ export interface Layout {
   /** Where the text starts horizontally and the side margins (click targets, L2, I11). */
   left: number
   marginWidth: number
+  /** The paginator's gap setting, as a fraction of the view (see PAGINATOR_GAP). */
+  gap: number
   /** The foliate-view element box that yields exactly `columnWidth` (see PAGINATOR_GAP). */
   viewLeft: number
   viewWidth: number
@@ -104,9 +108,16 @@ export function computeLayout(input: LayoutInput): Layout {
 
   const textWidth = columns * columnWidth + gutter
   const left = Math.round((areaWidth - textWidth) / 2)
-  const viewWidth = textWidth / (1 - 2 * PAGINATOR_GAP)
+  // foliate-js places text from its grid and gap (paginator.js #beforeRender):
+  // with a view of width V and gap g, the text starts g·V in; one column is
+  // V(1 − 2g) wide; two columns are V(1 − 3g)/2 each with a g·V gutter.
+  // So for one column keep g and size V; for a spread, pick V and g so the
+  // gutter is `gutter` and each page is `columnWidth`.
+  const viewWidth = columns === 2 ? textWidth + 2 * gutter : textWidth / (1 - 2 * PAGINATOR_GAP)
+  const gap = columns === 2 ? gutter / viewWidth : PAGINATOR_GAP
   return {
     columnWidth,
+    textWidth,
     measureCh,
     charsPerLine,
     columns,
@@ -117,6 +128,7 @@ export function computeLayout(input: LayoutInput): Layout {
     pageHeight,
     left,
     marginWidth: left,
+    gap,
     viewLeft: Math.round(left - (viewWidth - textWidth) / 2),
     viewWidth: Math.round(viewWidth),
   }

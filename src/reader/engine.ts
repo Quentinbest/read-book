@@ -26,7 +26,7 @@ import {
   type Chunks,
 } from './chunks'
 import { transformContent } from './content'
-import { MIN_SIDE_MARGIN, PAGINATOR_GAP, type Layout } from './layout'
+import { MIN_SIDE_MARGIN, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
 
@@ -391,8 +391,8 @@ export class ReaderEngine {
     if (view.isFixedLayout) return
     r.setAttribute('flow', 'paginated')
     r.setAttribute('margin', '0px')
-    // Text width = view width × (1 − 2 × gap): see PAGINATOR_GAP in layout.ts.
-    r.setAttribute('gap', `${PAGINATOR_GAP * 100}%`)
+    // The gap and view width together give the column and gutter: see layout.ts.
+    r.setAttribute('gap', `${layout.gap * 100}%`)
     r.setAttribute('max-block-size', `${Math.ceil(layout.pageHeight)}px`)
     r.setAttribute('max-column-count', String(layout.columns))
     // One column fills the view; two columns split it (see layout.ts).

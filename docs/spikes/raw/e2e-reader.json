@@ -116,6 +116,12 @@
       "evidence": "ok"
     },
     {
+      "id": "L8-spread",
+      "description": "From 1480 px the page is a two-page spread (G8): two 640 px pages, a 48 px gutter, one turn per spread",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "E2-fixed-layout",
       "description": "A fixed-layout book opens and turns pages (one view, scaled to fit)",
       "verdict": "pass",
@@ -187,7 +193,7 @@
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
     "os": "14.6.1",
-    "time": 1790261299,
+    "time": 1790263952,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

@@ -94,3 +94,32 @@ describe('L9', () => {
     expect(showLocationLine(480)).toBe(true)
   })
 })
+
+describe('L8 two-page spread (G8: two 640 px pages, 48 px gutter)', () => {
+  const l = computeLayout({ width: 1680, height: 1050, ...base, allowSpread: true })
+
+  it('lays out two pages from 1480 px', () => {
+    expect(l.columns).toBe(2)
+    expect(l.columnWidth).toBe(640)
+    expect(l.textWidth).toBe(1328)
+    expect(l.left).toBe(176)
+  })
+
+  it('sizes the view so foliate-js gives 640 px pages and a 48 px gutter', () => {
+    // paginator.js: text starts g·V in; pages are V(1 − 3g)/2; the gutter is g·V.
+    const V = l.viewWidth
+    expect(l.gap * V).toBeCloseTo(48, 0)
+    expect((V * (1 - 3 * l.gap)) / 2).toBeCloseTo(640, 0)
+    expect(l.viewLeft + l.gap * V).toBeCloseTo(176, 0)
+  })
+
+  it('stays one column without spread permission or below 1480 px', () => {
+    expect(computeLayout({ width: 1680, height: 1050, ...base }).columns).toBe(1)
+    expect(computeLayout({ width: 1470, height: 1050, ...base, allowSpread: true }).columns).toBe(1)
+  })
+
+  it('measures the breakpoint on the width left after a docked Navigator (B12)', () => {
+    const docked = { width: 1700, height: 1050, ...base, allowSpread: true, navigatorWidth: 320 }
+    expect(computeLayout(docked).columns).toBe(1)
+  })
+})

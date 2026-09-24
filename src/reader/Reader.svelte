@@ -105,6 +105,8 @@
       height: window.innerHeight,
       fontPx,
       spacing: 'default',
+      // L8, G8: the two-page spread is a Pages-mode layout.
+      allowSpread: true,
     })
     engine?.applyLayout(
       layout,
@@ -518,7 +520,7 @@
       </div>
     </header>
     <footer class="chrome bottom">
-      <div class="progress" style:width="{layout.columnWidth}px">
+      <div class="progress" style:width="{layout.textWidth}px">
         <div class="track" aria-hidden="true">
           <div class="fill" style:width="{(location?.fraction ?? 0) * 100}%"></div>
         </div>

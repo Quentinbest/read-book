@@ -382,6 +382,69 @@ export async function spikeE2E(): Promise<SpikeResult> {
   ]
 
   checks.push({
+    id: 'L8-spread',
+    description:
+      'From 1480 px the page is a two-page spread (G8): two 640 px pages, a 48 px gutter, one turn per spread',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick/)
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      const engine = reader()!.engine
+      await engine.goToTextStart() // Chapter 1: plain prose on both pages
+      await w.setSize(new LogicalSize(1680, 1050))
+      await settled(1500)
+      try {
+        // Where the pages sit on screen: each paragraph fragment is one column's box.
+        const range = engine.view.lastLocation?.range
+        if (!range) return 'no visible range'
+        const doc = range.startContainer.ownerDocument!
+        const dx = doc.defaultView!.frameElement!.getBoundingClientRect().left
+        const view = engine.view.getBoundingClientRect()
+        const boxes = new Map<number, number>()
+        for (const p of doc.querySelectorAll('p'))
+          for (const r of p.getClientRects()) {
+            const left = Math.round(r.left + dx)
+            // Fragments in this spread only (the frame holds the whole chapter).
+            if (left < view.left || left >= view.right) continue
+            // Each page's leftmost fragment is its column edge (indented blocks sit further in).
+            const page = left < view.left + view.width / 2 ? 0 : 1
+            const known = [...boxes.keys()].find(
+              (x) => (x < view.left + view.width / 2 ? 0 : 1) === page,
+            )
+            if (known === undefined || left < known) {
+              if (known !== undefined) boxes.delete(known)
+              boxes.set(left, Math.round(r.width))
+            }
+          }
+        const lefts = [...boxes.keys()].sort((a, b) => a - b)
+        const geometry = lefts.map((x) => `${x}+${boxes.get(x)}`).join(', ')
+        log(`L8 spread: pages at ${geometry}`)
+        if (
+          lefts.length !== 2 ||
+          Math.abs(lefts[0] - 176) > 1 ||
+          Math.abs(lefts[1] - (176 + 640 + 48)) > 1 ||
+          lefts.some((x) => Math.abs(boxes.get(x)! - 640) > 1)
+        )
+          return `expected pages at 176+640 and 864+640; got ${geometry}`
+        const before = range.cloneRange()
+        await engine.turn('next')
+        await settled(400)
+        const after = engine.view.lastLocation!.range
+        // The next spread starts after everything the previous one showed.
+        // END_TO_START compares this range's start with the source range's end.
+        if (after.compareBoundaryPoints(Range.END_TO_START, before) < 0)
+          return 'the turn did not move past the previous spread'
+        return 'ok'
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+    },
+  })
+
+  checks.push({
     id: 'E2-fixed-layout',
     description: 'A fixed-layout book opens and turns pages (one view, scaled to fit)',
     run: async () => {
