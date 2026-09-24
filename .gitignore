@@ -11,3 +11,7 @@ dist
 src-tauri/target
 src-tauri/gen/schemas
 __pycache__/
+
+# Test corpus (downloaded and generated; see corpus/manifest.json)
+corpus/cache/
+corpus/generated/
