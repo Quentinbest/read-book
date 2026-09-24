@@ -1,6 +1,6 @@
 # Spike B: input — needs a person at the machine
 
-**Status (2026-09-24): wheel and activating click pass with the native bridge. Trackpad criteria (I2, I3, I5) not tested: no trackpad available (owner).** Pass criteria as below. Pass criteria (plan §5): over 50 scripted and 50 manual gestures, exactly one page turn per gesture on both trackpad axes (I2, I3) and no extra turns from momentum (I5). Also record whether the window-activating click can be told apart (I11).
+**Status (2026-09-24): pass on macOS through the native `NSEvent` bridge:** wheel (I1) and activating click (I11) on the reference machine; trackpad (I2, I3, I5) on a MacBook Air (run 3). Only the 50 scripted gestures remain unrun. Pass criteria (plan §5): over 50 scripted and 50 manual gestures, exactly one page turn per gesture on both trackpad axes (I2, I3) and no extra turns from momentum (I5). Also record whether the window-activating click can be told apart (I11).
 
 ## Why it is not automated
 
@@ -66,3 +66,28 @@ Notes:
 - The WebView-only detector gave 20 turns for step 1's 52 rolls. It is not used for page turns.
 
 **Decision:** the native bridge is the page-turning input path on macOS (the plan's Spike B fallback, now proven for the wheel). I2, I3 and I5 stay open until a trackpad is available; `NativeTurns` implements them from AppKit's gesture and momentum phases and is unit-tested with synthetic phase streams.
+
+## Run 3 — 2026-09-24, built-in trackpad (MacBook Air, 2015)
+
+Run by the owner on a MacBook Air (Intel Core i5-5250U, macOS 12.7.4, WebKit 17613.3.9.1.16 / Safari 15.6.1) with the trackpad-only spike `bt` (Intel build, `dist-spikes/`). No book was loaded, because foliate-js needs WebKit 16.4 (see `docs/decisions.md`, D7-WebKit). Page turns go through the same path as the app: `NSEvent` monitor → `NativeTurns`. Raw events are in `raw/b-trackpad.json`.
+
+Each gesture runs from AppKit's Began/MayBegin to Ended/Cancelled; momentum events are separate.
+
+| Criterion | Gestures ≥ 80 px | Exactly one turn | Turns during momentum | Verdict |
+|---|---|---|---|---|
+| I2: vertical swipes | 30 (of 52 incl. resting touches) | 30/30 | 0 of 30 momentum tails | **pass** |
+| I3: horizontal swipes | 26 (of 32) | 26/26 | 0 of 29 momentum tails | **pass** |
+| I5: quick swipes during momentum | 17 (of 20) | 17/17 | 0 of 17 momentum tails | **pass** |
+| I11: activating click | — | AppKit reported the app inactive on the 6 activating clicks, active on the 1 ordinary click | — | **pass** |
+
+Checks behind the verdicts:
+
+- **Momentum was exercised.** 1,448 momentum events in 76 sequences, with single deltas up to 2,193 px, any one of which would pass 80 px on its own. None turned a page.
+- **Direction.** All 73 turns went in the direction of their own gesture. The 7 back turns in the vertical step were swipes the other way, early in the step.
+- **Gestures under 80 px.** 22 had 0 px of travel (fingers resting, AppKit's MayBegin/Began with no movement); 7 were short scrolls of 15–65 px. None turned a page, as I2 requires.
+- **Device classification.** All 2,275 events were `hasPreciseScrollingDeltas = true`; no trackpad event was taken for a wheel.
+
+Notes:
+
+- The MacBook Air runs macOS 12, below the D7 minimum. The test concerns AppKit trackpad events, which have not changed since, so the result stands for the supported versions; it is not a reference-machine measurement.
+- The Intel build could not be smoke-tested on the reference machine: Rosetta there crashes on every locally linked x86_64 binary, even a C “hello world” (`__thread_starts section missing`). It ran natively on the MacBook Air.
