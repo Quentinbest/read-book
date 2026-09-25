@@ -64,13 +64,18 @@ export class ExtensionHost {
   safeMode = $state(false)
   bridge: ReaderBridge | null = null
   /** Extensions whose Navigator tab is showing: kept loaded while it shows. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   visibleTabs = new Set<string>()
 
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #running = new Map<string, Running>()
   #nextCall = 1
   /** book.selection is readable only while the reader is using the extension (P3). */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #selection = new Map<string, { text: string; cfi: string }>()
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #subscribed = new Set<string>()
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #frames = new Map<Window, string>()
 
   constructor() {
@@ -209,6 +214,7 @@ export class ExtensionHost {
     const run: Running = {
       frame,
       started: new Promise<void>((res, rej) => ((started = res), (failed = rej))),
+      // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
       calls: new Map(),
       lastUsed: performance.now(),
       idle: 0,

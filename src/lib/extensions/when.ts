@@ -29,15 +29,25 @@ function tokens(s: string): Token[] {
   let i = 0
   while (i < s.length) {
     const c = s[i]
-    if (c === ' ') i++
-    else if (c === '(' || c === ')') (out.push({ t: c }), i++)
-    else if (s.startsWith('&&', i) || s.startsWith('||', i))
-      (out.push({ t: s.slice(i, i + 2) as '&&' | '||' }), (i += 2))
-    else if ('<>=!'.includes(c)) {
+    if (c === ' ') {
+      i++
+    } else if (c === '(' || c === ')') {
+      out.push({ t: c })
+      i++
+    } else if (s.startsWith('&&', i) || s.startsWith('||', i)) {
+      out.push({ t: s.slice(i, i + 2) as '&&' | '||' })
+      i += 2
+    } else if ('<>=!'.includes(c)) {
       const two = s[i + 1] === '='
-      if (c === '!' && !two) (out.push({ t: '!' }), i++)
-      else if (c === '=' && !two) throw new Error('use == to compare')
-      else (out.push({ t: 'op', v: s.slice(i, i + (two ? 2 : 1)) }), (i += two ? 2 : 1))
+      if (c === '!' && !two) {
+        out.push({ t: '!' })
+        i++
+      } else if (c === '=' && !two) {
+        throw new Error('use == to compare')
+      } else {
+        out.push({ t: 'op', v: s.slice(i, i + (two ? 2 : 1)) })
+        i += two ? 2 : 1
+      }
     } else if (c === '"') {
       const end = s.indexOf('"', i + 1)
       if (end < 0) throw new Error('unclosed string')
@@ -53,7 +63,9 @@ function tokens(s: string): Token[] {
       else if (VARIABLES.has(m)) out.push({ t: 'id', v: m as keyof WhenContext })
       else throw new Error(`unknown variable “${m}”`)
       i += m.length
-    } else throw new Error(`unexpected “${c}”`)
+    } else {
+      throw new Error(`unexpected “${c}”`)
+    }
   }
   return out
 }

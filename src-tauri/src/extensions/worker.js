@@ -1,3 +1,4 @@
+/* global importScripts */
 // The extension's Worker, bootstrapped by Linen (§7.2, P2). It defines `linen`,
 // the Host API v1: asynchronous, structured messages to the host, which checks
 // each call against the extension's granted permissions. Then it loads the
@@ -21,7 +22,8 @@
     if (m.reply) {
       const p = pending.get(m.reply)
       pending.delete(m.reply)
-      if (p) m.error ? p.reject(new Error(m.error)) : p.resolve(m.result)
+      if (p && m.error) p.reject(new Error(m.error))
+      else if (p) p.resolve(m.result)
     } else if (m.invoke) {
       try {
         const fn = commands.get(m.command)
