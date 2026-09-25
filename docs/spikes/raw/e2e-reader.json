@@ -458,6 +458,60 @@
       "evidence": "ok"
     },
     {
+      "id": "L4-aa-scope",
+      "description": "Aa: size, theme and line spacing change all books, layout this book only; each row names its scope; the choices persist",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "K8-text-size",
+      "description": "⌘+ ⌘− ⌘0 change the text size anywhere: 12 steps to 32 px, then on to 48 px; ⌘0 resets to 19 px",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "L18-E2-aa-hints",
+      "description": "Aa hints: a book over 30% code or tables suggests Scroll (L18); a fixed-layout book keeps only theme, with one line of explanation (E2)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "E6-library",
+      "description": "Library: Continue reading shows the last book with its chapter and Resume reading; All books has every book with its count; search and sort order the grid",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "E8-return-resumes",
+      "description": "Return in the library opens the current book at its saved position",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "E7-remove-undo",
+      "description": "The item menu has Book info, Show in Finder and Remove; Remove is immediate with Undo (⌘Z and the message)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "E10-book-info",
+      "description": "Book info: a read-only modal sheet with the metadata and accessibility metadata; Esc closes it",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "E3-damaged-card",
+      "description": "Opening a book with damaged chapters shows the card (how many of how many, Read anyway, Show file, Remove) until Read anyway",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "G2-settings",
+      "description": "Settings… (⌘,) asks for the Settings window; a change there (text size, announcements) reaches the open book at once and is saved",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -494,7 +548,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790326476,
+    "time": 1790340557,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

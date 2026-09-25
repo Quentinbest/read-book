@@ -92,6 +92,12 @@ The plan wanted D2 decided and the G2, G3, G4 and G12 designs before Phase 6. No
 
 18. **G12 — Aa hints (L18, E2).** *Built, provisional:* one line under Layout for books over 30% code or tables (“Much of this book is code or tables. Scroll may read better.”). For fixed-layout books, size and spacing are hidden and one line explains why (“This book has fixed pages, so its text size and spacing can't change. ⌘+ and ⌘− zoom the page.”).
 
+19. **Phase 6 visual baselines (Screens 01, 09, the 11 shell, and 12's empty and damaged states).** Review `docs/visual/phase6-review.html`. Please also open Settings… (⌘,) once in the app: the harness drives one WebView and so checks the Settings page inside the main window, not the separate window.
+    *Recommendation:* approve.
+
+20. **Not built in Phase 6: the cover-grow transition (240 ms) and a warm book after going to the library (S14).** Both need the reader kept alive behind the library, not recreated per book. Reopening costs about 500 ms today. The alternative is to do it now, in Phase 6.
+    *Recommendation:* do it in Phase 8 (polish).
+
 ## Carried over (need a person, not a decision)
 
 9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.

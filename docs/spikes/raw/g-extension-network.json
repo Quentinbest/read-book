@@ -1,0 +1,83 @@
+{
+  "spike": "g-extension-network",
+  "criteria": [
+    {
+      "id": "G-worker-ran",
+      "description": "The extension Worker runs on its own origin and can load its own package (positive control)",
+      "verdict": "pass",
+      "evidence": "own importScripts: allowed"
+    },
+    {
+      "id": "G-worker-network",
+      "description": "The Worker reaches no undeclared host: fetch, XHR, WebSocket, EventSource, importScripts, nested Workers, sendBeacon, FontFace",
+      "verdict": "pass",
+      "evidence": "fetch: blocked: TypeError; fetch no-cors: blocked: TypeError; XMLHttpRequest: blocked: Error; WebSocket: blocked: SecurityError; EventSource: blocked: SecurityError; importScripts (remote): blocked: NetworkError; importScripts (another extension): blocked: NetworkError; importScripts (data:): blocked: NetworkError; nested Worker (own package): blocked: SecurityError; nested Worker (remote): blocked: SecurityError; nested Worker (blob:): blocked: SecurityError; sendBeacon: refused; FontFace: blocked: NetworkError; Tauri IPC (ipc://): blocked: TypeError; Tauri IPC (http://ipc.localhost): blocked: TypeError; app origin: blocked: TypeError; book media: blocked: TypeError; importScripts (own package): allowed; canary hits: none"
+    },
+    {
+      "id": "G-ipc",
+      "description": "Neither extension code nor its UI can call a Tauri command",
+      "verdict": "pass",
+      "evidence": "the IPC canary was never called"
+    },
+    {
+      "id": "G-ui-opaque",
+      "description": "An extension UI page (sandbox=\"allow-scripts\") reaches no undeclared host",
+      "verdict": "pass",
+      "evidence": "its own script does not run at all in WebKit (script-src 'self' matches no opaque origin), so it is unusable, not unsafe; canary hits: none"
+    },
+    {
+      "id": "G-ui-same-origin",
+      "description": "An extension UI page (sandbox=\"allow-scripts allow-same-origin\") reaches no undeclared host and not the app",
+      "verdict": "pass",
+      "evidence": "fetch: blocked: TypeError; iframe: blocked: Error; form submit: submitted (the canary tells); Worker: blocked: SecurityError; Tauri internals: absent; WebKit message handler: posted (the canary tells); Tauri IPC (ipc://): blocked: TypeError; parent DOM: blocked: SecurityError; canary hits: none"
+    }
+  ],
+  "raw": {
+    "worker": {
+      "fetch": "blocked: TypeError",
+      "fetch no-cors": "blocked: TypeError",
+      "XMLHttpRequest": "blocked: Error",
+      "WebSocket": "blocked: SecurityError",
+      "EventSource": "blocked: SecurityError",
+      "importScripts (remote)": "blocked: NetworkError",
+      "importScripts (another extension)": "blocked: NetworkError",
+      "importScripts (data:)": "blocked: NetworkError",
+      "nested Worker (own package)": "blocked: SecurityError",
+      "nested Worker (remote)": "blocked: SecurityError",
+      "nested Worker (blob:)": "blocked: SecurityError",
+      "sendBeacon": "refused",
+      "FontFace": "blocked: NetworkError",
+      "Tauri IPC (ipc://)": "blocked: TypeError",
+      "Tauri IPC (http://ipc.localhost)": "blocked: TypeError",
+      "app origin": "blocked: TypeError",
+      "book media": "blocked: TypeError",
+      "importScripts (own package)": "allowed"
+    },
+    "ui": {
+      "allow-scripts": null,
+      "allow-scripts allow-same-origin": {
+        "fetch": "blocked: TypeError",
+        "iframe": "blocked: Error",
+        "form submit": "submitted (the canary tells)",
+        "Worker": "blocked: SecurityError",
+        "Tauri internals": "absent",
+        "WebKit message handler": "posted (the canary tells)",
+        "Tauri IPC (ipc://)": "blocked: TypeError",
+        "parent DOM": "blocked: SecurityError"
+      }
+    },
+    "canary": {
+      "ipc": [],
+      "http": []
+    }
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "only": null,
+    "os": "14.6.1",
+    "time": 1790339380,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

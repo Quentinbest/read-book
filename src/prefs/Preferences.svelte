@@ -9,9 +9,13 @@
   import { t } from '../lib/strings/en'
   import { ipc } from '../app/ipc'
   import { applyTheme, type ThemeChoice } from '../app/theme'
-  import { changeSetting, onSettingChanged } from '../app/settingsSync'
+  import { changeSetting as change, onSettingChanged } from '../app/settingsSync'
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from '../reader/textSizes'
   import { exportAllAnnotations } from './exportAll'
+
+  /** This page's own changes are not applied back to it. */
+  const source = crypto.randomUUID()
+  const changeSetting = (key: string, value: string) => change(key, value, source)
 
   type Section = keyof typeof t.prefs.sections
   const SECTIONS = Object.keys(t.prefs.sections) as Section[]
@@ -102,7 +106,7 @@
       if (key === 'theme') theme = value as ThemeChoice
       if (key === 'fontPx') fontPx = Number(value)
       if (key === 'lineSpacing') spacing = value
-    })
+    }, source)
     return () => void off.then((f) => f())
   })
 </script>

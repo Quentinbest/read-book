@@ -145,6 +145,26 @@ pub fn install<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.manage(SpikeState(Mutex::new(CanaryLog::default())))
 }
 
+/// Spike G: install a probe extension from `src-tauri/tests/fixtures/ext/<id>` into
+/// the library's Extensions folder (throwaway data folders only).
+#[tauri::command]
+pub fn spike_install_ext(
+    state: tauri::State<crate::commands::AppState>,
+    id: String,
+) -> Result<(), String> {
+    if !crate::extensions::valid_id(&id) {
+        return Err(format!("invalid id {id}"));
+    }
+    let from = repo_root().join("src-tauri/tests/fixtures/ext").join(&id);
+    let to = state.library.extensions_dir.join(&id);
+    std::fs::create_dir_all(&to).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(&from).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        std::fs::copy(entry.path(), to.join(entry.file_name())).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// §6.4 cold start: every file in a corpus folder (the 500-book fixture).
 #[tauri::command]
 pub fn spike_corpus_dir(name: String) -> Result<Vec<String>, String> {

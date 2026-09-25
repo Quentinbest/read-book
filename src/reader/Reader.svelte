@@ -731,6 +731,8 @@
   /** E2: a fixed-layout book (Aa keeps theme and zoom only). */
   let fixedBook = $state(false)
   const CODE_HEAVY_SHARE = 0.3
+  const CODE_SHARE_DELAY_MS = 5000
+  let unmounted = false
   function openAa() {
     if (aaOpen) return dispatch({ type: 'closeFloating' })
     if (!chromeVisible) dispatch({ type: 'showChrome' })
@@ -1424,10 +1426,15 @@
       const known = await ipc.settingGet(shareKey)
       if (known !== null) codeHeavy = Number(known) > CODE_HEAVY_SHARE
       else if (!engine.fixedLayout)
-        void engine.codeShare().then((share) => {
-          codeHeavy = share > CODE_HEAVY_SHARE
-          void ipc.settingSet(shareKey, share.toFixed(3))
-        })
+        // After the book has settled: measuring parses every chapter.
+        void new Promise((r) => setTimeout(r, CODE_SHARE_DELAY_MS))
+          .then(() => (unmounted || !engine ? null : engine.codeShare()))
+          .then((share) => {
+            // A book closed meanwhile is measured next time it opens.
+            if (share === null || Number.isNaN(share) || unmounted) return
+            codeHeavy = share > CODE_HEAVY_SHARE
+            void ipc.settingSet(shareKey, share.toFixed(3))
+          })
     })()
 
     const onResize = () => {
@@ -1463,6 +1470,7 @@
     window.addEventListener('blur', onBlur)
     window.addEventListener('keydown', onKeydown)
     return () => {
+      unmounted = true
       window.removeEventListener('resize', debouncedResize)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('keydown', onKeydown)

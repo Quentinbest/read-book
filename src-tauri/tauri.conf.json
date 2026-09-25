@@ -34,7 +34,7 @@
         "img-src": "'self' blob: data: linen-book:",
         "font-src": "'self' blob: data:",
         "media-src": "blob: linen-book:",
-        "frame-src": "blob:",
+        "frame-src": "blob: linen-ext:",
         "worker-src": "'self' blob:",
         "connect-src": "'self' ipc: http://ipc.localhost",
         "object-src": "'none'",

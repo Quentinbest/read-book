@@ -801,6 +801,61 @@ pub fn opened_take(pending: State<PendingOpens>) -> Vec<ImportResult> {
 mod tests {
     use super::*;
 
+    /// G4 (provisional): a book removed in an earlier session goes at launch with its
+    /// copied file, cover and annotations; files outside the library are never touched.
+    #[test]
+    fn purge_deletes_the_removed_books_files_and_rows_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let library = Library::new(dir.path()).unwrap();
+        let mut store = Store::open(&dir.path().join("linen.db")).unwrap();
+        let file = library.books_dir.join("b1.epub");
+        let cover = library.covers_dir.join("b1.png");
+        let outside = dir.path().join("outside.epub");
+        for f in [&file, &cover, &outside] {
+            std::fs::write(f, b"x").unwrap();
+        }
+        for (id, path, cover) in [
+            ("b1", file.to_str().unwrap(), Some(cover.to_str().unwrap())),
+            ("b2", outside.to_str().unwrap(), None),
+        ] {
+            store
+                .conn()
+                .execute(
+                    "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at, cover_path)
+                     VALUES (?1, ?1, ?2, ?1, 'package', 0, ?3)",
+                    rusqlite::params![id, path, cover],
+                )
+                .unwrap();
+        }
+        store
+            .conn()
+            .execute(
+                "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact, created_at, updated_at)
+                 VALUES ('a1', 'b1', 'b1', 'yellow', 'x', 'q', 0, 0)",
+                [],
+            )
+            .unwrap();
+        store.remove_book("b1").unwrap();
+        store.remove_book("b2").unwrap();
+        purge_removed(&mut store, &library);
+        assert!(
+            !file.exists() && !cover.exists(),
+            "the library copy and cover are deleted"
+        );
+        assert!(
+            outside.exists(),
+            "a file outside the library is never deleted"
+        );
+        let count = |sql: &str| {
+            store
+                .conn()
+                .query_row(sql, [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        assert_eq!(count("SELECT COUNT(*) FROM books"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM annotations"), 0);
+    }
+
     /// E5: a full disk surfaces as SaveFailed, and the same write succeeds once space returns.
     #[test]
     fn disk_full_is_a_save_failure_and_retry_succeeds() {

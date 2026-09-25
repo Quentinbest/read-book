@@ -351,6 +351,7 @@ export class ReaderEngine {
   #hlKeys = new WeakMap<object, string[]>()
   #hadSelection = false
   #caret: { color: string } | null = null
+  #closed = false
   /** Tests turn this off to exercise the overlay path older WebKit takes (A4). */
   useCustomHighlights = true
   /** Extracted text of live documents, for search offsets (F5). */
@@ -777,6 +778,8 @@ export class ReaderEngine {
     for (const section of this.#book?.sections ?? []) {
       if (section.linear === 'no') continue
       await new Promise((r) => (window.requestIdleCallback ?? setTimeout)(r))
+      // The book was closed: stop (the reader measures it again next time).
+      if (this.#closed) return Number.NaN
       const doc = await section.createDocument?.().catch(() => null)
       const body = doc?.body
       if (!body) continue
@@ -1357,6 +1360,7 @@ export class ReaderEngine {
   }
 
   close() {
+    this.#closed = true
     cancelAnimationFrame(this.#watchTimer)
     cancelAnimationFrame(this.#scrollFrame)
     clearInterval(this.#heightTimer)

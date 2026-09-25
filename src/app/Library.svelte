@@ -327,6 +327,8 @@
   .library {
     min-height: 100vh;
     box-sizing: border-box;
+    /* The empty state's top margin stays inside (no scrollbar on an empty library). */
+    display: flow-root;
     padding: 0 48px 48px;
     font-family: var(--font-ui);
     color: var(--ink);

@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod epub;
+pub mod extensions;
 pub mod import;
 pub mod native;
 pub mod native_input;
@@ -22,6 +23,20 @@ pub fn run() {
                 std::thread::spawn(move || {
                     let state = app.state::<commands::AppState>();
                     responder.respond(commands::serve_book_media(&state, &path));
+                });
+            },
+        )
+        // §7.2, Spike G: extension packages, each on its own origin.
+        .register_asynchronous_uri_scheme_protocol(
+            extensions::EXT_SCHEME,
+            |ctx, request, responder| {
+                use tauri::Manager;
+                let app = ctx.app_handle().clone();
+                let id = request.uri().host().unwrap_or_default().to_string();
+                let path = request.uri().path().to_string();
+                std::thread::spawn(move || {
+                    let state = app.state::<commands::AppState>();
+                    responder.respond(extensions::serve(&state.library.extensions_dir, &id, &path));
                 });
             },
         )
@@ -79,6 +94,7 @@ pub fn run() {
         spikes::spike_read_corpus,
         spikes::spike_corpus_path,
         spikes::spike_corpus_dir,
+        spikes::spike_install_ext,
         spikes::spike_canary,
         spikes::spike_canary_log,
         spikes::spike_canary_clear,

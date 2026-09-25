@@ -1718,7 +1718,8 @@ export async function spikeE2E(): Promise<SpikeResult> {
           problems.push(`⌘K ${c.id} “${inPalette.get(c.title)}”`)
         if (!inMore.has(c.title) || inMore.get(c.title) !== label) problems.push(`⋯ ${c.id}`)
         if (c.menu && !inMenuBar.has(c.id)) problems.push(`menu bar ${c.id}`)
-        if (!c.menu) problems.push(`no menu bar place for ${c.id}`)
+        // Settings… lives in the app menu, macOS's place for it (menubar.ts).
+        if (!c.menu && c.id !== 'app.settings') problems.push(`no menu bar place for ${c.id}`)
       }
       return problems.length ? problems.join('; ') : 'ok'
     },
@@ -3702,6 +3703,43 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await backToLibrary()
   clearMessage()
   await capture('01-library')
+
+  // Screen 12: the damaged-book card, then the empty library.
+  const [damaged] = await invoke<{ outcome: { book_id?: string } }[]>('library_import', {
+    paths: [await invoke<string>('spike_corpus_path', { name: 'broken-missing-items.epub' })],
+  })
+  hooks.run?.('library.show')
+  await settled(600)
+  Array.from(document.querySelectorAll<HTMLElement>('.library .tile'))
+    .find((t) => t.dataset.book === damaged.outcome.book_id)
+    ?.querySelector<HTMLButtonElement>('.open')
+    ?.click()
+  await waitFor('damaged card', () => document.querySelector('dialog[open] .card'))
+  await settled(400)
+  await capture('12-damaged-book')
+  ;(document.activeElement ?? document.body).dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+  )
+  await settled(300)
+  const all = await invoke<{ id: string }[]>('library_list')
+  for (const b of all) await invoke('library_remove', { bookId: b.id })
+  hooks.run?.('library.show')
+  await waitFor('empty library', () => document.querySelector('.library .empty'))
+  clearMessage()
+  await capture('12-empty-library')
+  for (const b of all) await invoke('library_restore', { bookId: b.id })
+
+  // Screen 11: the Settings window's page (Extensions, the shell until Phase 7).
+  const { default: Preferences } = await import('../prefs/Preferences.svelte')
+  const prefsHost = document.createElement('div')
+  prefsHost.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground)'
+  document.body.append(prefsHost)
+  mount(Preferences, { target: prefsHost })
+  await settled(600)
+  prefsHost.querySelector<HTMLButtonElement>('#prefs-extensions')!.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await capture('11-settings-extensions')
+  prefsHost.remove()
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

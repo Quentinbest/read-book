@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 6 review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body><main>
+<h1>Phase 6 review: settings and library</h1>
+<p class="lede">Each mock (left) beside the app, 1280 × 800, captured from the app's own window on the reference Mac (WebKit 19618). The library holds the visual spike's three test books, not the mock's fourteen. Approving makes these captures the Phase 6 baselines (item 19). <span class="tag ask">decide</span> marks the provisional designs in items 14–18.</p>
+
+<h2>Screen 09 — Reading settings (Aa)</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/09.png"><img src="mocks/09.png" alt="Mock 09"/></a></figure><figure><figcaption>App</figcaption><a href="app/09-reading-settings.png"><img src="app/09-reading-settings.png" alt="App 09"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>a 300 px popover under the Aa button, which is tinted while open;</li>
+<li>Text size with “19 px · All books” and the slider in the twelve L4 steps;</li>
+<li>the four theme swatches, each in its theme's own colours;</li>
+<li>Line spacing and Layout segments, each row naming its scope;</li>
+<li>“More in Settings…” and “⌘+ ⌘− work anywhere”.</li>
+</ul></li>
+<li><span class="tag ask">decide</span>G12, not shown here: books over 30% code or tables get “Much of this book is code or tables. Scroll may read better.” For fixed-layout books, size and spacing give way to one line of explanation. Both are tested (L18-E2-aa-hints).</li>
+</ul>
+
+<h2>Screen 01 — Library</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/01.png"><img src="mocks/01.png" alt="Mock 01"/></a></figure><figure><figcaption>App</figcaption><a href="app/01-library.png"><img src="app/01-library.png" alt="App 01"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>the header with search, sort (Recent) and Open…;</li>
+<li>Continue reading: the current book large, with its chapter, progress, Resume reading and “Opened today at …”, and the next two small;</li>
+<li>All books with its count;</li>
+<li>tiles with the cover, a two-line title, the author, and a progress bar with % (or New / Finished).</li>
+</ul></li>
+<li><span class="tag ok">expected</span>These test books have real covers. Books without one get a generated cover in Screen 01's tints, with the title and author set on it (tested for ≥ 7:1 lettering).</li>
+<li><span class="tag ask">decide</span>The item menu (right-click, or a ⋯ that appears on hover and focus) and Remove with Undo (G4, item 15).</li>
+<li><span class="tag later">later phase</span>The 240 ms cover-grow into the book (item 20).</li>
+</ul>
+
+<h2>Screen 12 — Damaged book</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/12.png"><img src="mocks/12.png" alt="Mock 12 damaged"/></a></figure><figure><figcaption>App</figcaption><a href="app/12-damaged-book.png"><img src="app/12-damaged-book.png" alt="App 12 damaged"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock's card: the warning line, “Part of this book couldn't be opened”, how many chapters of how many, and Read anyway, Show file and Remove.</li>
+<li><span class="tag ok">expected</span>It opens over the library as a modal when the book is opened, until Read anyway.</li>
+<li><span class="tag ok">expected</span>The warning line names the book's title and size. The original file name is not kept, because books are copied into the library.</li>
+</ul>
+
+<h2>Screen 12 — Empty library</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/12.png"><img src="mocks/12.png" alt="Mock 12 empty"/></a></figure><figure><figcaption>App</figcaption><a href="app/12-empty-library.png"><img src="app/12-empty-library.png" alt="App 12 empty"/></a></figure></div>
+<ul class="notes">
+<li>Unchanged since Phase 1: the title, the drop target, “Open a book… ⌘O” and the note.</li>
+<li><span class="tag ok">expected</span>The mock's book icon in a circle is not drawn (as in Phase 1).</li>
+</ul>
+
+<h2>Screen 11 — Settings (the shell)</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/11.png"><img src="mocks/11.png" alt="Mock 11"/></a></figure><figure><figcaption>App</figcaption><a href="app/11-settings-extensions.png"><img src="app/11-settings-extensions.png" alt="App 11"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock's frame: the sidebar (General, Reading, Library, Extensions, Shortcuts, About) with the selected section in accent, the section title, and the extensions intro.</li>
+<li><span class="tag later">later phase</span>The extension list, Install from file… and Restart without extensions arrive in Phase 7.</li>
+<li><span class="tag ask">decide</span>The contents of the other sections are G2's proposal (item 17).</li>
+</ul>
+</main></body></html>

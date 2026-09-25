@@ -53,6 +53,8 @@ pub struct Library {
     /// ~/Library/Application Support/app.linen.reader/Books (B3)
     pub books_dir: PathBuf,
     pub covers_dir: PathBuf,
+    /// Installed extension packages, one folder per extension id (§7.2).
+    pub extensions_dir: PathBuf,
 }
 
 impl Library {
@@ -60,9 +62,11 @@ impl Library {
         let lib = Library {
             books_dir: root.join("Books"),
             covers_dir: root.join("Covers"),
+            extensions_dir: root.join("Extensions"),
         };
         std::fs::create_dir_all(&lib.books_dir)?;
         std::fs::create_dir_all(&lib.covers_dir)?;
+        std::fs::create_dir_all(&lib.extensions_dir)?;
         Ok(lib)
     }
 }
