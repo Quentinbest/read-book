@@ -185,6 +185,22 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'View',
   },
   {
+    id: 'reader.settings',
+    rule: 'L4',
+    title: t.commands['reader.settings'],
+    section: 'view',
+    palette: true,
+    menu: 'View',
+  },
+  {
+    id: 'app.settings',
+    rule: 'G2',
+    title: t.commands['app.settings'],
+    section: 'app',
+    chord: { code: 'Comma', meta: true },
+    palette: true,
+  },
+  {
     id: 'palette.open',
     rule: 'K9',
     title: t.commands['palette.open'],

@@ -35,6 +35,9 @@
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu'
   import { multipliedTint, parseColor } from '../lib/theme/tokens'
+  import AaPopover from './AaPopover.svelte'
+  import { clampTextSize, DEFAULT_TEXT_SIZE, stepTextSize } from './textSizes'
+  import { applyTheme, type ThemeChoice } from '../app/theme'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
   import { bookMediaUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
@@ -48,7 +51,7 @@
   } from './engine'
   import { fallBackFailedFonts, literataFaces } from './fonts'
   import { libraryLoader } from './loader'
-  import { computeLayout, showLocationLine, type Layout } from './layout'
+  import { computeLayout, showLocationLine, type Layout, type Spacing } from './layout'
   import { ReadingPace } from './pace'
   import { PageCounter } from './pages'
   import { readerStyles } from './styles'
@@ -235,9 +238,10 @@
   /** Floating popovers close on a click outside them (S2). */
   function onReaderPointerDown(e: PointerEvent) {
     const kind = lanes.floating?.kind
-    if (kind !== 'goto' && kind !== 'peek' && kind !== 'more') return
+    if (kind !== 'goto' && kind !== 'peek' && kind !== 'more' && kind !== 'aa' && kind !== 'note')
+      return
     const inside = (e.target as Element | null)?.closest?.(
-      '.goto, .goto-label, .nav-goto, .peek, .more, .more-button',
+      '.goto, .goto-label, .nav-goto, .peek, .more, .more-button, .aa, .aa-button, .note',
     )
     if (!inside) dispatch({ type: 'closeFloating' })
   }
@@ -725,7 +729,56 @@
     if (!lanes.docked) closeNavigator()
   }
   let height = $state(window.innerHeight)
-  let fontPx = 19
+  // ---- Reading settings, the Aa popover (L4, L5, V1, B8; Screen 09)
+  let fontPx = $state(DEFAULT_TEXT_SIZE)
+  let spacing = $state<Spacing>('default')
+  let themeChoice = $state<ThemeChoice>('auto')
+  let aaOpen = $derived(lanes.floating?.kind === 'aa')
+  let aaButton: HTMLButtonElement | undefined = $state()
+  let aaAnchor = $state<DOMRect | null>(null)
+  /** L18: over 30% of the book is code or tables (measured once per book, in idle time). */
+  let codeHeavy = $state(false)
+  /** E2: a fixed-layout book (Aa keeps theme and zoom only). */
+  let fixedBook = $state(false)
+  const CODE_HEAVY_SHARE = 0.3
+  function openAa() {
+    if (aaOpen) return dispatch({ type: 'closeFloating' })
+    if (!chromeVisible) dispatch({ type: 'showChrome' })
+    requestAnimationFrame(() => {
+      aaAnchor = aaButton?.getBoundingClientRect() ?? new DOMRect(window.innerWidth - 90, 8, 36, 36)
+      dispatch({ type: 'openFloating', kind: 'aa' })
+    })
+  }
+  /** L4: all books; ⌘+ ⌘− ⌘0 and the slider. */
+  function setFont(px: number) {
+    const next = clampTextSize(px)
+    if (next === fontPx) return
+    fontPx = next
+    void ipc.settingSet('fontPx', String(next))
+    relayout()
+  }
+  /** L5: all books. */
+  function setSpacing(next: Spacing) {
+    if (next === spacing) return
+    spacing = next
+    void ipc.settingSet('lineSpacing', next)
+    relayout()
+  }
+  /** B8: this book only. */
+  async function switchMode(mode: ReadingMode) {
+    if (!engine || !(await engine.setMode(mode))) return
+    readingMode = mode
+    relayout()
+    void ipc.bookSettingsSet(book.id, mode, navigatorDocked).catch(() => {})
+  }
+  /** V1: all books, and the app around them; Auto follows the system. */
+  async function setTheme(choice: ThemeChoice) {
+    themeChoice = choice
+    applyTheme(choice)
+    await ipc.settingSet('theme', choice)
+    theme = await resolveTheme()
+    relayout()
+  }
   let edges = { topStart: 0, bottomOff: false }
   let announceTurns = true
   let fontFaces = ''
@@ -800,7 +853,7 @@
       width: window.innerWidth,
       height: window.innerHeight,
       fontPx,
-      spacing: 'default',
+      spacing,
       navigatorWidth: dockedWidth,
       // L8, G8: the two-page spread is a Pages-mode layout.
       allowSpread: readingMode === 'pages',
@@ -1073,7 +1126,10 @@
     const cleanups: (() => void)[] = []
     void (async () => {
       theme = await resolveTheme()
-      fontPx = Number((await ipc.settingGet('fontPx')) ?? 19) || 19
+      fontPx = clampTextSize(Number((await ipc.settingGet('fontPx')) ?? DEFAULT_TEXT_SIZE))
+      const savedSpacing = await ipc.settingGet('lineSpacing')
+      if (savedSpacing === 'compact' || savedSpacing === 'loose') spacing = savedSpacing
+      themeChoice = ((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto'
       announceTurns = (await ipc.settingGet('pageTurnAnnouncements')) !== 'off'
       await refreshEdges()
       const savedPace = await ipc.settingGet('readingPace')
@@ -1200,6 +1256,7 @@
       clearTimeout(openingTimer)
       openingShown = false
       rtlBook = engine.rtl
+      fixedBook = engine.fixedLayout
       zoom = engine.zoom
       pages = new PageCounter(opened.sections.map((s) => (s.linear === 'no' ? 0 : s.size)))
       relayout()
@@ -1312,13 +1369,7 @@
       cleanups.push(
         registry.handle('search.previous', { run: () => stepResult(-1), enabled: hasResults }),
       )
-      // B8: Pages and Scroll (the Aa popover's control arrives in Phase 6).
-      const switchMode = async (mode: ReadingMode) => {
-        if (!engine || !(await engine.setMode(mode))) return
-        readingMode = mode
-        relayout()
-        void ipc.bookSettingsSet(book.id, mode, navigatorDocked).catch(() => {})
-      }
+      // B8: Pages and Scroll, from the commands and the Aa popover (this book only).
       for (const mode of ['pages', 'scroll'] as const)
         cleanups.push(
           registry.handle(`layout.${mode}`, {
@@ -1326,27 +1377,45 @@
             enabled: () => readingMode !== mode && engine?.fixedLayout !== true,
           }),
         )
-      // K8 on a fixed-layout book zooms the page (I17); text size itself arrives with Aa.
-      // In the image view (N11) they zoom the image.
-      const zoomable = () => engine?.fixedLayout === true || imageOpen
+      // K8: ⌘+ ⌘− ⌘0 change the text size (all books). A fixed-layout book zooms its
+      // page instead (I17, E2), and the image view zooms the image (N11).
+      const zooms = () => engine?.fixedLayout === true || imageOpen
       cleanups.push(
         registry.handle('text.larger', {
-          run: () => (imageOpen ? imageView?.step(1) : zoomStep(1)),
-          enabled: zoomable,
+          run: () =>
+            imageOpen
+              ? imageView?.step(1)
+              : zooms()
+                ? zoomStep(1)
+                : setFont(stepTextSize(fontPx, 1)),
         }),
       )
       cleanups.push(
         registry.handle('text.smaller', {
-          run: () => (imageOpen ? imageView?.step(-1) : zoomStep(-1)),
-          enabled: zoomable,
+          run: () =>
+            imageOpen
+              ? imageView?.step(-1)
+              : zooms()
+                ? zoomStep(-1)
+                : setFont(stepTextSize(fontPx, -1)),
         }),
       )
       cleanups.push(
         registry.handle('text.reset', {
-          run: () => (imageOpen ? (imageZoom = 1) : setZoom(1)),
-          enabled: zoomable,
+          run: () =>
+            imageOpen ? (imageZoom = 1) : zooms() ? setZoom(1) : setFont(DEFAULT_TEXT_SIZE),
         }),
       )
+      cleanups.push(registry.handle('reader.settings', { run: openAa }))
+      // L18: how much of the book is code or tables, measured once in idle time.
+      const shareKey = `codeShare:${book.id}`
+      const known = await ipc.settingGet(shareKey)
+      if (known !== null) codeHeavy = Number(known) > CODE_HEAVY_SHARE
+      else if (!engine.fixedLayout)
+        void engine.codeShare().then((share) => {
+          codeHeavy = share > CODE_HEAVY_SHARE
+          void ipc.settingSet(shareKey, share.toFixed(3))
+        })
     })()
 
     const onResize = () => {
@@ -1359,6 +1428,16 @@
       clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(onResize, 120) // L10
     }
+    // V1: Auto follows the system between Paper and Night.
+    const scheme = matchMedia('(prefers-color-scheme: dark)')
+    const onScheme = () => {
+      if (themeChoice !== 'auto') return
+      void resolveTheme().then((th) => {
+        theme = th
+        relayout()
+      })
+    }
+    scheme.addEventListener('change', onScheme)
     const onBlur = () => saveNow()
     const onFocusEdges = () => void refreshEdges()
     window.addEventListener('focus', onFocusEdges)
@@ -1376,6 +1455,7 @@
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('keydown', onKeydown)
       window.removeEventListener('focus', onFocusEdges)
+      scheme.removeEventListener('change', onScheme)
       offQuit()
       cleanups.forEach((c) => c())
       saveNow()
@@ -1555,6 +1635,25 @@
         ongo={onGo}
       />
     {/if}
+    {#if aaOpen && aaAnchor}
+      <AaPopover
+        anchor={aaAnchor}
+        {fontPx}
+        theme={themeChoice}
+        {spacing}
+        layout={readingMode}
+        fixedLayout={fixedBook}
+        {codeHeavy}
+        onfont={setFont}
+        ontheme={(c) => void setTheme(c)}
+        onspacing={setSpacing}
+        onlayout={(m) => void switchMode(m)}
+        onsettings={() => {
+          dispatch({ type: 'closeFloating' })
+          registry.run('app.settings')
+        }}
+      />
+    {/if}
     {#if barOpen && bar}
       {@const existing = bar.id ? annotations.get(bar.id) : undefined}
       <SelectionBar
@@ -1623,7 +1722,7 @@
         <div class="title" aria-live="off">
           <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
         </div>
-        <!-- Screen 03: Search · Notes · Aa · ⋯ (Aa arrives in Phase 6). -->
+        <!-- Screen 03: Search · Notes · Aa · ⋯ -->
         <div class="tools">
           <button type="button" class="tool" aria-label={t.search.label} onclick={openSearch}>
             <Icon name="search" size={18} />
@@ -1636,6 +1735,16 @@
           >
             <Icon name="highlights" size={18} />
           </button>
+          <button
+            type="button"
+            class="tool aa-button"
+            class:open={aaOpen}
+            bind:this={aaButton}
+            aria-label={t.aa.button}
+            aria-haspopup="dialog"
+            aria-expanded={aaOpen}
+            onclick={openAa}>Aa</button
+          >
           <button
             type="button"
             class="tool more-button"
@@ -1798,6 +1907,14 @@
   .tool[aria-expanded='true'] {
     background: var(--hover-wash);
     color: var(--ink);
+  }
+  /* Screen 09: “Aa” in the reading face; accent on a 10% accent wash while open. */
+  .aa-button {
+    font: 500 16px var(--font-reading, Literata, Georgia, serif);
+  }
+  .aa-button.open {
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+    color: var(--accent);
   }
   .link-url {
     position: absolute;

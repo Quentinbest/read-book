@@ -767,6 +767,27 @@ export class ReaderEngine {
     this.#selection.forEach((l) => l(event))
   }
 
+  /**
+   * L18: the share of the book's text that is code or tables, measured over every
+   * chapter, one at a time in idle time (it runs once per book; the reader keeps it).
+   */
+  async codeShare(): Promise<number> {
+    let code = 0
+    let all = 0
+    for (const section of this.#book?.sections ?? []) {
+      if (section.linear === 'no') continue
+      await new Promise((r) => (window.requestIdleCallback ?? setTimeout)(r))
+      const doc = await section.createDocument?.().catch(() => null)
+      const body = doc?.body
+      if (!body) continue
+      all += body.textContent?.length ?? 0
+      // Outermost code blocks and tables only, so nested ones are not counted twice.
+      for (const el of body.querySelectorAll('pre, table, code'))
+        if (!el.parentElement?.closest('pre, table, code')) code += el.textContent?.length ?? 0
+    }
+    return all ? code / all : 0
+  }
+
   /** A8: the chapter a CFI points into, or null if it does not resolve in this book. */
   cfiIndex(cfi: string): number | null {
     try {

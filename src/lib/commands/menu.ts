@@ -28,6 +28,7 @@ const KEY_NAMES: Record<string, string> = {
   Equal: '=',
   Minus: '-',
   Slash: '/',
+  Comma: ',',
   Escape: 'Escape',
 }
 

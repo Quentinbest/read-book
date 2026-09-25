@@ -102,7 +102,13 @@ const pageDoc = () => {
   const c = reader()!
     .engine.view.renderer.getContents()
     .find((x) => x.index === l?.sectionIndex && x.doc?.body?.textContent?.trim())
-  if (!c?.doc) throw new Error('no page document')
+  if (!c?.doc)
+    throw new Error(
+      `no page document: at ${l?.sectionIndex}, loaded ${reader()!
+        .engine.view.renderer.getContents()
+        .map((x) => `${x.index}:${x.doc?.body?.textContent?.trim().length ?? 'none'}`)
+        .join(',')}`,
+    )
   return c as { doc: Document; index: number; overlayer?: { element: SVGElement } }
 }
 /** Chapter-text offsets of a phrase in the current chapter (the same extractor as the reader). */
@@ -240,6 +246,8 @@ export async function spikeE2E(): Promise<SpikeResult> {
     // F2: diacritics and CJK (golden results from Spike F).
     'idpf-sous-le-vent.epub',
     'idpf-kusamakura-japanese-vertical-writing.epub',
+    // L18: over 30% code and tables.
+    'code-heavy.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -2716,6 +2724,156 @@ export async function spikeE2E(): Promise<SpikeResult> {
           JSON.stringify(a),
       )
       return bad.length ? `${bad.length} changed` : 'ok'
+    },
+  })
+
+  // ---------------------------------------------------------------- Phase 6: reading settings (Aa)
+  const aa = () => document.querySelector<HTMLElement>('.aa[role="dialog"]')
+  const openAa = async () => {
+    if (!aa()) hooks.run?.('reader.settings')
+    return waitFor('Aa', aa)
+  }
+  const aaRadio = (group: string, label: string) =>
+    Array.from(
+      aa()!.querySelectorAll<HTMLButtonElement>(`[aria-labelledby="aa-${group}"] [role="radio"]`),
+    ).find((b) => b.textContent?.trim().endsWith(label))!
+  const bodyFontPx = () => parseFloat(getComputedStyle(pageDoc().doc.body).fontSize)
+  const bodyLineHeight = () => {
+    const cs = getComputedStyle(pageDoc().doc.body.querySelector('p') ?? pageDoc().doc.body)
+    return parseFloat(cs.lineHeight) / parseFloat(cs.fontSize)
+  }
+  const resetReading = async () => {
+    for (const [k, v] of [
+      ['fontPx', '19'],
+      ['lineSpacing', 'default'],
+      ['theme', 'auto'],
+    ])
+      await invoke('setting_set', { key: k, value: v })
+  }
+
+  checks.push({
+    id: 'L4-aa-scope',
+    description:
+      'Aa: size, theme and line spacing change all books, layout this book only; each row names its scope; the choices persist',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const pop = await openAa()
+      const labels = Array.from(pop.querySelectorAll('.lbl')).map((l) => l.textContent?.trim())
+      if (
+        labels.join(' | ') !==
+        'Text size19 px · All books | ThemeAll books | Line spacingAll books | LayoutThis book'
+      )
+        problems.push(`rows: ${labels.join(' | ')}`)
+      pop.querySelector<HTMLButtonElement>('.step.large')!.click()
+      await settled(500)
+      if (bodyFontPx() !== 20) problems.push(`text at ${bodyFontPx()} px after A+`)
+      aaRadio('theme', 'Sepia').click()
+      await settled(500)
+      if (
+        getComputedStyle(document.querySelector('.reader')!)
+          .getPropertyValue('--ground')
+          .trim()
+          .toLowerCase() !== '#f1e6d2'
+      )
+        problems.push('the theme did not change to Sepia')
+      aaRadio('spacing', 'Loose').click()
+      await settled(500)
+      if (Math.abs(bodyLineHeight() - 1.75) > 0.051)
+        problems.push(`line height ${bodyLineHeight().toFixed(2)} after Loose`)
+      aaRadio('layout', 'Scroll').click()
+      await settled(1200)
+      if (reader()!.engine.mode !== 'scroll') problems.push('layout did not switch to Scroll')
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      // Another book: the same size, theme and spacing; its own layout.
+      await backToLibrary()
+      await openFromLibrary(/Notes and images/)
+      if (bodyFontPx() !== 20) problems.push(`other book at ${bodyFontPx()} px`)
+      if (Math.abs(bodyLineHeight() - 1.75) > 0.051) problems.push('other book lost Loose')
+      if (reader()!.engine.mode !== 'pages') problems.push('layout leaked to another book')
+      if (document.documentElement.dataset.theme !== 'sepia')
+        problems.push(`app theme ${document.documentElement.dataset.theme}`)
+      // Reopening (the settings come from the store, as after a restart).
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      if (reader()!.engine.mode !== 'scroll') problems.push('this book forgot Scroll')
+      const again = await openAa()
+      if (aaRadio('theme', 'Sepia').getAttribute('aria-checked') !== 'true')
+        problems.push('Sepia not shown chosen')
+      aaRadio('layout', 'Pages').click()
+      await settled(1000)
+      key('Escape', { code: 'Escape' })
+      void again
+      await resetReading()
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'K8-text-size',
+    description:
+      '⌘+ ⌘− ⌘0 change the text size anywhere: 12 steps to 32 px, then on to 48 px; ⌘0 resets to 19 px',
+    run: async () => {
+      const problems: string[] = []
+      const press = async (code: string, n = 1) => {
+        for (let i = 0; i < n; i++)
+          keyOnApp(code === 'Equal' ? '=' : code === 'Minus' ? '-' : '0', { code, metaKey: true })
+        await settled(600)
+      }
+      await press('Digit0')
+      await press('Equal')
+      if (bodyFontPx() !== 20) problems.push(`⌘+ gave ${bodyFontPx()}`)
+      await press('Minus', 2)
+      if (bodyFontPx() !== 18) problems.push(`⌘− ⌘− gave ${bodyFontPx()}`)
+      await press('Equal', 20)
+      if (bodyFontPx() !== 48) problems.push(`the top is ${bodyFontPx()}`)
+      await press('Digit0')
+      if (bodyFontPx() !== 19) problems.push(`⌘0 gave ${bodyFontPx()}`)
+      await resetReading()
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'L18-E2-aa-hints',
+    description:
+      'Aa hints: a book over 30% code or tables suggests Scroll (L18); a fixed-layout book keeps only theme, with one line of explanation (E2)',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      await openFromLibrary(/Code and tables/)
+      // The share is measured once, in idle time, and kept.
+      for (let i = 0; i < 100; i++) {
+        const known = await invoke<string | null>('setting_get', {
+          key: `codeShare:${reader()!.bookId}`,
+        })
+        if (known !== null) break
+        await sleep(100)
+      }
+      let pop = await openAa()
+      if (!pop.querySelector('.hint')?.textContent?.includes('Scroll may read better'))
+        problems.push('no Scroll hint')
+      key('Escape', { code: 'Escape' })
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      pop = await openAa()
+      if (pop.querySelector('.hint')) problems.push('a hint on Moby-Dick')
+      key('Escape', { code: 'Escape' })
+      await backToLibrary()
+      await openFromLibrary(/blanche/i)
+      pop = await openAa()
+      if (pop.querySelector('#aa-size') || pop.querySelector('[aria-labelledby="aa-spacing"]'))
+        problems.push('typography controls on a fixed-layout book')
+      if (!pop.querySelector('.hint')?.textContent?.includes('fixed pages'))
+        problems.push('no fixed-layout line')
+      key('Escape', { code: 'Escape' })
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return problems.length ? problems.join('; ') : 'ok'
     },
   })
 

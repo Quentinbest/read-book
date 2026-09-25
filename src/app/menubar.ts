@@ -7,12 +7,25 @@ import type { CommandRegistry } from '../lib/commands/registry'
 export async function installMenuBar(registry: CommandRegistry) {
   const sep = () => PredefinedMenuItem.new({ item: 'Separator' })
   const model = menuModel(registry.available())
+  const settings = registry.available().find((c) => c.id === 'app.settings')
 
   const appMenu = await Submenu.new({
     text: 'Linen',
     items: [
       await PredefinedMenuItem.new({ item: { About: null } }),
       await sep(),
+      // macOS puts Settings… (⌘,) in the app menu.
+      ...(settings
+        ? [
+            await MenuItem.new({
+              id: settings.id,
+              text: settings.title,
+              accelerator: 'Cmd+,',
+              action: () => registry.run(settings.id),
+            }),
+            await sep(),
+          ]
+        : []),
       await PredefinedMenuItem.new({ item: 'Services' }),
       await sep(),
       await PredefinedMenuItem.new({ item: 'Hide' }),
