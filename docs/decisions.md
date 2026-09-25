@@ -60,3 +60,23 @@ The owner asked for the best call on the two questions raised by the memory inve
 
 The GPU process's fixed ~90 MB (window compositing, present before a book opens) counts, as §6.4 says “all processes”.
 
+## Approved 2026-09-25 (Phases 3–6 review)
+
+The owner reviewed the pending approvals and approved them as recommended. The designs and values below are no longer provisional; the PROVISIONAL notes in the code refer to this record.
+
+| # | Approved |
+|---|---|
+| Baselines | Phases 3–6 visual baselines (see `docs/visual/APPROVAL.md`). |
+| G10 | The `?` cheat sheet as built. |
+| ⋯ menu | Every command, grouped, with shortcuts; unavailable ones at 40%; extension items join in Phase 7. |
+| Footnote peek | Notes are copied as safe structure (paragraphs, emphasis), not in the book's own styles. |
+| G5 colours | The derived Sepia and Night values for panels, segments, popovers, tooltips and the selection bar, and the Paper segment ring in secondary ink. |
+| E3 card | The damaged-book card, built in Phase 6. |
+| G11 | Re-attach: a pill (“Select the passage for …” · Cancel), then a bar with Attach here and Cancel. |
+| Phase 5 details | Icons in the selection bar in every theme; Delete in place of Search for a clicked highlight; the note dot in the underline colour; the 3 px jump pulse; the note status wording; a steady 2 px caret. |
+| D2 | One library folder is the whole backup; export of all highlights and notes as W3C JSON; restore by putting the folder back; uninstalling leaves the folder, and Settings says so. |
+| G4 | Remove is immediate with Undo; the file and annotations go at the next launch; duplicates open the existing book; the item menu on right-click and a hover/focus button; a native sort menu. |
+| G3 | The book info sheet as built. |
+| G2 | Settings sections: General, Reading, Library, Extensions, Shortcuts, About. |
+| G12 | The Aa code-and-tables hint and the fixed-layout line. |
+| S14 transition | The cover-grow transition and a warm book after the library move to Phase 8. |
