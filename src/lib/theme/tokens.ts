@@ -31,6 +31,10 @@ export interface Theme {
   /** Popovers and peeks (Go to, footnote peek; Screen 17): surface and border. */
   popover: string
   popoverBorder: string
+  /** Key caps (⌘K, the cheat sheet, Search): text on the raised surface, ≥ 4.5:1 (D5). */
+  keyInk: string
+  /** Text on an accent-filled button (Resume reading, Read anyway), ≥ 4.5:1 (D5). */
+  onAccent: string
   /** Dark tooltips (the scrubber preview, Screen 03): ground and text. */
   tooltip: string
   tooltipInk: string
@@ -94,6 +98,8 @@ export const THEMES: Record<ThemeName, Theme> = {
     trackInk: '#5E584F',
     popover: '#FCFAF6',
     popoverBorder: '#D9D1C3',
+    keyInk: '#6B655C',
+    onAccent: '#FFFFFF',
     tooltip: '#2A2622',
     tooltipInk: '#F3EEE6',
     // As drawn in Screen 06.
@@ -125,6 +131,8 @@ export const THEMES: Record<ThemeName, Theme> = {
     // PROVISIONAL (G5): Paper's steps from its ground.
     popover: '#F6EDDC',
     popoverBorder: '#D3C4A9',
+    keyInk: '#6E5E4A',
+    onAccent: '#FFFFFF',
     tooltip: '#2E261D',
     tooltipInk: '#F5EBDA',
     // PROVISIONAL (G5): Screen 06's bar with Sepia's tooltip ground and ink.
@@ -156,6 +164,10 @@ export const THEMES: Record<ThemeName, Theme> = {
     // PROVISIONAL (G5): popovers a step above the Night panel; tooltips invert to light.
     popover: '#26241F',
     popoverBorder: '#3A3733',
+    // D5 (Phase 8 axe pass): secondary ink on Night's raised key caps is 3.9:1; the track ink is 4.6:1.
+    keyInk: '#A7A094',
+    // D5: white on the Night accent is 2.4:1; the Night page colour is 7.2:1.
+    onAccent: '#1B1A18',
     tooltip: '#D9D3C7',
     tooltipInk: '#1B1A18',
     // As drawn in Screen 14: the bar inverts to a light surface (13.6:1 against the page).
@@ -309,6 +321,8 @@ export function themeVariables(t: Theme): Record<string, string> {
     'popoverBorder',
     'tooltip',
     'tooltipInk',
+    'keyInk',
+    'onAccent',
   ] as const) {
     vars[`--${kebab(key)}`] = t[key]
   }

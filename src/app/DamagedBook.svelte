@@ -106,7 +106,7 @@
   .primary {
     border: 0;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
   }
   .secondary {
     border: 1px solid var(--popover-border);

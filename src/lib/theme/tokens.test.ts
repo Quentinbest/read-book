@@ -165,3 +165,12 @@ describe('Selection bar (A1, V2; Screens 06 and 14)', () => {
     expect(contrast(n.selectionBar.ground, n.ground)).toBeCloseTo(13.6, 1)
   })
 })
+
+describe('D5 (Phase 8 axe pass): key caps and text on the accent', () => {
+  for (const [n, t] of Object.entries(THEMES)) {
+    it(`${n}: key caps ≥ 4.5:1 on the raised surface, accent buttons ≥ 4.5:1`, () => {
+      expect(contrast(t.keyInk, t.raised)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t.onAccent, t.accent)).toBeGreaterThanOrEqual(4.5)
+    })
+  }
+})

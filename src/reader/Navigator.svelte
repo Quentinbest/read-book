@@ -185,40 +185,48 @@
       {@render notes()}
     </div>
   {:else}
-    <nav class="list" aria-label={t.navigator.contents}>
-      {#if !contents}
-        <p class="note">{t.navigator.loading}</p>
-      {:else}
-        {#if contents.source === 'headings'}
-          <p class="note">{t.navigator.generated}</p>
+    <div
+      class="panel"
+      id="navigator-panel-contents"
+      role="tabpanel"
+      aria-labelledby="navigator-tab-contents"
+    >
+      <nav class="list" aria-label={t.navigator.contents}>
+        {#if !contents}
+          <p class="note">{t.navigator.loading}</p>
+        {:else}
+          {#if contents.source === 'headings'}
+            <p class="note">{t.navigator.generated}</p>
+          {/if}
+          <ol>
+            {#each contents.items as item, i (i)}
+              <li>
+                <button
+                  type="button"
+                  bind:this={rows[i]}
+                  class="row"
+                  class:current={i === current}
+                  style:padding-left="{12 + item.depth * 16}px"
+                  tabindex={i === Math.max(0, current) ? 0 : -1}
+                  aria-current={i === current ? 'location' : undefined}
+                  onclick={() => onselect(item)}
+                  onkeydown={(e) => onkeydown(e, i)}
+                >
+                  <span class="label">{item.label}</span>
+                  {#if item.damaged}
+                    <span class="damaged"
+                      ><Icon name="warning" size={14} />{t.navigator.damaged}</span
+                    >
+                  {:else if i === current}
+                    <span class="here">{t.navigator.youAreHere}</span>
+                  {/if}
+                </button>
+              </li>
+            {/each}
+          </ol>
         {/if}
-        <ol>
-          {#each contents.items as item, i (i)}
-            <li>
-              <button
-                type="button"
-                bind:this={rows[i]}
-                class="row"
-                class:current={i === current}
-                style:padding-left="{12 + item.depth * 16}px"
-                tabindex={i === Math.max(0, current) ? 0 : -1}
-                aria-current={i === current ? 'location' : undefined}
-                onclick={() => onselect(item)}
-                onkeydown={(e) => onkeydown(e, i)}
-              >
-                <span class="label">{item.label}</span>
-                {#if item.damaged}
-                  <span class="damaged"><Icon name="warning" size={14} />{t.navigator.damaged}</span
-                  >
-                {:else if i === current}
-                  <span class="here">{t.navigator.youAreHere}</span>
-                {/if}
-              </button>
-            </li>
-          {/each}
-        </ol>
-      {/if}
-    </nav>
+      </nav>
+    </div>
   {/if}
 </aside>
 

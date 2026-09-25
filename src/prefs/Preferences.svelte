@@ -366,6 +366,27 @@
   .about-name {
     font: 500 22px var(--font-reading, Literata, Georgia, serif);
   }
+  /* X6: narrow (zoomed) Settings: the sections run across the top. */
+  @media (max-width: 560px) {
+    .prefs {
+      grid-template-columns: 1fr;
+    }
+    nav {
+      padding: 48px 12px 8px;
+      border-right: 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    ul {
+      flex-direction: row;
+      flex-wrap: wrap;
+    }
+    [role='tab'] {
+      width: auto;
+    }
+    .pane {
+      padding: 24px 16px 32px;
+    }
+  }
   [role='tab']:focus-visible,
   .seg button:focus-visible,
   .btn:focus-visible,

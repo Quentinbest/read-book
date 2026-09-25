@@ -3531,6 +3531,190 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Phase 8: accessibility (D5)
+  /** axe on the app's own UI (not the book, which is the publisher's), WCAG 2.2 A and AA. */
+  const axeRun = async (where: string) => {
+    const axe = (await import('axe-core')).default
+    const r = await axe.run(document, {
+      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'] },
+      iframes: false,
+      resultTypes: ['violations'],
+    })
+    return r.violations
+      .filter((v) => v.impact === 'serious' || v.impact === 'critical')
+      .map((v) => {
+        log(
+          `axe ${where} ${v.id}: ${v.nodes
+            .slice(0, 3)
+            .map(
+              (n) =>
+                `${n.target.join(' ')} — ${(n.failureSummary ?? '').replace(/\s+/g, ' ').slice(0, 220)}`,
+            )
+            .join(' | ')}`,
+        )
+        return `${where}: ${v.id} (${v.nodes.length}) ${v.nodes[0]?.target.join(' ')}`
+      })
+  }
+
+  checks.push({
+    id: 'X-axe-states',
+    description:
+      'D5 (WCAG 2.2 AA): axe finds no serious or critical violation in the library, the reader and its layers, and Settings, in Paper and Night',
+    run: async () => {
+      const found: string[] = []
+      // As the Settings window would: save it, and tell the app (a source of its own).
+      const setTheme = async (value: string) => {
+        await invoke('setting_set', { key: 'theme', value })
+        await emit('settings-changed', { key: 'theme', value, source: 'harness' })
+      }
+      for (const theme of ['paper', 'night']) {
+        await setTheme(theme)
+        await backToLibrary()
+        hooks.run?.('library.show')
+        await settled(600)
+        found.push(...(await axeRun(`${theme} library`)))
+        await openFromLibrary(/Moby Dick(?!;)/)
+        await hideControls()
+        found.push(...(await axeRun(`${theme} reader`)))
+        await showControls()
+        found.push(...(await axeRun(`${theme} controls`)))
+        for (const tab of ['contents', 'search', 'notes']) {
+          hooks.run?.(
+            tab === 'contents'
+              ? 'navigator.contents'
+              : tab === 'search'
+                ? 'search.open'
+                : 'navigator.notes',
+          )
+          await settled(700)
+          found.push(...(await axeRun(`${theme} navigator ${tab}`)))
+          key('Escape', { code: 'Escape' })
+          await settled(400)
+        }
+        await openAa()
+        await settled(300) // past its 140 ms fade-in (mid-fade text is half-transparent)
+        found.push(...(await axeRun(`${theme} Aa`)))
+        key('Escape', { code: 'Escape' })
+        await settled(300)
+        await selectPhrase('Call me Ishmael').catch(async () => {
+          await reader()!.engine.goToTextStart()
+          await settled(500)
+          return selectPhrase('Call me Ishmael')
+        })
+        await waitFor('bar', selBar)
+        found.push(...(await axeRun(`${theme} selection bar`)))
+        await pressBar(/^note$/i)
+        await waitFor('note', noteCard)
+        found.push(...(await axeRun(`${theme} note card`)))
+        noteCard()!
+          .querySelector('textarea')!
+          .dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+          )
+        await settled(300)
+        const made = annotationsOf().items.at(-1)
+        if (made) annotationsOf().remove(made.id)
+        keyOnApp('k', { code: 'KeyK', metaKey: true })
+        await waitFor('palette', palette)
+        found.push(...(await axeRun(`${theme} palette`)))
+        await escModal()
+        hooks.run?.('shortcuts.show')
+        await settled(400)
+        found.push(...(await axeRun(`${theme} cheat sheet`)))
+        await escModal()
+        found.push(
+          ...(await withSettings(async (root) => {
+            const out: string[] = []
+            for (const section of [
+              'general',
+              'reading',
+              'library',
+              'extensions',
+              'shortcuts',
+              'about',
+            ]) {
+              root.querySelector<HTMLButtonElement>(`#prefs-${section}`)!.click()
+              await settled(250)
+              out.push(...(await axeRun(`${theme} settings ${section}`)))
+            }
+            return out
+          })),
+        )
+      }
+      await setTheme('auto')
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return found.length ? found.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'X6-zoom',
+    description:
+      'X6: at 200% and 400% zoom the app takes its narrow form: one column, the Navigator floats, nothing scrolls sideways',
+    run: async () => {
+      const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+      const problems: string[] = []
+      const sideways = (where: string) => {
+        const el = document.scrollingElement ?? document.documentElement
+        if (el.scrollWidth > el.clientWidth + 1)
+          problems.push(`${where}: ${el.scrollWidth} > ${el.clientWidth}`)
+      }
+      try {
+        for (const zoom of [2, 4]) {
+          await getCurrentWebview().setZoom(zoom)
+          await settled(1500)
+          await backToLibrary()
+          sideways(`${zoom * 100}% library`)
+          await openFromLibrary(/Moby Dick(?!;)/)
+          await settled(800)
+          sideways(`${zoom * 100}% reader`)
+          const frames = pageDoc().doc.defaultView!
+          const columns = getComputedStyle(frames.document.documentElement).columnCount
+          if (columns !== 'auto' && Number(columns) > 1)
+            problems.push(`${zoom * 100}%: ${columns} columns`)
+          hooks.run?.('navigator.contents')
+          await settled(700)
+          if (!document.querySelector('.navigator.floating'))
+            problems.push(`${zoom * 100}%: the Navigator docked`)
+          sideways(`${zoom * 100}% navigator`)
+          key('Escape', { code: 'Escape' })
+          await settled(400)
+        }
+      } finally {
+        await getCurrentWebview().setZoom(1)
+        await settled(1500)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'X5-text-spacing',
+    description: 'X5 (WCAG 1.4.12): user text spacing re-paginates the chapter; no text is clipped',
+    run: async () => {
+      const engine = reader()!.engine
+      await toLoomings()
+      const before = engine.view.renderer.pages
+      engine.setExtraStyles(
+        '* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-bottom: 2em !important; }',
+      )
+      await settled(1500)
+      const after = engine.view.renderer.pages
+      const doc = pageDoc().doc
+      const clipped = Array.from(
+        doc.querySelectorAll<HTMLElement>('p, h1, h2, h3, li, blockquote'),
+      ).filter((el) => el.scrollWidth > el.clientWidth + 1 || el.scrollHeight > el.clientHeight + 1)
+      engine.setExtraStyles('')
+      await settled(1200)
+      const problems: string[] = []
+      if (!(after > before)) problems.push(`pages ${before} → ${after}`)
+      if (clipped.length)
+        problems.push(`${clipped.length} clipped, e.g. ${clipped[0].textContent?.slice(0, 40)}`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:

@@ -138,7 +138,7 @@
     border-radius: 4px;
     background: var(--raised);
     border: 1px solid var(--popover-border);
-    color: var(--ink-secondary);
+    color: var(--key-ink);
     font: 500 12px var(--font-ui);
     text-align: center;
   }

@@ -362,6 +362,7 @@
     border-radius: 4px;
     background: var(--raised);
     border: 1px solid var(--popover-border);
+    color: var(--key-ink);
     font: 500 11px var(--font-ui);
   }
 </style>

@@ -480,7 +480,7 @@
     border: 0;
     border-radius: 8px;
     background: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
     font: 600 14px var(--font-ui);
   }
   .opened {
@@ -653,6 +653,50 @@
   .search input:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
+  }
+  /* X6: at 200–400% zoom (or a narrow window) the library takes its narrow form:
+     the header wraps, Continue reading stacks, and nothing scrolls sideways. */
+  @media (max-width: 720px) {
+    .library {
+      padding: 0 16px 32px;
+    }
+    header {
+      height: auto;
+      min-height: 64px;
+      flex-wrap: wrap;
+      margin: 0 0 12px 56px;
+      padding: 12px 0;
+    }
+    .grow {
+      display: none;
+    }
+    .search {
+      flex: 1 1 100%;
+      order: 3;
+    }
+    .search input {
+      width: 100%;
+    }
+    .cr,
+    .current {
+      flex-direction: column;
+      gap: 16px;
+    }
+    .current {
+      width: auto;
+      max-width: 100%;
+    }
+    .next {
+      padding-left: 0;
+      border-left: 0;
+    }
+    .where .bar {
+      width: 120px !important;
+    }
+    .grid {
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 24px 16px;
+    }
   }
   .visually-hidden {
     position: absolute;

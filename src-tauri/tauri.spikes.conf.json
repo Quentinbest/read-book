@@ -25,7 +25,11 @@
         {
           "identifier": "spikes-e2e",
           "windows": ["main"],
-          "permissions": ["core:window:allow-set-size", "core:window:allow-inner-size"]
+          "permissions": [
+            "core:window:allow-set-size",
+            "core:window:allow-inner-size",
+            "core:webview:allow-set-webview-zoom"
+          ]
         }
       ]
     }

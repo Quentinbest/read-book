@@ -35,6 +35,8 @@ export function themeFromPack(extId: string, pack: Pack): Theme {
     trackInk: t.trackInk ?? t.inkSecondary,
     popover: t.popover ?? (light ? mix(ground, '#FFFFFF', 0.4) : mix(ground, ink, 0.05)),
     popoverBorder: t.popoverBorder ?? mix(ground, ink, 0.18),
+    keyInk: t.inkSecondary,
+    onAccent: contrast('#FFFFFF', t.accent) >= 4.5 ? '#FFFFFF' : ground,
     tooltip: t.tooltip ?? ink,
     tooltipInk: t.tooltipInk ?? ground,
     // The selection bar: ink-coloured on light pages, inverted on dark ones (V2).

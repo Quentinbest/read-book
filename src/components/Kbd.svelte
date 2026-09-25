@@ -7,7 +7,7 @@
 <style>
   kbd {
     font: 500 var(--text-caption) / 1 var(--font-ui);
-    color: var(--ink-secondary);
+    color: var(--key-ink);
     letter-spacing: 0.02em;
   }
 </style>

@@ -352,6 +352,7 @@ export class ReaderEngine {
   #hadSelection = false
   #caret: { color: string } | null = null
   #closed = false
+  #extraStyles = ''
   /** Tests turn this off to exercise the overlay path older WebKit takes (A4). */
   useCustomHighlights = true
   /** Extracted text of live documents, for search offsets (F5). */
@@ -1172,6 +1173,15 @@ export class ReaderEngine {
   }
 
   /** Place the page box and tell the paginators their geometry (L1–L3, L8). */
+  /**
+   * X5: styles laid over the book's, as a user stylesheet would (WCAG 1.4.12 text
+   * spacing is tested this way). The page re-paginates with them.
+   */
+  setExtraStyles(css: string) {
+    this.#extraStyles = css
+    if (this.#layout) this.applyLayout(this.#layout, this.#styles)
+  }
+
   applyLayout(layout: Layout, styles: string) {
     this.#layout = layout
     this.#styles = styles
@@ -1202,7 +1212,8 @@ export class ReaderEngine {
 
   setStyles(styles: string) {
     this.#styles = styles
-    for (const view of this.#views()) if (!view.isFixedLayout) view.renderer?.setStyles?.(styles)
+    for (const view of this.#views())
+      if (!view.isFixedLayout) view.renderer?.setStyles?.(styles + this.#extraStyles)
   }
 
   /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
@@ -1547,7 +1558,7 @@ export class ReaderEngine {
       r.setAttribute('gap', '0%')
       r.setAttribute('max-column-count', '1')
       r.setAttribute('max-inline-size', `${layout.columnWidth}px`)
-      r.setStyles(this.#styles)
+      r.setStyles(this.#styles + this.#extraStyles)
       return
     }
     r.setAttribute('flow', 'paginated')
@@ -1561,7 +1572,7 @@ export class ReaderEngine {
       'max-inline-size',
       `${layout.columns === 1 ? 100000 : Math.ceil(layout.viewWidth / 2)}px`,
     )
-    r.setStyles(this.#styles)
+    r.setStyles(this.#styles + this.#extraStyles)
   }
 
   #docOf(view: View): Document | undefined {
@@ -2175,7 +2186,8 @@ export class ReaderEngine {
         doc.head?.append(style)
       }
     }
-    if (this.#styles && !view.isFixedLayout) view.renderer?.setStyles?.(this.#styles)
+    if (this.#styles && !view.isFixedLayout)
+      view.renderer?.setStyles?.(this.#styles + this.#extraStyles)
     this.#doc.forEach((l) => l(doc))
   }
 
