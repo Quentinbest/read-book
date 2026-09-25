@@ -146,6 +146,8 @@ pub fn import_book(
 ) -> Result<ImportOutcome, ImportError> {
     let hash = sha256_file(source)?;
     if let Some(book_id) = store.book_by_hash(&hash)? {
+        // A book removed this session comes back as it was (G4, provisional).
+        store.restore_book(&book_id)?;
         return Ok(ImportOutcome::AlreadyInLibrary { book_id });
     }
     // Parsing untrusted files must never take the app down: a panic here (a parser
@@ -212,7 +214,7 @@ pub fn import_book(
         tx.execute(
             "UPDATE books SET content_hash = ?2, file_path = ?3, title = ?4, title_source = ?5, authors = ?6,
                  language = ?7, page_direction = ?8, layout = ?9, has_page_list = ?10, a11y_metadata = ?11,
-                 cover_path = ?12, generated_cover_tint = ?13, replaced_at = ?14
+                 cover_path = ?12, generated_cover_tint = ?13, replaced_at = ?14, removed_at = NULL
              WHERE id = ?1",
             params![
                 book_id, hash, dest.to_string_lossy(), title, title_source, authors, md.language,

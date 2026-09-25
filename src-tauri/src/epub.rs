@@ -59,6 +59,10 @@ pub struct Metadata {
     pub has_page_list: bool,
     /// EPUB accessibility metadata (E10): schema:accessMode, accessibilityFeature, …
     pub a11y: Vec<(String, String)>,
+    /// For the book info sheet (E10): not stored, read when the sheet opens.
+    pub publisher: Option<String>,
+    pub date: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
@@ -336,7 +340,10 @@ pub fn read_package<R: Read + Seek>(
                             text.clear();
                         }
                     }
-                    "title" | "creator" | "language" | "identifier" if in_metadata && !empty => {
+                    "title" | "creator" | "language" | "identifier" | "publisher" | "date"
+                    | "description"
+                        if in_metadata && !empty =>
+                    {
                         text_target = Some((name.clone(), a));
                         text.clear();
                     }
@@ -382,6 +389,13 @@ pub fn read_package<R: Read + Seek>(
                             md.language = Some(value)
                         }
                         "identifier" => identifiers.push((a.get("id").cloned(), value)),
+                        "publisher" if md.publisher.is_none() && !value.is_empty() => {
+                            md.publisher = Some(value)
+                        }
+                        "date" if md.date.is_none() && !value.is_empty() => md.date = Some(value),
+                        "description" if md.description.is_none() && !value.is_empty() => {
+                            md.description = Some(value)
+                        }
                         "meta" => {
                             let prop = a.get("property").cloned().unwrap_or_default();
                             if prop == "rendition:layout" && value == "pre-paginated" {

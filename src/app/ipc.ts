@@ -23,6 +23,19 @@ export interface Book {
   replaced_at: number | null
   damaged_items: number
   fraction: number | null
+  /** E6: the chapter at the saved position (Continue reading). */
+  chapter_label: string | null
+}
+
+/** E10, G3: the book info sheet's extra fields. */
+export interface BookInfo {
+  a11y: [string, string][]
+  file_size: number
+  added_at: number
+  publisher: string | null
+  published: string | null
+  identifier: string | null
+  description: string | null
 }
 
 export type ImportOutcome =
@@ -62,8 +75,12 @@ export const ipc = {
     invoke<[string, string | null] | null>('book_settings_get', { bookId }),
   bookSettingsSet: (bookId: string, layoutMode: string, navigatorDocked: string | null) =>
     invoke<void>('book_settings_set', { bookId, layoutMode, navigatorDocked }),
-  positionSave: (bookId: string, cfi: string, fraction: number) =>
-    invoke<void>('position_save', { bookId, cfi, fraction }),
+  positionSave: (bookId: string, cfi: string, fraction: number, chapterLabel: string | null) =>
+    invoke<void>('position_save', { bookId, cfi, fraction, chapterLabel }),
+  libraryRemove: (bookId: string) => invoke<void>('library_remove', { bookId }),
+  libraryRestore: (bookId: string) => invoke<void>('library_restore', { bookId }),
+  bookShowFile: (bookId: string) => invoke<void>('book_show_file', { bookId }),
+  bookInfo: (bookId: string) => invoke<BookInfo>('book_info', { bookId }),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),
   settingGet: (key: string) => invoke<string | null>('setting_get', { key }),
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),

@@ -76,13 +76,39 @@ pub fn init<R: Runtime>(app: &tauri::App<R>) -> Result<AppState, Box<dyn std::er
     #[cfg(not(any(debug_assertions, feature = "spikes")))]
     let root = app.path().app_data_dir()?;
     std::fs::create_dir_all(&root)?;
-    let store = Store::open(&root.join("linen.db"))?;
+    let mut store = Store::open(&root.join("linen.db"))?;
     let library = Library::new(&root)?;
+    purge_removed(&mut store, &library);
     Ok(AppState {
         store: Mutex::new(store),
         library,
         open_book: Mutex::new(None),
     })
+}
+
+/// G4 (provisional): books removed in an earlier session go for good at launch,
+/// with their files and covers. Only files inside the library are deleted.
+pub fn purge_removed(store: &mut Store, library: &Library) {
+    let Ok(gone) = store.purge_removed() else {
+        return;
+    };
+    let inside = |p: &str, dir: &std::path::Path| {
+        let (Ok(p), Ok(d)) = (PathBuf::from(p).canonicalize(), dir.canonicalize()) else {
+            return None;
+        };
+        p.starts_with(&d).then_some(p)
+    };
+    for (file, cover) in gone {
+        if let Some(p) = inside(&file, &library.books_dir) {
+            let _ = std::fs::remove_file(p);
+        }
+        if let Some(p) = cover
+            .as_deref()
+            .and_then(|c| inside(c, &library.covers_dir))
+        {
+            let _ = std::fs::remove_file(p);
+        }
+    }
 }
 
 #[tauri::command]
@@ -311,6 +337,10 @@ pub fn serve_book_media(
             .body(std::borrow::Cow::Borrowed(&[][..]))
             .unwrap()
     };
+    // E6, N6: a book's cover, as extracted at import (`/_cover/<book id>`).
+    if let Some(id) = path.strip_prefix("/_cover/") {
+        return serve_cover(state, &percent_decode(id).unwrap_or_default());
+    }
     let Some((book_id, entry)) = parse_book_path(path) else {
         return reply(StatusCode::BAD_REQUEST);
     };
@@ -330,6 +360,66 @@ pub fn serve_book_media(
             .header("Content-Type", mime)
             .header("X-Content-Type-Options", "nosniff")
             .header("Content-Security-Policy", "sandbox; default-src 'none'")
+            .body(std::borrow::Cow::Owned(bytes))
+            .unwrap(),
+        Err(_) => reply(StatusCode::NOT_FOUND),
+    }
+}
+
+/// A cover extracted at import into the library's Covers folder; nothing else.
+fn serve_cover(
+    state: &AppState,
+    book_id: &str,
+) -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+    use tauri::http::{Response, StatusCode};
+    let reply = |status: StatusCode| {
+        Response::builder()
+            .status(status)
+            .body(std::borrow::Cow::Borrowed(&[][..]))
+            .unwrap()
+    };
+    let path: Option<String> = state
+        .store
+        .lock()
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT cover_path FROM books WHERE id = ?1",
+            [book_id],
+            |r| r.get(0),
+        )
+        .ok()
+        .flatten();
+    let (Some(path), Ok(dir)) = (path, state.library.covers_dir.canonicalize()) else {
+        return reply(StatusCode::NOT_FOUND);
+    };
+    let Ok(file) = PathBuf::from(&path).canonicalize() else {
+        return reply(StatusCode::NOT_FOUND);
+    };
+    let mime = match file
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+    {
+        Some(e) if e == "svg" => "image/svg+xml",
+        Some(e) => match media_type(&format!("x.{e}")) {
+            Some(m) if m.starts_with("image/") => m,
+            _ => return reply(StatusCode::FORBIDDEN),
+        },
+        None => return reply(StatusCode::FORBIDDEN),
+    };
+    if !file.starts_with(&dir) {
+        return reply(StatusCode::FORBIDDEN);
+    }
+    match std::fs::read(&file) {
+        Ok(bytes) => Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", mime)
+            .header("X-Content-Type-Options", "nosniff")
+            .header(
+                "Content-Security-Policy",
+                "sandbox; default-src 'none'; style-src 'unsafe-inline'",
+            )
             .body(std::borrow::Cow::Owned(bytes))
             .unwrap(),
         Err(_) => reply(StatusCode::NOT_FOUND),
@@ -411,6 +501,66 @@ pub fn annotation_save(
     Ok(state.store.lock().unwrap().save_annotation(&annotation)?)
 }
 
+/// G4 (provisional): Remove at once, with Undo; the file goes at the next launch.
+#[tauri::command]
+pub fn library_remove(state: State<AppState>, book_id: String) -> CmdResult<()> {
+    Ok(state.store.lock().unwrap().remove_book(&book_id)?)
+}
+
+#[tauri::command]
+pub fn library_restore(state: State<AppState>, book_id: String) -> CmdResult<()> {
+    Ok(state.store.lock().unwrap().restore_book(&book_id)?)
+}
+
+/// E7: “Show in Finder” — the book's file in the library, selected in a Finder window.
+#[tauri::command]
+pub fn book_show_file(state: State<AppState>, book_id: String) -> CmdResult<()> {
+    let path = library_book_path(&state, &book_id)?;
+    std::process::Command::new("/usr/bin/open")
+        .arg("-R")
+        .arg(&path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })
+}
+
+/// E10, G3: what the book info sheet shows, read-only: the stored metadata, the
+/// EPUB accessibility metadata, the file's size, and the publisher and date from
+/// the package (read from the library copy now, as they are not stored).
+#[tauri::command]
+pub fn book_info(state: State<AppState>, book_id: String) -> CmdResult<serde_json::Value> {
+    let failed = |e: String| CommandError::Failed { message: e };
+    let path = library_book_path(&state, &book_id)?;
+    let (a11y, added_at): (String, i64) = state
+        .store
+        .lock()
+        .unwrap()
+        .conn()
+        .query_row(
+            "SELECT a11y_metadata, added_at FROM books WHERE id = ?1",
+            [&book_id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| failed(e.to_string()))?;
+    let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
+    let md = std::panic::catch_unwind(|| crate::epub::open(&path))
+        .ok()
+        .and_then(|r| r.ok())
+        .map(|(_, p)| p.metadata)
+        .unwrap_or_default();
+    Ok(serde_json::json!({
+        "a11y": serde_json::from_str::<serde_json::Value>(&a11y).unwrap_or_default(),
+        "file_size": size,
+        "added_at": added_at,
+        "publisher": md.publisher,
+        "published": md.date,
+        "identifier": md.package_identifier,
+        "description": md.description,
+    }))
+}
+
 /// A7: delete at once; Undo restores it.
 #[tauri::command]
 pub fn annotation_delete(state: State<AppState>, id: String) -> CmdResult<()> {
@@ -490,12 +640,14 @@ pub fn position_save(
     book_id: String,
     cfi: String,
     fraction: f64,
+    chapter_label: Option<String>,
 ) -> CmdResult<()> {
-    Ok(state
-        .store
-        .lock()
-        .unwrap()
-        .save_position(&book_id, &cfi, fraction)?)
+    Ok(state.store.lock().unwrap().save_position(
+        &book_id,
+        &cfi,
+        fraction,
+        chapter_label.as_deref(),
+    )?)
 }
 
 #[tauri::command]

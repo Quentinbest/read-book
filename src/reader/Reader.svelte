@@ -39,7 +39,7 @@
   import { clampTextSize, DEFAULT_TEXT_SIZE, stepTextSize } from './textSizes'
   import { applyTheme, type ThemeChoice } from '../app/theme'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
-  import { bookMediaUrl } from './loader'
+  import { coverUrl as bookCoverUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
   import {
     ReaderEngine,
@@ -887,7 +887,9 @@
     clearTimeout(saveTimer)
     const l = location
     if (!l?.cfi) return
-    void writes.write(`position:${book.id}`, () => ipc.positionSave(book.id, l.cfi, l.fraction))
+    void writes.write(`position:${book.id}`, () =>
+      ipc.positionSave(book.id, l.cfi, l.fraction, l.chapterLabel || null),
+    )
   }
   function saveSoon() {
     clearTimeout(saveTimer)
@@ -1226,19 +1228,8 @@
           return reanchorStale()
         })
         .catch((e) => console.error('annotations', e))
-      const coverPath = book.cover_path
-      // Raster covers come straight from the zip, as other images do (§6.4).
-      if (coverPath && /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(coverPath))
-        coverUrl = bookMediaUrl(book.id, coverPath)
-      else if (coverPath) {
-        // An SVG cover shown as an image cannot run scripts (img context).
-        void (opened as { getCover?: () => Promise<Blob | null> }).getCover?.().then((blob) => {
-          if (!blob) return
-          coverUrl = URL.createObjectURL(blob)
-          const url = coverUrl
-          cleanups.push(() => URL.revokeObjectURL(url))
-        })
-      }
+      // The cover extracted at import, served as an image (scripts cannot run in <img>).
+      if (book.cover_path) coverUrl = bookCoverUrl(book.id, book.content_hash)
       // N6: Contents from the navigation, headings or spine, with damaged chapters marked.
       void ipc
         .bookDamage(book.id)

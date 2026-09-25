@@ -15,6 +15,14 @@ export interface EntryLoader {
 const DIRECT_MEDIA = /^(image\/(png|jpeg|gif|webp|avif|bmp)|audio\/|video\/)/
 
 /** The URL of a media entry on the book scheme (`commands::BOOK_SCHEME`). */
+/**
+ * E6, N6: a book's cover as extracted at import. `version` (the content hash)
+ * changes when the file is replaced, so the WebView never shows a stale cover.
+ */
+export function coverUrl(bookId: string, version: string): string {
+  return `linen-book://localhost/_cover/${encodeURIComponent(bookId)}?v=${encodeURIComponent(version)}`
+}
+
 export function bookMediaUrl(bookId: string, name: string): string {
   const path = name.split('/').map(encodeURIComponent).join('/')
   return `linen-book://localhost/${encodeURIComponent(bookId)}/${path}`

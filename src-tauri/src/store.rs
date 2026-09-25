@@ -104,6 +104,12 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (book_id, section)
     );
     "#,
+    // 3: Remove with Undo (G4, provisional): a removed book stays until the next launch;
+    // Continue reading names the chapter (E6).
+    r#"
+    ALTER TABLE books ADD COLUMN removed_at INTEGER;
+    ALTER TABLE positions ADD COLUMN chapter_label TEXT;
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -159,6 +165,8 @@ pub struct BookRow {
     pub replaced_at: Option<i64>,
     pub damaged_items: i64,
     pub fraction: Option<f64>,
+    /// E6: the chapter at the saved position, for Continue reading.
+    pub chapter_label: Option<String>,
 }
 
 pub fn now_ms() -> i64 {
@@ -244,8 +252,10 @@ impl Store {
             "SELECT b.id, b.content_hash, b.package_identifier, b.file_path, b.title, b.title_source,
                     b.authors, b.language, b.page_direction, b.layout, b.has_page_list, b.cover_path,
                     b.generated_cover_tint, b.added_at, b.opened_at, b.finished_at, b.replaced_at,
-                    (SELECT COUNT(*) FROM book_damage d WHERE d.book_id = b.id), p.fraction
+                    (SELECT COUNT(*) FROM book_damage d WHERE d.book_id = b.id), p.fraction,
+                    p.chapter_label
              FROM books b LEFT JOIN positions p ON p.book_id = b.id
+             WHERE b.removed_at IS NULL
              ORDER BY COALESCE(b.opened_at, b.added_at) DESC",
         )?;
         let rows = stmt.query_map([], |r| {
@@ -270,18 +280,26 @@ impl Store {
                 replaced_at: r.get(16)?,
                 damaged_items: r.get(17)?,
                 fraction: r.get(18)?,
+                chapter_label: r.get(19)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
     }
 
-    pub fn save_position(&mut self, book_id: &str, cfi: &str, fraction: f64) -> Result<()> {
+    pub fn save_position(
+        &mut self,
+        book_id: &str,
+        cfi: &str,
+        fraction: f64,
+        chapter_label: Option<&str>,
+    ) -> Result<()> {
         let tx = self.conn.transaction()?;
         tx.execute(
-            "INSERT INTO positions (book_id, cfi, fraction, updated_at) VALUES (?1, ?2, ?3, ?4)
+            "INSERT INTO positions (book_id, cfi, fraction, updated_at, chapter_label)
+             VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(book_id) DO UPDATE SET cfi = excluded.cfi, fraction = excluded.fraction,
-             updated_at = excluded.updated_at",
-            params![book_id, cfi, fraction, now_ms()],
+             updated_at = excluded.updated_at, chapter_label = excluded.chapter_label",
+            params![book_id, cfi, fraction, now_ms(), chapter_label],
         )?;
         tx.execute(
             "UPDATE books SET opened_at = ?2 WHERE id = ?1",
@@ -289,6 +307,43 @@ impl Store {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// G4 (provisional): Remove takes the book out of the library at once; Undo puts it
+    /// back. Its file, cover and annotations go at the next launch (`purge_removed`).
+    pub fn remove_book(&mut self, book_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE books SET removed_at = ?2 WHERE id = ?1",
+            params![book_id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn restore_book(&mut self, book_id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE books SET removed_at = NULL WHERE id = ?1",
+            [book_id],
+        )?;
+        Ok(())
+    }
+
+    /// Delete books removed in an earlier session, with everything that belongs to
+    /// them. Returns their files and covers, for the caller to delete from disk.
+    pub fn purge_removed(&mut self) -> Result<Vec<(String, Option<String>)>> {
+        let tx = self.conn.transaction()?;
+        let gone: Vec<(String, String, Option<String>)> = {
+            let mut stmt = tx.prepare(
+                "SELECT id, file_path, cover_path FROM books WHERE removed_at IS NOT NULL",
+            )?;
+            let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+            rows.collect::<std::result::Result<_, _>>()?
+        };
+        for (id, _, _) in &gone {
+            // Annotations are soft-deleted rows too; all of the book's rows go (ON DELETE CASCADE).
+            tx.execute("DELETE FROM books WHERE id = ?1", [id])?;
+        }
+        tx.commit()?;
+        Ok(gone.into_iter().map(|(_, f, c)| (f, c)).collect())
     }
 
     /// A9: the book's live annotations (deleted ones are kept for Undo, not listed).
@@ -455,6 +510,74 @@ mod tests {
             Store::open(&path),
             Err(StoreError::TooNew(999, _))
         ));
+    }
+}
+
+#[cfg(test)]
+mod removal_tests {
+    use super::*;
+
+    fn book(store: &Store, id: &str) {
+        store
+            .conn()
+            .execute(
+                "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                 VALUES (?1, ?1, ?1, ?1, 'package', 0)",
+                [id],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn remove_hides_the_book_restore_brings_it_back_and_purge_deletes_everything() {
+        let mut store = Store::open_in_memory().unwrap();
+        book(&store, "b1");
+        book(&store, "b2");
+        store
+            .save_position("b1", "epubcfi(/6/2!/4)", 0.5, Some("One"))
+            .unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact, created_at, updated_at)
+                 VALUES ('a1', 'b1', 'b1', 'yellow', 'x', 'q', 0, 0)",
+                [],
+            )
+            .unwrap();
+        store.remove_book("b1").unwrap();
+        assert_eq!(
+            store
+                .books()
+                .unwrap()
+                .iter()
+                .map(|b| b.id.as_str())
+                .collect::<Vec<_>>(),
+            ["b2"]
+        );
+        store.restore_book("b1").unwrap();
+        let listed = store.books().unwrap();
+        assert_eq!(listed.len(), 2);
+        assert_eq!(
+            listed
+                .iter()
+                .find(|b| b.id == "b1")
+                .unwrap()
+                .chapter_label
+                .as_deref(),
+            Some("One")
+        );
+        store.remove_book("b1").unwrap();
+        let gone = store.purge_removed().unwrap();
+        assert_eq!(gone, vec![("b1".to_string(), None)]);
+        let count = |sql: &str| {
+            store
+                .conn()
+                .query_row(sql, [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        assert_eq!(count("SELECT COUNT(*) FROM books"), 1);
+        assert_eq!(count("SELECT COUNT(*) FROM annotations"), 0);
+        assert_eq!(count("SELECT COUNT(*) FROM positions"), 0);
     }
 }
 
