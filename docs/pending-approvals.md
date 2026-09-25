@@ -54,6 +54,44 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 
     *Recommendation:* approve.
 
+## Phase 6
+
+The plan wanted D2 decided and the G2, G3, G4 and G12 designs before Phase 6. None existed. What is below is built as recommended and marked provisional, so any of it can change on review.
+
+14. **D2 — backup, export and restore; uninstall.** *Recommendation:*
+    - **Where the data lives:** everything is in one folder (the library: the database, the books and the covers).
+    - **Backup:** Time Machine or any copy of that folder is a full backup. Preferences › Library shows the folder with “Show in Finder”.
+    - **Export:** “Export all highlights and notes…” writes one W3C Web Annotation JSON file (A9) per book, into a folder you choose.
+    - **Restore:** means putting the folder back. Importing an exported JSON back is a Phase 7 extension-API job, not built now.
+    - **Uninstall:** dragging the app to the Bin leaves the folder, as Mac apps do. Preferences › Library says so, and where it is.
+
+15. **G4 — library states.** *Recommendation, built:*
+    - **Remove** is immediate, with “Removed “…” · Undo” (⌘Z and ⌘K › Recently closed, as for highlights), and never asks to confirm. The book, its copied file and its annotations are deleted at the next launch, so Undo works until you quit.
+    - **Duplicate import** opens the existing book; a book removed this session comes back as it was.
+    - **Re-importing an updated file** replaces it and re-anchors highlights (Phase 5).
+    - **Search with no results** says “No books match “…”” with a Clear button.
+    - **The item menu** (Book info, Show in Finder, Remove) opens on right-click, or from a ⋯ button that shows on hover and focus.
+    - **The sort menu** is a native menu (Recent, Title, Author).
+
+16. **G3 — book info sheet (E10).** *Recommendation, built:* a modal sheet with:
+    - the cover, title and authors;
+    - publisher, publication date, language and identifier;
+    - the file size and when the book was added;
+    - the description;
+    - the EPUB accessibility metadata, in plain words where known (“Readable as text”, “Has alternative text for images”…).
+
+    It is read-only (Q4). Close with Esc or Done.
+
+17. **G2 — Preferences sections.** *Recommendation:* one window with a sidebar, as Screen 11 draws for Extensions:
+    - **General:** theme; open the last book at launch.
+    - **Reading:** text size, line spacing, page-turn crossfade, page-turn announcements.
+    - **Library:** the folder, export, and what uninstalling leaves (D2).
+    - **Extensions:** Screen 11; the shell only until Phase 7.
+    - **Shortcuts:** the single-key shortcut switch, and the cheat sheet's list.
+    - **About.**
+
+18. **G12 — Aa hints (L18, E2).** *Built, provisional:* one line under Layout for books over 30% code or tables (“Much of this book is code or tables. Scroll may read better.”). For fixed-layout books, size and spacing are hidden and one line explains why (“This book has fixed pages, so its text size and spacing can't change. ⌘+ and ⌘− zoom the page.”).
+
 ## Carried over (need a person, not a decision)
 
 9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.
