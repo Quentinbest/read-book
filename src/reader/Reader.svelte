@@ -112,6 +112,8 @@
   let dockedWidth = $state(0)
   let stageShift = $state(0)
   let contents = $state<Contents | null>(null)
+  /** The Navigator's cover: straight from the zip, or (SVG covers) through foliate-js. */
+  let coverUrl = $state<string | null>(null)
   let currentRow = $derived(contents && location ? currentIndex(contents.items, location) : -1)
   let navPanel: ReturnType<typeof Navigator> | undefined = $state()
   // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
@@ -707,6 +709,19 @@
       })
       readingMode = engine.mode
       pageList = engine.pageList
+      const coverPath = book.cover_path
+      // Raster covers come straight from the zip, as other images do (§6.4).
+      if (coverPath && /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(coverPath))
+        coverUrl = bookMediaUrl(book.id, coverPath)
+      else if (coverPath) {
+        // An SVG cover shown as an image cannot run scripts (img context).
+        void (opened as { getCover?: () => Promise<Blob | null> }).getCover?.().then((blob) => {
+          if (!blob) return
+          coverUrl = URL.createObjectURL(blob)
+          const url = coverUrl
+          cleanups.push(() => URL.revokeObjectURL(url))
+        })
+      }
       // N6: Contents from the navigation, headings or spine, with damaged chapters marked.
       void ipc
         .bookDamage(book.id)
@@ -730,10 +745,12 @@
       // N4: resuming deep in a book says where, with a way back to the beginning.
       if (saved && saved[1] > 0.02) {
         const label = engine.location?.chapterLabel
-        messages.push({
+        const resumed = messages.push({
           text: label ? t.reader.resumedIn(label) : t.reader.resumed,
           action: { label: t.reader.goToBeginning, run: () => void engine?.goToTextStart() },
         })
+        // Its action needs this reader: it goes when the book closes.
+        jumpMessages.push(resumed.id)
       }
       engine.focusPage()
 
@@ -879,7 +896,7 @@
       bind:this={navPanel}
       title={book.title}
       author={book.authors.join(', ')}
-      coverUrl={book.cover_path ? bookMediaUrl(book.id, book.cover_path) : null}
+      {coverUrl}
       coverTint={book.generated_cover_tint}
       fraction={location?.fraction ?? 0}
       {contents}

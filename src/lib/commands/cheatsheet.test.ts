@@ -7,10 +7,17 @@ describe('K9 cheat sheet', () => {
   const sheet = cheatSheet(COMMANDS)
   const listed = new Set(sheet.flatMap((s) => s.rows.flatMap((r) => r.keys)))
 
-  it('lists every chord, alternative and single key in the registry', () => {
-    for (const c of COMMANDS)
-      for (const k of [c.chord, ...(c.altChords ?? []), c.singleKey])
+  it('lists every chord, alternative key and single key in the registry', () => {
+    for (const c of COMMANDS) {
+      const alts = (c.altChords ?? []).filter((a) => a.code !== c.chord?.code)
+      for (const k of [c.chord, ...alts, c.singleKey])
         if (k) expect(listed.has(chordLabel(k)), `${c.id} ${chordLabel(k)}`).toBe(true)
+    }
+  })
+
+  it('shows a typing variant of the same key once (⌘+, not also ⇧⌘+)', () => {
+    const larger = sheet.flatMap((s) => s.rows).find((r) => r.label === 'Larger text')!
+    expect(larger.keys).toEqual(['⌘+'])
   })
 
   it('starts with the page keys and names every section', () => {

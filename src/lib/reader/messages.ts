@@ -184,7 +184,12 @@ export class MessageQueue {
 
   #remember(m: Message) {
     if (!m.action) return
-    this.#recentlyClosed = [m, ...this.#recentlyClosed].slice(0, RECENTLY_CLOSED_LIMIT)
+    // The same message again replaces the older one (Recently closed lists each once).
+    const same = (x: Message) => x.text === m.text && x.action?.label === m.action?.label
+    this.#recentlyClosed = [m, ...this.#recentlyClosed.filter((x) => !same(x))].slice(
+      0,
+      RECENTLY_CLOSED_LIMIT,
+    )
   }
 
   #emit() {

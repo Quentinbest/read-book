@@ -42,10 +42,10 @@ export function cheatSheet(
   const label = (c: Chord) => chordLabel(c, layout)
   const bySection = new Map<CommandSection, CheatRow[]>()
   for (const c of commands) {
-    const keys = [c.chord, ...(c.altChords ?? []), c.singleKey]
-      .filter((k): k is Chord => !!k)
-      .map(label)
-    // ⌘= is how ⌘+ is typed; show one of them.
+    // An alternative on the same key (⌘+ typed with or without ⇧) is a typing
+    // variant of the shortcut, not another one: show the shortcut once.
+    const alts = (c.altChords ?? []).filter((a) => a.code !== c.chord?.code)
+    const keys = [c.chord, ...alts, c.singleKey].filter((k): k is Chord => !!k).map(label)
     const unique = Array.from(new Set(keys))
     if (!unique.length) continue
     const rows = bySection.get(c.section) ?? []

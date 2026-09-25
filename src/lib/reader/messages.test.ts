@@ -165,3 +165,14 @@ describe('withdrawing a message whose action no longer applies', () => {
     expect(q.act(a.id)).toBe(false)
   })
 })
+
+describe('Recently closed lists each message once', () => {
+  it('keeps only the newest of identical messages', () => {
+    const { q, advance } = setup()
+    for (let i = 0; i < 3; i++) {
+      q.push({ text: 'Resumed in I: Loomings', action: undo() })
+      advance(MESSAGE_TIMEOUT_MS)
+    }
+    expect(q.recentlyClosed.length).toBe(1)
+  })
+})

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 3 review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body><main>
+<h1>Phase 3 review: Navigator, ⌘K, Go to, footnote peek</h1>
+<p class="lede">Mocks (left) against the app in the same state, captured from the app's own window at 1280 × 800 in Paper on the reference Mac (WebKit 19618). Approving makes the app captures the Phase 3 baselines (plan §6.1). The last three sections are provisional designs with no mock: the <code>?</code> cheat sheet (G10), the ⋯ menu, and the top bar's two new buttons.</p>
+<table><tr><th>Tag</th><th>Meaning</th></tr>
+<tr><td><span class="tag ok">expected</span></td><td>A deliberate difference: the book or an approved rule decides it</td></tr>
+<tr><td><span class="tag later">later phase</span></td><td>The feature arrives in a later phase; hidden until then</td></tr>
+<tr><td><span class="tag ask">your call</span></td><td>Needs your decision</td></tr></table>
+<h2>Screen 04 — Navigator, Contents</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/04.png"><img src="mocks/04.png" alt="Mock" /></a></figure><figure><figcaption>App</figcaption><a href="app/04-navigator-contents.png"><img src="app/04-navigator-contents.png" alt="App" /></a></figure></div>
+<ul class="notes"><li>Matches: the 320 px panel on the panel ground with a hairline; header with the window buttons, Library and ×; cover, title, author, progress and %; rows 34 px; “You are here” in accent on a 9% accent tint; the column recentred in the remaining width (text at x = 480).</li><li><span class="tag ok">expected</span>Entry labels come from the book’s own table of contents (“I: Loomings”, and the front matter Standard Ebooks lists); the mock’s number column is illustrative.</li><li><span class="tag ok">expected</span>The current row also shows the 2 px focus ring: ⌘T opens Contents focused on the current chapter (K3, C2).</li><li><span class="tag ok">expected</span>Standard Ebooks’ cover is SVG, drawn small in the thumbnail.</li><li><span class="tag later">later phase</span>The Contents · Search · Notes tabs: Search arrives in Phase 4 and Notes in Phase 5, so the tab strip appears then.</li></ul>
+<h2>Screen 16 — Command palette</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/16.png"><img src="mocks/16.png" alt="Mock" /></a></figure><figure><figcaption>App</figcaption><a href="app/16-command-palette.png"><img src="app/16-command-palette.png" alt="App" /></a></figure></div>
+<ul class="notes"><li>Matches: 600 px at y = 96 on the popover surface; field with the search icon and Esc; section headings; 40 px rows with key caps; the selected row’s accent tint and ring; the ↑ ↓ ↵ ? footer.</li><li><span class="tag ok">expected</span>Rows are the commands that work today, with their shortcuts; Recently closed holds what was actually dismissed in this session.</li><li><span class="tag later">later phase</span>The Extensions section (Phase 7) and settings rows such as “Reading settings” and “Turn off single-key shortcuts” (Phase 6).</li><li>With a query, the book’s chapters join the results (“Type a command, chapter or setting”), and the section with the best match comes first.</li></ul>
+<h2>Screen 17 — Go to location and footnote peek</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/17.png"><img src="mocks/17.png" alt="Mock" /></a></figure><figure><figcaption>App: Go to</figcaption><a href="app/17-goto.png"><img src="app/17-goto.png" alt="App: Go to" /></a></figure><figure><figcaption>App: footnote peek</figcaption><a href="app/17-footnote-peek.png"><img src="app/17-footnote-peek.png" alt="App: footnote peek" /></a></figure></div>
+<ul class="notes"><li>Go to: 360 px on the popover surface; Percent · Chapter segments; the field and Go; the preview line (“31% is in XXXVII: Sunset. Your current place stays in Back history (⌘[)”); the page-list note; opened from the “3% · Go to… ⌘J” label.</li><li><span class="tag ok">expected</span>Print page appears only for books with a page list (here, Moby Dick has none).</li><li>Peek: NOTE 21 with “Esc closes · focus returns to the marker”; the note in the reading face; Open note in place and Copy; the marker keeps its ring.</li><li><span class="tag ok">expected</span>This note is long, so the peek opens above the marker (N9: above it near the page foot), never over the marker’s line.</li><li><span class="tag ask">your call</span>The note is copied into the peek as plain structure (paragraphs, emphasis, super- and subscripts) rather than with the book’s own styles, because book markup is untrusted (§7). The mock says “rendered with the book’s own styles”. Keep the safe copy, or ask for a sandboxed frame that uses the book’s CSS (more work, same look for most books).</li></ul>
+<h2>G10 — Keyboard shortcuts (<code>?</code>), provisional</h2>
+<div class="pair"><figure><figcaption>App</figcaption><a href="app/g10-cheat-sheet.png"><img src="app/g10-cheat-sheet.png" alt="App" /></a></figure></div>
+<ul class="notes"><li><span class="tag ask">your call</span>Proposed design: a 760 px modal on the popover surface, 17/600 title, two columns of sections in the palette’s heading style, one row per command with its key caps, and a line about when single keys work. Built from the command registry plus the page keys, so it always lists every working shortcut (a Done-when test checks this).</li></ul>
+<h2>⋯ menu, provisional</h2>
+<div class="pair"><figure><figcaption>App</figcaption><a href="app/03-more-menu.png"><img src="app/03-more-menu.png" alt="App" /></a></figure></div>
+<ul class="notes"><li><span class="tag ask">your call</span>No design gives the ⋯ menu’s contents. Proposed: every command, grouped as in the cheat sheet, with shortcuts; unavailable ones at 40% (V4). Plan Done-when needs every command reachable from ⌘K, the menu bar and ⋯.</li></ul>
+<h2>Screens 03 and 14 — two new top-bar buttons</h2>
+<div class="pair"><figure><figcaption>Approved baseline</figcaption><a href="baselines/webkit-19618/03-reader-controls-paper.png"><img src="baselines/webkit-19618/03-reader-controls-paper.png" alt="Approved baseline" /></a></figure><figure><figcaption>Now</figcaption><a href="app/03-reader-controls-paper.png"><img src="app/03-reader-controls-paper.png" alt="Now" /></a></figure></div>
+<ul class="notes"><li><span class="tag ask">your call</span>Contents and ⋯ now appear at the right of the top bar (Screen 03 draws Contents · Search · Notes · Aa · ⋯; the other three stay hidden until their phases). 46 pixels differ from the approved baselines of Screens 03 and 14, within the 0.1% tolerance; approving records the new captures as the baselines.</li></ul>
+</main></body></html>

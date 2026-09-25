@@ -5,7 +5,7 @@
       "id": "visual-captured",
       "description": "Baseline candidates captured",
       "verdict": "manual",
-      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom"
+      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek"
     }
   ],
   "raw": {
@@ -21,14 +21,21 @@
       "g8-scroll-join": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g8-scroll-join.png",
       "g8-rtl-controls": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g8-rtl-controls.png",
       "g8-fxl-fit": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g8-fxl-fit.png",
-      "g8-fxl-zoom": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g8-fxl-zoom.png"
+      "g8-fxl-zoom": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g8-fxl-zoom.png",
+      "04-navigator-contents": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/04-navigator-contents.png",
+      "16-command-palette": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/16-command-palette.png",
+      "g10-cheat-sheet": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/g10-cheat-sheet.png",
+      "03-more-menu": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/03-more-menu.png",
+      "17-goto": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/17-goto.png",
+      "17-footnote-peek": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/17-footnote-peek.png"
     }
   },
   "info": {
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
+    "only": null,
     "os": "14.6.1",
-    "time": 1790267197,
+    "time": 1790309318,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

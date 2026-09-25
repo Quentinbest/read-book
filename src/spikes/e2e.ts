@@ -1507,7 +1507,13 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const { chordLabel } = await import('../lib/commands/keys')
       const missing = hooks
         .registry!.available()
-        .flatMap((c) => [c.chord, ...(c.altChords ?? []), c.singleKey].filter((k) => !!k))
+        .flatMap((c) =>
+          [
+            c.chord,
+            ...(c.altChords ?? []).filter((a) => a.code !== c.chord?.code),
+            c.singleKey,
+          ].filter((k) => !!k),
+        )
         .map((k) => chordLabel(k!))
         .filter((l) => !shown.has(l))
       await escModal()
@@ -1991,6 +1997,66 @@ export async function spikeVisual(): Promise<SpikeResult> {
   keyOnApp('=', { code: 'Equal', metaKey: true })
   keyOnApp('=', { code: 'Equal', metaKey: true })
   await capture('g8-fxl-zoom')
+
+  // Phase 3 (Screens 04, 16, 17; G10 and the ⋯ menu, provisional).
+  await openIn('paper')
+  await hideControls()
+  hooks.run?.('navigator.contents')
+  await waitFor('contents', () => document.querySelector('.navigator .row.current'))
+  await settled(900)
+  await capture('04-navigator-contents')
+  key('Escape', { code: 'Escape' })
+  await settled(600)
+  // A jump, so ⌘K has a Back entry under Recently closed (as Screen 16 shows).
+  await reader()!.engine.goTo('chapter-3.xhtml')
+  await settled(600)
+  await reader()!.engine.goTo('chapter-1.xhtml')
+  hooks.run?.('history.back')
+  await settled(600)
+  const m = hooks.messages?.current
+  if (m) hooks.messages!.dismiss(m.id)
+  keyOnApp('k', { code: 'KeyK', metaKey: true })
+  await waitFor('palette', () => document.querySelector('dialog[open] .palette'))
+  await capture('16-command-palette')
+  ;(document.activeElement ?? document.body).dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+  )
+  await settled(400)
+  keyOnApp('?', { code: 'Slash', shiftKey: true })
+  hooks.run?.('shortcuts.show')
+  await waitFor('cheat sheet', () => document.querySelector('dialog[open] .sheet'))
+  await capture('g10-cheat-sheet')
+  ;(document.activeElement ?? document.body).dispatchEvent(
+    new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }),
+  )
+  await settled(400)
+  await reader()!.engine.goTo('chapter-1.xhtml')
+  await settled(600)
+  await showControls()
+  document.querySelector<HTMLButtonElement>('.more-button')!.click()
+  await waitFor('⋯ menu', () => document.querySelector('.more'))
+  await capture('03-more-menu')
+  key('Escape', { code: 'Escape' })
+  await settled(300)
+  keyOnApp('j', { code: 'KeyJ', metaKey: true })
+  const pop = await waitFor('Go to', () => document.querySelector<HTMLElement>('.goto'))
+  const input = pop.querySelector<HTMLInputElement>('input')!
+  input.value = '31'
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+  await capture('17-goto')
+  key('Escape', { code: 'Escape' })
+  await settled(300)
+  await hideControls()
+  const sections = reader()!.engine.book!.sections
+  await reader()!.engine.goTo(sections.findIndex((x) => x.id.endsWith('/chapter-109.xhtml')))
+  await settled(900)
+  const doc = reader()!.engine.view.renderer.getContents()[0].doc
+  doc
+    .querySelector('#noteref-21')!
+    .dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  await waitFor('peek', () => document.querySelector('.peek'))
+  await capture('17-footnote-peek')
+  key('Escape', { code: 'Escape' })
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',
