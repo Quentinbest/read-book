@@ -30,7 +30,7 @@ import {
 } from './chunks'
 import { transformContent } from './content'
 import { isNoteRef, noteContainer, referencedFootnoteAsides } from './notes'
-import { extractText, rangeFor, type ExtractedText } from '../lib/search/extract'
+import { extractText, offsetAt, rangeFor, type ExtractedText } from '../lib/search/extract'
 import { MIN_SIDE_MARGIN, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
@@ -113,6 +113,86 @@ function drawMark(rects: DOMRectList, o: MarkStyle): SVGElement {
   return g
 }
 
+/** A1: text selected in the book (one chapter; B4). Offsets are in the chapter's extracted text. */
+export interface SelectionEvent {
+  index: number
+  range: Range
+  cfi: string
+  start: number
+  end: number
+  text: string
+  /** The first and last selected lines, in window coordinates (A1 placement). */
+  first: DOMRect
+  last: DOMRect
+}
+
+/** A4: a highlight to draw: tint plus a 2 px underline; `note` adds the margin dot (A6). */
+export interface HighlightMark {
+  id: string
+  cfi: string
+  color: 'yellow' | 'green' | 'blue' | 'rose'
+  note: boolean
+}
+export type HighlightColors = Record<HighlightMark['color'], { tint: string; underline: string }>
+
+function drawHighlight(
+  rects: DOMRectList,
+  o: { tint: string; underline: string; dot: boolean },
+): SVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const g = document.createElementNS(ns, 'g')
+  const list = Array.from(rects).filter((r) => r.width > 0)
+  for (const r of list) {
+    const tint = document.createElementNS(ns, 'rect')
+    tint.setAttribute('x', String(r.left))
+    tint.setAttribute('y', String(r.top))
+    tint.setAttribute('width', String(r.width))
+    tint.setAttribute('height', String(r.height))
+    tint.setAttribute('fill', o.tint)
+    const line = document.createElementNS(ns, 'rect')
+    line.setAttribute('x', String(r.left))
+    line.setAttribute('y', String(r.bottom - 2))
+    line.setAttribute('width', String(r.width))
+    line.setAttribute('height', '2')
+    line.setAttribute('fill', o.underline)
+    g.append(tint, line)
+  }
+  if (o.dot && list[0]) {
+    // A6: a dot in the margin beside the passage's first line.
+    const dot = document.createElementNS(ns, 'circle')
+    dot.setAttribute('cx', String(list[0].left - 12))
+    dot.setAttribute('cy', String(list[0].top + list[0].height / 2))
+    dot.setAttribute('r', '3')
+    dot.setAttribute('fill', o.underline)
+    g.append(dot)
+  }
+  return g
+}
+
+/** V8: a jump pulses the passage for 1.2 s. */
+function drawPulse(rects: DOMRectList, o: { color: string }): SVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const g = document.createElementNS(ns, 'g')
+  for (const r of Array.from(rects)) {
+    const el = document.createElementNS(ns, 'rect')
+    el.setAttribute('x', String(r.left - 3))
+    el.setAttribute('y', String(r.top - 2))
+    el.setAttribute('width', String(r.width + 6))
+    el.setAttribute('height', String(r.height + 4))
+    el.setAttribute('rx', '4')
+    el.setAttribute('fill', 'none')
+    el.setAttribute('stroke', o.color)
+    el.setAttribute('stroke-width', '2')
+    g.append(el)
+  }
+  g.animate([{ opacity: 1 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], {
+    duration: 1200,
+    easing: 'ease-out',
+    fill: 'forwards',
+  })
+  return g
+}
+
 /** N11: an image in the text was clicked. */
 export interface ImageEvent {
   src: string
@@ -187,6 +267,11 @@ export class ReaderEngine {
   #notes = new Set<Listener<NoteEvent>>()
   #images = new Set<Listener<ImageEvent>>()
   #hover = new Set<Listener<string | null>>()
+  #selection = new Set<Listener<SelectionEvent | null>>()
+  #highlightClick = new Set<Listener<{ id: string; first: DOMRect; last: DOMRect }>>()
+  #highlights: { marks: HighlightMark[]; colors: HighlightColors } | null = null
+  #hlKeys = new WeakMap<object, string[]>()
+  #hadSelection = false
   /** Extracted text of live documents, for search offsets (F5). */
   #texts = new WeakMap<Document, ExtractedText>()
   #marks: SearchMarks | null = null
@@ -297,6 +382,120 @@ export class ReaderEngine {
   onLinkHover(l: Listener<string | null>) {
     this.#hover.add(l)
     return () => this.#hover.delete(l)
+  }
+
+  /** A1: the reader selected text (or the selection went: null). */
+  onSelection(l: Listener<SelectionEvent | null>) {
+    this.#selection.add(l)
+    return () => this.#selection.delete(l)
+  }
+
+  /** A5: a plain click on a highlight. */
+  onHighlightClick(l: Listener<{ id: string; first: DOMRect; last: DOMRect }>) {
+    this.#highlightClick.add(l)
+    return () => this.#highlightClick.delete(l)
+  }
+
+  /** A4, A6: draw highlights (tint, 2 px underline, note dot) in every loaded chapter. */
+  setHighlights(marks: HighlightMark[] | null, colors?: HighlightColors) {
+    this.#highlights = marks && colors ? { marks, colors } : null
+    for (const view of this.#views()) this.#drawHighlights(view)
+  }
+
+  /** Clear the selection in the book (after an action, A1). */
+  clearSelection() {
+    for (const view of this.#views())
+      for (const c of view.renderer?.getContents() ?? []) c.doc?.getSelection()?.removeAllRanges()
+    this.#hadSelection = false
+  }
+
+  /** A range's lines in window coordinates. */
+  #screenRects(range: Range): { first: DOMRect; last: DOMRect } | null {
+    const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0)
+    const frame =
+      range.startContainer.ownerDocument?.defaultView?.frameElement?.getBoundingClientRect()
+    if (!rects.length || !frame) return null
+    const move = (r: DOMRect) =>
+      new DOMRect(r.left + frame.left, r.top + frame.top, r.width, r.height)
+    return { first: move(rects[0]), last: move(rects[rects.length - 1]) }
+  }
+
+  /** The Range a CFI points at in a loaded document, if it is loaded. */
+  #cfiRange(view: View, cfi: string, doc: Document, index: number): Range | null {
+    try {
+      const r = view.resolveNavigation(cfi) as
+        { index: number; anchor: (d: Document) => Range | Element | null } | undefined
+      if (!r || r.index !== index) return null
+      const a = r.anchor(doc)
+      if (!a) return null
+      if ('startContainer' in a) return a
+      const range = doc.createRange()
+      range.selectNodeContents(a)
+      return range
+    } catch {
+      return null
+    }
+  }
+
+  #drawHighlights(view: View) {
+    for (const c of view.renderer?.getContents() ?? []) {
+      const layer = c.overlayer as MarkLayer | undefined
+      if (!layer || !c.doc) continue
+      for (const key of this.#hlKeys.get(layer) ?? []) layer.remove(key)
+      const keys: string[] = []
+      const h = this.#highlights
+      for (const m of h?.marks ?? []) {
+        const range = this.#cfiRange(view, m.cfi, c.doc, c.index)
+        if (!range || !h) continue
+        const key = `linen-hl:${m.id}`
+        const colors = h.colors[m.color]
+        ;(layer as unknown as { add: (...a: unknown[]) => void }).add(key, range, drawHighlight, {
+          ...colors,
+          dot: m.note,
+        })
+        keys.push(key)
+      }
+      this.#hlKeys.set(layer, keys)
+    }
+  }
+
+  /** V8, A8: pulse a passage for 1.2 s after a jump to it. */
+  pulse(cfi: string, color: string) {
+    const view = this.#current
+    for (const c of view.renderer?.getContents() ?? []) {
+      const layer = c.overlayer as unknown as
+        { add: (...a: unknown[]) => void; remove: (k: string) => void } | undefined
+      if (!layer || !c.doc) continue
+      const range = this.#cfiRange(view, cfi, c.doc, c.index)
+      if (!range) continue
+      layer.add('linen-pulse', range, drawPulse, { color })
+      setTimeout(() => layer.remove('linen-pulse'), 1300)
+    }
+  }
+
+  /** A1: report the selection in `doc` (or its end). */
+  #reportSelection(view: View, doc: Document, index: number) {
+    if (view !== this.#current) return
+    const sel = doc.getSelection()
+    const range = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0) : null
+    const text = range?.toString() ?? ''
+    if (!range || !text.trim()) {
+      if (this.#hadSelection) this.#selection.forEach((l) => l(null))
+      this.#hadSelection = false
+      return
+    }
+    const rects = this.#screenRects(range)
+    let x = this.#texts.get(doc)
+    if (!x) {
+      x = extractText(doc.body ?? doc.documentElement)
+      this.#texts.set(doc, x)
+    }
+    const start = offsetAt(x, range.startContainer, range.startOffset)
+    const end = offsetAt(x, range.endContainer, range.endOffset)
+    if (!rects || start === null || end === null || end <= start) return
+    this.#hadSelection = true
+    const event = { index, range, cfi: view.getCFI(index, range), start, end, text, ...rects }
+    this.#selection.forEach((l) => l(event))
   }
 
   /** F5: a Range for extracted-text offsets in a live document (same extractor as the index). */
@@ -894,7 +1093,19 @@ export class ReaderEngine {
       this.#onLoad(view, doc, index)
     })
     // A new document's overlay is ready: draw any search marks for it (F5).
-    view.addEventListener('create-overlay', () => this.#drawMarks(view))
+    view.addEventListener('create-overlay', () => {
+      this.#drawMarks(view)
+      this.#drawHighlights(view)
+    })
+    // A5: a plain click on a highlight (not the end of a drag that made a selection).
+    view.addEventListener('show-annotation', (e) => {
+      const { value, range } = (e as CustomEvent<{ value: string; range: Range }>).detail
+      if (!value.startsWith('linen-hl:') || view !== this.#current) return
+      const sel = range.startContainer.ownerDocument?.getSelection()
+      if (sel && !sel.isCollapsed) return
+      const rects = this.#screenRects(range)
+      if (rects) this.#highlightClick.forEach((l) => l({ id: value.slice(9), ...rects }))
+    })
     return view
   }
 
@@ -1468,6 +1679,15 @@ export class ReaderEngine {
       }
     }
     doc.addEventListener('keydown', (e) => this.#key.forEach((l) => l(e)))
+    // A1: a selection is reported when the mouse or keyboard finishes making it.
+    const report = () => setTimeout(() => this.#reportSelection(view, doc, index), 0)
+    doc.addEventListener('pointerup', report)
+    doc.addEventListener('keyup', (e) => {
+      if (e.shiftKey || e.key === 'Shift') report()
+    })
+    doc.addEventListener('selectionchange', () => {
+      if (doc.getSelection()?.isCollapsed && this.#hadSelection) report()
+    })
     // N9: footnote asides that the text refers to are read in the peek, not in the flow.
     const asides = referencedFootnoteAsides(doc)
     if (asides.length) {

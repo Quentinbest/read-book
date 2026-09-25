@@ -131,3 +131,24 @@ export function rangeFor(extracted: ExtractedText, start: number, end: number): 
   range.setEnd(b.node, b.offset)
   return range
 }
+
+/**
+ * The offset in the extracted text of a DOM boundary point (the inverse of
+ * positionAt), for turning a selection into a quote (A9). A point between
+ * elements maps to the next text after it.
+ */
+export function offsetAt(extracted: ExtractedText, node: Node, offset: number): number | null {
+  const { segments } = extracted
+  if (node.nodeType === 3) {
+    const seg = segments.find((s) => s.node === node)
+    return seg ? seg.start + Math.min(offset, (node as Text).data.length) : null
+  }
+  // An element boundary: the first text node at or after that child.
+  const doc = node.ownerDocument ?? (node as Document)
+  const probe = doc.createRange()
+  probe.setStart(node, offset)
+  for (const seg of segments) {
+    if (probe.comparePoint(seg.node, 0) >= 0) return seg.start
+  }
+  return extracted.text.length
+}

@@ -33,3 +33,24 @@ describe('extractText', () => {
     expect(range.startContainer.parentElement!.localName).toBe('em')
   })
 })
+
+describe('offsetAt (A9: selection to quote)', () => {
+  it('maps DOM boundary points back to extracted offsets, the inverse of rangeFor', async () => {
+    const { extractText, offsetAt, rangeFor } = await import('./extract')
+    const doc = new DOMParser().parseFromString(
+      '<body><p>Call <em>me</em> Ishmael.</p><p>Some years ago.</p></body>',
+      'text/html',
+    )
+    const x = extractText(doc.body)
+    const start = x.text.indexOf('me Ish')
+    const end = start + 'me Ish'.length
+    const r = rangeFor(x, start, end)!
+    expect(offsetAt(x, r.startContainer, r.startOffset)).toBe(start)
+    expect(offsetAt(x, r.endContainer, r.endOffset)).toBe(end)
+    // An element boundary: before the second paragraph.
+    const p2 = doc.querySelectorAll('p')[1]
+    expect(offsetAt(x, doc.body, Array.from(doc.body.childNodes).indexOf(p2))).toBe(
+      x.text.indexOf('Some'),
+    )
+  })
+})
