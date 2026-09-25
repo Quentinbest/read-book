@@ -40,7 +40,7 @@
 2. ~~G8 designs~~: approved 2026-09-24 and built (app captures `docs/visual/app/g8-*.png` match the approved frames). Remaining: the image view (Phase 3) and pinch zoom (native gesture bridge).
 3. ~~Visual baselines~~: approved 2026-09-24.
 4. **VoiceOver re-check** of the product's X3 sync: the harness is ready (`scripts/run-spikes.sh x3`, about 5 minutes). It starts three pages before a chapter end and records location, snapping, saving and announcements automatically; the person answers three questions. Results go to `docs/spikes/raw/x3-voiceover.json`.
-5. ~~Memory budget margin~~: fixed 2026-09-25 (below); measured per decision M1 with 20 runs, p95 under budget on both measures. Only the macOS 14 reference Mac has been measured; the 2015 MacBook Air (macOS 12, Intel) needs a person to run `scripts/perf-memory.sh` there.
+5. ~~Memory budget margin~~: fixed 2026-09-25 (below); measured per decision M1 with 20 runs, p95 under budget on both measures. Measured on the macOS reference Mac. The other machine §6.4 needs is the oldest supported macOS (13, with Safari 16.4+), which is not available yet (`docs/spikes/reference-machines.md`). The 2015 MacBook Air is not a reference machine: its Safari 15.6.1 is below the D7 minimum and cannot run the reader, and `scripts/perf-memory.sh` now says so up front.
 
 ## Fixes found by the L16 checks
 

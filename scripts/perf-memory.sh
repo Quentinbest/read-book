@@ -9,12 +9,37 @@ set -e
 cd "$(dirname "$0")/.."
 RUNS="${1:-20}"
 APP=./src-tauri/target/release/linen
+RAW=docs/spikes/raw/budget-memory.json
+
+# Preflight. D7 (docs/decisions.md): the reader needs Safari 16.4 or later (WebKit
+# parses foliate-js only from there), so on older WebKit there is nothing to measure.
+SAFARI=$(defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString 2>/dev/null || echo 0)
+if ! python3 -c "import sys; v=[int(x) for x in '$SAFARI'.split('.')[:2]]+[0]; sys.exit(0 if v[:2] >= [16, 4] else 1)"; then
+  echo "This Mac has Safari $SAFARI; Linen's reader needs Safari 16.4 or later (decision D7)." >&2
+  echo "The memory budget applies only to the reference machines (docs/spikes/reference-machines.md)." >&2
+  exit 1
+fi
+if [ ! -x "$APP" ]; then
+  echo "No spikes build at $APP. Build it first (see the usage line at the top of this script)." >&2
+  exit 1
+fi
+
+# Results go into this checkout, wherever the binary was built.
+LINEN_REPO=$(pwd)
+export LINEN_REPO
+mkdir -p docs/spikes/raw
 OUT=$(mktemp -d)
 i=1
 while [ "$i" -le "$RUNS" ]; do
   DATA=$(mktemp -d)
+  rm -f "$RAW"
   LINEN_DATA_DIR="$DATA" LINEN_SPIKE=m LINEN_SPIKE_TIMEOUT=900 "$APP" >"$OUT/run-$i.log" 2>&1 || true
-  cp docs/spikes/raw/budget-memory.json "$OUT/run-$i.json"
+  if [ ! -f "$RAW" ]; then
+    echo "Run $i produced no result. The end of its log ($OUT/run-$i.log):" >&2
+    tail -20 "$OUT/run-$i.log" >&2
+    exit 1
+  fi
+  cp "$RAW" "$OUT/run-$i.json"
   rm -rf "$DATA"
   echo "run $i/$RUNS: $(python3 -c "import json;a=json.load(open('$OUT/run-$i.json'))['raw']['after'];print(a['total_mb'],'MB RSS,',a.get('footprint_mb'),'MB footprint')")"
   i=$((i + 1))
