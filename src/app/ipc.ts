@@ -47,6 +47,7 @@ export const ipc = {
   libraryImport: (paths: string[]) => invoke<ImportResult[]>('library_import', { paths }),
   /** The book file for the reader (library files only). */
   bookBytes: (bookId: string) => invoke<ArrayBuffer>('book_bytes', { bookId }),
+  bookDamage: (bookId: string) => invoke<string[]>('book_damage', { bookId }),
   bookSettingsGet: (bookId: string) =>
     invoke<[string, string | null] | null>('book_settings_get', { bookId }),
   bookSettingsSet: (bookId: string, layoutMode: string, navigatorDocked: string | null) =>

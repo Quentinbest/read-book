@@ -41,6 +41,8 @@ export interface ReaderLocation {
   sectionCount: number
   /** Label of the current table-of-contents entry. */
   chapterLabel: string
+  /** Its href, to mark “You are here” in Contents (N6). */
+  tocHref?: string
   /** Characters left in this section (B2 turns them into minutes). */
   sectionCharsLeft: number
   /** Page within the section (1-based) and the section's page count, when laid out. */
@@ -1248,6 +1250,7 @@ export class ReaderEngine {
       sectionIndex: section.current,
       sectionCount: section.total,
       chapterLabel: (d.tocItem as { label?: string } | undefined)?.label?.trim() ?? '',
+      tocHref: (d.tocItem as { href?: string } | undefined)?.href,
       // foliate's `time.section` is in units of 1600 characters.
       sectionCharsLeft: (time?.section ?? 0) * 1600,
       page,

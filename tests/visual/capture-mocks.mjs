@@ -9,6 +9,10 @@ const boards = {
   '03': '03 Reader — controls visible',
   10: '10 Reading themes',
   14: '14 Night — controls and selection',
+  '04': '04 Navigator — Contents',
+  16: '16 Command palette',
+  17: '17 Footnote peek · Go to location',
+  12: '12 Empty and error states',
 }
 const file = pathToFileURL(resolve('docs/design/Quiet EPUB Reader (screens).html')).href
 const browser = await chromium.launch()

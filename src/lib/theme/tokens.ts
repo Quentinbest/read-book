@@ -17,6 +17,16 @@ export interface Theme {
   hairline: string
   /** Night chrome keeps the page colour with its own hairline (V2). */
   chromeHairline: string
+  /** Side panels (Navigator, the library sidebar): Screen 04 and 01. */
+  panel: string
+  /** The track behind segmented controls and tabs on a panel. */
+  controlTrack: string
+  /** A raised surface on the track: the selected segment or tab. */
+  raised: string
+  /** The ring around the selected segment (V7: ≥ 3:1 against the track). */
+  segmentRing: string
+  /** Unselected segment and tab labels: secondary ink, darkened to hold 4.5:1 on the track. */
+  trackInk: string
   highlight: Record<HighlightColor, { tint: string; underline: string }>
   search: { tint: string; outline: string; activeTint: string; activeOutline: string }
   /** Colour scheme for native controls and scrollbars. */
@@ -65,6 +75,14 @@ export const THEMES: Record<ThemeName, Theme> = {
     accent: '#8C4A2F',
     hairline: '#E4DDD1',
     chromeHairline: '#E4DDD1',
+    // As drawn in Screens 01 and 04.
+    panel: '#F1ECE3',
+    controlTrack: '#E6DFD3',
+    raised: '#FBF8F3',
+    // PROVISIONAL: Screen 04 draws the ring #8F877B, 2.7:1 on the track, under V7's
+    // 3:1; secondary ink (as the Phase 1 segmented control) gives 4.4:1.
+    segmentRing: '#6B655C',
+    trackInk: '#5E584F',
     highlight: LIGHT_HIGHLIGHTS,
     search: LIGHT_SEARCH,
     scheme: 'light',
@@ -77,6 +95,12 @@ export const THEMES: Record<ThemeName, Theme> = {
     accent: '#8C4A2F',
     hairline: '#E2D4BC',
     chromeHairline: '#E2D4BC',
+    // PROVISIONAL (G5: Sepia panels are derived): Paper's steps from its ground, applied to Sepia's.
+    panel: '#EBDFC9',
+    controlTrack: '#E0D2BD',
+    raised: '#F5EBD9',
+    segmentRing: '#6E5E4A',
+    trackInk: '#615139',
     highlight: SEPIA_HIGHLIGHTS,
     search: SEPIA_SEARCH,
     scheme: 'light',
@@ -89,6 +113,12 @@ export const THEMES: Record<ThemeName, Theme> = {
     accent: '#D39A73',
     hairline: '#2E2C29',
     chromeHairline: '#3A3733',
+    // PROVISIONAL (G5: Night panels are derived): a panel sits a step above the ground.
+    panel: '#22211E',
+    controlTrack: '#2E2C29',
+    raised: '#3A3733',
+    segmentRing: '#8F877B',
+    trackInk: '#A7A094',
     // Approved 2026-09-24 (C7, docs/decisions.md): S4 draws Night tints at 16%
     // alpha, which leaves highlighted text at 8.2–8.8:1, under X1's 9:1. At 11%
     // every colour reaches ≥ 9.2:1. Underline colours are as approved.
@@ -198,6 +228,11 @@ export function themeVariables(t: Theme): Record<string, string> {
     'accent',
     'hairline',
     'chromeHairline',
+    'panel',
+    'controlTrack',
+    'raised',
+    'segmentRing',
+    'trackInk',
   ] as const) {
     vars[`--${kebab(key)}`] = t[key]
   }

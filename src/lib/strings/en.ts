@@ -54,6 +54,15 @@ export const en = {
     /** G8: shown only when opening takes over 500 ms. */
     opening: (title: string) => `Opening “${title}”…`,
   },
+  navigator: {
+    label: 'Navigator',
+    close: 'Close navigator',
+    contents: 'Contents',
+    loading: 'Reading the contents…',
+    generated: 'Generated from headings',
+    youAreHere: 'You are here',
+    damaged: 'Damaged',
+  },
   messages: {
     region: 'Message',
     dismiss: 'Dismiss',

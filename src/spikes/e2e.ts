@@ -104,6 +104,10 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'idpf-page-blanche.epub',
     'long-chapter.epub',
     'broken-bad-css-and-font.epub',
+    // N6: NCX-only (EPUB 2), no navigation at all, and damaged chapters.
+    'gutenberg-2701-moby-dick-epub2.epub',
+    'broken-no-toc.epub',
+    'broken-missing-items.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -144,7 +148,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       id: 'N3-bodymatter',
       description: 'A new book opens at the bodymatter landmark, not the cover',
       run: async () => {
-        await openFromLibrary(/Moby Dick/)
+        await openFromLibrary(/Moby Dick(?!;)/)
         const l = loc()!
         return /loomings/i.test(l.chapterLabel) || l.sectionIndex > 2
           ? 'ok'
@@ -338,7 +342,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
         const before = where()
         const cfi = loc()!.cfi
         await backToLibrary()
-        await openFromLibrary(/Moby Dick/)
+        await openFromLibrary(/Moby Dick(?!;)/)
         return where() === before
           ? 'ok'
           : `was ${before} (${cfi}), reopened at ${where()} (${loc()!.cfi})`
@@ -440,7 +444,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       try {
         const row = await waitFor('row', () =>
           Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-            /Moby Dick/.test(b.textContent ?? ''),
+            /Moby Dick(?!;)/.test(b.textContent ?? ''),
           ),
         )
         row.click()
@@ -467,7 +471,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       'From 1480 px the page is a two-page spread (G8): two 640 px pages, a 48 px gutter, one turn per spread',
     run: async () => {
       await backToLibrary()
-      await openFromLibrary(/Moby Dick/)
+      await openFromLibrary(/Moby Dick(?!;)/)
       const w = getCurrentWindow()
       const size = await w.innerSize()
       const factor = await w.scaleFactor()
@@ -729,7 +733,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
     description: 'A page turn is announced briefly to screen readers (“Page N”)',
     run: async () => {
       await backToLibrary()
-      await openFromLibrary(/Moby Dick/)
+      await openFromLibrary(/Moby Dick(?!;)/)
       key('ArrowRight')
       await settled(600)
       const text = document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
@@ -829,7 +833,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await settled(1200)
       const saved = loc()!
       await backToLibrary()
-      await openFromLibrary(/Moby Dick/)
+      await openFromLibrary(/Moby Dick(?!;)/)
       await settled(800)
       const reopened = reader()!.engine
       if (reopened.mode !== 'scroll') return 'reopened in Pages; the mode was not remembered'
@@ -901,6 +905,151 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  /** The Navigator's rows, once Contents has loaded. */
+  const navRows = () =>
+    waitFor('contents', () => {
+      const rows = Array.from(document.querySelectorAll<HTMLButtonElement>('.navigator .row'))
+      return rows.length ? rows : null
+    })
+  const stageLeft = () => parseFloat(getComputedStyle(document.querySelector('.stage')!).left)
+
+  checks.push({
+    id: 'N6-contents-nav',
+    description:
+      'Contents (⌘T) docks from 1100 px, marks “You are here” on the current chapter with focus there, jumps with Back, and the column recentres',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await reader()!.engine.goTo('chapter-3.xhtml')
+      await settled(800)
+      const here = loc()!
+      if (!hooks.run?.('navigator.contents')) return 'the Contents command did not run'
+      const rows = await navRows()
+      await settled(500)
+      if (document.querySelector('.navigator.floating')) return 'floated at a wide window'
+      if (rows.length < 100) return `${rows.length} rows`
+      const current = document.querySelector<HTMLButtonElement>('.navigator .row.current')
+      if (!current || !/You are here/.test(current.textContent ?? ''))
+        return 'no “You are here” row'
+      if (!current.textContent!.includes(here.chapterLabel))
+        return `“You are here” on “${current.textContent}”, reading “${here.chapterLabel}”`
+      if (document.activeElement !== current) return 'focus is not on the current chapter'
+      if (stageLeft() !== 320) return `reading area starts at ${stageLeft()} px`
+      // The column is centred in what is left (Screen 04: x = 480 at 1280 px).
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const p = doc.querySelector('p')!.getClientRects()[0]
+      const frame = doc.defaultView!.frameElement!.getBoundingClientRect()
+      const textLeft = Math.round(
+        (((p.left % frame.width) + frame.width) % frame.width) + frame.left,
+      )
+      const want = Math.round(320 + (innerWidth - 320 - 640) / 2)
+      const target = rows[rows.indexOf(current) + 3]
+      target.click()
+      await settled(900)
+      if (loc()!.sectionIndex <= here.sectionIndex) return 'the jump did not move forward'
+      if (!reader()!.history.canGoBack) return 'the jump is not in Back history (N1)'
+      return Math.abs(textLeft - want) <= 1 ? 'ok' : `text at x = ${textLeft}, expected ${want}`
+    },
+  })
+
+  checks.push({
+    id: 'S2-esc-navigator',
+    description:
+      'Esc closes the docked Navigator, the reading area returns to full width, focus to the text',
+    run: async () => {
+      key('Escape', { code: 'Escape' })
+      await settled(600)
+      if (document.querySelector('.navigator')) return 'still open'
+      return stageLeft() === 0 ? 'ok' : `reading area at ${stageLeft()} px`
+    },
+  })
+
+  checks.push({
+    id: 'S13-dock-remembered',
+    description: 'A docked Navigator is remembered per book and reopens with it',
+    run: async () => {
+      hooks.run?.('navigator.contents')
+      await navRows()
+      await settled(600)
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await settled(600)
+      const open = !!document.querySelector('.navigator:not(.floating)')
+      key('Escape', { code: 'Escape' })
+      await settled(600)
+      return open ? 'ok' : 'reopened without the Navigator'
+    },
+  })
+
+  checks.push({
+    id: 'S2-navigator-floats',
+    description: 'Below 1100 px the Navigator floats over the text and leaves the layout alone',
+    run: async () => {
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      await w.setSize(new LogicalSize(1000, 760))
+      await settled(1200)
+      try {
+        hooks.run?.('navigator.contents')
+        await navRows()
+        await settled(400)
+        const floating = !!document.querySelector('.navigator.floating')
+        const left = stageLeft()
+        key('Escape', { code: 'Escape' })
+        await settled(400)
+        if (!floating) return 'docked below 1100 px'
+        if (left !== 0) return `reading area moved to ${left} px`
+        return document.querySelector('.navigator') ? 'Esc did not close it' : 'ok'
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+    },
+  })
+
+  const contentsOf = async (title: RegExp) => {
+    await backToLibrary()
+    await openFromLibrary(title)
+    hooks.run?.('navigator.contents')
+    const rows = await navRows()
+    const note = document.querySelector('.navigator .note')?.textContent ?? ''
+    const damaged = document.querySelectorAll('.navigator .damaged').length
+    key('Escape', { code: 'Escape' })
+    await settled(500)
+    return { rows: rows.length, note, damaged }
+  }
+
+  checks.push({
+    id: 'N6-contents-ncx',
+    description: 'An EPUB 2 book with only an NCX lists its contents',
+    run: async () => {
+      const c = await contentsOf(/Moby Dick; Or/)
+      return c.rows > 100 && !c.note ? 'ok' : `${c.rows} rows, note “${c.note}”`
+    },
+  })
+
+  checks.push({
+    id: 'N6-contents-headings',
+    description:
+      'A book without navigation gets Contents from its headings, labelled “Generated from headings”',
+    run: async () => {
+      const c = await contentsOf(/No table of contents/)
+      return c.rows > 0 && c.note === 'Generated from headings'
+        ? 'ok'
+        : `${c.rows} rows, note “${c.note}”`
+    },
+  })
+
+  checks.push({
+    id: 'N6-contents-damaged',
+    description: 'Damaged chapters are marked in Contents (E3)',
+    run: async () => {
+      const c = await contentsOf(/Missing items/)
+      return c.damaged === 2 ? 'ok' : `${c.damaged} rows marked damaged of ${c.rows}`
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -911,7 +1060,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
         await backToLibrary()
         const row = await waitFor('row', () =>
           Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-            /Moby Dick/.test(b.textContent ?? ''),
+            /Moby Dick(?!;)/.test(b.textContent ?? ''),
           ),
         )
         const previous = reader()?.engine
@@ -977,7 +1126,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
     description: 'Page turns render within a frame: < 16 ms p95, within and across chapters (§6.4)',
     run: async () => {
       await backToLibrary()
-      await openFromLibrary(/Moby Dick/)
+      await openFromLibrary(/Moby Dick(?!;)/)
       const engine = reader()!.engine
       await engine.goTo(20)
       await sleep(600)
@@ -1239,7 +1388,7 @@ export async function spikeVisual(): Promise<SpikeResult> {
   const openIn = async (theme: string) => {
     await invoke('setting_set', { key: 'theme', value: theme })
     if (reader()) await backToLibrary()
-    await openFromLibrary(/Moby Dick/)
+    await openFromLibrary(/Moby Dick(?!;)/)
     // Chapter 1, first page (Screen 02's state).
     await reader()!.engine.goTo('chapter-1.xhtml')
     await settled(900)
@@ -1333,7 +1482,7 @@ export async function spikeX3(): Promise<SpikeResult> {
   document.getElementById('chrome-top')!.style.display = 'none'
   const { default: App } = await import('../App.svelte')
   mount(App, { target: document.getElementById('reader')! })
-  await openFromLibrary(/Moby Dick/)
+  await openFromLibrary(/Moby Dick(?!;)/)
   const engine = reader()!.engine
   const bookId = reader()!.bookId
 

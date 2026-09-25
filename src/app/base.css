@@ -15,6 +15,7 @@
   --motion-popover: 140ms;
   --motion-chrome-in: 160ms;
   --motion-chrome-out: 220ms;
+  --motion-navigator: 220ms;
 }
 
 *,
@@ -65,6 +66,7 @@ textarea {
     --motion-popover: 100ms;
     --motion-chrome-in: 100ms;
     --motion-chrome-out: 100ms;
+    --motion-navigator: 100ms;
   }
   *,
   *::before,

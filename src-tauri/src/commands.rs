@@ -323,6 +323,25 @@ pub fn serve_book_media(
     }
 }
 
+/// E3, N6: the book's damaged spine items (zip paths), recorded at import.
+#[tauri::command]
+pub fn book_damage(state: State<AppState>, book_id: String) -> CmdResult<Vec<String>> {
+    let failed = |e: rusqlite::Error| CommandError::Failed {
+        message: e.to_string(),
+    };
+    let store = state.store.lock().unwrap();
+    let mut stmt = store
+        .conn()
+        .prepare("SELECT item_href FROM book_damage WHERE book_id = ?1 ORDER BY item_href")
+        .map_err(failed)?;
+    let rows = stmt
+        .query_map([&book_id], |r| r.get(0))
+        .map_err(failed)?
+        .collect::<Result<Vec<String>, _>>()
+        .map_err(failed)?;
+    Ok(rows)
+}
+
 /// Per-book settings (S13): layout mode and the docked Navigator tab.
 #[tauri::command]
 pub fn book_settings_get(

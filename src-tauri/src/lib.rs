@@ -39,6 +39,7 @@ pub fn run() {
                 commands::book_bytes,
                 commands::book_entries,
                 commands::book_entry,
+                commands::book_damage,
                 commands::book_settings_get,
                 commands::book_settings_set,
                 commands::position_save,

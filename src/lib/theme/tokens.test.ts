@@ -83,3 +83,24 @@ describe('themeCss', () => {
     expect(css).toContain('--chrome-hairline: #3A3733')
   })
 })
+
+describe('Panels (Screens 01, 04; G5 derived for Sepia and Night)', () => {
+  for (const n of names) {
+    const t = THEMES[n]
+    it(`${n}: text on the panel keeps X1 contrast`, () => {
+      expect(contrast(t.ink, t.panel)).toBeGreaterThanOrEqual(7)
+      expect(contrast(t.inkSecondary, t.panel)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t.accent, t.panel)).toBeGreaterThanOrEqual(4.5)
+    })
+    it(`${n}: the current Contents row (accent on a 9% accent tint) stays readable`, () => {
+      const [r, g, b] = [1, 3, 5].map((i) => parseInt(t.accent.slice(i, i + 2), 16))
+      const row = over(`rgba(${r},${g},${b},.09)`, t.panel)
+      expect(contrast(t.accent, row)).toBeGreaterThanOrEqual(4.5)
+    })
+    it(`${n}: segments: text on the track and the raised segment, and its ring ≥ 3:1 (V7)`, () => {
+      expect(contrast(t.trackInk, t.controlTrack)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t.ink, t.raised)).toBeGreaterThanOrEqual(7)
+      expect(contrast(t.segmentRing, t.controlTrack)).toBeGreaterThanOrEqual(3)
+    })
+  }
+})

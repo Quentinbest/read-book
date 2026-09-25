@@ -14,7 +14,11 @@
   import type { MessageQueue } from '../lib/reader/messages'
   import { initialState, reduce, type ReaderEvent, type ReaderState } from '../lib/reader/state'
   import { t } from '../lib/strings/en'
-  import { THEMES, type Theme } from '../lib/theme/tokens'
+  import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
+  import { navigatorTab } from '../lib/reader/state'
+  import Navigator from './Navigator.svelte'
+  import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
+  import { bookMediaUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
   import {
     ReaderEngine,
@@ -87,10 +91,64 @@
   const OPENING_LINE_AFTER_MS = 500
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
-  // Screens 02/03: the window buttons live in the top bar and hide with it.
+  /** Every theme token, for panels and controls that the inline colours below do not cover. */
+  let themeStyle = $derived(
+    Object.entries(themeVariables(theme))
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('; '),
+  )
+  // ---- Navigator (S2, S3, N6; Screen 04)
+  const NAVIGATOR_WIDTH = 320
+  const MOTION_NAVIGATOR_MS = 220
+  let navigatorOpen = $derived(navigatorTab(lanes) !== null)
+  /** The width the docked Navigator takes from the reading area (applied after its slide, V8). */
+  let dockedWidth = $state(0)
+  let stageShift = $state(0)
+  let contents = $state<Contents | null>(null)
+  let currentRow = $derived(contents && location ? currentIndex(contents.items, location) : -1)
+  let navigator: ReturnType<typeof Navigator> | undefined = $state()
+  // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
   $effect(() => {
-    void ipc.setWindowControls(chromeVisible).catch(() => {})
+    void ipc.setWindowControls(chromeVisible || navigatorOpen).catch(() => {})
   })
+  // V8: the Navigator slides in 220 ms while the column moves by transform; the
+  // page reflows at the new width only after the slide, so the text never jumps.
+  $effect(() => {
+    const target = lanes.docked ? NAVIGATOR_WIDTH : 0
+    if (target === dockedWidth) return
+    const settle = () => {
+      stageShift = 0
+      dockedWidth = target
+      relayout()
+    }
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return settle()
+    // The column is centred in the area; docking moves the area's centre by half the width.
+    stageShift = (target - dockedWidth) / 2
+    const timer = window.setTimeout(settle, MOTION_NAVIGATOR_MS)
+    return () => clearTimeout(timer)
+  })
+  // S13: whether the Navigator is docked is remembered per book.
+  let restoredDock = false
+  $effect(() => {
+    const docked = lanes.docked
+    if (!restoredDock) return
+    navigatorDocked = docked
+    void ipc.bookSettingsSet(book.id, readingMode, docked).catch(() => {})
+  })
+  /** K3: open Contents (or, when it is open, focus it) on the current chapter (C2). */
+  function openContents() {
+    if (navigatorTab(lanes) !== 'contents') dispatch({ type: 'openNavigator', tab: 'contents' })
+    requestAnimationFrame(() => navigator?.focusCurrent())
+  }
+  function closeNavigator() {
+    dispatch({ type: 'closeNavigator' })
+  }
+  function onContentsSelect(item: ContentsItem) {
+    if (location) pushJump(location, 'contents')
+    void engine?.goTo(item.href)
+    // A floating Navigator gives way to the text; a docked one stays (S2).
+    if (!lanes.docked) closeNavigator()
+  }
   let height = $state(window.innerHeight)
   let fontPx = 19
   let edges = { topStart: 0, bottomOff: false }
@@ -167,6 +225,7 @@
       height: window.innerHeight,
       fontPx,
       spacing: 'default',
+      navigatorWidth: dockedWidth,
       // L8, G8: the two-page spread is a Pages-mode layout.
       allowSpread: readingMode === 'pages',
     })
@@ -465,12 +524,22 @@
       const settings = await ipc.bookSettingsGet(book.id).catch(() => null)
       if (settings?.[0] === 'scroll') readingMode = 'scroll'
       navigatorDocked = settings?.[1] ?? null
+      // S13: reopen the Navigator docked if it was, when the window is wide enough.
+      if (navigatorDocked === 'contents' && window.innerWidth >= 1100)
+        dispatch({ type: 'openNavigator', tab: 'contents' })
+      restoredDock = true
       relayout()
       const opened = await engine.open(await libraryLoader(book.id), {
         cfi: saved?.[0],
         mode: readingMode,
       })
       readingMode = engine.mode
+      // N6: Contents from the navigation, headings or spine, with damaged chapters marked.
+      void ipc
+        .bookDamage(book.id)
+        .catch(() => [] as string[])
+        .then((damaged) => buildContents(opened, damaged))
+        .then((c) => (contents = c))
       clearTimeout(openingTimer)
       openingShown = false
       rtlBook = engine.rtl
@@ -528,6 +597,7 @@
         }),
       )
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
+      cleanups.push(registry.handle('navigator.contents', { run: openContents }))
       // B8: Pages and Scroll (the Aa popover's control arrives in Phase 6).
       const switchMode = async (mode: ReadingMode) => {
         if (!engine || !(await engine.setMode(mode))) return
@@ -603,93 +673,124 @@
   style:--ink-secondary={theme.inkSecondary}
   style:--accent={theme.accent}
   style:--chrome-hairline={theme.chromeHairline}
+  style={themeStyle}
 >
-  <div class="host" bind:this={host}></div>
-
-  <!-- Margins: click targets for the previous and next page (I11, S3). -->
-  <button
-    class="margin left"
-    class:scroll={readingMode === 'scroll'}
-    class:shown={chromeVisible}
-    class:zoomed={zoom > 1}
-    style:width="{layout.marginWidth}px"
-    aria-label={t.reader.previousPage}
-    tabindex="-1"
-    onclick={() => onMarginClick('left')}
+  {#if navigatorOpen}
+    <Navigator
+      bind:this={navigator}
+      title={book.title}
+      author={book.authors.join(', ')}
+      coverUrl={book.cover_path ? bookMediaUrl(book.id, book.cover_path) : null}
+      coverTint={book.generated_cover_tint}
+      fraction={location?.fraction ?? 0}
+      {contents}
+      current={currentRow}
+      floating={!lanes.docked}
+      onselect={onContentsSelect}
+      onclose={closeNavigator}
+      onlibrary={leave}
+    />
+  {/if}
+  <!-- The reading area: everything right of a docked Navigator. -->
+  <div
+    class="stage"
+    style:left="{dockedWidth}px"
+    style:transform={stageShift ? `translateX(${stageShift}px)` : undefined}
+    style:transition={stageShift ? `transform ${MOTION_NAVIGATOR_MS}ms ease-out` : undefined}
   >
-    <svg
-      class="chevron"
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.4"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg
-    >
-  </button>
-  <button
-    class="margin right"
-    class:scroll={readingMode === 'scroll'}
-    class:shown={chromeVisible}
-    class:zoomed={zoom > 1}
-    style:width="{layout.marginWidth}px"
-    aria-label={t.reader.nextPage}
-    tabindex="-1"
-    onclick={() => onMarginClick('right')}
-  >
-    <svg
-      class="chevron"
-      width="22"
-      height="22"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      stroke-width="1.4"
-      stroke-linecap="round"
-      stroke-linejoin="round"
-      aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg
-    >
-  </button>
+    <div class="host" bind:this={host}></div>
 
-  {#if readingMode === 'scroll'}
-    <!-- G8: the text runs under the window edges; the location line sits on the lower fade. -->
-    <div class="fade top-fade" aria-hidden="true"></div>
-    <div class="fade bottom-fade" aria-hidden="true"></div>
-  {/if}
-  {#if zoomChipShown}
-    <div class="zoom-chip" role="status">
-      <span>{t.reader.zoomLevel(zoom)}</span>
-      <button type="button" onclick={() => setZoom(1)}>{t.reader.zoomFit}<Kbd keys="⌘0" /></button>
-    </div>
-  {/if}
-  {#if chromeVisible}
-    <header class="chrome top" data-tauri-drag-region out:chromeOut={{ from: -4 }}>
-      <button type="button" class="library" onclick={leave}>
-        <Icon name="library" size={18} />{t.reader.library}
-      </button>
-      <div class="title" aria-live="off">
-        <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
+    <!-- Margins: click targets for the previous and next page (I11, S3). -->
+    <button
+      class="margin left"
+      class:scroll={readingMode === 'scroll'}
+      class:shown={chromeVisible}
+      class:zoomed={zoom > 1}
+      style:width="{layout.marginWidth}px"
+      aria-label={t.reader.previousPage}
+      tabindex="-1"
+      onclick={() => onMarginClick('left')}
+    >
+      <svg
+        class="chevron"
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg
+      >
+    </button>
+    <button
+      class="margin right"
+      class:scroll={readingMode === 'scroll'}
+      class:shown={chromeVisible}
+      class:zoomed={zoom > 1}
+      style:width="{layout.marginWidth}px"
+      aria-label={t.reader.nextPage}
+      tabindex="-1"
+      onclick={() => onMarginClick('right')}
+    >
+      <svg
+        class="chevron"
+        width="22"
+        height="22"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.4"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"><path d="M9 5l7 7-7 7" /></svg
+      >
+    </button>
+
+    {#if readingMode === 'scroll'}
+      <!-- G8: the text runs under the window edges; the location line sits on the lower fade. -->
+      <div class="fade top-fade" aria-hidden="true"></div>
+      <div class="fade bottom-fade" aria-hidden="true"></div>
+    {/if}
+    {#if zoomChipShown}
+      <div class="zoom-chip" role="status">
+        <span>{t.reader.zoomLevel(zoom)}</span>
+        <button type="button" onclick={() => setZoom(1)}>{t.reader.zoomFit}<Kbd keys="⌘0" /></button
+        >
       </div>
-    </header>
-    <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
-      <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
-        <div class="track" aria-hidden="true">
-          <div class="fill" style:width="{(location?.fraction ?? 0) * 100}%"></div>
+    {/if}
+    {#if chromeVisible}
+      <header
+        class="chrome top"
+        class:docked={dockedWidth > 0}
+        data-tauri-drag-region
+        out:chromeOut={{ from: -4 }}
+      >
+        <button type="button" class="library" onclick={leave}>
+          <Icon name="library" size={18} />{t.reader.library}
+        </button>
+        <div class="title" aria-live="off">
+          <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
         </div>
-        <div class="labels">
-          <span>{location?.chapterLabel ?? ''}</span>
-          <span>{[progressText, locationText.split(' · ')[1]].filter(Boolean).join(' · ')}</span>
+      </header>
+      <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
+        <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
+          <div class="track" aria-hidden="true">
+            <div class="fill" style:width="{(location?.fraction ?? 0) * 100}%"></div>
+          </div>
+          <div class="labels">
+            <span>{location?.chapterLabel ?? ''}</span>
+            <span>{[progressText, locationText.split(' · ')[1]].filter(Boolean).join(' · ')}</span>
+          </div>
         </div>
-      </div>
-    </footer>
-  {:else if openingShown && !location}
-    <div class="location-line">{t.reader.opening(book.title)}</div>
-  {:else if showLocationLine(height) && locationText}
-    <div class="location-line" aria-hidden="true">{locationText}</div>
-  {/if}
+      </footer>
+    {:else if openingShown && !location}
+      <div class="location-line">{t.reader.opening(book.title)}</div>
+    {:else if showLocationLine(height) && locationText}
+      <div class="location-line" aria-hidden="true">{locationText}</div>
+    {/if}
+  </div>
 </div>
 
 <style>
@@ -700,9 +801,19 @@
     color: var(--ink);
     overflow: hidden;
   }
+  .stage {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+  }
   .host {
     position: absolute;
     inset: 0;
+  }
+  /* With the Navigator docked, its header holds the window buttons (Screen 04). */
+  .top.docked {
+    padding-left: 12px;
   }
   .margin {
     position: absolute;
