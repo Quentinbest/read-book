@@ -1128,8 +1128,9 @@ export async function spikeMemory(): Promise<SpikeResult> {
       {
         id: 'budget-memory',
         description:
-          'A 100 MB book after reading 50 pages uses < 400 MB across the app and its WebKit processes (§6.4)',
-        verdict: after.total_mb < 400 ? 'pass' : 'fail',
+          'A 100 MB book after reading 50 pages uses < 400 MB (RSS and footprint) across the app and its WebKit processes (§6.4, M1)',
+        // Decision M1 (docs/decisions.md): both RSS and physical footprint must be under 400 MB.
+        verdict: after.total_mb < 400 && after.footprint_mb < 400 ? 'pass' : 'fail',
         evidence,
       },
     ],

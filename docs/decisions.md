@@ -48,3 +48,15 @@ The owner chose the recommended defaults for the open behaviour questions (plan 
 Still needed before Phase 2 starts: Spikes B and C (owner at the machine) and the G8 designs (Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, loading state and “≈” locations). G4 (library and import states) is needed by Phase 6, and its import states by Phase 1 exit; the import messages stay provisional until then.
 
 **2026-09-24:** the owner approved the G8 designs (`docs/design/g8/APPROVAL.md`), which closes the last Phase 2 design input.
+
+## M1 — How the memory budget is measured (2026-09-25)
+
+The owner asked for the best call on the two questions raised by the memory investigation (`docs/phase2-status.md`, “Memory”).
+
+| Question | Decision |
+|---|---|
+| RSS or physical footprint | **Both must be under 400 MB.** §6.4 names resident memory, so RSS stays. RSS alone is unreliable on a Mac under memory pressure: macOS compresses idle pages out of it, so the same run read 206–420 MB. The physical footprint (Activity Monitor's “Memory”, compressed pages included) is stable to within a few MB and is the stricter of the two, so a pass on both means the app really fits. |
+| One run or many | **Median and p95 of 20 runs, as §6.4 says**, each in a fresh launch with a fresh data folder (`scripts/perf-memory.sh`). The budget holds when the p95 of both measures is under 400 MB. A single `LINEN_SPIKE=m` run stays as the quick check. |
+
+The GPU process's fixed ~90 MB (window compositing, present before a book opens) counts, as §6.4 says “all processes”.
+
