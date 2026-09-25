@@ -112,9 +112,9 @@ pub fn import_paths(state: &AppState, paths: &[PathBuf]) -> CmdResult<Vec<Import
     // that was open. (Locked after the store: `with_open_book` takes them the other way.)
     let mut open = state.open_book.lock().unwrap();
     let replaced = |id: &str| {
-        results.iter().any(
-            |r| matches!(&r.outcome, ImportOutcome::Replaced { book_id, .. } if book_id == id),
-        )
+        results
+            .iter()
+            .any(|r| matches!(&r.outcome, ImportOutcome::Replaced { book_id, .. } if book_id == id))
     };
     if open.as_ref().is_some_and(|(id, _)| replaced(id)) {
         *open = None;
