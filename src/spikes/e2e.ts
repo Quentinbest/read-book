@@ -1015,11 +1015,18 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const wheel = (delta: number, count: number, pixels: boolean) =>
         invoke('spike_scroll_wheel', { x: 640, y: 400, delta, count, pixels })
       await settled(1500) // past any wheel cooldown
+      const seen: string[] = []
+      const { listen } = await import('@tauri-apps/api/event')
+      const unlisten = await listen<{ x: number; y: number; dy: number }>('native-scroll', (e) =>
+        seen.push(`${Math.round(e.payload.x)},${Math.round(e.payload.y)} dy ${e.payload.dy}`),
+      )
       const before = where()
       await wheel(-1, 1, false)
       await settled(700)
+      unlisten()
       const pageTurned = where() !== before
-      if (!pageTurned) return `a wheel notch in Pages did not turn (${before})`
+      if (!pageTurned)
+        return `a wheel notch in Pages did not turn (${before}); AppKit delivered ${seen.length ? seen.join(' | ') : 'no scroll event'}`
       hooks.run?.('layout.scroll')
       await settled(1500)
       const host = engine.view.parentElement!

@@ -202,13 +202,31 @@ pub fn spike_corpus_path(name: String) -> Result<String, String> {
 }
 
 pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::Error>> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("main window missing")?;
+    // The owner's instruction (2026-09-25): end-to-end runs happen on another desktop
+    // (LINEN_SPACE=2), so the harness never takes over the screen being used. The
+    // window starts hidden (tauri.spikes.conf.json), moves, then shows.
+    let desktop = std::env::var("LINEN_SPACE")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok());
+    #[cfg(target_os = "macos")]
+    if let Some(n) = desktop {
+        match desktops::move_window(&window, n) {
+            Ok(space) => eprintln!("spikes: window moved to desktop {n} (space {space})"),
+            Err(e) => {
+                eprintln!("spikes: could not move the window to desktop {n}: {e}");
+                return Err(e.into());
+            }
+        }
+    }
+    let _ = desktop;
+    window.show()?;
     let Ok(run) = std::env::var("LINEN_SPIKE") else {
         return Ok(());
     };
     start_canary_server(app.handle().clone());
-    let window = app
-        .get_webview_window("main")
-        .ok_or("main window missing")?;
     let url = window.url()?.join(&format!("spikes.html?run={run}"))?;
     window.navigate(url)?;
 
@@ -403,4 +421,101 @@ pub fn spike_read_pasteboard() -> String {
         .stringForType(unsafe { NSPasteboardTypeString })
         .map(|s| s.to_string())
         .unwrap_or_default()
+}
+
+/// macOS desktops (Spaces). There is no public API for putting a window on another
+/// desktop; the window server's calls below are what window managers use. Spike
+/// builds only, for the harness's own window.
+#[cfg(target_os = "macos")]
+mod desktops {
+    use objc2::runtime::AnyObject;
+    use objc2::{class, msg_send};
+    use objc2_foundation::NSString;
+    use tauri::Runtime;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGSMainConnectionID() -> i32;
+        fn CGSCopyManagedDisplaySpaces(cid: i32) -> *mut AnyObject;
+        fn CGSMoveWindowsToManagedSpace(cid: i32, windows: *mut AnyObject, space: u64);
+        fn CGSCopySpacesForWindows(cid: i32, mask: i32, windows: *mut AnyObject) -> *mut AnyObject;
+    }
+
+    unsafe fn get(dict: *mut AnyObject, key: &str) -> *mut AnyObject {
+        let key = NSString::from_str(key);
+        msg_send![dict, objectForKey: &*key]
+    }
+
+    /// The window-server ids of the user desktops on the main display, in order.
+    fn user_desktops() -> Vec<u64> {
+        unsafe {
+            let cid = CGSMainConnectionID();
+            let displays = CGSCopyManagedDisplaySpaces(cid);
+            if displays.is_null() {
+                return vec![];
+            }
+            let mut out = vec![];
+            let count: usize = msg_send![displays, count];
+            if count > 0 {
+                let main: *mut AnyObject = msg_send![displays, objectAtIndex: 0usize];
+                let spaces = get(main, "Spaces");
+                let n: usize = if spaces.is_null() {
+                    0
+                } else {
+                    msg_send![spaces, count]
+                };
+                for i in 0..n {
+                    let space: *mut AnyObject = msg_send![spaces, objectAtIndex: i];
+                    let kind: i64 = msg_send![get(space, "type"), longLongValue];
+                    let id: u64 = msg_send![get(space, "ManagedSpaceID"), unsignedLongLongValue];
+                    if kind == 0 {
+                        out.push(id);
+                    }
+                }
+            }
+            let _: () = msg_send![displays, release];
+            out
+        }
+    }
+
+    /// Put the window on the user's desktop `n` (1-based) without switching to it.
+    pub fn move_window<R: Runtime>(
+        window: &tauri::WebviewWindow<R>,
+        n: usize,
+    ) -> Result<u64, String> {
+        let spaces = user_desktops();
+        let space = *spaces
+            .get(n.checked_sub(1).ok_or("desktops count from 1")?)
+            .ok_or(format!(
+                "there is no desktop {n} (this Mac has {})",
+                spaces.len()
+            ))?;
+        let ns_window = window.ns_window().map_err(|e| e.to_string())? as *mut AnyObject;
+        unsafe {
+            let cid = CGSMainConnectionID();
+            let number: isize = msg_send![ns_window, windowNumber];
+            let boxed: *mut AnyObject = msg_send![class!(NSNumber), numberWithInteger: number];
+            let list: *mut AnyObject = msg_send![class!(NSArray), arrayWithObject: boxed];
+            CGSMoveWindowsToManagedSpace(cid, list, space);
+            // Check where it went (mask 7: every kind of space).
+            let now = CGSCopySpacesForWindows(cid, 7, list);
+            let found: bool = if now.is_null() {
+                false
+            } else {
+                let count: usize = msg_send![now, count];
+                let mut hit = false;
+                for i in 0..count {
+                    let v: *mut AnyObject = msg_send![now, objectAtIndex: i];
+                    let id: u64 = msg_send![v, unsignedLongLongValue];
+                    hit |= id == space;
+                }
+                let _: () = msg_send![now, release];
+                hit
+            };
+            if !found {
+                return Err(format!("the window is not on space {space} after the move"));
+            }
+        }
+        Ok(space)
+    }
 }
