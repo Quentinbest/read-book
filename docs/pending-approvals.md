@@ -25,8 +25,13 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 7. **The damaged-book card (E3).** Contents marks damaged chapters (the Phase 3 Done-when item). The card “Part of this book couldn't be opened · Read anyway / Show file / Remove” (Screen 12) is not built; Remove depends on G4 (what Remove deletes), a Phase 6 decision.
    *Recommendation:* build the card with Read anyway and Show file in Phase 6, together with Remove.
 
+## Phase 4
+
+8. **Phase 4 visual baseline (Screen 05).** Review `docs/visual/phase4-review.html`.
+   *Recommendation:* approve.
+
 ## Carried over (need a person, not a decision)
 
-8. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.
+9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.
 
-9. **Oldest supported macOS reference machine (macOS 13 with Safari 16.4+).** Needed before the §6.4 budgets are signed off for release (`docs/spikes/reference-machines.md`).
+10. **Oldest supported macOS reference machine (macOS 13 with Safari 16.4+).** Needed before the §6.4 budgets are signed off for release (`docs/spikes/reference-machines.md`).

@@ -2341,6 +2341,28 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await waitFor('peek', () => document.querySelector('.peek'))
   await capture('17-footnote-peek')
   key('Escape', { code: 'Escape' })
+  await settled(300)
+
+  // Phase 4 (Screen 05): “water” in Chapter 1, the second result on the page.
+  const chapter1 = reader()!.engine.book!.sections.findIndex((x) =>
+    x.id.endsWith('/chapter-1.xhtml'),
+  )
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  keyOnApp('f', { code: 'KeyF', metaKey: true })
+  const field = await waitFor('search field', () =>
+    document.querySelector<HTMLInputElement>('.navigator .search input'),
+  )
+  field.value = 'water'
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+  await waitFor('search finished', () => reader()!.search.settled || null, 30_000)
+  for (let i = 0; i < 2; i++)
+    field.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+    )
+  await settled(900)
+  await capture('05-navigator-search')
+  key('Escape', { code: 'Escape' })
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

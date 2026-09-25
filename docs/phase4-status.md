@@ -12,7 +12,7 @@
 | Every result lands on its match in the page, and marks meet the F5 contrast values | Done | e2e F5-results-land: every result (↵ through all of them) is on the page shown in the right chapter, its range reads “water”, the active mark is the stronger tint with a 2 px accent outline, the others a soft tint with a 1 px outline, in the theme's approved colours (contrast in `tokens.test.ts`); marks go when Search closes |
 | The Esc-return rule (F7) passes an end-to-end test | Done | e2e F7-esc-return: Esc after browsing returns to the original page; after choosing a result you stay, and Back returns |
 | Search timing holds the Spike F budget in the app | Done | e2e F3-F8-streaming-persisted: from the saved index, “the” (19,959 results, the worst query) is searched and painted in about 160 ms (budget 300 ms) |
-| The Screen 05 visual baseline is approved | **Waiting for the owner** | `docs/pending-approvals.md` |
+| The Screen 05 visual baseline is approved | **Waiting for the owner** | `docs/visual/phase4-review.html`; `docs/pending-approvals.md` item 8 |
 
 ## Work items
 

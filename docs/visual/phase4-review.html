@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 4 review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body><main>
+<h1>Phase 4 review: Search</h1>
+<p class="lede">The Screen 05 mock (left) against the app in the same state: Moby-Dick, “water”, the second result on the page, 1280 × 800, Paper, captured from the app's own window on the reference Mac (WebKit 19618). Approving makes the capture the Phase 4 baseline.</p>
+<h2>Screen 05 — Navigator, Search</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/05.png"><img src="mocks/05.png" alt="Mock"/></a></figure><figure><figcaption>App</figcaption><a href="app/05-navigator-search.png"><img src="app/05-navigator-search.png" alt="App"/></a></figure></div>
+<ul class="notes">
+<li>Matches: the tabs under the header (no book block on this tab), the field with its accent ring and clear button, the count line, chapter groups with counts and “You are here”, the current chapter open, snippets with the match marked, the active result raised, marks in the page (soft tint and 1 px outline; the active one stronger with a 2 px accent outline), the ↵ / ⇧↵ / Esc footer and “Result 2 of N · chapter” in the location line.</li>
+<li><span class="tag ok">expected</span>The counts are the book's real ones (292 results in 93 chapters); the mock shows 14 in 5, mid-search. While a search is still running the line adds “so far” and a “Searching N of M chapters” bar, as the mock draws.</li>
+<li><span class="tag ok">expected</span>Chapter labels come from the book's table of contents (“I: Loomings”).</li>
+<li><span class="tag later">later phase</span>The Notes tab joins in Phase 5.</li>
+</ul>
+</main></body></html>
