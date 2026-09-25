@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod epub;
+pub mod ext_commands;
 pub mod extensions;
 pub mod import;
 pub mod native;
@@ -74,6 +75,21 @@ pub fn run() {
                 commands::library_folder_show,
                 commands::export_write,
                 commands::startup_mark,
+                commands::export_save_file,
+                ext_commands::extensions_list,
+                ext_commands::extension_inspect,
+                ext_commands::extension_install,
+                ext_commands::extension_set_enabled,
+                ext_commands::extension_remove,
+                ext_commands::extension_crashed,
+                ext_commands::extension_restart,
+                ext_commands::extension_storage_get,
+                ext_commands::extension_storage_set,
+                ext_commands::extension_storage_delete,
+                ext_commands::extension_storage_keys,
+                ext_commands::extension_net_fetch,
+                ext_commands::app_safe_mode,
+                ext_commands::app_restart_safe,
                 commands::position_get,
                 commands::setting_get,
                 commands::setting_set,
@@ -118,7 +134,19 @@ pub fn run() {
             }
             let state = commands::init(app)?;
             use tauri::Manager;
+            // P7: safe mode is decided before anything else reads the extensions.
+            let safe = ext_commands::launch_in_safe_mode(&state);
+            if let Err(e) = extensions::registry::ensure_builtins(
+                &state.store.lock().unwrap(),
+                &state.library.extensions_dir,
+                ext_commands::BUILTINS,
+            ) {
+                log::error!("built-in extensions: {e}");
+            }
             app.manage(state);
+            app.manage(ext_commands::SafeMode(std::sync::atomic::AtomicBool::new(
+                safe,
+            )));
             commands::flush_pending_opens(app.handle());
             native_input::install(app.handle());
             #[cfg(feature = "spikes")]

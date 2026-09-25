@@ -4,6 +4,35 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 
 Items 1–8 and 11–20 were approved as recommended on 2026-09-25; the record is in `docs/decisions.md`. New items are added below as work continues.
 
+## Phase 7
+
+The plan wanted D4 decided and the G1 and G7 designs before Phase 7. None existed; each is built as recommended below and marked provisional.
+
+21. **D4 — extension packages.** *Recommendation:*
+    - **Package:** a zip file named `*.linenext`, with `manifest.json` at its root (P1), plus the extension's scripts, UI pages and icons. A theme pack is the same, with only a manifest and token JSON.
+    - **Signing:** none in the MVP. Install is from a file only, and the consent dialog says “Not verified by Linen”. A signed registry follows the MVP (P§19).
+    - **API reference:** Markdown in `docs/extensions/`, with a TypeScript declaration file (`linen.d.ts`) that extension authors can use.
+    - **Localisation:** English only in the MVP. A manifest `locales` field is reserved and ignored.
+
+22. **G1 — install consent.** *Recommendation, built:* a modal sheet in the Settings window. The main install sheet shows:
+    - the extension's name, version and description;
+    - “Not verified by Linen”;
+    - **Can access**: the permissions in Screen 11's plain words (“Read the text you select”, “Connect to api.dictionaryapi.dev”). Those marked in P3 (`book.text`, `annotations.write`, wildcards, `background`) are highlighted in accent, as Screen 11 draws `network:` and `background`;
+    - **Adds**: what it contributes (“Command”, “‘Define’ in selection menu”, “Navigator tab”, “Theme”);
+    - Cancel and Install.
+
+    Two other sheets follow the same pattern:
+    - **Updates** that ask for more show only the new permissions, with “Keep current version” and “Update”; until then the old version keeps running.
+    - **Remove** asks “Also delete its saved data?”, with Keep data and Delete data (P5).
+
+23. **G7 — extension surfaces.** *Recommendation, built:*
+    - **Navigator tab:** an extension's tab follows Notes in the Navigator's tabs. More than one extension tab collapses into a “More” menu tab.
+    - **Selection “⋯”:** opens a small menu of extension actions under the bar, as Screen 12 draws. A stuck action shows “Not responding” with “Restart <name>”; “Manage extensions…” is at the end.
+    - **Pinned commands:** they appear at the top of the reader's ⋯ menu, under the extension's name. There is no top-bar slot (P8).
+    - **Built-in extensions** (Markdown Export) are listed with “Built-in” and can be turned off, not removed.
+    - **Suspended extensions** show Screen 11's warning box (“Stopped responding … Reading wasn't affected. Restart · Disable”).
+    - **Frames:** extension UI frames run on the extension's own origin (Spike G: WebKit runs no script in an opaque-origin frame). P§19's “no same-origin access” holds for the app: the frame is never on the app's origin.
+
 ## Carried over (need a person, not a decision)
 
 9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.

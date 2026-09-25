@@ -9,7 +9,8 @@ export type HighlightColor = 'yellow' | 'green' | 'blue' | 'rose'
 export const HIGHLIGHT_COLORS: HighlightColor[] = ['yellow', 'green', 'blue', 'rose']
 
 export interface Theme {
-  name: ThemeName
+  /** A built-in theme, or an extension's theme pack (P9): `ext:<extension id>/<theme id>`. */
+  name: ThemeName | `ext:${string}`
   ground: string
   ink: string
   inkSecondary: string

@@ -1,0 +1,15 @@
+{
+  "id": "app.linen.markdown-export",
+  "version": "1.0.0",
+  "name": "Markdown Export",
+  "description": "Exports highlights and notes of a book as a Markdown file.",
+  "publisher": "Linen",
+  "engines": { "linen": "^1.0" },
+  "main": "main.js",
+  "activation": ["onExport:markdown"],
+  "contributes": {
+    "commands": [{ "id": "export-markdown", "title": "Export highlights as Markdown" }],
+    "exporters": [{ "id": "markdown", "title": "Export as Markdown", "command": "export-markdown" }]
+  },
+  "permissions": ["annotations.read", "files.export"]
+}

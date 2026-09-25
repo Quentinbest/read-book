@@ -601,6 +601,33 @@ pub fn startup_mark<R: Runtime>(app: AppHandle<R>, what: String) {
     let _ = (app, what);
 }
 
+/// P3 files.export: save text where the reader chose in the save dialog. Never
+/// into the library folder (the app's own data).
+#[tauri::command]
+pub fn export_save_file(state: State<AppState>, path: String, contents: String) -> CmdResult<()> {
+    let failed = |m: String| CommandError::Failed { message: m };
+    let path = PathBuf::from(path);
+    if !path.is_absolute() {
+        return Err(failed("not a full path".into()));
+    }
+    let root = state
+        .library
+        .books_dir
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    let parent = path
+        .parent()
+        .and_then(|p| p.canonicalize().ok())
+        .ok_or(failed("no such folder".into()))?;
+    if root.canonicalize().is_ok_and(|r| parent.starts_with(r)) {
+        return Err(failed("that folder belongs to Linen's library".into()));
+    }
+    std::fs::write(&path, contents).map_err(|e| CommandError::SaveFailed {
+        message: e.to_string(),
+    })
+}
+
 /// E10, G3: what the book info sheet shows, read-only: the stored metadata, the
 /// EPUB accessibility metadata, the file's size, and the publisher and date from
 /// the package (read from the library copy now, as they are not stored).

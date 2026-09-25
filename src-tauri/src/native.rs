@@ -293,3 +293,17 @@ pub fn set_window_controls(window: tauri::WebviewWindow, visible: bool) {
     #[cfg(not(target_os = "macos"))]
     let _ = (window, visible);
 }
+
+/// P7: is ⇧ held right now? Read at launch: holding it starts in safe mode.
+#[cfg(target_os = "macos")]
+pub fn shift_held() -> bool {
+    use objc2::{class, msg_send};
+    // NSEventModifierFlagShift = 1 << 17
+    let flags: usize = unsafe { msg_send![class!(NSEvent), modifierFlags] };
+    flags & (1 << 17) != 0
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn shift_held() -> bool {
+    false
+}

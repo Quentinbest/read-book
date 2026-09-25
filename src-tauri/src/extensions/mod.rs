@@ -7,13 +7,20 @@
 //! through the host (`net.fetch`, Phase 7). Extension UI pages (Navigator tabs,
 //! Phase 7) get their own locked-down CSP.
 
+pub mod manifest;
+pub mod registry;
+pub mod when;
+
 use std::path::{Component, Path, PathBuf};
 use tauri::http::{Response, StatusCode};
 
 pub const EXT_SCHEME: &str = "linen-ext";
 
-const HOST_HTML: &str = include_str!("ext/host.html");
-const HOST_JS: &str = include_str!("ext/host.js");
+const HOST_HTML: &str = include_str!("host.html");
+const HOST_JS: &str = include_str!("host.js");
+const WORKER_JS: &str = include_str!("worker.js");
+const UI_JS: &str = include_str!("ui.js");
+const KIT_CSS: &str = include_str!("kit.css");
 
 /// The host frame: scripts and workers from this origin only; nothing else.
 const HOST_CSP: &str = "default-src 'none'; script-src 'self'; worker-src 'self'; \
@@ -79,6 +86,21 @@ pub fn serve(root: &Path, id: &str, path: &str) -> Reply {
                 HOST_HTML.as_bytes().into(),
             )
         }
+        "/_worker.js" => {
+            return ok(
+                "text/javascript; charset=utf-8",
+                WORKER_CSP,
+                WORKER_JS.as_bytes().into(),
+            )
+        }
+        "/_ui.js" => {
+            return ok(
+                "text/javascript; charset=utf-8",
+                UI_CSP,
+                UI_JS.as_bytes().into(),
+            )
+        }
+        "/_kit.css" => return ok("text/css; charset=utf-8", UI_CSP, KIT_CSS.as_bytes().into()),
         "/_host.js" => {
             return ok(
                 "text/javascript; charset=utf-8",
