@@ -3,6 +3,7 @@
 
 import type { LocationHistory } from '../lib/reader/history'
 import type { MessageQueue } from '../lib/reader/messages'
+import type { CommandRegistry } from '../lib/commands/registry'
 import type { ReaderEngine, ReaderLocation } from '../reader/engine'
 
 export interface TestHooks {
@@ -15,6 +16,7 @@ export interface TestHooks {
     pagesExact: () => boolean
   }
   messages?: MessageQueue
+  registry?: CommandRegistry
   /** Run a command as the menu or ⌘K would. */
   run?: (id: string) => boolean
   /** Set instead of quitting, so the harness can check what was saved (N5). */

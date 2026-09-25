@@ -302,6 +302,30 @@
       "evidence": "ok"
     },
     {
+      "id": "K9-palette",
+      "description": "⌘K: fuzzy match, ↑ ↓ ↵ run, chapters by name, Recently closed, and it suspends reader input (S8)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "K9-cheat-sheet",
+      "description": "? (and ? in ⌘K) opens the cheat sheet, which lists every working shortcut",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "K-commands-reachable",
+      "description": "Every available command is in ⌘K, the macOS menu bar and the ⋯ menu, with its shortcut",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "K1-chapter-keys",
+      "description": "⌥↓ ⌥↑ and ] [ move by chapter",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -338,7 +362,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790307912,
+    "time": 1790308911,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

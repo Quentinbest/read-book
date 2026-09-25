@@ -8,7 +8,18 @@
     open,
     onclose,
     children,
-  }: { label: string; open: boolean; onclose: () => void; children: Snippet } = $props()
+    width,
+    top,
+  }: {
+    label: string
+    open: boolean
+    onclose: () => void
+    children: Snippet
+    /** Width in px (default: 560 px, or the window less 48 px). */
+    width?: number
+    /** Distance from the top of the window in px (default: centred). */
+    top?: number
+  } = $props()
 
   let dialog: HTMLDialogElement | undefined = $state()
 
@@ -18,6 +29,13 @@
   // A native <dialog> makes the page inert but lets Tab leave the dialog when it
   // reaches the end; S8 needs focus trapped, so Tab cycles inside.
   function onkeydown(e: KeyboardEvent) {
+    // Esc closes this modal only: it must not also reach the reader behind it (S2, S8).
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      e.stopPropagation()
+      onclose()
+      return
+    }
     if (e.key !== 'Tab' || !dialog) return
     const items = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE))
     if (!items.length) return e.preventDefault()
@@ -43,6 +61,8 @@
 <dialog
   bind:this={dialog}
   aria-label={label}
+  style:width={width ? `min(${width}px, calc(100vw - 48px))` : undefined}
+  style:margin-top={top !== undefined ? `${top}px` : undefined}
   {onkeydown}
   oncancel={(e) => {
     e.preventDefault()

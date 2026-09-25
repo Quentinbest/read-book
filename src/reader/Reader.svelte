@@ -16,9 +16,11 @@
   import { t } from '../lib/strings/en'
   import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
   import { navigatorTab } from '../lib/reader/state'
+  import { setPaletteChapters } from '../app/palette'
   import Navigator from './Navigator.svelte'
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
+  import MoreMenu from './MoreMenu.svelte'
   import ImageView from './ImageView.svelte'
   import { noteText } from './notes'
   import type { ImageEvent, NoteEvent } from './engine'
@@ -220,9 +222,20 @@
   /** Floating popovers close on a click outside them (S2). */
   function onReaderPointerDown(e: PointerEvent) {
     const kind = lanes.floating?.kind
-    if (kind !== 'goto' && kind !== 'peek') return
-    const inside = (e.target as Element | null)?.closest?.('.goto, .goto-label, .nav-goto, .peek')
+    if (kind !== 'goto' && kind !== 'peek' && kind !== 'more') return
+    const inside = (e.target as Element | null)?.closest?.(
+      '.goto, .goto-label, .nav-goto, .peek, .more, .more-button',
+    )
     if (!inside) dispatch({ type: 'closeFloating' })
+  }
+
+  // ---- The ⋯ menu (Screen 03): every command, as in the menu bar and ⌘K
+  let moreOpen = $derived(lanes.floating?.kind === 'more')
+  let moreAnchor = $state<DOMRect | null>(null)
+  function openMore(anchor: DOMRect) {
+    moreAnchor = anchor
+    if (moreOpen) dispatch({ type: 'closeFloating' })
+    else dispatch({ type: 'openFloating', kind: 'more' })
   }
 
   // ---- Footnote peek (N9), image view (N11), links (N10)
@@ -428,7 +441,8 @@
 
   // ---- page turns (I1–I10, S6, I7)
   function turn(dir: Turn) {
-    if (!engine || lanes.floating?.kind === 'palette' || lanes.floating?.kind === 'dialog') return
+    // S8: modals (⌘K, dialogs) suspend reader input, the wheel included.
+    if (!engine || keyContext().modalOpen) return
     dispatch({ type: 'pageTurn' })
     if (readingMode === 'scroll') {
       void engine.turn(dir) // I9: a screen, not a page; no rapid-turn chip
@@ -699,6 +713,14 @@
         .catch(() => [] as string[])
         .then((damaged) => buildContents(opened, damaged))
         .then((c) => (contents = c))
+      // ⌘K finds chapters too (Screen 16: “Type a command, chapter or setting”).
+      setPaletteChapters(() =>
+        (contents?.items ?? []).map((item) => ({
+          label: item.label,
+          run: () => onContentsSelect(item),
+        })),
+      )
+      cleanups.push(() => setPaletteChapters(null))
       clearTimeout(openingTimer)
       openingShown = false
       rtlBook = engine.rtl
@@ -931,6 +953,13 @@
       <div class="fade top-fade" aria-hidden="true"></div>
       <div class="fade bottom-fade" aria-hidden="true"></div>
     {/if}
+    {#if moreOpen && moreAnchor}
+      <MoreMenu
+        {registry}
+        anchor={moreAnchor}
+        onclose={() => dispatch({ type: 'closeFloating' })}
+      />
+    {/if}
     {#if peekOpen && note}
       <FootnotePeek bind:this={peek} {note} onopen={openNoteInPlace} oncopy={copyNote} />
     {/if}
@@ -978,6 +1007,22 @@
         </button>
         <div class="title" aria-live="off">
           <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
+        </div>
+        <!-- Screen 03: Contents · Search · Notes · Aa · ⋯ (Search, Notes and Aa arrive later). -->
+        <div class="tools">
+          <button type="button" class="tool" aria-label={t.reader.contents} onclick={openContents}>
+            <Icon name="contents" size={18} />
+          </button>
+          <button
+            type="button"
+            class="tool more-button"
+            aria-label={t.reader.more}
+            aria-haspopup="menu"
+            aria-expanded={moreOpen}
+            onclick={(e) => openMore(e.currentTarget.getBoundingClientRect())}
+          >
+            <Icon name="more" size={18} />
+          </button>
         </div>
       </header>
       <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
@@ -1107,6 +1152,29 @@
     bottom: 0;
     height: 88px;
     background: linear-gradient(transparent, var(--ground) 55%);
+  }
+  .tools {
+    margin-left: auto;
+    display: flex;
+    gap: 4px;
+    position: relative;
+    z-index: 1;
+  }
+  .tool {
+    width: 36px;
+    height: 36px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--ink-secondary);
+    cursor: default;
+  }
+  .tool:hover,
+  .tool[aria-expanded='true'] {
+    background: var(--hover-wash);
+    color: var(--ink);
   }
   .link-url {
     position: absolute;

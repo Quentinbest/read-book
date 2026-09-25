@@ -11,6 +11,8 @@
   import { ipc, type Book, type ImportResult } from './app/ipc'
   import { installMenuBar } from './app/menubar'
   import { refreshLayoutLabels } from './app/keyLabels'
+  import CommandPalette from './app/CommandPalette.svelte'
+  import CheatSheet from './app/CheatSheet.svelte'
   import { applyTheme, type ThemeChoice } from './app/theme'
   import { WriteQueue } from './app/writes'
   import { testHooks } from './app/testHooks'
@@ -32,7 +34,10 @@
   const writes = new WriteQueue(messages)
   if (testHooks) testHooks.messages = messages
   const registry = new CommandRegistry()
-  if (testHooks) testHooks.run = (id) => registry.run(id)
+  if (testHooks) {
+    testHooks.run = (id) => registry.run(id)
+    testHooks.registry = registry
+  }
   // N5: work to finish before the app quits (the reader saves its position).
   // Not reactive state: nothing renders from it.
   // eslint-disable-next-line svelte/prefer-svelte-reactivity
@@ -87,6 +92,10 @@
     if (picked) await importPaths(Array.isArray(picked) ? picked : [picked])
   }
 
+  // K9, S8: the command palette, a modal over the reader or the library.
+  let paletteOpen = $state(false)
+  let cheatSheetOpen = $state(false)
+
   function keyContext(): KeyContext {
     return {
       // In the library no page has focus; the reader routes its own page keys.
@@ -121,6 +130,8 @@
       const srTimer = setInterval(() => void pollScreenReader(), 2000)
       cleanups.push(() => clearInterval(srTimer))
       cleanups.push(registry.handle('book.open', { run: () => void openBookDialog() }))
+      cleanups.push(registry.handle('palette.open', { run: () => (paletteOpen = !paletteOpen) }))
+      cleanups.push(registry.handle('shortcuts.show', { run: () => (cheatSheetOpen = true) }))
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),
@@ -183,5 +194,7 @@
 {:else}
   <Library {books} {dropActive} onopen={() => void openBookDialog()} onopenbook={openBook} />
 {/if}
+<CommandPalette open={paletteOpen} {registry} {messages} onclose={() => (paletteOpen = false)} />
+<CheatSheet open={cheatSheetOpen} {registry} onclose={() => (cheatSheetOpen = false)} />
 <MessageBar queue={messages} />
 <LiveRegion bind:this={liveRegion} />

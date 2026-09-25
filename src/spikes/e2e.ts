@@ -1406,6 +1406,193 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  const palette = () => document.querySelector<HTMLElement>('dialog[open] .palette')
+  /** Esc as a real key arrives: at the focused element, inside the modal. */
+  const escModal = async () => {
+    ;(document.activeElement ?? document.body).dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    )
+    await settled(300)
+  }
+  const typePalette = async (q: string) => {
+    typeInto(palette()!.querySelector('input')!, q)
+    await settled(150)
+  }
+  const pressInPalette = (k: string) =>
+    palette()!
+      .querySelector('input')!
+      .dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }))
+
+  checks.push({
+    id: 'K9-palette',
+    description:
+      '⌘K: fuzzy match, ↑ ↓ ↵ run, chapters by name, Recently closed, and it suspends reader input (S8)',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      await settled(200)
+      if (document.activeElement !== palette()!.querySelector('input'))
+        return 'focus is not in the field'
+      // S8: the wheel does not turn pages behind a modal.
+      const before = where()
+      const t0 = performance.now()
+      for (const [i, dy] of [-0.1, -0.9, -3.2].entries())
+        await emit('native-scroll', {
+          precise: false,
+          phase: 0,
+          momentum: 0,
+          dx: 0,
+          dy,
+          x: 640,
+          y: 400,
+          t: t0 + i * 20,
+        })
+      await settled(500)
+      if (where() !== before) return 'the page turned behind ⌘K'
+      await typePalette('gtc')
+      const first = palette()!.querySelector('.row.selected')?.textContent?.trim()
+      if (!first?.startsWith('Go to chapter')) return `“gtc” selected “${first}”`
+      pressInPalette('ArrowDown')
+      pressInPalette('ArrowUp')
+      pressInPalette('Enter')
+      await settled(700)
+      if (palette()) return 'Enter did not close the palette'
+      if (!document.querySelector('.navigator')) return 'Enter did not run Go to chapter…'
+      key('Escape', { code: 'Escape' })
+      await settled(500)
+      // A chapter by name.
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      await typePalette('carpet bag')
+      const row = palette()!.querySelector('.row.selected')?.textContent?.trim() ?? ''
+      pressInPalette('Enter')
+      await settled(900)
+      if (!/Carpetbag/.test(loc()!.chapterLabel))
+        return `went to “${loc()!.chapterLabel}” from “${row}”`
+      // Recently closed: the Back chip from that jump, dismissed, is still reachable.
+      const m = hooks.messages!.current
+      if (!m || !/Back/.test(m.text)) return `no Back chip after the jump (“${m?.text}”)`
+      hooks.messages!.dismiss(m.id)
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      const sections = Array.from(palette()!.querySelectorAll('.section')).map((x) => x.textContent)
+      const closed = palette()!.querySelector('.row')?.textContent ?? ''
+      pressInPalette('Enter')
+      await settled(900)
+      if (sections[0] !== 'Recently closed') return `sections ${sections.join(', ')}`
+      if (!/Back to page/.test(closed)) return `first row “${closed}”`
+      return /Loomings/.test(loc()!.chapterLabel) ? 'ok' : `Back went to “${loc()!.chapterLabel}”`
+    },
+  })
+
+  checks.push({
+    id: 'K9-cheat-sheet',
+    description: '? (and ? in ⌘K) opens the cheat sheet, which lists every working shortcut',
+    run: async () => {
+      key('?', { code: 'Slash', shiftKey: true })
+      const sheet = await waitFor('cheat sheet', () =>
+        document.querySelector<HTMLElement>('dialog[open] .sheet'),
+      )
+      await settled(200)
+      const shown = new Set(Array.from(sheet.querySelectorAll('kbd')).map((k) => k.textContent))
+      const { chordLabel } = await import('../lib/commands/keys')
+      const missing = hooks
+        .registry!.available()
+        .flatMap((c) => [c.chord, ...(c.altChords ?? []), c.singleKey].filter((k) => !!k))
+        .map((k) => chordLabel(k!))
+        .filter((l) => !shown.has(l))
+      await escModal()
+      if (document.querySelector('dialog[open]')) return 'Esc did not close the cheat sheet'
+      if (missing.length) return `not listed: ${missing.join(' ')}`
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      pressInPalette('?')
+      const again = await waitFor('cheat sheet from ⌘K', () =>
+        document.querySelector('dialog[open] .sheet'),
+      )
+      await escModal()
+      return again ? 'ok' : 'no cheat sheet from ⌘K'
+    },
+  })
+
+  checks.push({
+    id: 'K-commands-reachable',
+    description:
+      'Every available command is in ⌘K, the macOS menu bar and the ⋯ menu, with its shortcut',
+    run: async () => {
+      const { menuModel } = await import('../lib/commands/menu')
+      const { chordLabel } = await import('../lib/commands/keys')
+      const commands = hooks.registry!.available().filter((c) => c.palette)
+      const inMenuBar = new Map(
+        menuModel(hooks.registry!.available()).flatMap((m) => m.items.map((i) => [i.id, i])),
+      )
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      const inPalette = new Map(
+        Array.from(palette()!.querySelectorAll('.row')).map((r) => [
+          r.querySelector('.label')?.textContent,
+          r.querySelector('kbd')?.textContent ?? '',
+        ]),
+      )
+      await escModal()
+      await showControls()
+      document.querySelector<HTMLButtonElement>('.more-button')!.click()
+      const more = await waitFor('⋯ menu', () => document.querySelector<HTMLElement>('.more'))
+      const inMore = new Map(
+        Array.from(more.querySelectorAll('[role="menuitem"]')).map((r) => [
+          r.querySelector('span')?.textContent,
+          r.querySelector('.key')?.textContent ?? '',
+        ]),
+      )
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      await hideControls()
+      const problems: string[] = []
+      for (const c of commands) {
+        const k = c.chord ?? c.singleKey
+        const label = k ? chordLabel(k) : ''
+        const enabled = c.enabled?.() ?? true
+        if (enabled && inPalette.get(c.title) !== label)
+          problems.push(`⌘K ${c.id} “${inPalette.get(c.title)}”`)
+        if (!inMore.has(c.title) || inMore.get(c.title) !== label) problems.push(`⋯ ${c.id}`)
+        if (c.menu && !inMenuBar.has(c.id)) problems.push(`menu bar ${c.id}`)
+        if (!c.menu) problems.push(`no menu bar place for ${c.id}`)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'K1-chapter-keys',
+    description: '⌥↓ ⌥↑ and ] [ move by chapter',
+    run: async () => {
+      const s0 = loc()!.sectionIndex
+      key('ArrowDown', { code: 'ArrowDown', altKey: true })
+      await settled(700)
+      const s1 = loc()!.sectionIndex
+      key(']', { code: 'BracketRight' })
+      await settled(700)
+      const s2 = loc()!.sectionIndex
+      key('[', { code: 'BracketLeft' })
+      await settled(700)
+      key('ArrowUp', { code: 'ArrowUp', altKey: true })
+      await settled(700)
+      const s3 = loc()!.sectionIndex
+      return s1 > s0 && s2 > s1 && s3 === s0
+        ? 'ok'
+        : `sections ${s0} → ${s1} → ${s2} → back to ${s3}`
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:

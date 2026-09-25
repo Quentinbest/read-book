@@ -15,7 +15,16 @@ export const NAVIGATOR_DOCK_MIN_WIDTH = 1100
 export type NavigatorTab = 'contents' | 'search' | 'notes' | `extension:${string}`
 
 export type FloatingKind =
-  'aa' | 'goto' | 'selection' | 'note' | 'peek' | 'image' | 'palette' | 'dialog' | 'navigator'
+  | 'aa'
+  | 'goto'
+  | 'more'
+  | 'selection'
+  | 'note'
+  | 'peek'
+  | 'image'
+  | 'palette'
+  | 'dialog'
+  | 'navigator'
 
 export type Floating =
   { kind: Exclude<FloatingKind, 'navigator'> } | { kind: 'navigator'; tab: NavigatorTab }
@@ -59,9 +68,15 @@ export interface Transition {
 /** Layers that suspend reader input and trap focus (S8). */
 const MODAL: ReadonlySet<FloatingKind> = new Set(['palette', 'dialog'])
 /** Layers a new selection dismisses (S7): popovers and peeks. */
-const DISMISSED_BY_SELECTION: ReadonlySet<FloatingKind> = new Set(['aa', 'goto', 'peek', 'image'])
+const DISMISSED_BY_SELECTION: ReadonlySet<FloatingKind> = new Set([
+  'aa',
+  'goto',
+  'more',
+  'peek',
+  'image',
+])
 /** Popovers anchored to the chrome: the chrome never hides while one is open (S10). */
-const CHROME_POPOVERS: ReadonlySet<FloatingKind> = new Set(['aa', 'goto'])
+const CHROME_POPOVERS: ReadonlySet<FloatingKind> = new Set(['aa', 'goto', 'more'])
 
 export function initialState(width: number, dockedTab: NavigatorTab | null = null): ReaderState {
   const wide = width >= NAVIGATOR_DOCK_MIN_WIDTH

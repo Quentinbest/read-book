@@ -32,6 +32,8 @@ export const en = {
   },
   reader: {
     library: 'Library',
+    more: 'More',
+    contents: 'Contents',
     previousPage: 'Previous page',
     nextPage: 'Next page',
     minutesLeft: (n: number) => `${n} min left in chapter`,
@@ -96,6 +98,23 @@ export const en = {
     zoomIn: 'Zoom in',
     zoomOut: 'Zoom out',
     fit: 'Fit',
+  },
+  cheatSheet: {
+    title: 'Keyboard shortcuts',
+    close: 'Close',
+    singleKeys:
+      'Single-key shortcuts (such as [ and ]) work when the book text has focus and no screen reader is running.',
+  },
+  palette: {
+    label: 'Command palette',
+    placeholder: 'Type a command, chapter or setting',
+    recentlyClosed: 'Recently closed',
+    reading: 'Reading',
+    chapters: 'Chapters',
+    none: 'No matching commands',
+    move: 'move',
+    run: 'run',
+    all: 'all shortcuts',
   },
   messages: {
     region: 'Message',
