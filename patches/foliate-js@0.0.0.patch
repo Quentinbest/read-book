@@ -1,3 +1,62 @@
+diff --git a/epub.js b/epub.js
+index e8bd70333accb9f9f6fb7389cb434b6805156da0..38786dd98d3de3b970a71f17b40e52b9a0091f1a 100644
+--- a/epub.js
++++ b/epub.js
+@@ -628,6 +628,9 @@ class Encryption {
+     getDecoder(uri) {
+         return this.#decoders.get(this.#uris.get(uri)) ?? (x => x)
+     }
++    isEncrypted(uri) {
++        return this.#uris.has(uri)
++    }
+ }
+ 
+ class Resources {
+@@ -708,9 +711,11 @@ class Loader {
+     #children = new Map()
+     #refCount = new Map()
+     eventTarget = new EventTarget()
+-    constructor({ loadText, loadBlob, resources }) {
++    constructor({ loadText, loadBlob, resources, urlFor }) {
+         this.loadText = loadText
+         this.loadBlob = loadBlob
++        // Linen (§6.4 memory): a URL the host serves the item from directly, or null
++        this.urlFor = urlFor
+         this.manifest = resources.manifest
+         this.assets = resources.manifest
+         // needed only when replacing in (X)HTML w/o parsing (see below)
+@@ -772,6 +777,9 @@ class Loader {
+         if (!allow) return null
+ 
+         const parent = parents.at(-1)
++        // Linen: media the host serves directly never becomes a blob
++        const direct = !isScript && this.urlFor?.(href, mediaType)
++        if (direct) return direct
+         if (this.#cache.has(href)) return this.ref(href, parent)
+ 
+         const shouldReplace =
+@@ -933,9 +941,10 @@ export class EPUB {
+     parser = new DOMParser()
+     #loader
+     #encryption
+-    constructor({ loadText, loadBlob, getSize, sha1 }) {
++    constructor({ loadText, loadBlob, getSize, sha1, urlFor }) {
+         this.loadText = loadText
+         this.loadBlob = loadBlob
++        this.urlFor = urlFor
+         this.getSize = getSize
+         this.#encryption = new Encryption(deobfuscators(sha1))
+     }
+@@ -974,6 +983,9 @@ ${doc.querySelector('parsererror').innerText}`)
+             loadBlob: uri => Promise.resolve(this.loadBlob(uri))
+                 .then(this.#encryption.getDecoder(uri)),
+             resources: this.resources,
++            // Linen: encrypted items (obfuscated fonts) still go through the decoder
++            urlFor: this.urlFor && ((uri, type) =>
++                this.#encryption.isEncrypted(uri) ? null : this.urlFor(uri, type)),
+         })
+         this.transformTarget = this.#loader.eventTarget
+         this.sections = this.resources.spine.map((spineItem, index) => {
 diff --git a/fixed-layout.js b/fixed-layout.js
 index c582abad1496874a9265cad1ab69e12a475c684d..dd8df3a6e45ea06925aad3ae045b24f2689174e8 100644
 --- a/fixed-layout.js

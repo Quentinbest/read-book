@@ -1,0 +1,34 @@
+{
+  "spike": "memory-trace",
+  "criteria": [
+    {
+      "id": "memory-trace",
+      "description": "Memory trace",
+      "verdict": "manual",
+      "evidence": "idle +10000 ms: RSS 103 MB, footprint 349 MB = linen 29 MB + com.apple.WebKit.WebContent 211 MB + com.apple.WebKit.Networking 13 MB + com.apple.WebKit.GPU 94 MB; 7 blob URLs 2 MB; section 4"
+    }
+  ],
+  "raw": {
+    "samples": [
+      "before open: RSS 217 MB, footprint 156 MB = linen 30 MB + com.apple.WebKit.WebContent 30 MB + com.apple.WebKit.Networking 6 MB + com.apple.WebKit.GPU 88 MB; 0 blob URLs 0 MB; section undefined",
+      "after open: RSS 301 MB, footprint 299 MB = linen 32 MB + com.apple.WebKit.WebContent 165 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 91 MB; 6 blob URLs 2 MB; section 0",
+      "after 10 pages: RSS 231 MB, footprint 304 MB = linen 32 MB + com.apple.WebKit.WebContent 168 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 93 MB; 6 blob URLs 2 MB; section 1",
+      "after 20 pages: RSS 257 MB, footprint 321 MB = linen 32 MB + com.apple.WebKit.WebContent 183 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 95 MB; 7 blob URLs 2 MB; section 2",
+      "after 30 pages: RSS 226 MB, footprint 322 MB = linen 32 MB + com.apple.WebKit.WebContent 183 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 96 MB; 7 blob URLs 2 MB; section 2",
+      "after 40 pages: RSS 212 MB, footprint 323 MB = linen 32 MB + com.apple.WebKit.WebContent 184 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 97 MB; 7 blob URLs 2 MB; section 2",
+      "after 50 pages: RSS 270 MB, footprint 337 MB = linen 32 MB + com.apple.WebKit.WebContent 197 MB + com.apple.WebKit.Networking 9 MB + com.apple.WebKit.GPU 97 MB; 7 blob URLs 2 MB; section 4",
+      "idle +2000 ms: RSS 234 MB, footprint 340 MB = linen 32 MB + com.apple.WebKit.WebContent 199 MB + com.apple.WebKit.Networking 10 MB + com.apple.WebKit.GPU 97 MB; 7 blob URLs 2 MB; section 4",
+      "idle +5000 ms: RSS 188 MB, footprint 352 MB = linen 29 MB + com.apple.WebKit.WebContent 213 MB + com.apple.WebKit.Networking 12 MB + com.apple.WebKit.GPU 97 MB; 7 blob URLs 2 MB; section 4",
+      "idle +10000 ms: RSS 103 MB, footprint 349 MB = linen 29 MB + com.apple.WebKit.WebContent 211 MB + com.apple.WebKit.Networking 13 MB + com.apple.WebKit.GPU 94 MB; 7 blob URLs 2 MB; section 4"
+    ]
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "only": null,
+    "os": "14.6.1",
+    "time": 1790301681,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

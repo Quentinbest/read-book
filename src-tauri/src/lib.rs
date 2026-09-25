@@ -12,6 +12,19 @@ mod spikes;
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // §6.4: book media straight from the zip, never as blobs (see commands::BOOK_SCHEME).
+        .register_asynchronous_uri_scheme_protocol(
+            commands::BOOK_SCHEME,
+            |ctx, request, responder| {
+                use tauri::Manager;
+                let app = ctx.app_handle().clone();
+                let path = request.uri().path().to_string();
+                std::thread::spawn(move || {
+                    let state = app.state::<commands::AppState>();
+                    responder.respond(commands::serve_book_media(&state, &path));
+                });
+            },
+        )
         .manage(commands::PendingOpens::default())
         .manage(commands::QuitState::default());
     #[cfg(feature = "spikes")]

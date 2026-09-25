@@ -204,22 +204,123 @@ pub fn book_entry(
     book_id: String,
     name: String,
 ) -> CmdResult<tauri::ipc::Response> {
-    use std::io::Read;
     with_open_book(&state, &book_id, |archive| {
-        let failed = |e: String| CommandError::Failed { message: e };
-        let entry = archive
-            .by_name(&name)
-            .map_err(|e| failed(format!("{name}: {e}")))?;
-        if entry.size() > MAX_ENTRY_BYTES {
-            return Err(failed(format!("{name} is too large")));
-        }
-        let mut bytes = Vec::with_capacity(entry.size() as usize);
-        entry
-            .take(MAX_ENTRY_BYTES)
-            .read_to_end(&mut bytes)
-            .map_err(|e| failed(e.to_string()))?;
-        Ok(tauri::ipc::Response::new(bytes))
+        read_entry(archive, &name).map(tauri::ipc::Response::new)
     })
+}
+
+/// One entry's bytes, capped at MAX_ENTRY_BYTES.
+fn read_entry(archive: &mut zip::ZipArchive<std::fs::File>, name: &str) -> CmdResult<Vec<u8>> {
+    use std::io::Read;
+    let failed = |e: String| CommandError::Failed { message: e };
+    let entry = archive
+        .by_name(name)
+        .map_err(|e| failed(format!("{name}: {e}")))?;
+    if entry.size() > MAX_ENTRY_BYTES {
+        return Err(failed(format!("{name} is too large")));
+    }
+    let mut bytes = Vec::with_capacity(entry.size() as usize);
+    entry
+        .take(MAX_ENTRY_BYTES)
+        .read_to_end(&mut bytes)
+        .map_err(|e| failed(e.to_string()))?;
+    Ok(bytes)
+}
+
+/// §6.4 memory: the book's images, audio and video are served to the WebView from
+/// the zip through this URL scheme (`linen-book://localhost/<book id>/<entry>`),
+/// so they never pass through JavaScript as blobs. Only media entries of the
+/// book that is open now are served: never documents, styles or scripts, which
+/// go through the content sanitiser (D-E1), and never another book.
+pub const BOOK_SCHEME: &str = "linen-book";
+
+/// The media type of a servable entry, from its extension; `None` refuses it.
+pub fn media_type(name: &str) -> Option<&'static str> {
+    let ext = name.rsplit_once('.')?.1.to_ascii_lowercase();
+    Some(match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        "bmp" => "image/bmp",
+        "mp3" => "audio/mpeg",
+        "m4a" | "aac" => "audio/mp4",
+        "ogg" | "oga" | "opus" => "audio/ogg",
+        "wav" => "audio/wav",
+        "flac" => "audio/flac",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "ogv" => "video/ogg",
+        "mov" => "video/quicktime",
+        _ => return None,
+    })
+}
+
+/// Decode a %-encoded URL path segment; `None` for malformed input.
+fn percent_decode(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            let hex = std::str::from_utf8(bytes.get(i + 1..i + 3)?).ok()?;
+            out.push(u8::from_str_radix(hex, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(bytes[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// Split `/<book id>/<entry path>` into its parts.
+pub fn parse_book_path(path: &str) -> Option<(String, String)> {
+    let (id, entry) = path.strip_prefix('/')?.split_once('/')?;
+    let entry = entry
+        .split('/')
+        .map(percent_decode)
+        .collect::<Option<Vec<_>>>()?
+        .join("/");
+    Some((percent_decode(id)?, entry))
+}
+
+/// Serve one request on BOOK_SCHEME.
+pub fn serve_book_media(
+    state: &AppState,
+    path: &str,
+) -> tauri::http::Response<std::borrow::Cow<'static, [u8]>> {
+    use tauri::http::{Response, StatusCode};
+    let reply = |status: StatusCode| {
+        Response::builder()
+            .status(status)
+            .body(std::borrow::Cow::Borrowed(&[][..]))
+            .unwrap()
+    };
+    let Some((book_id, entry)) = parse_book_path(path) else {
+        return reply(StatusCode::BAD_REQUEST);
+    };
+    let Some(mime) = media_type(&entry) else {
+        return reply(StatusCode::FORBIDDEN);
+    };
+    let mut open = state.open_book.lock().unwrap();
+    let Some((open_id, archive)) = open.as_mut() else {
+        return reply(StatusCode::NOT_FOUND);
+    };
+    if *open_id != book_id {
+        return reply(StatusCode::NOT_FOUND);
+    }
+    match read_entry(archive, &entry) {
+        Ok(bytes) => Response::builder()
+            .status(StatusCode::OK)
+            .header("Content-Type", mime)
+            .header("X-Content-Type-Options", "nosniff")
+            .header("Content-Security-Policy", "sandbox; default-src 'none'")
+            .body(std::borrow::Cow::Owned(bytes))
+            .unwrap(),
+        Err(_) => reply(StatusCode::NOT_FOUND),
+    }
 }
 
 /// Per-book settings (S13): layout mode and the docked Navigator tab.
@@ -421,4 +522,32 @@ pub fn hold_exit_for_save<R: Runtime>(app: &AppHandle<R>) -> bool {
         handle.exit(0);
     });
     true
+}
+
+#[cfg(test)]
+mod book_scheme_tests {
+    use super::{media_type, parse_book_path};
+
+    #[test]
+    fn serves_only_media_types() {
+        assert_eq!(media_type("OEBPS/plate-3.PNG"), Some("image/png"));
+        assert_eq!(media_type("a/b.jpeg"), Some("image/jpeg"));
+        assert_eq!(media_type("audio/x.mp3"), Some("audio/mpeg"));
+        // Documents, styles, scripts, SVG and fonts always go through the sanitiser or decoder.
+        for name in [
+            "c.xhtml", "c.html", "s.css", "x.js", "i.svg", "f.otf", "f.woff2", "noext",
+        ] {
+            assert_eq!(media_type(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn parses_book_and_entry() {
+        assert_eq!(
+            parse_book_path("/abc123/OEBPS/images/a%20b.png"),
+            Some(("abc123".into(), "OEBPS/images/a b.png".into()))
+        );
+        assert_eq!(parse_book_path("/abc123"), None);
+        assert_eq!(parse_book_path("/abc/%zz.png"), None);
+    }
 }

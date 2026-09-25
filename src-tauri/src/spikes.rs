@@ -231,19 +231,44 @@ pub fn spike_memory() -> Result<serde_json::Value, String> {
         .map(|r| r.1)
         .ok_or("own process not found")?;
     let mut total_kb = 0u64;
+    let mut footprint_total = 0u64;
     let mut parts = Vec::new();
+    let mut footprints = Vec::new();
     for (pid, age, rss, comm) in &rows {
         let ours = *pid == me || (comm.contains("com.apple.WebKit") && *age <= my_age);
         if ours {
+            let name = comm.rsplit('/').next().unwrap_or(comm);
             total_kb += rss;
-            parts.push(format!(
-                "{} {} MB",
-                comm.rsplit('/').next().unwrap_or(comm),
-                rss / 1024
-            ));
+            parts.push(format!("{name} {} MB", rss / 1024));
+            let fp = phys_footprint(*pid).unwrap_or(0);
+            footprint_total += fp;
+            footprints.push(format!("{name} {} MB", fp >> 20));
         }
     }
-    Ok(serde_json::json!({ "total_mb": total_kb / 1024, "processes": parts }))
+    Ok(serde_json::json!({
+        // §6.4 names resident memory (RSS). Under memory pressure macOS compresses
+        // pages out of RSS, so the physical footprint (what Activity Monitor calls
+        // Memory; it includes compressed pages) is reported alongside.
+        "total_mb": total_kb / 1024,
+        "processes": parts,
+        "footprint_mb": footprint_total >> 20,
+        "footprints": footprints,
+    }))
+}
+
+/// A process's physical footprint in bytes (same user only).
+fn phys_footprint(pid: u32) -> Option<u64> {
+    let mut info = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
+    // SAFETY: proc_pid_rusage fills a rusage_info_v2 of the size the flavor names.
+    let ok = unsafe {
+        libc::proc_pid_rusage(
+            pid as libc::c_int,
+            libc::RUSAGE_INFO_V2,
+            info.as_mut_ptr() as *mut libc::rusage_info_t,
+        )
+    };
+    // SAFETY: zero-initialised and, on success, filled by the kernel.
+    (ok == 0).then(|| unsafe { info.assume_init() }.ri_phys_footprint)
 }
 
 /// Capture this app's own window (and nothing else on screen) to

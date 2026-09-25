@@ -1108,11 +1108,19 @@ export async function spikeMemory(): Promise<SpikeResult> {
   const { default: App } = await import('../App.svelte')
   mount(App, { target: document.getElementById('reader')! })
   await openFromLibrary(/100 MB/)
-  const before = await invoke<{ total_mb: number; processes: string[] }>('spike_memory')
+  type Memory = {
+    total_mb: number
+    processes: string[]
+    footprint_mb: number
+    footprints: string[]
+  }
+  const before = await invoke<Memory>('spike_memory')
   for (let i = 0; i < 50; i++) await reader()!.engine.turn('next')
   await settled(2000)
-  const after = await invoke<{ total_mb: number; processes: string[] }>('spike_memory')
-  const evidence = `after opening ${before.total_mb} MB; after 50 pages ${after.total_mb} MB = ${after.processes.join(' + ')}`
+  const after = await invoke<Memory>('spike_memory')
+  // §6.4 names resident memory (RSS); under memory pressure macOS compresses pages
+  // out of RSS, so the physical footprint (compressed pages included) is recorded too.
+  const evidence = `after opening ${before.total_mb} MB; after 50 pages RSS ${after.total_mb} MB = ${after.processes.join(' + ')}; footprint ${after.footprint_mb} MB = ${after.footprints.join(' + ')}`
   log(`memory: ${evidence}`)
   return {
     spike: 'budget-memory',
@@ -1126,6 +1134,74 @@ export async function spikeMemory(): Promise<SpikeResult> {
       },
     ],
     raw: { before, after },
+  }
+}
+
+/**
+ * Memory diagnostics (not a budget check): where the 100 MB book's memory goes.
+ * Tracks live blob URLs (count and bytes) and samples each process's resident
+ * memory while reading 50 pages and then while idle.
+ */
+export async function spikeMemoryTrace(): Promise<SpikeResult> {
+  const live = new Map<string, number>()
+  const create = URL.createObjectURL.bind(URL)
+  const revoke = URL.revokeObjectURL.bind(URL)
+  URL.createObjectURL = (o: Blob | MediaSource) => {
+    const url = create(o)
+    live.set(url, o instanceof Blob ? o.size : 0)
+    return url
+  }
+  URL.revokeObjectURL = (url: string) => {
+    live.delete(url)
+    revoke(url)
+  }
+  const blobs = () => {
+    const bytes = [...live.values()].reduce((a, b) => a + b, 0)
+    return `${live.size} blob URLs ${Math.round(bytes / 1e6)} MB`
+  }
+  const path = await invoke<string>('spike_corpus_path', { name: 'large-100mb.epub' })
+  await invoke('library_import', { paths: [path] })
+  const { installThemeCss } = await import('../app/theme')
+  await import('../app/base.css')
+  installThemeCss()
+  document.getElementById('log')!.style.display = 'none'
+  document.getElementById('chrome-top')!.style.display = 'none'
+  const { default: App } = await import('../App.svelte')
+  mount(App, { target: document.getElementById('reader')! })
+  const samples: string[] = []
+  const sample = async (label: string) => {
+    const m = await invoke<{
+      total_mb: number
+      processes: string[]
+      footprint_mb: number
+      footprints: string[]
+    }>('spike_memory')
+    const line = `${label}: RSS ${m.total_mb} MB, footprint ${m.footprint_mb} MB = ${m.footprints.join(' + ')}; ${blobs()}; section ${loc()?.sectionIndex}`
+    samples.push(line)
+    log(line)
+  }
+  await sample('before open')
+  await openFromLibrary(/100 MB/)
+  await sample('after open')
+  for (let i = 1; i <= 50; i++) {
+    await reader()!.engine.turn('next')
+    if (i % 10 === 0) await sample(`after ${i} pages`)
+  }
+  for (const wait of [2000, 5000, 10000]) {
+    await settled(wait)
+    await sample(`idle +${wait} ms`)
+  }
+  return {
+    spike: 'memory-trace',
+    criteria: [
+      {
+        id: 'memory-trace',
+        description: 'Memory trace',
+        verdict: 'manual',
+        evidence: samples.at(-1) ?? '',
+      },
+    ],
+    raw: { samples },
   }
 }
 

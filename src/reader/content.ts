@@ -5,7 +5,7 @@
 
 /** Per-document CSP (D-E1), in addition to the app CSP that WebKit applies to blob documents. */
 export const BOOK_DOCUMENT_CSP =
-  "default-src 'none'; img-src blob: data:; style-src blob: 'unsafe-inline'; font-src blob: data:; media-src blob:"
+  "default-src 'none'; img-src blob: data: linen-book:; style-src blob: 'unsafe-inline'; font-src blob: data:; media-src blob: linen-book:"
 
 export function injectDocumentCsp(html: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${BOOK_DOCUMENT_CSP}"/>`

@@ -4,28 +4,42 @@
     {
       "id": "budget-memory",
       "description": "A 100 MB book after reading 50 pages uses < 400 MB across the app and its WebKit processes (§6.4)",
-      "verdict": "fail",
-      "evidence": "after opening 262 MB; after 50 pages 406 MB = linen 59 MB + com.apple.WebKit.WebContent 193 MB + com.apple.WebKit.Networking 71 MB + com.apple.WebKit.GPU 82 MB"
+      "verdict": "pass",
+      "evidence": "after opening 261 MB; after 50 pages RSS 293 MB = linen 63 MB + com.apple.WebKit.WebContent 161 MB + com.apple.WebKit.Networking 13 MB + com.apple.WebKit.GPU 55 MB; footprint 340 MB = linen 33 MB + com.apple.WebKit.WebContent 199 MB + com.apple.WebKit.Networking 10 MB + com.apple.WebKit.GPU 96 MB"
     }
   ],
   "raw": {
     "before": {
+      "footprint_mb": 284,
+      "footprints": [
+        "linen 34 MB",
+        "com.apple.WebKit.WebContent 149 MB",
+        "com.apple.WebKit.Networking 9 MB",
+        "com.apple.WebKit.GPU 91 MB"
+      ],
       "processes": [
-        "linen 78 MB",
-        "com.apple.WebKit.WebContent 94 MB",
-        "com.apple.WebKit.Networking 64 MB",
+        "linen 74 MB",
+        "com.apple.WebKit.WebContent 144 MB",
+        "com.apple.WebKit.Networking 16 MB",
         "com.apple.WebKit.GPU 25 MB"
       ],
-      "total_mb": 262
+      "total_mb": 261
     },
     "after": {
-      "processes": [
-        "linen 59 MB",
-        "com.apple.WebKit.WebContent 193 MB",
-        "com.apple.WebKit.Networking 71 MB",
-        "com.apple.WebKit.GPU 82 MB"
+      "footprint_mb": 340,
+      "footprints": [
+        "linen 33 MB",
+        "com.apple.WebKit.WebContent 199 MB",
+        "com.apple.WebKit.Networking 10 MB",
+        "com.apple.WebKit.GPU 96 MB"
       ],
-      "total_mb": 406
+      "processes": [
+        "linen 63 MB",
+        "com.apple.WebKit.WebContent 161 MB",
+        "com.apple.WebKit.Networking 13 MB",
+        "com.apple.WebKit.GPU 55 MB"
+      ],
+      "total_mb": 293
     }
   },
   "info": {
@@ -33,7 +47,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790269342,
+    "time": 1790301464,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
