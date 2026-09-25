@@ -381,6 +381,34 @@ pub fn search_text_put(
     tx.commit().map_err(failed)
 }
 
+/// A9: the book's annotations.
+#[tauri::command]
+pub fn annotations_list(
+    state: State<AppState>,
+    book_id: String,
+) -> CmdResult<Vec<crate::store::AnnotationRow>> {
+    Ok(state.store.lock().unwrap().annotations(&book_id)?)
+}
+
+#[tauri::command]
+pub fn annotation_save(
+    state: State<AppState>,
+    annotation: crate::store::AnnotationRow,
+) -> CmdResult<()> {
+    Ok(state.store.lock().unwrap().save_annotation(&annotation)?)
+}
+
+/// A7: delete at once; Undo restores it.
+#[tauri::command]
+pub fn annotation_delete(state: State<AppState>, id: String) -> CmdResult<()> {
+    Ok(state.store.lock().unwrap().delete_annotation(&id)?)
+}
+
+#[tauri::command]
+pub fn annotation_restore(state: State<AppState>, id: String) -> CmdResult<()> {
+    Ok(state.store.lock().unwrap().restore_annotation(&id)?)
+}
+
 /// E3, N6: the book's damaged spine items (zip paths), recorded at import.
 #[tauri::command]
 pub fn book_damage(state: State<AppState>, book_id: String) -> CmdResult<Vec<String>> {

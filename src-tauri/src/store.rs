@@ -116,6 +116,24 @@ pub enum StoreError {
 
 pub type Result<T> = std::result::Result<T, StoreError>;
 
+/// An annotation as stored (A9): a CFI and a text quote, and the file version it was made on.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct AnnotationRow {
+    pub id: String,
+    pub book_id: String,
+    pub anchored_content_hash: String,
+    pub color: String,
+    pub cfi_range: String,
+    pub quote_exact: String,
+    pub quote_prefix: String,
+    pub quote_suffix: String,
+    pub note: Option<String>,
+    pub created_at: i64,
+    pub updated_at: i64,
+    /// 'anchored' | 'reanchor' (the file was replaced) | 'unplaced' (A8: Couldn't place)
+    pub anchor_status: String,
+}
+
 pub struct Store {
     conn: Connection,
 }
@@ -273,6 +291,81 @@ impl Store {
         Ok(())
     }
 
+    /// A9: the book's live annotations (deleted ones are kept for Undo, not listed).
+    pub fn annotations(&self, book_id: &str) -> Result<Vec<AnnotationRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, book_id, anchored_content_hash, color, cfi_range, quote_exact, quote_prefix,
+                    quote_suffix, note, created_at, updated_at, anchor_status
+             FROM annotations WHERE book_id = ?1 AND deleted_at IS NULL ORDER BY created_at",
+        )?;
+        let rows = stmt
+            .query_map([book_id], |r| {
+                Ok(AnnotationRow {
+                    id: r.get(0)?,
+                    book_id: r.get(1)?,
+                    anchored_content_hash: r.get(2)?,
+                    color: r.get(3)?,
+                    cfi_range: r.get(4)?,
+                    quote_exact: r.get(5)?,
+                    quote_prefix: r.get(6)?,
+                    quote_suffix: r.get(7)?,
+                    note: r.get(8)?,
+                    created_at: r.get(9)?,
+                    updated_at: r.get(10)?,
+                    anchor_status: r.get(11)?,
+                })
+            })?
+            .collect::<std::result::Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
+    /// Insert or update an annotation; saving a deleted one restores it (Undo, A7).
+    pub fn save_annotation(&mut self, a: &AnnotationRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
+                 quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12)
+             ON CONFLICT(id) DO UPDATE SET anchored_content_hash = excluded.anchored_content_hash,
+                 color = excluded.color, cfi_range = excluded.cfi_range,
+                 quote_exact = excluded.quote_exact, quote_prefix = excluded.quote_prefix,
+                 quote_suffix = excluded.quote_suffix, note = excluded.note,
+                 updated_at = excluded.updated_at, deleted_at = NULL,
+                 anchor_status = excluded.anchor_status",
+            params![
+                a.id,
+                a.book_id,
+                a.anchored_content_hash,
+                a.color,
+                a.cfi_range,
+                a.quote_exact,
+                a.quote_prefix,
+                a.quote_suffix,
+                a.note,
+                a.created_at,
+                a.updated_at,
+                a.anchor_status
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// A7: delete at once; the row stays (marked deleted) so Undo can restore it exactly.
+    pub fn delete_annotation(&mut self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE annotations SET deleted_at = ?2 WHERE id = ?1",
+            params![id, now_ms()],
+        )?;
+        Ok(())
+    }
+
+    pub fn restore_annotation(&mut self, id: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE annotations SET deleted_at = NULL WHERE id = ?1",
+            [id],
+        )?;
+        Ok(())
+    }
+
     pub fn position(&self, book_id: &str) -> Result<Option<(String, f64)>> {
         Ok(self
             .conn
@@ -362,5 +455,52 @@ mod tests {
             Store::open(&path),
             Err(StoreError::TooNew(999, _))
         ));
+    }
+}
+
+#[cfg(test)]
+mod annotation_tests {
+    use super::*;
+
+    fn row(id: &str) -> AnnotationRow {
+        AnnotationRow {
+            id: id.into(),
+            book_id: "b1".into(),
+            anchored_content_hash: "h1".into(),
+            color: "yellow".into(),
+            cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:5)".into(),
+            quote_exact: "Call me".into(),
+            quote_prefix: String::new(),
+            quote_suffix: " Ishmael".into(),
+            note: None,
+            created_at: 1,
+            updated_at: 1,
+            anchor_status: "anchored".into(),
+        }
+    }
+
+    #[test]
+    fn save_delete_and_undo_restore_the_exact_annotation() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = Store::open(&dir.path().join("linen.db")).unwrap();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                 VALUES ('b1', 'h1', '/b1.epub', 'B', 'package', 0)",
+                [],
+            )
+            .unwrap();
+        let mut a = row("a1");
+        store.save_annotation(&a).unwrap();
+        a.note = Some("a note".into());
+        a.color = "green".into();
+        a.updated_at = 2;
+        store.save_annotation(&a).unwrap();
+        assert_eq!(store.annotations("b1").unwrap(), vec![a.clone()]);
+        store.delete_annotation("a1").unwrap();
+        assert!(store.annotations("b1").unwrap().is_empty());
+        store.restore_annotation("a1").unwrap();
+        assert_eq!(store.annotations("b1").unwrap(), vec![a]);
     }
 }
