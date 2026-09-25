@@ -108,6 +108,8 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'gutenberg-2701-moby-dick-epub2.epub',
     'broken-no-toc.epub',
     'broken-missing-items.epub',
+    // N8: a print page list.
+    'idpf-childrens-literature.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -936,12 +938,14 @@ export async function spikeE2E(): Promise<SpikeResult> {
       if (document.activeElement !== current) return 'focus is not on the current chapter'
       if (stageLeft() !== 320) return `reading area starts at ${stageLeft()} px`
       // The column is centred in what is left (Screen 04: x = 480 at 1280 px).
-      const doc = reader()!.engine.view.renderer.getContents()[0].doc
-      const p = doc.querySelector('p')!.getClientRects()[0]
-      const frame = doc.defaultView!.frameElement!.getBoundingClientRect()
-      const textLeft = Math.round(
-        (((p.left % frame.width) + frame.width) % frame.width) + frame.left,
-      )
+      // The leftmost line on the page shown (first lines are indented).
+      const shown = reader()!.engine.view.lastLocation!.range
+      const frame =
+        shown.startContainer.ownerDocument!.defaultView!.frameElement!.getBoundingClientRect()
+      const lefts = Array.from(shown.getClientRects())
+        .filter((r) => r.width > 40)
+        .map((r) => r.left)
+      const textLeft = Math.round(frame.left + Math.min(...lefts))
       const want = Math.round(320 + (innerWidth - 320 - 640) / 2)
       const target = rows[rows.indexOf(current) + 3]
       target.click()
@@ -1047,6 +1051,173 @@ export async function spikeE2E(): Promise<SpikeResult> {
     run: async () => {
       const c = await contentsOf(/Missing items/)
       return c.damaged === 2 ? 'ok' : `${c.damaged} rows marked damaged of ${c.rows}`
+    },
+  })
+
+  /** Type into a field the way a person does, so Svelte's bindings see it. */
+  const typeInto = (el: HTMLInputElement | HTMLSelectElement, value: string) => {
+    el.value = value
+    el.dispatchEvent(
+      new Event(el instanceof HTMLSelectElement ? 'change' : 'input', { bubbles: true }),
+    )
+  }
+  const openGoTo = async () => {
+    keyOnApp('j', { code: 'KeyJ', metaKey: true })
+    return waitFor('Go to', () => document.querySelector<HTMLElement>('.goto'))
+  }
+  const submitGoTo = async () => {
+    document.querySelector<HTMLFormElement>('.goto form')!.requestSubmit()
+    await settled(900)
+  }
+  const back = async () => {
+    keyOnApp('[', { code: 'BracketLeft', metaKey: true })
+    await settled(900)
+  }
+
+  checks.push({
+    id: 'N8-goto-percent',
+    description:
+      'Go to (⌘J) by percent: the preview names the chapter, Go lands there, and Back (⌘[) returns',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await settled(600)
+      const start = loc()!
+      const pop = await openGoTo()
+      await settled(200)
+      const input = pop.querySelector<HTMLInputElement>('input')!
+      if (document.activeElement !== input) return 'focus is not in the field'
+      typeInto(input, '31')
+      await settled(100)
+      const preview = pop.querySelector('.preview')?.textContent ?? ''
+      if (!/^31% is in .+\. Your current place stays in Back history/.test(preview))
+        return `preview “${preview}”`
+      await submitGoTo()
+      if (document.querySelector('.goto')) return 'Go to stayed open'
+      const at = loc()!
+      if (Math.abs(at.fraction - 0.31) > 0.01) return `landed at ${Math.round(at.fraction * 100)}%`
+      if (!preview.includes(at.chapterLabel))
+        return `preview named another chapter than “${at.chapterLabel}”`
+      await back()
+      return loc()!.cfi === start.cfi ? 'ok' : 'Back did not return to the start'
+    },
+  })
+
+  checks.push({
+    id: 'N8-goto-chapter',
+    description: 'Go to by chapter lands at the start of that chapter',
+    run: async () => {
+      const pop = await openGoTo()
+      pop.querySelectorAll<HTMLButtonElement>('.segmented button')[1].click()
+      await settled(200)
+      const select = pop.querySelector<HTMLSelectElement>('select')!
+      const option = select.options[20]
+      typeInto(select, option.value)
+      await submitGoTo()
+      return loc()!.chapterLabel === option.textContent!.trim()
+        ? 'ok'
+        : `landed in “${loc()!.chapterLabel}”, chose “${option.textContent}”`
+    },
+  })
+
+  checks.push({
+    id: 'S2-esc-order',
+    description:
+      'With the Navigator docked and Go to open, Esc closes Go to first, then the Navigator (S2)',
+    run: async () => {
+      hooks.run?.('navigator.contents')
+      await navRows()
+      await settled(400)
+      await openGoTo()
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      const first = !document.querySelector('.goto') && !!document.querySelector('.navigator')
+      key('Escape', { code: 'Escape' })
+      await settled(500)
+      const second = !document.querySelector('.navigator')
+      return first && second
+        ? 'ok'
+        : `after one Esc: Go to closed ${first}; after two: Navigator closed ${second}`
+    },
+  })
+
+  checks.push({
+    id: 'N7-scrubber',
+    description:
+      'Dragging the progress track previews chapter and %, and releasing jumps there (Back returns)',
+    run: async () => {
+      await showControls()
+      const start = loc()!
+      const track = document.querySelector<HTMLElement>('.track')!
+      const r = track.getBoundingClientRect()
+      const at = (f: number) => ({
+        clientX: r.left + r.width * f,
+        clientY: r.top + 2,
+        bubbles: true,
+        pointerId: 1,
+      })
+      track.dispatchEvent(new PointerEvent('pointerdown', at(0.3)))
+      track.dispatchEvent(new PointerEvent('pointermove', at(0.5)))
+      await settled(100)
+      const tip = document.querySelector('.scrub-tip')?.textContent?.trim() ?? ''
+      track.dispatchEvent(new PointerEvent('pointerup', at(0.5)))
+      await settled(900)
+      const f = loc()!.fraction
+      await hideControls()
+      if (!/ · 50%$/.test(tip)) return `tooltip “${tip}”`
+      if (Math.abs(f - 0.5) > 0.01) return `landed at ${Math.round(f * 100)}%`
+      await back()
+      return loc()!.cfi === start.cfi ? 'ok' : 'Back did not return'
+    },
+  })
+
+  checks.push({
+    id: 'N8-goto-page',
+    description: 'Go to by print page (only in books with a page list) lands on that page',
+    run: async () => {
+      let pop = await openGoTo()
+      const withoutList = pop.querySelectorAll('.segmented button').length
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      if (withoutList !== 2) return `Moby Dick offered ${withoutList} modes`
+      await backToLibrary()
+      await openFromLibrary(/Children's Literature/)
+      pop = await openGoTo()
+      const modes = pop.querySelectorAll<HTMLButtonElement>('.segmented button')
+      if (modes.length !== 3) return `${modes.length} modes with a page list`
+      modes[2].click()
+      await settled(200)
+      const input = pop.querySelector<HTMLInputElement>('input')!
+      typeInto(input, '9999')
+      await settled(100)
+      const none = pop.querySelector('.preview')?.textContent ?? ''
+      typeInto(input, '175')
+      await settled(100)
+      const preview = pop.querySelector('.preview')?.textContent ?? ''
+      await submitGoTo()
+      // The page's anchor is on the page now shown.
+      const target = reader()!.engine.pageList.find((p) => p.label === '175')!
+      const shown = reader()!.engine.view.lastLocation?.range
+      const { index, anchor } = reader()!.engine.view.resolveNavigation(target.href) as {
+        index: number
+        anchor: (d: Document) => Range | Element
+      }
+      const doc = shown?.startContainer.ownerDocument
+      const a = doc ? anchor(doc) : null
+      const node = a && 'startContainer' in a ? a.startContainer : a
+      const range = doc?.createRange()
+      if (node && range) range.selectNode(node as Node)
+      const onPage =
+        !!shown &&
+        !!range &&
+        loc()!.sectionIndex === index &&
+        shown.compareBoundaryPoints(Range.START_TO_END, range) >= 0 &&
+        shown.compareBoundaryPoints(Range.END_TO_START, range) <= 0
+      if (!/There is no page 9999/.test(none)) return `unknown page preview “${none}”`
+      if (!/^Page 175 is in /.test(preview)) return `preview “${preview}”`
+      return onPage
+        ? 'ok'
+        : `page 175 not on the page shown (section ${loc()!.sectionIndex}, target ${index})`
     },
   })
 

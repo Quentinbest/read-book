@@ -27,6 +27,12 @@ export interface Theme {
   segmentRing: string
   /** Unselected segment and tab labels: secondary ink, darkened to hold 4.5:1 on the track. */
   trackInk: string
+  /** Popovers and peeks (Go to, footnote peek; Screen 17): surface and border. */
+  popover: string
+  popoverBorder: string
+  /** Dark tooltips (the scrubber preview, Screen 03): ground and text. */
+  tooltip: string
+  tooltipInk: string
   highlight: Record<HighlightColor, { tint: string; underline: string }>
   search: { tint: string; outline: string; activeTint: string; activeOutline: string }
   /** Colour scheme for native controls and scrollbars. */
@@ -83,6 +89,10 @@ export const THEMES: Record<ThemeName, Theme> = {
     // 3:1; secondary ink (as the Phase 1 segmented control) gives 4.4:1.
     segmentRing: '#6B655C',
     trackInk: '#5E584F',
+    popover: '#FCFAF6',
+    popoverBorder: '#D9D1C3',
+    tooltip: '#2A2622',
+    tooltipInk: '#F3EEE6',
     highlight: LIGHT_HIGHLIGHTS,
     search: LIGHT_SEARCH,
     scheme: 'light',
@@ -101,6 +111,11 @@ export const THEMES: Record<ThemeName, Theme> = {
     raised: '#F5EBD9',
     segmentRing: '#6E5E4A',
     trackInk: '#615139',
+    // PROVISIONAL (G5): Paper's steps from its ground.
+    popover: '#F6EDDC',
+    popoverBorder: '#D3C4A9',
+    tooltip: '#2E261D',
+    tooltipInk: '#F5EBDA',
     highlight: SEPIA_HIGHLIGHTS,
     search: SEPIA_SEARCH,
     scheme: 'light',
@@ -119,6 +134,11 @@ export const THEMES: Record<ThemeName, Theme> = {
     raised: '#3A3733',
     segmentRing: '#8F877B',
     trackInk: '#A7A094',
+    // PROVISIONAL (G5): popovers a step above the Night panel; tooltips invert to light.
+    popover: '#26241F',
+    popoverBorder: '#3A3733',
+    tooltip: '#D9D3C7',
+    tooltipInk: '#1B1A18',
     // Approved 2026-09-24 (C7, docs/decisions.md): S4 draws Night tints at 16%
     // alpha, which leaves highlighted text at 8.2–8.8:1, under X1's 9:1. At 11%
     // every colour reaches ≥ 9.2:1. Underline colours are as approved.
@@ -233,6 +253,10 @@ export function themeVariables(t: Theme): Record<string, string> {
     'raised',
     'segmentRing',
     'trackInk',
+    'popover',
+    'popoverBorder',
+    'tooltip',
+    'tooltipInk',
   ] as const) {
     vars[`--${kebab(key)}`] = t[key]
   }

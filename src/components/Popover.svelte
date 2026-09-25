@@ -19,8 +19,10 @@
     min-width: 240px;
     padding: 12px 16px;
     border-radius: var(--radius-popover);
-    background: var(--ground);
-    border: 1px solid var(--hairline);
+    /* Screen 17: popovers sit on their own surface with a firmer border. */
+    background: var(--popover, var(--ground));
+    border: 1px solid var(--popover-border, var(--hairline));
+    color: var(--ink);
     box-shadow: var(--shadow-popover);
     animation: pop-in var(--motion-popover) ease-out;
   }

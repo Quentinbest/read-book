@@ -18,6 +18,7 @@
     onselect,
     onclose,
     onlibrary,
+    ongoto,
   }: {
     title: string
     author: string
@@ -30,6 +31,8 @@
     onselect: (item: ContentsItem) => void
     onclose: () => void
     onlibrary: () => void
+    /** N8: the progress label opens Go to (S3: the header stands in for the chrome). */
+    ongoto: (anchor: DOMRect) => void
   } = $props()
 
   let rows: HTMLButtonElement[] = $state([])
@@ -85,7 +88,14 @@
         <div class="track" aria-hidden="true">
           <div class="fill" style:width="{fraction * 100}%"></div>
         </div>
-        <span>{Math.round(fraction * 100)}%</span>
+        <button
+          type="button"
+          class="nav-goto"
+          aria-haspopup="dialog"
+          aria-label="{Math.round(fraction * 100)}% · {t.goto.open}"
+          onclick={(e) => ongoto(e.currentTarget.getBoundingClientRect())}
+          >{Math.round(fraction * 100)}%</button
+        >
       </div>
     </div>
   </div>
@@ -249,6 +259,22 @@
     height: 100%;
     border-radius: 2px;
     background: var(--accent);
+  }
+  .nav-goto {
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+  }
+  .nav-goto:hover,
+  .nav-goto:focus-visible {
+    color: var(--accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
   }
   .list {
     flex: 1;

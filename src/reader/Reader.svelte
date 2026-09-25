@@ -17,6 +17,7 @@
   import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
   import { navigatorTab } from '../lib/reader/state'
   import Navigator from './Navigator.svelte'
+  import GoTo, { type GoToTarget } from './GoTo.svelte'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
   import { bookMediaUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
@@ -140,6 +141,86 @@
     if (navigatorTab(lanes) !== 'contents') dispatch({ type: 'openNavigator', tab: 'contents' })
     requestAnimationFrame(() => navigator?.focusCurrent())
   }
+  // ---- Go to (N8) and the scrubber (N7)
+  let gotoOpen = $derived(lanes.floating?.kind === 'goto')
+  let pageList = $state<{ label: string; href: string }[]>([])
+  let gotoLabel: HTMLButtonElement | undefined = $state()
+  let gotoAnchor = $state<DOMRect | null>(null)
+  /**
+   * ⌘J or a progress label: open Go to from the progress label, which is the bottom
+   * bar's, or the Navigator header's while the Navigator is open (S3).
+   */
+  function openGoTo(anchor?: DOMRect) {
+    if (!engine) return
+    dispatch({ type: 'showChrome' })
+    dispatch({ type: 'openFloating', kind: 'goto' })
+    if (anchor) gotoAnchor = anchor
+    else
+      requestAnimationFrame(() => {
+        const label =
+          document.querySelector<HTMLElement>('.navigator .nav-goto') ?? gotoLabel ?? null
+        gotoAnchor = label?.getBoundingClientRect() ?? null
+      })
+  }
+  /** The Contents label for a book fraction or an href. */
+  function chapterLabelAt(target: number | string): string {
+    if (!engine || !contents) return ''
+    const index =
+      typeof target === 'number'
+        ? engine.sectionAt(target)
+        : (engine.book?.resolveHref?.(target)?.index ?? -1)
+    return contents.items[currentIndex(contents.items, { sectionIndex: index })]?.label ?? ''
+  }
+  function onGo(target: GoToTarget) {
+    if (location) pushJump(location, target.kind === 'percent' ? 'percent' : 'goto')
+    dispatch({ type: 'closeFloating' })
+    if (target.kind === 'percent') void engine?.goToFraction(target.fraction)
+    else void engine?.goTo(target.href)
+  }
+  /** N7: dragging the progress track previews the chapter and %, and jumps on release. */
+  let scrub = $state<{ fraction: number; x: number } | null>(null)
+  let track: HTMLElement | undefined = $state()
+  let scrubbedByKey = false
+  function scrubAt(e: PointerEvent) {
+    if (!track) return
+    const r = track.getBoundingClientRect()
+    const x = Math.min(r.width, Math.max(0, e.clientX - r.left))
+    scrub = { fraction: rtlBook ? 1 - x / r.width : x / r.width, x }
+  }
+  function scrubEnd() {
+    if (!scrub) return
+    if (location) pushJump(location, 'percent')
+    void engine?.goToFraction(scrub.fraction)
+    scrub = null
+  }
+  function onScrubKey(e: KeyboardEvent) {
+    const step =
+      {
+        ArrowRight: 0.01,
+        ArrowUp: 0.01,
+        ArrowLeft: -0.01,
+        ArrowDown: -0.01,
+        PageUp: 0.1,
+        PageDown: -0.1,
+      }[e.key] ?? 0
+    if (!step || !location) return
+    e.preventDefault()
+    e.stopPropagation()
+    // One Back entry for a run of key presses, not one per percent.
+    if (!scrubbedByKey) pushJump(location, 'percent')
+    scrubbedByKey = true
+    void engine?.goToFraction(
+      Math.min(1, Math.max(0, location.fraction + (rtlBook ? -step : step))),
+    )
+  }
+  /** Floating popovers close on a click outside them (S2). */
+  function onReaderPointerDown(e: PointerEvent) {
+    const kind = lanes.floating?.kind
+    if (kind !== 'goto') return
+    const inside = (e.target as Element | null)?.closest?.('.goto, .goto-label, .nav-goto')
+    if (!inside) dispatch({ type: 'closeFloating' })
+  }
+
   function closeNavigator() {
     dispatch({ type: 'closeNavigator' })
   }
@@ -534,6 +615,7 @@
         mode: readingMode,
       })
       readingMode = engine.mode
+      pageList = engine.pageList
       // N6: Contents from the navigation, headings or spine, with damaged chapters marked.
       void ipc
         .bookDamage(book.id)
@@ -598,6 +680,7 @@
       )
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
       cleanups.push(registry.handle('navigator.contents', { run: openContents }))
+      cleanups.push(registry.handle('goto.open', { run: () => openGoTo() }))
       // B8: Pages and Scroll (the Aa popover's control arrives in Phase 6).
       const switchMode = async (mode: ReadingMode) => {
         if (!engine || !(await engine.setMode(mode))) return
@@ -668,6 +751,7 @@
   bind:this={area}
   role="presentation"
   onpointermove={onPointerMove}
+  onpointerdowncapture={onReaderPointerDown}
   style:--ground={theme.ground}
   style:--ink={theme.ink}
   style:--ink-secondary={theme.inkSecondary}
@@ -689,6 +773,7 @@
       onselect={onContentsSelect}
       onclose={closeNavigator}
       onlibrary={leave}
+      ongoto={openGoTo}
     />
   {/if}
   <!-- The reading area: everything right of a docked Navigator. -->
@@ -753,6 +838,18 @@
       <div class="fade top-fade" aria-hidden="true"></div>
       <div class="fade bottom-fade" aria-hidden="true"></div>
     {/if}
+    {#if gotoOpen && contents && gotoAnchor}
+      <GoTo
+        fraction={location?.fraction ?? 0}
+        chapters={contents.items}
+        currentChapter={currentRow}
+        pages={pageList}
+        chapterAt={chapterLabelAt}
+        chapterStart={(item) => engine?.sectionStart(item.section) ?? 0}
+        anchor={gotoAnchor}
+        ongo={onGo}
+      />
+    {/if}
     {#if zoomChipShown}
       <div class="zoom-chip" role="status">
         <span>{t.reader.zoomLevel(zoom)}</span>
@@ -776,12 +873,65 @@
       </header>
       <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
         <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
-          <div class="track" aria-hidden="true">
-            <div class="fill" style:width="{(location?.fraction ?? 0) * 100}%"></div>
+          <div
+            class="track"
+            class:scrubbing={!!scrub}
+            bind:this={track}
+            role="slider"
+            tabindex="0"
+            aria-label={t.goto.scrubber}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round((location?.fraction ?? 0) * 100)}
+            aria-valuetext="{progressText} · {location?.chapterLabel ?? ''}"
+            onpointerdown={(e) => {
+              try {
+                track?.setPointerCapture(e.pointerId)
+              } catch {
+                // not a live pointer (e.g. a synthetic event); dragging still works over the bar
+              }
+              scrubAt(e)
+            }}
+            onpointermove={(e) => scrub && scrubAt(e)}
+            onpointerup={scrubEnd}
+            onpointercancel={() => (scrub = null)}
+            onkeydown={onScrubKey}
+            onblur={() => (scrubbedByKey = false)}
+          >
+            <div
+              class="fill"
+              style:width="{(scrub?.fraction ?? location?.fraction ?? 0) * 100}%"
+            ></div>
+            <div
+              class="thumb"
+              style:left="{(rtlBook
+                ? 1 - (scrub?.fraction ?? location?.fraction ?? 0)
+                : (scrub?.fraction ?? location?.fraction ?? 0)) * 100}%"
+            ></div>
+            {#if scrub}
+              <div class="scrub-tip" style:left="{scrub.x}px">
+                {[chapterLabelAt(scrub.fraction), `${Math.round(scrub.fraction * 100)}%`]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </div>
+            {/if}
           </div>
           <div class="labels">
             <span>{location?.chapterLabel ?? ''}</span>
-            <span>{[progressText, locationText.split(' · ')[1]].filter(Boolean).join(' · ')}</span>
+            <button
+              type="button"
+              class="goto-label"
+              class:open={gotoOpen}
+              bind:this={gotoLabel}
+              aria-haspopup="dialog"
+              aria-expanded={gotoOpen}
+              onclick={(e) => openGoTo(e.currentTarget.getBoundingClientRect())}
+            >
+              <span class="rest"
+                >{[progressText, locationText.split(' · ')[1]].filter(Boolean).join(' · ')}</span
+              >
+              <span class="hint">{progressText} · {t.goto.open} ⌘J</span>
+            </button>
           </div>
         </div>
       </footer>
@@ -987,6 +1137,75 @@
     height: 4px;
     border-radius: 2px;
     background: color-mix(in srgb, var(--ink-secondary) 45%, var(--ground));
+    cursor: default;
+    touch-action: none;
+  }
+  /* A taller hit area than the 4 px bar (X4). */
+  .track::before {
+    content: '';
+    position: absolute;
+    inset: -10px 0;
+  }
+  .thumb {
+    position: absolute;
+    top: 50%;
+    width: 12px;
+    height: 12px;
+    margin: -6px 0 0 -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 100ms;
+    pointer-events: none;
+  }
+  .track:hover .thumb,
+  .track:focus-visible .thumb,
+  .track.scrubbing .thumb {
+    opacity: 1;
+  }
+  /* N7, Screen 03: the dark preview above the track while dragging. */
+  .scrub-tip {
+    position: absolute;
+    bottom: 16px;
+    transform: translateX(-50%);
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: var(--tooltip);
+    color: var(--tooltip-ink);
+    font: 400 12px var(--font-ui);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  /* N8, Screen 17: the progress label opens Go to; it shows the hint when pointed at. */
+  .goto-label {
+    padding: 2px 6px;
+    margin: -2px -6px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: default;
+  }
+  .goto-label .hint {
+    display: none;
+  }
+  .goto-label:hover,
+  .goto-label:focus-visible,
+  .goto-label.open {
+    color: var(--accent);
+    font-weight: 600;
+    background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .goto-label:hover .rest,
+  .goto-label:focus-visible .rest,
+  .goto-label.open .rest {
+    display: none;
+  }
+  .goto-label:hover .hint,
+  .goto-label:focus-visible .hint,
+  .goto-label.open .hint {
+    display: inline;
   }
   .rtl .track {
     display: flex;

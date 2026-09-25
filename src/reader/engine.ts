@@ -434,6 +434,26 @@ export class ReaderEngine {
     if (index >= 0) await this.#navigate(index)
   }
 
+  /** N8: the section a book fraction lands in. */
+  sectionAt(fraction: number): number {
+    const r = this.#current.resolveNavigation({ fraction: Math.min(1, Math.max(0, fraction)) }) as
+      { index: number } | undefined
+    return r?.index ?? -1
+  }
+
+  /** N8: where a section starts, as a book fraction (by size, as foliate-js measures). */
+  sectionStart(index: number): number {
+    return this.#bookFraction(index, 0)
+  }
+
+  /** N8: the book's print page list (EPUB page-list), or an empty list. */
+  get pageList(): { label: string; href: string }[] {
+    const list = (this.#book as { pageList?: { label?: string; href?: string }[] } | null)?.pageList
+    return (list ?? [])
+      .filter((p) => p.label && p.href)
+      .map((p) => ({ label: String(p.label).trim(), href: String(p.href) }))
+  }
+
   get location(): ReaderLocation | null {
     const l = this.#current.lastLocation
     return l

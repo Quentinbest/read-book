@@ -104,3 +104,15 @@ describe('Panels (Screens 01, 04; G5 derived for Sepia and Night)', () => {
     })
   }
 })
+
+describe('Popovers and tooltips (Screens 03, 17; G5 derived)', () => {
+  for (const n of names) {
+    const t = THEMES[n]
+    it(`${n}: text on popovers and tooltips keeps X1 contrast`, () => {
+      expect(contrast(t.ink, t.popover)).toBeGreaterThanOrEqual(7)
+      expect(contrast(t.inkSecondary, t.popover)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t.accent, t.popover)).toBeGreaterThanOrEqual(4.5)
+      expect(contrast(t.tooltipInk, t.tooltip)).toBeGreaterThanOrEqual(7)
+    })
+  }
+})

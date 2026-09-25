@@ -200,6 +200,78 @@
       "evidence": "ok"
     },
     {
+      "id": "N6-contents-nav",
+      "description": "Contents (⌘T) docks from 1100 px, marks “You are here” on the current chapter with focus there, jumps with Back, and the column recentres",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S2-esc-navigator",
+      "description": "Esc closes the docked Navigator, the reading area returns to full width, focus to the text",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S13-dock-remembered",
+      "description": "A docked Navigator is remembered per book and reopens with it",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S2-navigator-floats",
+      "description": "Below 1100 px the Navigator floats over the text and leaves the layout alone",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N6-contents-ncx",
+      "description": "An EPUB 2 book with only an NCX lists its contents",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N6-contents-headings",
+      "description": "A book without navigation gets Contents from its headings, labelled “Generated from headings”",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N6-contents-damaged",
+      "description": "Damaged chapters are marked in Contents (E3)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N8-goto-percent",
+      "description": "Go to (⌘J) by percent: the preview names the chapter, Go lands there, and Back (⌘[) returns",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N8-goto-chapter",
+      "description": "Go to by chapter lands at the start of that chapter",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S2-esc-order",
+      "description": "With the Navigator docked and Go to open, Esc closes Go to first, then the Navigator (S2)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N7-scrubber",
+      "description": "Dragging the progress track previews chapter and %, and releasing jumps there (Back returns)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N8-goto-page",
+      "description": "Go to by print page (only in books with a page list) lands on that page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -236,7 +308,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790301624,
+    "time": 1790306481,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
