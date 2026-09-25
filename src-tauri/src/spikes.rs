@@ -145,6 +145,23 @@ pub fn install<R: Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
     builder.manage(SpikeState(Mutex::new(CanaryLog::default())))
 }
 
+/// §6.4 cold start: every file in a corpus folder (the 500-book fixture).
+#[tauri::command]
+pub fn spike_corpus_dir(name: String) -> Result<Vec<String>, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid corpus name: {name}"));
+    }
+    let dir = repo_root().join("corpus/generated").join(&name);
+    let mut out: Vec<String> = std::fs::read_dir(&dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.extension().is_some_and(|x| x == "epub"))
+        .map(|p| p.display().to_string())
+        .collect();
+    out.sort();
+    Ok(out)
+}
+
 /// Absolute path of a corpus file, for importing it through the product commands.
 #[tauri::command]
 pub fn spike_corpus_path(name: String) -> Result<String, String> {

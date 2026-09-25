@@ -58,6 +58,7 @@ pub fn run() {
                 commands::library_folder,
                 commands::library_folder_show,
                 commands::export_write,
+                commands::startup_mark,
                 commands::position_get,
                 commands::setting_get,
                 commands::setting_set,
@@ -77,6 +78,7 @@ pub fn run() {
     let builder = builder.invoke_handler(handler!(
         spikes::spike_read_corpus,
         spikes::spike_corpus_path,
+        spikes::spike_corpus_dir,
         spikes::spike_canary,
         spikes::spike_canary_log,
         spikes::spike_canary_clear,

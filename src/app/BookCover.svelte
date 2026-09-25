@@ -26,7 +26,7 @@
   aria-hidden="true"
 >
   {#if src}
-    <img {src} alt="" onerror={() => (failed = true)} />
+    <img {src} alt="" loading="lazy" decoding="async" onerror={() => (failed = true)} />
   {:else if lettering}
     <span class="ct" class:long={book.title.length > 32}>{book.title}</span>
     <span class="ca">{author}</span>

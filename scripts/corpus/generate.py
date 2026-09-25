@@ -384,6 +384,33 @@ def edited_books(chapters):
     simple_book(OUT / "anchoring-revised.epub", "Anchoring test", revised, ident=ident)
 
 
+def library_500(chapters):
+    """§6.4 cold start: a 500-book library (small books; one in three with a cover)."""
+    out = OUT / "library-500"
+    out.mkdir(exist_ok=True)
+    rng = random.Random(500)
+    first = ["Anna", "Brontë", "Charles", "Dora", "Emil", "Fatima", "George", "Hana", "Ivan", "Jun"]
+    last = ["Austen", "Brontë", "Dickens", "Eliot", "Hardy", "Melville", "Tolstoy", "Woolf", "Sōseki", "Hugo"]
+    words = ["River", "Winter", "Lantern", "Harbour", "Orchard", "Glass", "Northern", "Silent", "Paper", "Evening"]
+    for i in range(500):
+        title = f"{'The ' if i % 4 == 0 else ''}{words[i % 10]} {words[(i * 7) % 10].lower()} {i + 1}"
+        author = f"{first[i % 10]} {last[(i * 3) % 10]}"
+        body = "".join(f"<p>{chapters[(i + k) % len(chapters)][1][:400]}</p>" for k in range(2))
+        res = {"cover.png": (png(120, 180, rng), "image/png")} if i % 3 == 0 else None
+        # The package names the author (simple_book does not).
+        files = {"chapter-1.xhtml": xhtml(title, f"<h1>{html.escape(title)}</h1>{body}")}
+        items = [("c1", "chapter-1.xhtml", "application/xhtml+xml", "")]
+        if res:
+            files["cover.png"] = res["cover.png"][0]
+            items.append(("cover", "cover.png", "image/png", "cover-image"))
+        files["nav.xhtml"] = nav_doc([("chapter-1.xhtml", title)])
+        ident = "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"linen-corpus:library-500:{i}"))
+        package = opf(title, items, ["c1"], ident=ident)
+        package = package.replace("<dc:language>", f"<dc:creator>{html.escape(author)}</dc:creator><dc:language>", 1)
+        files["content.opf"] = package
+        write_epub(out / f"book-{i:03d}.epub", files)
+
+
 def large_books(chapters):
     rng = random.Random(20260924)
     images = {f"plate-{i}.png": (png(1800, 1800, rng), "image/png") for i in range(10)}  # ~97 MB, incompressible
@@ -426,8 +453,10 @@ def main() -> int:
     large_books(chapters)
     note_books()
     edited_books(chapters)
+    library_500(chapters)
     for p in sorted(OUT.iterdir()):
-        print(f"{p.stat().st_size:>12,}  {p.name}")
+        if p.is_file():
+            print(f"{p.stat().st_size:>12,}  {p.name}")
     return 0
 
 

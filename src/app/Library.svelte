@@ -550,6 +550,9 @@
   .tile {
     position: relative;
     min-width: 0;
+    /* §6.4 cold start: tiles below the fold are laid out and painted only when near. */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 290px;
   }
   .open {
     display: flex;

@@ -1,3 +1,8 @@
+<script lang="ts" module>
+  /** Only the session's first book counts for the cold-start mark. */
+  let startupMarked = false
+</script>
+
 <script lang="ts">
   // The reader (plan Phase 2; Screens 02, 03, 14). Features that arrive in later
   // phases (Contents, Search, Notes, Aa, the ⋯ menu, Go to) are hidden until then.
@@ -1257,6 +1262,13 @@
         jumpMessages.push(resumed.id)
       }
       engine.focusPage()
+      // §6.4: the first page of the first book this session (cold start to last book).
+      if (!startupMarked) {
+        startupMarked = true
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => void ipc.startupMark('book').catch(() => {})),
+        )
+      }
 
       // Wheel and trackpad come from AppKit (Spike B): one turn per roll or gesture.
       const turns = new NativeTurns()

@@ -118,16 +118,27 @@
   onMount(() => {
     const cleanups: (() => void)[] = []
     void (async () => {
-      applyTheme(((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto')
-      singleKeysEnabled = (await ipc.settingGet('singleKeyShortcuts')) !== 'off'
-      await refresh()
+      // §6.4 cold start: the first round trips go together.
+      const [themeSetting, singleKeys, atLaunch] = await Promise.all([
+        ipc.settingGet('theme'),
+        ipc.settingGet('singleKeyShortcuts'),
+        ipc.settingGet('openAtLaunch'),
+        refresh(),
+      ])
+      applyTheme((themeSetting as ThemeChoice | null) ?? 'auto')
+      singleKeysEnabled = singleKeys !== 'off'
       // G2 (provisional): “When Linen opens: Reopen the last book”.
-      if ((await ipc.settingGet('openAtLaunch')) === 'book' && !reading) {
+      if (atLaunch === 'book' && !reading) {
         const last = books
           .filter((b) => b.opened_at !== null && !b.finished_at)
           .sort((a, b) => (b.opened_at ?? 0) - (a.opened_at ?? 0))[0]
         if (last) reading = last
       }
+      // §6.4: the library's first paint (the reader marks its first page itself).
+      if (!reading)
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => void ipc.startupMark('library').catch(() => {})),
+        )
       // T6: VoiceOver has no web-visible signal; ask the core, and keep asking.
       const pollScreenReader = async () => {
         screenReaderRunning = await ipc.screenReaderRunning()

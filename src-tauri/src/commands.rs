@@ -576,6 +576,31 @@ pub fn export_write(dir: String, name: String, contents: String) -> CmdResult<St
     Ok(path.to_string_lossy().into_owned())
 }
 
+/// §6.4 cold start: the UI says when the library (or the resumed book) first
+/// painted. In debug and spike builds, with LINEN_STARTUP_LOG set, the time is
+/// appended to that file (ms since the epoch), and LINEN_EXIT_AFTER_STARTUP=<what>
+/// quits there, so a script can time launches. Otherwise it does nothing.
+#[tauri::command]
+pub fn startup_mark<R: Runtime>(app: AppHandle<R>, what: String) {
+    #[cfg(any(debug_assertions, feature = "spikes"))]
+    if let Some(path) = std::env::var_os("LINEN_STARTUP_LOG") {
+        use std::io::Write;
+        let line = format!("{what} {}\n", crate::store::now_ms());
+        if let Ok(mut f) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
+            let _ = f.write_all(line.as_bytes());
+        }
+        if std::env::var("LINEN_EXIT_AFTER_STARTUP").ok().as_deref() == Some(what.as_str()) {
+            app.exit(0);
+        }
+    }
+    #[cfg(not(any(debug_assertions, feature = "spikes")))]
+    let _ = (app, what);
+}
+
 /// E10, G3: what the book info sheet shows, read-only: the stored metadata, the
 /// EPUB accessibility metadata, the file's size, and the publisher and date from
 /// the package (read from the library copy now, as they are not stored).

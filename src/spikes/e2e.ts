@@ -3901,3 +3901,23 @@ export async function spikeX3(): Promise<SpikeResult> {
     raw: { readingFrom: Math.round(readingFrom), startLoc, endLoc, relocations, samples },
   }
 }
+
+/** §6.4 cold start: import the 500-book fixture into LINEN_DATA_DIR, then exit. */
+export async function spikeSeed500(): Promise<SpikeResult> {
+  const paths = await invoke<string[]>('spike_corpus_dir', { name: 'library-500' })
+  const t0 = performance.now()
+  const results = await invoke<{ outcome: { kind: string } }[]>('library_import', { paths })
+  const imported = results.filter((r) => r.outcome.kind === 'imported').length
+  return {
+    spike: 'seed-500',
+    criteria: [
+      {
+        id: 'seeded',
+        description: 'The 500-book fixture is in the library',
+        verdict: imported === 500 ? 'pass' : 'fail',
+        evidence: `${imported} of ${paths.length} imported in ${Math.round(performance.now() - t0)} ms`,
+      },
+    ],
+    raw: {},
+  }
+}

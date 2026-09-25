@@ -84,6 +84,8 @@ export const ipc = {
   bookShowFile: (bookId: string) => invoke<void>('book_show_file', { bookId }),
   bookInfo: (bookId: string) => invoke<BookInfo>('book_info', { bookId }),
   libraryFolder: () => invoke<string>('library_folder'),
+  /** §6.4: first paint of the library or of the resumed book (timed in test builds). */
+  startupMark: (what: 'library' | 'book') => invoke<void>('startup_mark', { what }),
   libraryFolderShow: () => invoke<void>('library_folder_show'),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),
   settingGet: (key: string) => invoke<string | null>('setting_get', { key }),
