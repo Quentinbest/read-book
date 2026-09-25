@@ -27,7 +27,12 @@ function markdown(collection) {
     }
     out.push(item(a))
   }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n').trim() + '\n'
+  return (
+    out
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim() + '\n'
+  )
 }
 
 linen.commands.register('export-markdown', async () => {
