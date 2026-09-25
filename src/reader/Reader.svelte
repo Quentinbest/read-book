@@ -584,7 +584,8 @@
     jumpedTo = a.id
     if (!lanes.docked) closeNavigator()
     await engine?.goTo(a.cfi)
-    requestAnimationFrame(() => engine?.pulse(a.cfi, accentAt(0.4)))
+    // After the jump has laid out (not rAF: WebKit defers frames for a window no one sees).
+    setTimeout(() => engine?.pulse(a.cfi, accentAt(0.4)), 16)
   }
   function chapterOf(a: Annotation): number {
     return engine?.cfiIndex(a.cfi) ?? -1

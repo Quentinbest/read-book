@@ -5,7 +5,7 @@
       "id": "visual-captured",
       "description": "Baseline candidates captured",
       "verdict": "manual",
-      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions"
+      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions, 12-extension-failure"
     }
   ],
   "raw": {
@@ -38,15 +38,16 @@
       "01-library": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/01-library.png",
       "12-damaged-book": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/12-damaged-book.png",
       "12-empty-library": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/12-empty-library.png",
-      "11-settings-extensions": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/11-settings-extensions.png"
+      "11-settings-extensions": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/11-settings-extensions.png",
+      "12-extension-failure": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/12-extension-failure.png"
     }
   },
   "info": {
     "cpu": "Apple M2",
     "memory_bytes": "8589934592",
-    "only": null,
+    "only": "",
     "os": "14.6.1",
-    "time": 1790338977,
+    "time": 1790349728,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

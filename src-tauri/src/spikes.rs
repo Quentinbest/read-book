@@ -358,14 +358,18 @@ pub fn spike_capture<R: Runtime>(
     let dir = repo_root().join("docs/visual/app");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.png"));
-    let status = std::process::Command::new("screencapture")
-        .args(["-x", "-o", &format!("-l{number}")])
-        .arg(&path)
-        .status()
-        .map_err(|e| e.to_string())?;
-    if !status.success() {
-        return Err(format!("screencapture failed: {status}"));
+    // The window server's own capture of this one window: it works wherever the
+    // window is, including another desktop (LINEN_SPACE), where screencapture fails.
+    // It can refuse once in a while (the window between frames): try a few times.
+    let mut result = capture::window_png(number as u32, &path);
+    for _ in 0..5 {
+        if result.is_ok() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(250));
+        result = capture::window_png(number as u32, &path);
     }
+    result?;
     Ok(path.display().to_string())
 }
 
@@ -546,5 +550,97 @@ mod desktops {
             }
         }
         Ok(space)
+    }
+}
+
+/// Capture one of this app's windows to a PNG, on any desktop (spike builds only).
+mod capture {
+    use std::ffi::c_void;
+    use std::path::Path;
+
+    type CFTypeRef = *const c_void;
+    /// Include the whole window, not clipped by what is on screen.
+    const IGNORE_GLOBAL_CLIP_SHAPE: u32 = 1 << 11;
+    /// Nominal resolution: one pixel per point, as the baselines were taken.
+    const NOMINAL_RESOLUTION: u32 = 1 << 9;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGSMainConnectionID() -> i32;
+        fn CGSHWCaptureWindowList(
+            cid: i32,
+            windows: *const u32,
+            count: u32,
+            options: u32,
+        ) -> CFTypeRef;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    extern "C" {
+        fn CFArrayGetCount(array: CFTypeRef) -> isize;
+        fn CFArrayGetValueAtIndex(array: CFTypeRef, index: isize) -> CFTypeRef;
+        fn CFURLCreateFromFileSystemRepresentation(
+            alloc: CFTypeRef,
+            buffer: *const u8,
+            length: isize,
+            is_directory: bool,
+        ) -> CFTypeRef;
+        fn CFStringCreateWithCString(alloc: CFTypeRef, s: *const i8, encoding: u32) -> CFTypeRef;
+        fn CFRelease(cf: CFTypeRef);
+    }
+    #[link(name = "ImageIO", kind = "framework")]
+    extern "C" {
+        fn CGImageDestinationCreateWithURL(
+            url: CFTypeRef,
+            kind: CFTypeRef,
+            count: usize,
+            options: CFTypeRef,
+        ) -> CFTypeRef;
+        fn CGImageDestinationAddImage(dest: CFTypeRef, image: CFTypeRef, properties: CFTypeRef);
+        fn CGImageDestinationFinalize(dest: CFTypeRef) -> bool;
+    }
+
+    pub fn window_png(window: u32, path: &Path) -> Result<(), String> {
+        let bytes = path.to_string_lossy().into_owned();
+        // SAFETY: plain CoreFoundation / ImageIO calls on objects created and released here.
+        unsafe {
+            let images = CGSHWCaptureWindowList(
+                CGSMainConnectionID(),
+                &window,
+                1,
+                IGNORE_GLOBAL_CLIP_SHAPE | NOMINAL_RESOLUTION,
+            );
+            if images.is_null() || CFArrayGetCount(images) < 1 {
+                if !images.is_null() {
+                    CFRelease(images);
+                }
+                return Err(format!(
+                    "the window server could not capture window {window}"
+                ));
+            }
+            let image = CFArrayGetValueAtIndex(images, 0);
+            let url = CFURLCreateFromFileSystemRepresentation(
+                std::ptr::null(),
+                bytes.as_ptr(),
+                bytes.len() as isize,
+                false,
+            );
+            let png =
+                CFStringCreateWithCString(std::ptr::null(), c"public.png".as_ptr(), 0x0800_0100);
+            let dest = CGImageDestinationCreateWithURL(url, png, 1, std::ptr::null());
+            let ok = !dest.is_null() && {
+                CGImageDestinationAddImage(dest, image, std::ptr::null());
+                CGImageDestinationFinalize(dest)
+            };
+            for cf in [dest, png, url, images] {
+                if !cf.is_null() {
+                    CFRelease(cf);
+                }
+            }
+            if ok {
+                Ok(())
+            } else {
+                Err(format!("could not write {}", path.display()))
+            }
+        }
     }
 }

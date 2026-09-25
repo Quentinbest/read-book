@@ -12,3 +12,7 @@ The 2026-09-25 approval covers `phase3-review.html` to `phase6-review.html`, wit
 - `LINEN_SPIKE=v` recaptures the app into `docs/visual/app/`.
 - `node tests/visual/compare.mjs` diffs the recapture against these baselines. It fails when more than 0.1% of pixels change, and writes diff images to `docs/visual/diff/`.
 - An intended visual change needs a new review and approval here. A new WebKit version gets its own baseline folder.
+- **Where captures are taken (from 2026-09-25).** On Desktop 2, by the owner's instruction: `scripts/e2e.sh v`, which sets `LINEN_SPACE=2`. The capture is the window server's own capture of the app's window (`CGSHWCaptureWindowList`), because `screencapture` refuses windows on a desktop that isn't showing. It gives the same pixels: most baselines compare at 0 changed pixels.
+- **What differs on Desktop 2.** The window there is never the active window, so WebKit draws no focus rings and uses the inactive selection colour.
+  - Screen 04's current Contents row loses its focus ring: a 0.12% difference.
+  - Captures of states that show focus or a selection are reviewed with that in mind.

@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 7 review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body><main>
+<h1>Phase 7 review: extensions</h1>
+<p class="lede">Each mock (left) beside the app, 1280 × 800. The captures were taken on Desktop 2 (<code>LINEN_SPACE=2</code>) by the window server's capture of the app's own window. Approving makes them the Phase 7 baselines (item 24). <span class="tag ask">decide</span> marks what depends on items 21–23 (D4, G1, G7).</p>
+
+<h2>Screen 11 — Settings › Extensions</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/11.png"><img src="mocks/11.png" alt="Mock 11"/></a></figure><figure><figcaption>App</figcaption><a href="app/11-settings-extensions.png"><img src="app/11-settings-extensions.png" alt="App 11"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>the sidebar, the intro and Install from file…;</li>
+<li>each extension with its name, “Built-in” or “Theme pack”, the version and “Off”, and its description;</li>
+<li>“Can access”, with network permissions in accent and a globe;</li>
+<li>“Adds”, and the theme pack's “Can: Nothing — themes contain no code”;</li>
+<li>the switch;</li>
+<li>the failure box (“Stopped responding twice recently and was restarted. Reading wasn't affected.”) with Restart and Disable.</li>
+</ul></li>
+<li><span class="tag ok">expected</span>The extensions are the samples and test packages: Markdown Export (built in), Dictionary, Night Owl, and a test extension turned off. The mock's “Reading Time” needs session events, which come in 1.1 (C3).</li>
+<li><span class="tag ask">decide</span>The icon is the name's first letter; manifests have no icon field yet. Each extension also has “Show its commands in the ⋯ menu” (P8 pinning) and Remove… (P5). The mock draws neither.</li>
+<li><span class="tag ok">expected</span>“Restart without extensions” and the ⇧ hint are at the foot of the list, below this crop.</li>
+<li><span class="tag ok">expected</span>The window buttons look pale: on Desktop 2 the window is never the active window.</li>
+</ul>
+
+<h2>Screen 12 — Extension failure, contained</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/12.png"><img src="mocks/12.png" alt="Mock 12 extension failure"/></a></figure><figure><figcaption>App</figcaption><a href="app/12-extension-failure.png"><img src="app/12-extension-failure.png" alt="App 12 extension failure"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock's panel:
+<ul>
+<li>the core actions render at once, and the extension actions sit behind “⋯” (P10);</li>
+<li>a stuck action shows “Not responding” with “Restart Dictionary”;</li>
+<li>“Manage extensions…” opens Settings.</li>
+</ul></li>
+<li><span class="tag ok">expected</span>The mock's second extension (Translate) is not a sample.</li>
+<li><span class="tag ok">expected</span>The selection is grey, and the book's highlight shows beside it. The grey is macOS's colour for a selection in an inactive window, since on Desktop 2 the window is never active.</li>
+</ul>
+
+<h2>Also in Phase 7 (no mock)</h2>
+<ul class="notes">
+<li><span class="tag ask">decide</span><strong>The install sheet (G1)</strong> is covered by the end-to-end check P5-install-consent, and item 22 describes it. It shows:
+<ul>
+<li>“Install “Dictionary”?” and “Not verified by Linen”;</li>
+<li>the permissions in plain words, with the highlighted ones in accent;</li>
+<li>what it adds;</li>
+<li>Cancel and Install.</li>
+</ul></li>
+<li><span class="tag ask">decide</span><strong>Extension Navigator tabs (G7)</strong> follow Notes; several collapse under “More”. Their pages use Linen's style kit in the current theme.</li>
+<li><span class="tag ok">expected</span><strong>Screen 04 differs from its baseline by 0.12%:</strong> the focus ring on the current Contents row is not drawn, because WebKit draws no focus ring in an inactive window. Reading on Desktop 1 still shows it; this is a property of running the tests on Desktop 2.</li>
+</ul>
+</main></body></html>

@@ -4163,6 +4163,7 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await reader()!.engine.goTo(chapter1)
   await settled(600)
   hooks.extensions!.status['org.example.dictionary'] = 'not-responding'
+  clearMessage()
   await selectPhrase('spleen')
   await waitFor('bar', selBar)
   barButton(/more actions from extensions/i)?.click()

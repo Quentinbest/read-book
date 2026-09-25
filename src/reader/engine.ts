@@ -777,7 +777,9 @@ export class ReaderEngine {
     let all = 0
     for (const section of this.#book?.sections ?? []) {
       if (section.linear === 'no') continue
-      await new Promise((r) => (window.requestIdleCallback ?? setTimeout)(r))
+      // WebKit has no requestIdleCallback: space the chapters out so this never
+      // competes with reading or search (it runs once per book).
+      await new Promise((r) => setTimeout(r, 50))
       // The book was closed: stop (the reader measures it again next time).
       if (this.#closed) return Number.NaN
       const doc = await section.createDocument?.().catch(() => null)

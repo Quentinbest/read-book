@@ -33,6 +33,12 @@ The plan wanted D4 decided and the G1 and G7 designs before Phase 7. None existe
     - **Suspended extensions** show Screen 11's warning box (“Stopped responding … Reading wasn't affected. Restart · Disable”).
     - **Frames:** extension UI frames run on the extension's own origin (Spike G: WebKit runs no script in an opaque-origin frame). P§19's “no same-origin access” holds for the app: the frame is never on the app's origin.
 
+24. **Phase 7 visual baselines (Screen 11 with extensions installed; Screen 12's extension failure).** Review `docs/visual/phase7-review.html`.
+    *Recommendation:* approve.
+
+25. **Not met in Phase 7: the P6 memory budget.** WebKit gives a page no way to measure a Worker's memory; `measureUserAgentSpecificMemory` is Chromium-only. CPU is budgeted through the heartbeat; memory is not.
+    *Recommendation:* accept for the MVP. Revisit if a native per-WebContent-process measure (like Phase 2's `proc_pid_rusage`) proves attributable to one extension.
+
 ## Carried over (need a person, not a decision)
 
 9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.
