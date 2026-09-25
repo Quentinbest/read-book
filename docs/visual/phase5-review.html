@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Phase 5 review</title>
+    <style>
+      :root {
+        --ground: #f7f3ec;
+        --ink: #22201c;
+        --muted: #6b655c;
+        --line: #e4ddd1;
+        --accent: #8c4a2f;
+        --ok: #4e7f2a;
+        --later: #3f6fa8;
+        --ask: #9a7410;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root:not([data-theme='light']) {
+          --ground: #1b1a18;
+          --ink: #d9d3c7;
+          --muted: #9a9387;
+          --line: #2e2c29;
+          --accent: #d39a73;
+          --ok: #a0c470;
+          --later: #80aad6;
+          --ask: #e3c35a;
+        }
+      }
+      body {
+        margin: 0;
+        background: var(--ground);
+        color: var(--ink);
+        font: 15px/1.5 system-ui, -apple-system, sans-serif;
+      }
+      main {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 32px 16px 64px;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      h2 {
+        font-size: 17px;
+        margin: 40px 0 12px;
+        padding-top: 16px;
+        border-top: 1px solid var(--line);
+      }
+      p.lede {
+        color: var(--muted);
+        margin: 0 0 16px;
+        max-width: 72ch;
+      }
+      .pair {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 16px;
+      }
+      figure {
+        margin: 0;
+      }
+      figcaption {
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 6px;
+      }
+      img {
+        width: 100%;
+        height: auto;
+        display: block;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      ul.notes {
+        padding-left: 20px;
+        margin: 12px 0 0;
+      }
+      ul.notes li {
+        margin: 4px 0;
+      }
+      .tag {
+        display: inline-block;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 0 6px;
+        border-radius: 4px;
+        border: 1px solid currentColor;
+        margin-right: 6px;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .later {
+        color: var(--later);
+      }
+      .ask {
+        color: var(--ask);
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        font-size: 14px;
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--line);
+        vertical-align: top;
+      }
+    </style>
+  </head>
+  <body><main>
+<h1>Phase 5 review: selection and annotation</h1>
+<p class="lede">Each mock (left) beside the app in the same state: Moby-Dick, Chapter 1, 1280 × 800 (Screen 15 at 760 × 1000), in the mock's theme, captured from the app's own window on the reference Mac (WebKit 19618). The pages break at different words from the mocks, because the mocks set a fixed excerpt; the passages are the mocks' passages. Approving makes these captures the Phase 5 baselines (item 11). Items 12 and 13 in <code>docs/pending-approvals.md</code> refer to what is marked <span class="tag ask">decide</span>.</p>
+
+<h2>Screen 06 — Text selection</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/06.png"><img src="mocks/06.png" alt="Mock 06"/></a></figure><figure><figcaption>App</figcaption><a href="app/06-selection-bar.png"><img src="app/06-selection-bar.png" alt="App 06"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>the bar sits 12 px above the first selected line and starts 34 px before it, with the tail 15 px into the selection;</li>
+<li>the ink ground and the last-used colour's ring;</li>
+<li>four dots, then Note, Copy and Search with their icons;</li>
+<li>the system selection colour (S4);</li>
+<li>the yellow highlight is a tint behind the text with a 2 px underline.</li>
+</ul></li>
+<li><span class="tag later">later phase</span>The “⋯” extension actions are hidden until an extension adds some (P10, Phase 7). A1 says hidden actions stay hidden, not greyed.</li>
+<li><span class="tag ok">expected</span>The chapter's line shows no “min left” yet on a fresh profile (B2 needs reading pace).</li>
+</ul>
+
+<h2>Screen 07 — Margin note</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/07.png"><img src="mocks/07.png" alt="Mock 07"/></a></figure><figure><figcaption>App</figcaption><a href="app/07-margin-note.png"><img src="app/07-margin-note.png" alt="App 07"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>a 256 px card 36 px right of the dot, joined by a hairline;</li>
+<li>the header shows “Note · Green” and “✓ Saved” in a status region;</li>
+<li>the note is set in Literata; the colours below it have the current one ringed in accent;</li>
+<li>Copy and Delete, and the hint.</li>
+</ul></li>
+<li><span class="tag ask">decide</span>The dot is drawn in the highlight's underline colour; the mock's <code>#8FA86A</code> is not a token (item 13).</li>
+</ul>
+
+<h2>Screen 08 — Navigator, Notes</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/08.png"><img src="mocks/08.png" alt="Mock 08"/></a></figure><figure><figcaption>App</figcaption><a href="app/08-navigator-notes.png"><img src="app/08-navigator-notes.png" alt="App 08"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>the tabs, the filter field, All and the colour chips, and “N highlights · M notes”;</li>
+<li>the chapter group with its count;</li>
+<li>each quote in its colour, with the note and “Colour · Today · Note”;</li>
+<li>the chosen one raised, and the passage pulsing with a 3 px accent outline;</li>
+<li>the Back message with ⌘[.</li>
+</ul></li>
+<li><span class="tag ok">expected</span>Two highlights here, against five in the mock. The “Couldn't place” group appears only when there is something in it; the end-to-end check <code>A9-reimport</code> exercises it.</li>
+<li><span class="tag ok">expected</span>The Back message is the standard message (Phase 3, approved); the mock draws a smaller pill.</li>
+<li><span class="tag later">later phase</span>“Export as Markdown” stays hidden until the Markdown Export extension (Phase 7).</li>
+</ul>
+
+<h2>Screen 14 — Night, controls and selection</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/14.png"><img src="mocks/14.png" alt="Mock 14"/></a></figure><figure><figcaption>App</figcaption><a href="app/14-night-selection.png"><img src="app/14-night-selection.png" alt="App 14"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock:
+<ul>
+<li>the bar inverts to a light surface (13.6:1 against the page, tested);</li>
+<li>the Night colour dots, and the system selection colour;</li>
+<li>the chrome keeps the page colour with its hairline.</li>
+</ul></li>
+<li><span class="tag ask">decide</span>The actions keep their icons, as in Screen 06. The mock shows text only here (item 13).</li>
+<li><span class="tag later">later phase</span>Aa arrives in Phase 6. The top bar is otherwise complete (item 4).</li>
+</ul>
+
+<h2>Screen 15 — Narrow window, note as a sheet</h2>
+<div class="pair"><figure><figcaption>Mock</figcaption><a href="mocks/15.png"><img src="mocks/15.png" alt="Mock 15"/></a></figure><figure><figcaption>App</figcaption><a href="app/15-note-sheet.png"><img src="app/15-note-sheet.png" alt="App 15"/></a></figure></div>
+<ul class="notes">
+<li>Matches the mock: below 1240 px the note is a bottom sheet with its grip, “Note · Green” and “Saved”, the quote in italics, the field, the colours, and Delete and Done.</li>
+<li><span class="tag ok">expected</span>At this width the passage falls lower on its page than in the mock, so the sheet covers it. The page is laid out as the book flows.</li>
+</ul>
+
+<h2>Screens 03 and 14 — the top bar (item 4)</h2>
+<div class="pair"><figure><figcaption>Mock 03</figcaption><a href="mocks/03.png"><img src="mocks/03.png" alt="Mock 03"/></a></figure><figure><figcaption>App</figcaption><a href="app/03-reader-controls-paper.png"><img src="app/03-reader-controls-paper.png" alt="App 03"/></a></figure></div>
+<ul class="notes">
+<li>Contents now sits beside Library; Search and Notes join ⋯ on the right, as drawn. Aa arrives in Phase 6.</li>
+</ul>
+
+<h2>G11 — Re-attach (provisional, item 12)</h2>
+<ul class="notes">
+<li>In the Notes tab, a highlight that could not be placed in a changed edition is listed under “Couldn't place” with its quote, “The book file changed after this was saved.” and Re-attach.</li>
+<li>Re-attach closes a floating Navigator and shows a pill at the bottom: “Select the passage for “…” · Cancel”.</li>
+<li>The next selection shows the bar with only “Attach here” and “Cancel”. Attaching keeps the colour and note and says “Highlight re-attached”.</li>
+<li>Tested end to end (<code>A9-reimport</code>).</li>
+</ul>
+</main></body></html>

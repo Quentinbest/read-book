@@ -97,14 +97,27 @@ pub struct ImportResult {
 }
 
 pub fn import_paths(state: &AppState, paths: &[PathBuf]) -> CmdResult<Vec<ImportResult>> {
-    let mut store = state.store.lock().unwrap();
     let mut results = Vec::new();
-    for path in paths {
-        let outcome = import_book(&mut store, &state.library, path)?;
-        results.push(ImportResult {
-            path: path.to_string_lossy().into_owned(),
-            outcome,
-        });
+    {
+        let mut store = state.store.lock().unwrap();
+        for path in paths {
+            let outcome = import_book(&mut store, &state.library, path)?;
+            results.push(ImportResult {
+                path: path.to_string_lossy().into_owned(),
+                outcome,
+            });
+        }
+    }
+    // B3: a replaced book is read from its new file from now on, not from the archive
+    // that was open. (Locked after the store: `with_open_book` takes them the other way.)
+    let mut open = state.open_book.lock().unwrap();
+    let replaced = |id: &str| {
+        results.iter().any(
+            |r| matches!(&r.outcome, ImportOutcome::Replaced { book_id, .. } if book_id == id),
+        )
+    };
+    if open.as_ref().is_some_and(|(id, _)| replaced(id)) {
+        *open = None;
     }
     Ok(results)
 }

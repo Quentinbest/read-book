@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { contrast, HIGHLIGHT_COLORS, over, THEMES, themeCss, type ThemeName } from './tokens'
+import {
+  contrast,
+  HIGHLIGHT_COLORS,
+  over,
+  multipliedTint,
+  parseColor,
+  THEMES,
+  themeCss,
+  type ThemeName,
+} from './tokens'
 
 const names = Object.keys(THEMES) as ThemeName[]
 const r1 = (x: number) => Math.round(x * 10) / 10
@@ -38,6 +47,30 @@ describe('X1 contrast in every theme', () => {
       for (const c of HIGHLIGHT_COLORS) {
         const bg = over(t.highlight[c].tint, t.ground)
         expect(contrast(t.ink, bg), `${c} ${r1(contrast(t.ink, bg))}`).toBeGreaterThanOrEqual(9)
+      }
+    })
+
+    it(`${n}: highlighted text ≥ 9:1 on WebKit without custom highlights (the tint drawn over the text)`, () => {
+      const multiply = (a: string, b: string) => {
+        const [x, y] = [parseColor(a), parseColor(b)]
+        return (
+          '#' +
+          [0, 1, 2]
+            .map((i) =>
+              Math.round((x[i] * y[i]) / 255)
+                .toString(16)
+                .padStart(2, '0'),
+            )
+            .join('')
+        )
+      }
+      for (const c of HIGHLIGHT_COLORS) {
+        const tint = t.highlight[c].tint
+        const [text, bg] =
+          t.scheme === 'light'
+            ? [multiply(t.ink, multipliedTint(t, c)), multiply(t.ground, multipliedTint(t, c))]
+            : [over(tint, t.ink), over(tint, t.ground)]
+        expect(contrast(text, bg), `${c} ${r1(contrast(text, bg))}`).toBeGreaterThanOrEqual(9)
       }
     })
 
@@ -115,4 +148,20 @@ describe('Popovers and tooltips (Screens 03, 17; G5 derived)', () => {
       expect(contrast(t.tooltipInk, t.tooltip)).toBeGreaterThanOrEqual(7)
     })
   }
+})
+
+describe('Selection bar (A1, V2; Screens 06 and 14)', () => {
+  for (const [n, th] of Object.entries(THEMES)) {
+    it(`${n}: labels on the bar are ≥ 7:1 and the bar stands out from the page`, () => {
+      expect(contrast(th.selectionBar.ink, th.selectionBar.ground)).toBeGreaterThanOrEqual(7)
+      expect(contrast(th.selectionBar.ground, th.ground)).toBeGreaterThanOrEqual(3)
+      expect(
+        contrast(over(th.selectionBar.ring, th.selectionBar.ground), th.selectionBar.ground),
+      ).toBeGreaterThanOrEqual(3)
+    })
+  }
+  it('Night inverts to a light surface, 13.6:1 against the page (Screen 14)', () => {
+    const n = THEMES.night
+    expect(contrast(n.selectionBar.ground, n.ground)).toBeCloseTo(13.6, 1)
+  })
 })

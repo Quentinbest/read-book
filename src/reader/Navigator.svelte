@@ -1,7 +1,7 @@
 <script lang="ts">
   // The Navigator (S2, S3, N6; Screen 04): Library, the book and its progress in
-  // the header, then Contents. It docks from 1100 px and floats below. Search and
-  // Notes join the tabs in Phases 4 and 5.
+  // the header, then Contents, Search (F1–F7) and Notes (A8). It docks from
+  // 1100 px and floats below.
   import type { Snippet } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import Tabs from '../components/Tabs.svelte'
@@ -24,6 +24,7 @@
     tab,
     ontab,
     search,
+    notes,
   }: {
     title: string
     author: string
@@ -38,11 +39,13 @@
     onlibrary: () => void
     /** N8: the progress label opens Go to (S3: the header stands in for the chrome). */
     ongoto: (anchor: DOMRect) => void
-    /** The open tab; Notes joins in Phase 5. */
-    tab: 'contents' | 'search'
-    ontab: (tab: 'contents' | 'search') => void
+    /** The open tab. */
+    tab: 'contents' | 'search' | 'notes'
+    ontab: (tab: 'contents' | 'search' | 'notes') => void
     /** The Search tab's panel (F1–F7). */
     search: Snippet
+    /** The Notes tab's panel (A8). */
+    notes: Snippet
   } = $props()
 
   let rows: HTMLButtonElement[] = $state([])
@@ -118,6 +121,7 @@
       tabs={[
         { value: 'contents', label: t.navigator.contents },
         { value: 'search', label: t.navigator.search },
+        { value: 'notes', label: t.navigator.notes },
       ]}
       bind:selected={() => tab, (v) => ontab(v)}
     />
@@ -130,6 +134,15 @@
       aria-labelledby="navigator-tab-search"
     >
       {@render search()}
+    </div>
+  {:else if tab === 'notes'}
+    <div
+      class="panel"
+      id="navigator-panel-notes"
+      role="tabpanel"
+      aria-labelledby="navigator-tab-notes"
+    >
+      {@render notes()}
     </div>
   {:else}
     <nav class="list" aria-label={t.navigator.contents}>

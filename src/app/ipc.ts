@@ -1,6 +1,7 @@
 // Typed wrappers over the Rust commands (src-tauri/src/commands.rs).
 
 import { invoke } from '@tauri-apps/api/core'
+import type { AnnotationRow } from '../lib/annotations/model'
 
 export interface Book {
   id: string
@@ -51,6 +52,10 @@ export const ipc = {
   searchTextGet: (bookId: string) => invoke<[number, string][]>('search_text_get', { bookId }),
   searchTextPut: (bookId: string, chapters: [number, string][]) =>
     invoke<void>('search_text_put', { bookId, chapters }),
+  annotationsList: (bookId: string) => invoke<AnnotationRow[]>('annotations_list', { bookId }),
+  annotationSave: (annotation: AnnotationRow) => invoke<void>('annotation_save', { annotation }),
+  annotationDelete: (id: string) => invoke<void>('annotation_delete', { id }),
+  annotationRestore: (id: string) => invoke<void>('annotation_restore', { id }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
   copyText: (text: string) => invoke<void>('copy_text', { text }),
   bookSettingsGet: (bookId: string) =>

@@ -62,3 +62,31 @@ describe('E5 write failures', () => {
     expect(messages.current?.text).toBe(SAVE_FAILED_TEXT)
   })
 })
+
+describe('E5 transient failures', () => {
+  it('a write that fails without a disk error is retried before the Retry message', async () => {
+    const messages = new MessageQueue({ now: () => 0 })
+    const queue = new WriteQueue(messages)
+    let calls = 0
+    await queue.write('position', async () => {
+      if (++calls < 2) throw new TypeError('Load failed')
+    })
+    expect(calls).toBe(2)
+    expect(queue.pendingKeys).toEqual([])
+    expect(messages.current).toBeNull()
+    expect(queue.lastError?.error).toBe('TypeError: Load failed')
+  })
+
+  it('gives up after a few attempts, keeping the write', async () => {
+    const messages = new MessageQueue({ now: () => 0 })
+    const queue = new WriteQueue(messages)
+    let calls = 0
+    await queue.write('position', async () => {
+      calls++
+      throw new TypeError('Load failed')
+    })
+    expect(calls).toBe(3)
+    expect(queue.pendingKeys).toEqual(['position'])
+    expect(messages.current?.text).toBe(SAVE_FAILED_TEXT)
+  })
+})

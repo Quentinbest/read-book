@@ -18,6 +18,7 @@
 //   stack slides forward and back as the reader scrolls between chapters.
 
 import 'foliate-js/view.js'
+import { compare as compareCfi } from 'foliate-js/epubcfi.js'
 import type { Book, View } from 'foliate-js/view.js'
 import {
   CHUNK_THRESHOLD_BYTES,
@@ -34,6 +35,16 @@ import { extractText, offsetAt, rangeFor, type ExtractedText } from '../lib/sear
 import { MIN_SIDE_MARGIN, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
+import { locate, quoteAt, type Placement, type TextQuote } from '../lib/annotations/anchor'
+
+/** Reading order of two CFIs (A8): negative, zero or positive. */
+export function cfiOrder(a: string, b: string): number {
+  try {
+    return compareCfi(a, b)
+  } catch {
+    return a < b ? -1 : a > b ? 1 : 0
+  }
+}
 
 export interface ReaderLocation {
   cfi: string
@@ -121,6 +132,8 @@ export interface SelectionEvent {
   start: number
   end: number
   text: string
+  /** A9: the text quote kept beside the CFI. */
+  quote: TextQuote
   /** The first and last selected lines, in window coordinates (A1 placement). */
   first: DOMRect
   last: DOMRect
@@ -134,55 +147,120 @@ export interface HighlightMark {
   note: boolean
 }
 export type HighlightColors = Record<HighlightMark['color'], { tint: string; underline: string }>
+/**
+ * A4: highlight colours, and for WebKit without custom highlights the overlay
+ * tints and whether they multiply with the page (light themes).
+ */
+export interface HighlightStyle {
+  colors: HighlightColors
+  overlayTints: Record<HighlightMark['color'], string>
+  multiply: boolean
+}
+
+/** The line boxes of a range's text only (element boxes would tint whole paragraphs). */
+function textRects(range: Range): DOMRect[] {
+  const doc = range.startContainer.ownerDocument
+  if (!doc) return []
+  const root = range.commonAncestorContainer
+  const out: DOMRect[] = []
+  const walker = doc.createTreeWalker(root.nodeType === 3 ? root.parentNode! : root, 4)
+  const part = doc.createRange()
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!range.intersectsNode(n)) continue
+    const text = n as Text
+    part.setStart(text, n === range.startContainer ? range.startOffset : 0)
+    part.setEnd(text, n === range.endContainer ? range.endOffset : text.data.length)
+    for (const r of Array.from(part.getClientRects())) if (r.width > 0 && r.height > 0) out.push(r)
+  }
+  return out
+}
+
+/** The edge of the text column beside a line (for the note dot, A6; Screen 07). */
+function columnEdge(range: Range, line: DOMRect, rtl: boolean): number {
+  let el: Element | null =
+    range.startContainer.nodeType === 1
+      ? (range.startContainer as Element)
+      : range.startContainer.parentElement
+  const view = range.startContainer.ownerDocument?.defaultView
+  while (el && view && view.getComputedStyle(el).display.startsWith('inline')) el = el.parentElement
+  const box = Array.from(el?.getClientRects() ?? []).find(
+    (r) => r.top <= line.top + 1 && r.bottom >= line.bottom - 1 && r.left <= line.left + 1,
+  )
+  return rtl ? (box?.left ?? line.left) : (box?.right ?? line.right)
+}
+
+/** The document's CSS custom highlight registry, where WebKit has one (17.2+). */
+function customHighlights(
+  doc: Document,
+): { set(name: string, h: unknown): void; delete(name: string): void } | null {
+  const win = doc.defaultView as unknown as {
+    CSS?: { highlights?: { set(n: string, h: unknown): void; delete(n: string): void } }
+    Highlight?: unknown
+  } | null
+  return win?.CSS?.highlights && win.Highlight ? win.CSS.highlights : null
+}
 
 function drawHighlight(
-  rects: DOMRectList,
-  o: { tint: string; underline: string; dot: boolean },
+  _rects: DOMRectList,
+  o: { tint: string | null; underline: string; dot: boolean; range: Range; multiply: boolean },
 ): SVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const g = document.createElementNS(ns, 'g')
-  const list = Array.from(rects).filter((r) => r.width > 0)
-  for (const r of list) {
-    const tint = document.createElementNS(ns, 'rect')
-    tint.setAttribute('x', String(r.left))
-    tint.setAttribute('y', String(r.top))
-    tint.setAttribute('width', String(r.width))
-    tint.setAttribute('height', String(r.height))
-    tint.setAttribute('fill', o.tint)
-    const line = document.createElementNS(ns, 'rect')
-    line.setAttribute('x', String(r.left))
-    line.setAttribute('y', String(r.bottom - 2))
-    line.setAttribute('width', String(r.width))
-    line.setAttribute('height', '2')
-    line.setAttribute('fill', o.underline)
-    g.append(tint, line)
+  // The overlay lies over the text: on light themes the tint multiplies with the
+  // page, so text shows through as ink on the tint; Night's tints are translucent.
+  const tints = document.createElementNS(ns, 'g')
+  tints.setAttribute('data-linen-tints', '')
+  if (o.multiply) tints.style.mixBlendMode = 'multiply'
+  g.append(tints)
+  const doc = o.range.startContainer.ownerDocument
+  const style = doc?.body ? doc.defaultView?.getComputedStyle(doc.body) : null
+  const vertical = style?.writingMode.startsWith('vertical') ?? false
+  const rtl = style?.direction === 'rtl'
+  const list = textRects(o.range)
+  const rect = (x: number, y: number, w: number, h: number, fill: string, into = g) => {
+    const el = document.createElementNS(ns, 'rect')
+    el.setAttribute('x', String(x))
+    el.setAttribute('y', String(y))
+    el.setAttribute('width', String(w))
+    el.setAttribute('height', String(h))
+    el.setAttribute('fill', fill)
+    into.append(el)
   }
-  if (o.dot && list[0]) {
-    // A6: a dot in the margin beside the passage's first line.
+  for (const r of list) {
+    if (o.tint) rect(r.left, r.top, r.width, r.height, o.tint, tints)
+    // A4: a 2 px underline; under vertical text it runs down the right side.
+    if (vertical) rect(r.right - 2, r.top, 2, r.height, o.underline)
+    else rect(r.left, r.bottom - 2, r.width, 2, o.underline)
+  }
+  if (o.dot && list[0] && !vertical) {
+    // A6: a dot in the margin beside the passage's first line (Screen 07).
+    const edge = columnEdge(o.range, list[0], rtl)
     const dot = document.createElementNS(ns, 'circle')
-    dot.setAttribute('cx', String(list[0].left - 12))
+    dot.setAttribute('cx', String(rtl ? edge - 9.5 : edge + 9.5))
     dot.setAttribute('cy', String(list[0].top + list[0].height / 2))
-    dot.setAttribute('r', '3')
+    dot.setAttribute('r', '3.5')
     dot.setAttribute('fill', o.underline)
+    dot.setAttribute('data-linen-note-dot', '')
     g.append(dot)
   }
   return g
 }
 
 /** V8: a jump pulses the passage for 1.2 s. */
-function drawPulse(rects: DOMRectList, o: { color: string }): SVGElement {
+function drawPulse(_rects: DOMRectList, o: { color: string; range: Range }): SVGElement {
   const ns = 'http://www.w3.org/2000/svg'
   const g = document.createElementNS(ns, 'g')
-  for (const r of Array.from(rects)) {
+  for (const r of textRects(o.range)) {
     const el = document.createElementNS(ns, 'rect')
-    el.setAttribute('x', String(r.left - 3))
-    el.setAttribute('y', String(r.top - 2))
-    el.setAttribute('width', String(r.width + 6))
-    el.setAttribute('height', String(r.height + 4))
-    el.setAttribute('rx', '4')
+    // Screen 08: a 3 px outline 2 px outside the passage.
+    el.setAttribute('x', String(r.left - 3.5))
+    el.setAttribute('y', String(r.top - 3.5))
+    el.setAttribute('width', String(r.width + 7))
+    el.setAttribute('height', String(r.height + 7))
+    el.setAttribute('rx', '2')
     el.setAttribute('fill', 'none')
     el.setAttribute('stroke', o.color)
-    el.setAttribute('stroke-width', '2')
+    el.setAttribute('stroke-width', '3')
     g.append(el)
   }
   g.animate([{ opacity: 1 }, { opacity: 1, offset: 0.6 }, { opacity: 0 }], {
@@ -269,9 +347,12 @@ export class ReaderEngine {
   #hover = new Set<Listener<string | null>>()
   #selection = new Set<Listener<SelectionEvent | null>>()
   #highlightClick = new Set<Listener<{ id: string; first: DOMRect; last: DOMRect }>>()
-  #highlights: { marks: HighlightMark[]; colors: HighlightColors } | null = null
+  #highlights: { marks: HighlightMark[]; style: HighlightStyle } | null = null
   #hlKeys = new WeakMap<object, string[]>()
   #hadSelection = false
+  #caret: { color: string } | null = null
+  /** Tests turn this off to exercise the overlay path older WebKit takes (A4). */
+  useCustomHighlights = true
   /** Extracted text of live documents, for search offsets (F5). */
   #texts = new WeakMap<Document, ExtractedText>()
   #marks: SearchMarks | null = null
@@ -384,6 +465,145 @@ export class ReaderEngine {
     return () => this.#hover.delete(l)
   }
 
+  // ---- A11, T3: caret browsing. WebKit has none, so the caret is ours: a
+  // collapsed selection in the page, drawn in the overlay; the arrows move it and
+  // ⇧ + arrows extend it with Selection.modify (a selection is then reported as
+  // usual, A1). Moving past the page turns it.
+
+  get caretBrowsing(): boolean {
+    return this.#caret !== null
+  }
+
+  /** F7: turn caret browsing on (at the start of the page, if nothing is selected) or off. */
+  setCaretBrowsing(color: string | null) {
+    this.#caret = color ? { color } : null
+    const c = this.#pageContents()
+    if (!c) return
+    if (color) {
+      const sel = c.doc.getSelection()
+      if (!sel?.rangeCount || !this.#onPage(sel.getRangeAt(0))) this.#caretToPageStart()
+      c.doc.body?.focus?.()
+    }
+    this.#drawCaret()
+  }
+
+  /**
+   * Handle an arrow, Home or End key while caret browsing. Returns true when the
+   * key was used (the reader must not turn the page for it).
+   */
+  caretKey(e: KeyboardEvent): boolean {
+    if (!this.#caret || e.metaKey || e.ctrlKey) return false
+    const c = this.#pageContents()
+    const sel = c?.doc.getSelection() as
+      | (Selection & {
+          modify?: (alter: string, direction: string, granularity: string) => void
+        })
+      | null
+    if (!c || !sel?.modify) return false
+    const vertical = this.#vertical()
+    const rtl = this.rtl
+    const moves: Record<string, [string, string]> = {
+      ArrowLeft: vertical
+        ? ['forward', 'line']
+        : [rtl ? 'forward' : 'backward', e.altKey ? 'word' : 'character'],
+      ArrowRight: vertical
+        ? ['backward', 'line']
+        : [rtl ? 'backward' : 'forward', e.altKey ? 'word' : 'character'],
+      ArrowUp: vertical ? ['backward', 'character'] : ['backward', e.altKey ? 'paragraph' : 'line'],
+      ArrowDown: vertical ? ['forward', 'character'] : ['forward', e.altKey ? 'paragraph' : 'line'],
+      Home: ['backward', 'lineboundary'],
+      End: ['forward', 'lineboundary'],
+    }
+    const move = moves[e.key]
+    if (!move) return false
+    if (!sel.rangeCount) this.#caretToPageStart()
+    sel.modify(e.shiftKey ? 'extend' : 'move', move[0], move[1])
+    this.#drawCaret()
+    // Keep the caret on screen: past the page's end or start, turn the page.
+    const focus = c.doc.createRange()
+    if (sel.focusNode) focus.setStart(sel.focusNode, sel.focusOffset)
+    if (sel.focusNode && !this.#onPage(focus))
+      void this.turn(move[0] === 'forward' ? 'next' : 'prev').then(() => this.#drawCaret())
+    return true
+  }
+
+  #pageContents(): { doc: Document; index: number; overlayer?: unknown } | null {
+    const index = this.location?.sectionIndex
+    const c = this.#current.renderer
+      ?.getContents()
+      .find((x) => x.doc && (index === undefined || x.index === index))
+    return c?.doc ? (c as { doc: Document; index: number; overlayer?: unknown }) : null
+  }
+
+  /** Whether a range starts on the page shown. */
+  #onPage(range: Range): boolean {
+    const shown = this.#current.lastLocation?.range
+    if (!shown || shown.startContainer.ownerDocument !== range.startContainer.ownerDocument)
+      return false
+    try {
+      return (
+        // The page starts at or before it, and ends at or after its start.
+        shown.compareBoundaryPoints(Range.START_TO_START, range) <= 0 &&
+        shown.compareBoundaryPoints(Range.START_TO_END, range) >= 0
+      )
+    } catch {
+      return false
+    }
+  }
+
+  #caretToPageStart() {
+    const shown = this.#current.lastLocation?.range
+    const doc = shown?.startContainer.ownerDocument
+    const sel = doc?.getSelection()
+    if (!shown || !sel) return
+    sel.removeAllRanges()
+    sel.collapse(shown.startContainer, shown.startOffset)
+  }
+
+  #drawCaret() {
+    for (const c of this.#current.renderer?.getContents() ?? []) {
+      const layer = c.overlayer as MarkLayer | undefined
+      if (!layer || !c.doc) continue
+      layer.remove('linen-caret')
+      const sel = c.doc.getSelection()
+      if (!this.#caret || !sel?.focusNode || !sel.isCollapsed) continue
+      const range = c.doc.createRange()
+      range.setStart(sel.focusNode, sel.focusOffset)
+      const vertical = this.#vertical()
+      const color = this.#caret.color
+      ;(layer as unknown as { add: (...a: unknown[]) => void }).add(
+        'linen-caret',
+        range,
+        (rects: DOMRectList) => {
+          const ns = 'http://www.w3.org/2000/svg'
+          const r = rects[0] ?? range.getBoundingClientRect()
+          const el = document.createElementNS(ns, 'rect')
+          el.setAttribute('x', String(vertical ? r.left : r.left - 1))
+          el.setAttribute('y', String(vertical ? r.top - 1 : r.top))
+          el.setAttribute('width', String(vertical ? r.width : 2))
+          el.setAttribute('height', String(vertical ? 2 : r.height))
+          el.setAttribute('fill', color)
+          el.setAttribute('data-linen-caret', '')
+          return el
+        },
+        {},
+      )
+    }
+  }
+
+  /** A10: the highlight under a pointer event in the book, if any. */
+  highlightAt(e: MouseEvent): string | null {
+    const doc = (e.target as Node | null)?.ownerDocument
+    for (const c of this.#current.renderer?.getContents() ?? []) {
+      if (c.doc !== doc) continue
+      const layer = c.overlayer as
+        { hitTest?: (p: { x: number; y: number }) => [string?] } | undefined
+      const [key] = layer?.hitTest?.({ x: e.clientX, y: e.clientY }) ?? []
+      return key?.startsWith('linen-hl:') ? key.slice(9) : null
+    }
+    return null
+  }
+
   /** A1: the reader selected text (or the selection went: null). */
   onSelection(l: Listener<SelectionEvent | null>) {
     this.#selection.add(l)
@@ -397,8 +617,13 @@ export class ReaderEngine {
   }
 
   /** A4, A6: draw highlights (tint, 2 px underline, note dot) in every loaded chapter. */
-  setHighlights(marks: HighlightMark[] | null, colors?: HighlightColors) {
-    this.#highlights = marks && colors ? { marks, colors } : null
+  setHighlights(marks: HighlightMark[] | null, style?: HighlightStyle) {
+    this.#highlights = marks && style ? { marks, style } : null
+    for (const view of this.#views()) this.#drawHighlights(view)
+  }
+
+  /** Draw the highlights again with what was last set (tests switch drawing paths). */
+  redrawHighlights() {
     for (const view of this.#views()) this.#drawHighlights(view)
   }
 
@@ -444,18 +669,53 @@ export class ReaderEngine {
       for (const key of this.#hlKeys.get(layer) ?? []) layer.remove(key)
       const keys: string[] = []
       const h = this.#highlights
+      // A4: the tint goes behind the text, as a CSS custom highlight in the book's
+      // document where WebKit has them (Safari 17.2+); older WebKit multiplies an
+      // overlay tint with the page instead. Underlines and note dots are overlay drawings.
+      const registry = this.useCustomHighlights ? customHighlights(c.doc) : null
+      if (!registry)
+        for (const color of ['yellow', 'green', 'blue', 'rose'])
+          customHighlights(c.doc)?.delete(`linen-hl-${color}`)
+      const byColor: Record<string, Range[]> = {}
       for (const m of h?.marks ?? []) {
         const range = this.#cfiRange(view, m.cfi, c.doc, c.index)
         if (!range || !h) continue
+        ;(byColor[m.color] ??= []).push(range)
         const key = `linen-hl:${m.id}`
-        const colors = h.colors[m.color]
+        const colors = h.style.colors[m.color]
         ;(layer as unknown as { add: (...a: unknown[]) => void }).add(key, range, drawHighlight, {
           ...colors,
+          tint: registry ? null : h.style.overlayTints[m.color],
           dot: m.note,
+          range,
+          multiply: h.style.multiply,
         })
         keys.push(key)
       }
       this.#hlKeys.set(layer, keys)
+      if (registry) {
+        const Highlight = (
+          c.doc.defaultView as unknown as { Highlight: new (...r: Range[]) => unknown }
+        ).Highlight
+        for (const color of ['yellow', 'green', 'blue', 'rose'] as const) {
+          const ranges = byColor[color]
+          if (ranges?.length) registry.set(`linen-hl-${color}`, new Highlight(...ranges))
+          else registry.delete(`linen-hl-${color}`)
+        }
+        let style = c.doc.getElementById('linen-highlight-style')
+        if (!style) {
+          style = c.doc.createElement('style')
+          style.id = 'linen-highlight-style'
+          c.doc.head?.append(style)
+        }
+        style.textContent = h
+          ? Object.entries(h.style.colors)
+              .map(
+                ([color, v]) => `::highlight(linen-hl-${color}) { background-color: ${v.tint}; }`,
+              )
+              .join('\n')
+          : ''
+      }
     }
   }
 
@@ -468,7 +728,7 @@ export class ReaderEngine {
       if (!layer || !c.doc) continue
       const range = this.#cfiRange(view, cfi, c.doc, c.index)
       if (!range) continue
-      layer.add('linen-pulse', range, drawPulse, { color })
+      layer.add('linen-pulse', range, drawPulse, { color, range })
       setTimeout(() => layer.remove('linen-pulse'), 1300)
     }
   }
@@ -494,8 +754,122 @@ export class ReaderEngine {
     const end = offsetAt(x, range.endContainer, range.endOffset)
     if (!rects || start === null || end === null || end <= start) return
     this.#hadSelection = true
-    const event = { index, range, cfi: view.getCFI(index, range), start, end, text, ...rects }
+    const event = {
+      index,
+      range,
+      cfi: view.getCFI(index, range),
+      start,
+      end,
+      text,
+      quote: quoteAt(x.text, start, end),
+      ...rects,
+    }
     this.#selection.forEach((l) => l(event))
+  }
+
+  /** A8: the chapter a CFI points into, or null if it does not resolve in this book. */
+  cfiIndex(cfi: string): number | null {
+    try {
+      const r = this.#current.resolveNavigation(cfi) as { index: number } | undefined
+      return r && Number.isInteger(r.index) && this.#book?.sections[r.index] ? r.index : null
+    } catch {
+      return null
+    }
+  }
+
+  /**
+   * A9, B3: place text quotes in this edition of the book. Each is tried in its old
+   * CFI's chapter first, with the old position as a tie-break; then in every other
+   * chapter, where only a single placement in the whole book counts. Null means
+   * “Couldn't place”; nothing is put at a guessed position.
+   */
+  async placeQuotes(
+    items: { quote: TextQuote; cfi: string }[],
+  ): Promise<({ index: number; cfi: string; quote: TextQuote; how: Placement['how'] } | null)[]> {
+    const view = this.#current
+    const sections = this.#book?.sections ?? []
+    const chapters = new Map<number, Promise<{ doc: Document; x: ExtractedText } | null>>()
+    const chapter = (index: number) => {
+      let c = chapters.get(index)
+      if (!c) {
+        c = (async () => {
+          const doc = await sections[index]?.createDocument?.().catch(() => null)
+          const root = doc?.body ?? doc?.documentElement
+          return doc && root ? { doc, x: extractText(root) } : null
+        })()
+        chapters.set(index, c)
+      }
+      return c
+    }
+    const place = async (index: number, quote: TextQuote, oldCfi: string | null) => {
+      const c = await chapter(index)
+      if (!c) return null
+      let hint: number | undefined
+      if (oldCfi)
+        try {
+          const r = this.#cfiRange(view, oldCfi, c.doc, index)
+          hint = r ? (offsetAt(c.x, r.startContainer, r.startOffset) ?? undefined) : undefined
+        } catch {
+          hint = undefined
+        }
+      const p = locate(c.x.text, quote, hint)
+      const range = p && rangeFor(c.x, p.start, p.end)
+      return p && range
+        ? {
+            index,
+            cfi: view.getCFI(index, range),
+            quote: quoteAt(c.x.text, p.start, p.end),
+            how: p.how,
+          }
+        : null
+    }
+    const out = []
+    for (const { quote, cfi } of items) {
+      const first = this.cfiIndex(cfi)
+      let found = first === null ? null : await place(first, quote, cfi)
+      if (!found) {
+        const elsewhere = []
+        for (let i = 0; i < sections.length && elsewhere.length < 2; i++)
+          if (i !== first) {
+            const p = await place(i, quote, null)
+            if (p) elsewhere.push(p)
+          }
+        // The same passage in two chapters: do not guess.
+        found = elsewhere.length === 1 ? elsewhere[0] : null
+      }
+      out.push(found)
+    }
+    return out
+  }
+
+  /**
+   * A6: where a highlight is on screen, in window coordinates: its first and last
+   * lines and the edge of the text column beside the first (for the margin note).
+   */
+  passageBox(cfi: string): { first: DOMRect; last: DOMRect; edge: number } | null {
+    const view = this.#current
+    for (const c of view.renderer?.getContents() ?? []) {
+      if (!c.doc) continue
+      const range = this.#cfiRange(view, cfi, c.doc, c.index)
+      if (!range) continue
+      const rects = textRects(range)
+      const frame = c.doc.defaultView?.frameElement?.getBoundingClientRect()
+      if (!rects.length || !frame) return null
+      const rtl = c.doc.body
+        ? c.doc.defaultView?.getComputedStyle(c.doc.body).direction === 'rtl'
+        : false
+      const move = (r: DOMRect) =>
+        new DOMRect(r.left + frame.left, r.top + frame.top, r.width, r.height)
+      const firstVisible =
+        rects.find((r) => r.right + frame.left > 0 && r.left + frame.left < window.innerWidth) ??
+        rects[0]
+      return {
+        first: move(firstVisible),
+        last: move(rects[rects.length - 1]),
+        edge: columnEdge(range, firstVisible, !!rtl) + frame.left,
+      }
+    }
+    return null
   }
 
   /** F5: a Range for extracted-text offsets in a live document (same extractor as the index). */
@@ -1096,6 +1470,7 @@ export class ReaderEngine {
     view.addEventListener('create-overlay', () => {
       this.#drawMarks(view)
       this.#drawHighlights(view)
+      this.#drawCaret()
     })
     // A5: a plain click on a highlight (not the end of a drag that made a selection).
     view.addEventListener('show-annotation', (e) => {
@@ -1686,6 +2061,7 @@ export class ReaderEngine {
       if (e.shiftKey || e.key === 'Shift') report()
     })
     doc.addEventListener('selectionchange', () => {
+      if (this.#caret) this.#drawCaret()
       if (doc.getSelection()?.isCollapsed && this.#hadSelection) report()
     })
     // N9: footnote asides that the text refers to are read in the peek, not in the flow.
@@ -1770,6 +2146,13 @@ export class ReaderEngine {
       reason ?? (detail.reason as ReaderLocation['reason']) ?? 'page',
     )
     this.#relocate.forEach((l) => l(loc))
+    // A11: a page turned by other means takes the caret along (a selection stays put).
+    if (this.#caret && view === this.#current) {
+      const sel = this.#pageContents()?.doc.getSelection()
+      const at = sel?.rangeCount ? sel.getRangeAt(0) : null
+      if (!at || (at.collapsed && !this.#onPage(at))) this.#caretToPageStart()
+      this.#drawCaret()
+    }
   }
 
   #toLocation(

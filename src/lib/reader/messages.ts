@@ -26,6 +26,8 @@ export interface MessageInput {
   politeness?: 'polite' | 'assertive'
   /** Messages that must stay until handled (E5 save failure) have no timer. */
   persistent?: boolean
+  /** How ⌘K › Recently closed names it, when the text alone would not say which (A7). */
+  closedLabel?: string
 }
 
 export interface Message extends Required<
@@ -33,6 +35,7 @@ export interface Message extends Required<
 > {
   id: number
   action?: MessageAction
+  closedLabel?: string
   /** Time left on the timer, frozen while paused. */
   remainingMs: number
 }
@@ -85,6 +88,7 @@ export class MessageQueue {
       id: this.#nextId++,
       text: input.text,
       action: input.action,
+      closedLabel: input.closedLabel,
       politeness: input.politeness ?? 'polite',
       persistent: input.persistent ?? false,
       remainingMs: MESSAGE_TIMEOUT_MS,

@@ -364,6 +364,26 @@ def note_books():
     ], resources={"plate.png": (png(320, 200, rng), "image/png")})
 
 
+def edited_books(chapters):
+    """A9, B3: one book in two editions (same identifier), the second edited in known
+    ways: a paragraph inserted before a passage, punctuation changed inside one, a
+    passage deleted; a passage in another chapter is untouched."""
+    ident = "urn:uuid:5a1e0000-0000-4000-8000-0000000a9001"
+    first = [chapters[0], chapters[1], chapters[2]]
+    loomings_title, loomings = chapters[0]
+    marker = "<p>Call me Ishmael"
+    assert marker in loomings
+    revised_loomings = (
+        loomings.replace(marker, "<p>A paragraph the publisher added to this edition, before everything else.</p>\n" + marker, 1)
+        .replace("damp, drizzly November in my soul", "damp; drizzly November in my soul", 1)
+        .replace("This is my substitute for pistol and ball. ", "", 1)
+    )
+    assert revised_loomings.count("pistol and ball") == 0
+    revised = [(loomings_title, revised_loomings), chapters[1], chapters[2]]
+    simple_book(OUT / "anchoring-first.epub", "Anchoring test", first, ident=ident)
+    simple_book(OUT / "anchoring-revised.epub", "Anchoring test", revised, ident=ident)
+
+
 def large_books(chapters):
     rng = random.Random(20260924)
     images = {f"plate-{i}.png": (png(1800, 1800, rng), "image/png") for i in range(10)}  # ~97 MB, incompressible
@@ -405,6 +425,7 @@ def main() -> int:
     broken_books(chapters)
     large_books(chapters)
     note_books()
+    edited_books(chapters)
     for p in sorted(OUT.iterdir()):
         print(f"{p.stat().st_size:>12,}  {p.name}")
     return 0

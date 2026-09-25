@@ -74,7 +74,6 @@ export function readerStyles(o: ReaderStyleOptions): string {
       text-align: start !important;
     }
     pre { white-space: pre !important; }
-    ::selection { background: ${night ? 'rgba(211,154,115,.35)' : 'rgba(140,74,47,.22)'}; }
   `
 }
 

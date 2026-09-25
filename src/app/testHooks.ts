@@ -16,6 +16,9 @@ export interface TestHooks {
     pagesExact: () => boolean
     /** F1–F8: the reader's search state. */
     search: import('../reader/search.svelte').SearchState
+    /** A4–A9: the book's highlights and notes, and what ⌘Z can undo. */
+    annotations: import('../reader/annotations.svelte').Annotations
+    undo: import('../reader/annotations.svelte').UndoStack
   }
   messages?: MessageQueue
   registry?: CommandRegistry
@@ -26,6 +29,8 @@ export interface TestHooks {
   quitRequested?: boolean
   /** External links the reader would have opened; tests never open the system browser (N10). */
   externalOpened?: string[]
+  /** A10: the native context menu's items, recorded instead of shown (menus block the harness). */
+  contextMenu?: { labels: string[]; run: (label: string) => void }
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

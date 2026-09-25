@@ -33,6 +33,8 @@ export interface Theme {
   /** Dark tooltips (the scrubber preview, Screen 03): ground and text. */
   tooltip: string
   tooltipInk: string
+  /** The selection bar (A1, V2; Screens 06 and 14): ink-coloured, inverted to light at Night. */
+  selectionBar: { ground: string; ink: string; divider: string; ring: string; hover: string }
   highlight: Record<HighlightColor, { tint: string; underline: string }>
   search: { tint: string; outline: string; activeTint: string; activeOutline: string }
   /** Colour scheme for native controls and scrollbars. */
@@ -93,6 +95,14 @@ export const THEMES: Record<ThemeName, Theme> = {
     popoverBorder: '#D9D1C3',
     tooltip: '#2A2622',
     tooltipInk: '#F3EEE6',
+    // As drawn in Screen 06.
+    selectionBar: {
+      ground: '#2A2622',
+      ink: '#F3EEE6',
+      divider: '#4A443D',
+      ring: 'rgba(243,238,230,.55)',
+      hover: 'rgba(255,255,255,.1)',
+    },
     highlight: LIGHT_HIGHLIGHTS,
     search: LIGHT_SEARCH,
     scheme: 'light',
@@ -116,6 +126,14 @@ export const THEMES: Record<ThemeName, Theme> = {
     popoverBorder: '#D3C4A9',
     tooltip: '#2E261D',
     tooltipInk: '#F5EBDA',
+    // PROVISIONAL (G5): Screen 06's bar with Sepia's tooltip ground and ink.
+    selectionBar: {
+      ground: '#2E261D',
+      ink: '#F5EBDA',
+      divider: '#4F4438',
+      ring: 'rgba(245,235,218,.55)',
+      hover: 'rgba(255,255,255,.1)',
+    },
     highlight: SEPIA_HIGHLIGHTS,
     search: SEPIA_SEARCH,
     scheme: 'light',
@@ -139,6 +157,14 @@ export const THEMES: Record<ThemeName, Theme> = {
     popoverBorder: '#3A3733',
     tooltip: '#D9D3C7',
     tooltipInk: '#1B1A18',
+    // As drawn in Screen 14: the bar inverts to a light surface (13.6:1 against the page).
+    selectionBar: {
+      ground: '#E9E3D8',
+      ink: '#22201C',
+      divider: '#C9C1B3',
+      ring: '#22201C',
+      hover: 'rgba(34,32,28,.08)',
+    },
     // Approved 2026-09-24 (C7, docs/decisions.md): S4 draws Night tints at 16%
     // alpha, which leaves highlighted text at 8.2–8.8:1, under X1's 9:1. At 11%
     // every colour reaches ≥ 9.2:1. Underline colours are as approved.
@@ -234,7 +260,32 @@ export function contrast(a: string, b: string): number {
   return (x + 0.05) / (y + 0.05)
 }
 
+/**
+ * A4 on WebKit without CSS custom highlights (before Safari 17.2): the tint is
+ * drawn over the text and multiplied with it, so it is lightened first, to show
+ * the approved tint on the page (exactly, where no channel is lighter than the page).
+ */
+export function multipliedTint(t: Theme, c: HighlightColor): string {
+  const [r, g, b] = parseColor(t.highlight[c].tint)
+  const ground = parseColor(t.ground)
+  return (
+    '#' +
+    [r, g, b]
+      .map((v, i) => Math.min(255, Math.round((v * 255) / Math.max(1, ground[i]))))
+      .map((v) => v.toString(16).padStart(2, '0'))
+      .join('')
+  )
+}
+
 // ---------------------------------------------------------------- CSS
+
+/**
+ * The colour dot for a highlight colour (A1, A6, A8). Light themes show the tint,
+ * as Screens 06–08 draw; Night's tints are faint, so Screen 14 shows the underline colour.
+ */
+export function highlightSwatch(t: Theme, c: HighlightColor): string {
+  return t.scheme === 'dark' ? t.highlight[c].underline : t.highlight[c].tint
+}
 
 const kebab = (s: string) => s.replace(/[A-Z]/g, (m) => '-' + m.toLowerCase())
 
@@ -263,7 +314,9 @@ export function themeVariables(t: Theme): Record<string, string> {
   for (const c of HIGHLIGHT_COLORS) {
     vars[`--hl-${c}-tint`] = t.highlight[c].tint
     vars[`--hl-${c}-underline`] = t.highlight[c].underline
+    vars[`--hl-${c}-swatch`] = highlightSwatch(t, c)
   }
+  for (const [k, v] of Object.entries(t.selectionBar)) vars[`--selbar-${k}`] = v
   for (const [k, v] of Object.entries(t.search)) vars[`--search-${kebab(k)}`] = v
   vars['--hover-wash'] = over(`rgba(${parseColor(t.ink).slice(0, 3).join(',')},.06)`, t.ground)
   return vars

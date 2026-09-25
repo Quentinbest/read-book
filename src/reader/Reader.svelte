@@ -26,7 +26,15 @@
   import { BookSearch } from './bookSearch'
   import ImageView from './ImageView.svelte'
   import { noteText } from './notes'
-  import type { ImageEvent, NoteEvent } from './engine'
+  import type { ImageEvent, NoteEvent, SelectionEvent } from './engine'
+  import { cfiOrder } from './engine'
+  import SelectionBar from './SelectionBar.svelte'
+  import NoteCard from './NoteCard.svelte'
+  import NotesPanel from './NotesPanel.svelte'
+  import { Annotations, COLOR_NAMES, COLORS, UndoStack } from './annotations.svelte'
+  import type { Annotation, HighlightColor } from '../lib/annotations/model'
+  import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu'
+  import { multipliedTint, parseColor } from '../lib/theme/tokens'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
   import { bookMediaUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
@@ -328,6 +336,327 @@
     wasSearchOpen = open
   })
 
+  // ---- Selection and annotation (A1–A11; Screens 06, 07, 08, 14, 15)
+  // The reader is recreated for each book ({#key}), so the book it starts with is its book.
+  // svelte-ignore state_referenced_locally
+  const annotations = new Annotations({
+    bookId: book.id,
+    contentHash: book.content_hash,
+    writes,
+    api: { save: ipc.annotationSave, delete: ipc.annotationDelete },
+  })
+  const undo = new UndoStack()
+  /** Undo messages from this session; they go when the book closes (their action needs it). */
+  const annotationMessages: number[] = []
+  let annotationsReady = $state(false)
+  let selection = $state.raw<SelectionEvent | null>(null)
+  let bar = $state.raw<{
+    mode: 'new' | 'existing' | 'attach'
+    id?: string
+    first: DOMRect
+    last: DOMRect
+  } | null>(null)
+  let selectionBar: ReturnType<typeof SelectionBar> | undefined = $state()
+  let barOpen = $derived(lanes.floating?.kind === 'selection' && bar !== null)
+  let noteFor = $state<string | null>(null)
+  let noteBefore: string | null = null
+  let noteCard: ReturnType<typeof NoteCard> | undefined = $state()
+  let noteOpen = $derived(lanes.floating?.kind === 'note' && noteFor !== null)
+  let notePlace = $state.raw<{ left: number; top: number; dotX: number; dotY: number } | null>(null)
+  let noteMode = $state<'margin' | 'sheet'>('margin')
+  let notesPanel: ReturnType<typeof NotesPanel> | undefined = $state()
+  let notesOpen = $derived(navigatorTab(lanes) === 'notes')
+  /** The highlight last jumped to from the Notes tab. */
+  let jumpedTo = $state<string | null>(null)
+  /** G11 (provisional): the highlight being re-attached to a new selection. */
+  let reattaching = $state.raw<Annotation | null>(null)
+  const NOTE_MARGIN_MIN_WIDTH = 1240
+  const NOTE_CARD_WIDTH = 256
+  const shortQuote = (q: string) => {
+    const s = q.replace(/\s+/g, ' ').trim()
+    return s.length > 40 ? s.slice(0, 40).replace(/\s+\S*$/, '') + '…' : s
+  }
+  const accentAt = (alpha: number) =>
+    `rgba(${parseColor(theme.accent).slice(0, 3).join(',')},${alpha})`
+
+  // A4: highlights are drawn from their CFIs in every loaded chapter, and again on reflow.
+  $effect(() => {
+    if (!annotationsReady || !engine) return
+    engine.setHighlights(
+      annotations.placed.map((a) => ({ id: a.id, cfi: a.cfi, color: a.color, note: !!a.note })),
+      {
+        colors: theme.highlight,
+        multiply: theme.scheme === 'light',
+        overlayTints: Object.fromEntries(
+          COLORS.map((c) => [
+            c,
+            theme.scheme === 'light' ? multipliedTint(theme, c) : theme.highlight[c].tint,
+          ]),
+        ) as Record<HighlightColor, string>,
+      },
+    )
+  })
+  // The bar and the card go with their floating layer (a page turn, Esc, another layer).
+  $effect(() => {
+    if (lanes.floating?.kind !== 'selection' && bar) bar = null
+  })
+  $effect(() => {
+    if (lanes.floating?.kind !== 'note' && noteFor) noteClosed()
+  })
+
+  /** Something changed that ⌘Z, the message's Undo and ⌘K › Recently closed can take back (B5). */
+  function offerUndo(text: string, closedLabel: string, restore: () => void) {
+    let id = 0
+    const run = undo.push(() => {
+      restore()
+      messages.withdraw(id)
+    })
+    id = messages.push({
+      text,
+      closedLabel,
+      action: { label: t.annotations.undo, shortcut: '⌘Z', run },
+    }).id
+    annotationMessages.push(id)
+  }
+
+  function onSelection(e: SelectionEvent | null) {
+    selection = e
+    if (!e) {
+      if (bar?.mode !== 'existing' && lanes.floating?.kind === 'selection')
+        dispatch({ type: 'closeFloating' })
+      return
+    }
+    // S7: a new selection dismisses popovers and peeks; the bar takes the floating lane.
+    dispatch({ type: 'selectionStart' })
+    bar = { mode: reattaching ? 'attach' : 'new', first: e.first, last: e.last }
+    dispatch({ type: 'openFloating', kind: 'selection' })
+    announce(t.annotations.barAnnounce)
+  }
+
+  function onHighlightClick(e: { id: string; first: DOMRect; last: DOMRect }) {
+    if (!annotations.get(e.id)) return
+    dispatch({ type: 'selectionStart' })
+    bar = { mode: 'existing', id: e.id, first: e.first, last: e.last }
+    dispatch({ type: 'openFloating', kind: 'selection' })
+    announce(t.annotations.barAnnounce)
+  }
+
+  function closeBar(clear: boolean) {
+    if (clear) {
+      engine?.clearSelection()
+      selection = null
+    }
+    if (lanes.floating?.kind === 'selection') dispatch({ type: 'closeFloating' })
+    bar = null
+  }
+
+  /** A4: a colour saves the highlight at once; the same range again changes its colour (B4). */
+  function highlightSelection(color: HighlightColor): Annotation | null {
+    const sel = selection
+    if (!sel) return null
+    const { annotation, previousColor } = annotations.highlight(
+      { cfi: sel.cfi, quote: sel.quote },
+      color,
+    )
+    if (previousColor && previousColor !== color) offerRecolorUndo(annotation, previousColor)
+    else announce(t.annotations.highlighted(COLOR_NAMES[color]))
+    closeBar(true)
+    return annotation
+  }
+
+  function offerRecolorUndo(a: Annotation, previous: HighlightColor) {
+    offerUndo(
+      t.annotations.recolored(COLOR_NAMES[a.color]),
+      t.annotations.restoreColor(shortQuote(a.quote.exact)),
+      () => annotations.setColor(a.id, previous),
+    )
+  }
+
+  function recolor(id: string, color: HighlightColor) {
+    const a = annotations.get(id)
+    const previous = annotations.setColor(id, color)
+    if (a && previous) offerRecolorUndo({ ...a, color }, previous)
+  }
+
+  /** A7: delete at once, with Undo; never a confirmation. */
+  function deleteAnnotation(id: string) {
+    const gone = annotations.remove(id)
+    if (!gone) return
+    if (noteFor === id) {
+      noteFor = null
+      if (lanes.floating?.kind === 'note') dispatch({ type: 'closeFloating' })
+    }
+    closeBar(false)
+    offerUndo(t.annotations.deleted, t.annotations.restore(shortQuote(gone.quote.exact)), () =>
+      annotations.restore(gone),
+    )
+    engine?.focusPage()
+  }
+
+  /** B4: Copy copies the plain text only. */
+  function copyText(text: string) {
+    void ipc.copyText(text).then(() => announce(t.annotations.copied))
+  }
+
+  function searchFor(text: string) {
+    closeBar(false)
+    searchState.setQuery(text.replace(/\s+/g, ' ').trim())
+    searchState.run()
+    openSearch()
+  }
+
+  /** A6: a note belongs to a highlight; N on a selection highlights it first. */
+  function noteOnSelection() {
+    const sel = selection
+    if (!sel) return
+    const existing = annotations.placed.find((a) => a.cfi === sel.cfi)
+    const a = existing ?? highlightSelection(annotations.lastColor)
+    closeBar(true)
+    if (a) openNote(a.id)
+  }
+
+  function openNote(id: string) {
+    const a = annotations.get(id)
+    if (!a) return
+    const box = engine?.passageBox(a.cfi)
+    noteMode = 'sheet'
+    notePlace = null
+    if (box && window.innerWidth >= NOTE_MARGIN_MIN_WIDTH) {
+      const dotX = box.edge + 9.5
+      const dotY = box.first.top + box.first.height / 2
+      const left = dotX + 36
+      if (left + NOTE_CARD_WIDTH + 16 <= window.innerWidth) {
+        noteMode = 'margin'
+        notePlace = { left, top: Math.max(8, Math.min(dotY - 23, height - 280)), dotX, dotY }
+      }
+    }
+    noteFor = id
+    noteBefore = a.note
+    dispatch({ type: 'openFloating', kind: 'note' })
+  }
+
+  /** The card closed: an emptied note can be undone (B5). */
+  function noteClosed() {
+    const id = noteFor
+    noteFor = null
+    const before = noteBefore
+    noteBefore = null
+    if (!id) return
+    const a = annotations.get(id)
+    if (a && before && !a.note)
+      offerUndo(
+        t.annotations.noteDeleted,
+        t.annotations.restoreNote(shortQuote(a.quote.exact)),
+        () => void annotations.setNote(id, before),
+      )
+  }
+
+  function closeNote() {
+    noteCard?.flush()
+    if (lanes.floating?.kind === 'note') dispatch({ type: 'closeFloating' })
+    engine?.focusPage()
+  }
+
+  // A8: the Notes tab. Choosing a highlight jumps, pulses it for 1.2 s and offers Back.
+  function openNotes() {
+    if (!notesOpen) dispatch({ type: 'openNavigator', tab: 'notes' })
+    requestAnimationFrame(() => notesPanel?.focusField())
+  }
+  async function chooseAnnotation(a: Annotation) {
+    if (location) pushJump(location, 'annotation')
+    jumpedTo = a.id
+    if (!lanes.docked) closeNavigator()
+    await engine?.goTo(a.cfi)
+    requestAnimationFrame(() => engine?.pulse(a.cfi, accentAt(0.4)))
+  }
+  function chapterOf(a: Annotation): number {
+    return engine?.cfiIndex(a.cfi) ?? -1
+  }
+
+  // G11 (provisional): Re-attach asks for the passage to be selected again.
+  function startReattach(a: Annotation) {
+    reattaching = a
+    if (!lanes.docked) closeNavigator()
+    engine?.focusPage()
+  }
+  function attachSelection() {
+    const a = reattaching
+    const sel = selection
+    if (!a || !sel) return
+    annotations.reanchor(a.id, { cfi: sel.cfi, quote: sel.quote }, true)
+    reattaching = null
+    closeBar(true)
+    messages.push({ text: t.annotations.reattached })
+  }
+  function cancelReattach() {
+    reattaching = null
+    closeBar(true)
+  }
+
+  /** B3: highlights made against another edition of the file are placed again. */
+  async function reanchorStale() {
+    const stale = annotations.stale
+    if (!stale.length || !engine) return
+    const placed = await engine.placeQuotes(stale.map((a) => ({ quote: a.quote, cfi: a.cfi })))
+    let lost = 0
+    stale.forEach((a, i) => {
+      const p = placed[i]
+      annotations.reanchor(a.id, p ? { cfi: p.cfi, quote: p.quote } : null)
+      if (!p) lost++
+    })
+    if (lost)
+      annotationMessages.push(
+        messages.push({
+          text: t.annotations.unplacedAfterUpdate(lost),
+          action: { label: t.annotations.show, run: openNotes },
+        }).id,
+      )
+  }
+
+  /** A10: right-click on a selection or a highlight gives the same actions, natively. */
+  async function contextMenu(e: MouseEvent) {
+    const sel = selection
+    const hit = sel ? null : engine?.highlightAt(e)
+    const existing = hit ? annotations.get(hit) : null
+    if (!sel && !existing) return
+    e.preventDefault()
+    const entries: ({ label: string; run: () => void } | null)[] = [
+      ...(['yellow', 'green', 'blue', 'rose'] as const).map((c) => ({
+        label: `Highlight ${COLOR_NAMES[c]}`,
+        run: () => void (existing ? recolor(existing.id, c) : highlightSelection(c)),
+      })),
+      null,
+      {
+        label: t.annotations.note,
+        run: () => (existing ? openNote(existing.id) : noteOnSelection()),
+      },
+      {
+        label: t.annotations.copy,
+        run: () => copyText(existing ? existing.quote.exact : (sel?.text ?? '')),
+      },
+      existing
+        ? { label: t.annotations.delete, run: () => deleteAnnotation(existing.id) }
+        : { label: t.annotations.search, run: () => searchFor(sel?.text ?? '') },
+    ]
+    // The harness cannot dismiss a native menu: it gets the entries instead.
+    if (testHooks) {
+      const actions = entries.filter((x) => x !== null)
+      testHooks.contextMenu = {
+        labels: actions.map((x) => x.label),
+        run: (label) => actions.find((x) => x.label === label)?.run(),
+      }
+      return
+    }
+    const items = await Promise.all(
+      entries.map((x) =>
+        x
+          ? MenuItem.new({ text: x.label, action: x.run })
+          : PredefinedMenuItem.new({ item: 'Separator' }),
+      ),
+    )
+    await (await Menu.new({ items })).popup()
+  }
+
   // ---- The ⋯ menu (Screen 03): every command, as in the menu bar and ⌘K
   let moreOpen = $derived(lanes.floating?.kind === 'more')
   let moreAnchor = $state<DOMRect | null>(null)
@@ -453,6 +782,7 @@
 
   function dispatch(e: ReaderEvent) {
     const { state, effects } = reduce(lanes, e)
+    for (const fx of effects) if (fx.type === 'saveNote') noteCard?.flush()
     lanes = state
     for (const fx of effects) if (fx.type === 'focusText') engine?.focusPage()
   }
@@ -602,6 +932,11 @@
         e.preventDefault()
         return
       }
+    }
+    // A11: while caret browsing, the arrows move the caret (⇧ extends the selection).
+    if (engine?.caretKey(e)) {
+      e.preventDefault()
+      return
     }
     // I10: Space on a focused button presses the button.
     const target = e.target
@@ -754,6 +1089,8 @@
           bookId: book.id,
           pagesExact: () => pages?.exact ?? false,
           search: searchState,
+          annotations,
+          undo,
         }
       }
       relayout()
@@ -765,15 +1102,25 @@
       cleanups.push(engine.onNote(onNote))
       cleanups.push(engine.onImage(onImage))
       cleanups.push(engine.onLinkHover((href) => (hoverUrl = href)))
-      // A click in the text closes the peek (it is not a modal, S8).
+      cleanups.push(engine.onSelection(onSelection))
+      cleanups.push(engine.onHighlightClick(onHighlightClick))
+      // A click in the text closes the peek, a clicked highlight's bar and the note
+      // card (none is a modal, S8; A6: a click elsewhere closes the note).
       cleanups.push(
-        engine.onDocument((doc) =>
+        engine.onDocument((doc) => {
           doc.addEventListener('pointerdown', (e) => {
-            if (lanes.floating?.kind !== 'peek') return
-            if ((e.target as Element | null)?.closest?.('.linen-peek-marker')) return
-            dispatch({ type: 'closeFloating' })
-          }),
-        ),
+            const kind = lanes.floating?.kind
+            if (kind === 'peek' && (e.target as Element | null)?.closest?.('.linen-peek-marker'))
+              return
+            if (
+              kind === 'peek' ||
+              kind === 'note' ||
+              (kind === 'selection' && bar?.mode === 'existing')
+            )
+              dispatch({ type: 'closeFloating' })
+          })
+          doc.addEventListener('contextmenu', (e) => void contextMenu(e))
+        }),
       )
       cleanups.push(
         engine.onLink((link) => {
@@ -814,6 +1161,15 @@
       })
       readingMode = engine.mode
       pageList = engine.pageList
+      // A4, A9: the book's highlights, placed again if the file changed (B3).
+      void ipc
+        .annotationsList(book.id)
+        .then((rows) => {
+          annotations.load(rows)
+          annotationsReady = true
+          return reanchorStale()
+        })
+        .catch((e) => console.error('annotations', e))
       const coverPath = book.cover_path
       // Raster covers come straight from the zip, as other images do (§6.4).
       if (coverPath && /\.(png|jpe?g|gif|webp|avif|bmp)$/i.test(coverPath))
@@ -903,6 +1259,52 @@
       cleanups.push(registry.handle('navigator.contents', { run: openContents }))
       cleanups.push(registry.handle('goto.open', { run: () => openGoTo() }))
       cleanups.push(registry.handle('search.open', { run: openSearch }))
+      // A3, K6: H and N (and ⇧⌘H, ⇧⌘N) on the selection or a clicked highlight.
+      const onSelectionOrHighlight = () => !!selection || bar?.mode === 'existing'
+      cleanups.push(
+        registry.handle('selection.highlight', {
+          run: () => {
+            if (selection) highlightSelection(annotations.lastColor)
+            else if (bar?.id) recolor(bar.id, annotations.lastColor)
+          },
+          enabled: onSelectionOrHighlight,
+        }),
+      )
+      cleanups.push(
+        registry.handle('selection.note', {
+          run: () => (selection ? noteOnSelection() : bar?.id && openNote(bar.id)),
+          enabled: onSelectionOrHighlight,
+        }),
+      )
+      // A2, K7: F6 moves focus into the bar.
+      cleanups.push(
+        registry.handle('selection.focusBar', {
+          run: () => selectionBar?.focusFirst(),
+          enabled: () => barOpen,
+        }),
+      )
+      cleanups.push(registry.handle('navigator.notes', { run: openNotes }))
+      // A11, K7: F7 caret browsing (T3: our own caret; WebKit has none).
+      cleanups.push(
+        registry.handle('reader.caretBrowsing', {
+          run: () => {
+            const on = !engine?.caretBrowsing
+            engine?.setCaretBrowsing(on ? theme.ink : null)
+            announce(on ? t.reader.caretOn : t.reader.caretOff)
+          },
+        }),
+      )
+      // K13, B5: ⌘Z undoes a deletion or a colour change; in a text field it is the field's own undo.
+      const inTextField = () => {
+        const el = document.activeElement
+        return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
+      }
+      cleanups.push(
+        registry.handle('edit.undo', {
+          run: () => (inTextField() ? document.execCommand('undo') : undo.undo()),
+          enabled: () => inTextField() || undo.canUndo,
+        }),
+      )
       const hasResults = () => searchState.count > 0
       cleanups.push(
         registry.handle('search.next', { run: () => stepResult(1), enabled: hasResults }),
@@ -961,6 +1363,7 @@
     const onFocusEdges = () => void refreshEdges()
     window.addEventListener('focus', onFocusEdges)
     const offQuit = onBeforeQuit(() => {
+      noteCard?.flush() // N5, A6: a note typed just before quitting is saved
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
     })
@@ -982,6 +1385,7 @@
       bookSearch?.close()
       engine?.close()
       for (const id of jumpMessages) messages.withdraw(id)
+      for (const id of annotationMessages) messages.withdraw(id)
       if (testHooks) testHooks.reader = undefined
       void ipc.setWindowControls(true).catch(() => {})
     }
@@ -1021,9 +1425,27 @@
       onclose={closeNavigator}
       onlibrary={leave}
       ongoto={openGoTo}
-      tab={searchOpen ? 'search' : 'contents'}
-      ontab={(tab) => (tab === 'search' ? openSearch() : dispatch({ type: 'openNavigator', tab }))}
+      tab={searchOpen ? 'search' : notesOpen ? 'notes' : 'contents'}
+      ontab={(tab) =>
+        tab === 'search'
+          ? openSearch()
+          : tab === 'notes'
+            ? openNotes()
+            : dispatch({ type: 'openNavigator', tab })}
     >
+      {#snippet notes()}
+        <NotesPanel
+          bind:this={notesPanel}
+          placed={annotations.placed}
+          unplaced={annotations.unplaced}
+          {chapterOf}
+          chapterLabel={chapterLabelFor}
+          order={cfiOrder}
+          current={jumpedTo}
+          onchoose={(a) => void chooseAnnotation(a)}
+          onreattach={startReattach}
+        />
+      {/snippet}
       {#snippet search()}
         <SearchPanel
           bind:this={searchPanel}
@@ -1133,6 +1555,51 @@
         ongo={onGo}
       />
     {/if}
+    {#if barOpen && bar}
+      {@const existing = bar.id ? annotations.get(bar.id) : undefined}
+      <SelectionBar
+        bind:this={selectionBar}
+        first={bar.first}
+        last={bar.last}
+        top={chromeVisible ? 52 : 0}
+        mode={bar.mode}
+        color={existing?.color ?? annotations.lastColor}
+        onhighlight={(c) => (bar?.id ? recolor(bar.id, c) : highlightSelection(c))}
+        onnote={() => (bar?.id ? openNote(bar.id) : noteOnSelection())}
+        oncopy={() => {
+          copyText(existing ? existing.quote.exact : (selection?.text ?? ''))
+          closeBar(false)
+        }}
+        onsearch={() => searchFor(selection?.text ?? '')}
+        ondelete={() => bar?.id && deleteAnnotation(bar.id)}
+        onescape={() => engine?.focusPage()}
+        onattach={attachSelection}
+        oncancel={cancelReattach}
+      />
+    {/if}
+    {#if noteOpen && noteFor}
+      {@const a = annotations.get(noteFor)}
+      {#if a}
+        <NoteCard
+          bind:this={noteCard}
+          annotation={a}
+          mode={noteMode}
+          place={notePlace}
+          onsave={(text) => annotations.setNote(a.id, text)}
+          oncolor={(c) => recolor(a.id, c)}
+          oncopy={() => copyText(a.note ? `${a.quote.exact}\n\n${a.note}` : a.quote.exact)}
+          ondelete={() => deleteAnnotation(a.id)}
+          onclose={closeNote}
+        />
+      {/if}
+    {/if}
+    {#if reattaching}
+      <!-- G11 (provisional): what Re-attach is waiting for. -->
+      <div class="reattach" role="status">
+        <span>{t.annotations.reattachPrompt(shortQuote(reattaching.quote.exact))}</span>
+        <button type="button" onclick={cancelReattach}>{t.annotations.cancel}</button>
+      </div>
+    {/if}
     {#if zoomChipShown}
       <div class="zoom-chip" role="status">
         <span>{t.reader.zoomLevel(zoom)}</span>
@@ -1150,13 +1617,24 @@
         <button type="button" class="library" onclick={leave}>
           <Icon name="library" size={18} />{t.reader.library}
         </button>
+        <button type="button" class="tool" aria-label={t.reader.contents} onclick={openContents}>
+          <Icon name="contents" size={18} />
+        </button>
         <div class="title" aria-live="off">
           <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
         </div>
-        <!-- Screen 03: Contents · Search · Notes · Aa · ⋯ (Search, Notes and Aa arrive later). -->
+        <!-- Screen 03: Search · Notes · Aa · ⋯ (Aa arrives in Phase 6). -->
         <div class="tools">
-          <button type="button" class="tool" aria-label={t.reader.contents} onclick={openContents}>
-            <Icon name="contents" size={18} />
+          <button type="button" class="tool" aria-label={t.search.label} onclick={openSearch}>
+            <Icon name="search" size={18} />
+          </button>
+          <button
+            type="button"
+            class="tool"
+            aria-label={t.commands['navigator.notes']}
+            onclick={openNotes}
+          >
+            <Icon name="highlights" size={18} />
           </button>
           <button
             type="button"
@@ -1340,6 +1818,35 @@
   /* I17: a zoomed page takes the whole window for panning; keys still turn. */
   .margin.zoomed {
     pointer-events: none;
+  }
+  .reattach {
+    position: absolute;
+    left: 50%;
+    bottom: 24px;
+    z-index: 30;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 4px 8px 4px 16px;
+    border-radius: 22px;
+    background: var(--ink);
+    color: var(--ground);
+    box-shadow: var(--shadow-popover);
+    font: 500 var(--text-body) var(--font-ui);
+    white-space: nowrap;
+  }
+  .reattach button {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 18px;
+    background: none;
+    color: inherit;
+    font-weight: 600;
+  }
+  .reattach button:focus-visible {
+    outline: 2px solid var(--accent);
   }
   .zoom-chip {
     position: absolute;

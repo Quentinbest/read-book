@@ -49,7 +49,9 @@
       .map((m) => ({
         id: `closed:${m.id}`,
         // “Back to page 43” names its action; “Resumed in …” is named by it (“Go to beginning”).
-        label: m.text.startsWith(m.action!.label) ? m.text : `${m.action!.label} (${m.text})`,
+        label:
+          m.closedLabel ??
+          (m.text.startsWith(m.action!.label) ? m.text : `${m.action!.label} (${m.text})`),
         hint: m.action!.shortcut ?? '',
         run: () => messages.act(m.id),
       }))

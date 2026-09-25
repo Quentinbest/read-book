@@ -93,6 +93,131 @@ async function hideControls() {
   await sleep(400)
 }
 
+// ---------------------------------------------------------------- Phase 5 helpers (A1–A9)
+
+const annotationsOf = () => reader()!.annotations
+/** The book document showing the current page. */
+const pageDoc = () => {
+  const l = loc()
+  const c = reader()!
+    .engine.view.renderer.getContents()
+    .find((x) => x.index === l?.sectionIndex && x.doc?.body?.textContent?.trim())
+  if (!c?.doc) throw new Error('no page document')
+  return c as { doc: Document; index: number; overlayer?: { element: SVGElement } }
+}
+/** Chapter-text offsets of a phrase in the current chapter (the same extractor as the reader). */
+const offsetsOf = async (phrase: string) => {
+  const { extractText } = await import('../lib/search/extract')
+  const { doc, index } = pageDoc()
+  const text = extractText(doc.body).text
+  const start = text.indexOf(phrase)
+  if (start < 0) throw new Error(`“${phrase}” is not in this chapter`)
+  return { index, start, end: start + phrase.length }
+}
+/** Select a phrase as a reader does: show it, select it in the page, then mouse-up. */
+const selectPhrase = async (phrase: string, opts: { from?: number } = {}) => {
+  const { index, start, end } = await offsetsOf(phrase)
+  await reader()!.engine.goToText(index, start + (opts.from ?? 0), end)
+  await settled(500)
+  const { doc } = pageDoc()
+  const range = reader()!.engine.textRange(doc, start + (opts.from ?? 0), end)!
+  const sel = doc.getSelection()!
+  sel.removeAllRanges()
+  sel.addRange(range)
+  doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+  await settled(250)
+  return range
+}
+const selBar = () => document.querySelector<HTMLElement>('.bar[role="toolbar"]')
+const barButton = (label: RegExp) =>
+  Array.from(selBar()?.querySelectorAll<HTMLButtonElement>('button') ?? []).find((b) =>
+    label.test(b.getAttribute('aria-label') ?? b.textContent ?? ''),
+  )
+const pressBar = async (label: RegExp) => {
+  const b = barButton(label)
+  if (!b) throw new Error(`no ${label} in the selection bar`)
+  b.click()
+  await settled(300)
+}
+const stored = async () => {
+  await hooks.writes!.idle()
+  return invoke<{ id: string; color: string; note: string | null; cfi_range: string }[]>(
+    'annotations_list',
+    { bookId: reader()!.bookId },
+  )
+}
+/**
+ * How a highlight is drawn: its tint behind the text (a CSS custom highlight holding
+ * exactly its range, or overlay rects on older WebKit) and its 2 px underline rects.
+ */
+const drawn = (id: string) => {
+  const a = annotationsOf().get(id)
+  const { doc } = pageDoc()
+  const layer = pageDoc().overlayer?.element
+  const vars = getComputedStyle(document.querySelector('.reader')!)
+  // WebKit normalises custom properties (“.11” becomes “0.11”), so compare canonical forms.
+  const canon = (c: string | null) =>
+    (c ?? '')
+      .replace(/\s/g, '')
+      .replace(/([,(])0\./g, '$1.')
+      .toLowerCase()
+  const line = a ? canon(vars.getPropertyValue(`--hl-${a.color}-underline`)) : '-'
+  const rects = Array.from(layer?.querySelectorAll<SVGRectElement>('rect') ?? [])
+  const registry = (doc.defaultView as unknown as { CSS: { highlights?: Map<string, Set<Range>> } })
+    .CSS.highlights
+  const ranges = a ? [...(registry?.get(`linen-hl-${a.color}`) ?? [])] : []
+  return {
+    behindText: ranges.some((r) => r.toString() === a?.quote.exact),
+    // On light themes the overlay tint multiplies with the page; Night's is translucent.
+    overlayTints: rects.filter((r) => {
+      const g = r.parentNode as SVGElement | null
+      const light = !vars.getPropertyValue('--hl-yellow-tint').trim().startsWith('rgba')
+      return (
+        !!g?.hasAttribute('data-linen-tints') && (g.style.mixBlendMode === 'multiply') === light
+      )
+    }),
+    lines: rects.filter(
+      (r) => canon(r.getAttribute('fill')) === line && r.getAttribute('height') === '2',
+    ),
+  }
+}
+/** The first dozen characters on the page shown (its first line). */
+const firstLineRange = () => {
+  const { doc } = pageDoc()
+  const visible = reader()!.engine.view.lastLocation!.range
+  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    if (visible.comparePoint(n, 0) < 0 && !visible.intersectsNode(n)) continue
+    const from = n === visible.startContainer ? visible.startOffset : 0
+    const text = n.data.slice(from)
+    const lead = text.length - text.trimStart().length
+    if (text.trim().length < 12) continue
+    const r = doc.createRange()
+    r.setStart(n, from + lead)
+    r.setEnd(n, from + lead + 12)
+    return r
+  }
+  throw new Error('no text on the page')
+}
+/** A click at the middle of a range's first line, where foliate hit-tests annotations (A5). */
+const clickOn = (range: Range) => {
+  const r = Array.from(range.getClientRects()).find((x) => x.width > 4)!
+  const doc = range.startContainer.ownerDocument!
+  doc.getSelection()?.removeAllRanges()
+  const at = { clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true }
+  doc.body.dispatchEvent(new PointerEvent('pointerdown', at))
+  doc.body.dispatchEvent(new PointerEvent('pointerup', at))
+  doc.body.dispatchEvent(new MouseEvent('click', at))
+}
+const NOVEMBER = 'damp, drizzly November in my soul'
+const MANHATTOES = 'There now is your insular city of the Manhattoes'
+const noteCard = () => document.querySelector<HTMLElement>('.note[role="dialog"]')
+const typeNote = (text: string) => {
+  const field = noteCard()!.querySelector('textarea')!
+  field.value = text
+  field.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
 type Check = { id: string; description: string; run: () => Promise<string> }
 
 export async function spikeE2E(): Promise<SpikeResult> {
@@ -1880,6 +2005,720 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Phase 5: selection and annotation
+
+  checks.push({
+    id: 'A1-selection-bar',
+    description:
+      'A selection shows the bar 12 px above its first line (below when < 56 px above), never over the selection; F6 moves focus in, arrows move, Esc returns to the text',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      const range = await selectPhrase(MANHATTOES)
+      const bar = await waitFor('selection bar', selBar)
+      await settled(150)
+      const frame =
+        range.startContainer.ownerDocument!.defaultView!.frameElement!.getBoundingClientRect()
+      const lines = Array.from(range.getClientRects()).map(
+        (r) => new DOMRect(r.left + frame.left, r.top + frame.top, r.width, r.height),
+      )
+      const b = bar.getBoundingClientRect()
+      if (Math.abs(lines[0].top - 12 - b.bottom) > 1)
+        problems.push(`bar bottom ${b.bottom.toFixed(1)}, first line ${lines[0].top.toFixed(1)}`)
+      if (
+        lines.some(
+          (l) => l.top < b.bottom && l.bottom > b.top && l.left < b.right && l.right > b.left,
+        )
+      )
+        problems.push('the bar covers the selection')
+      const ground = getComputedStyle(document.querySelector('.reader')!)
+        .getPropertyValue('--selbar-ground')
+        .trim()
+      const probe = document.createElement('div')
+      probe.style.color = ground
+      document.body.append(probe)
+      const expected = getComputedStyle(probe).color
+      probe.remove()
+      if (getComputedStyle(bar).backgroundColor !== expected)
+        problems.push(`bar colour ${getComputedStyle(bar).backgroundColor}, theme ${expected}`)
+      if (barButton(/more actions/i)) problems.push('the empty extension area shows')
+      // A2: F6, arrows, Esc.
+      key('F6', { code: 'F6' })
+      await settled(100)
+      if (document.activeElement !== bar.querySelector('button'))
+        problems.push('F6 did not focus the bar')
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+      )
+      if (document.activeElement !== bar.querySelectorAll('button')[1])
+        problems.push('→ did not move')
+      document.activeElement!.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      )
+      await settled(150)
+      if (bar.contains(document.activeElement)) problems.push('Esc left focus in the bar')
+      if (!pageDoc().doc.getSelection()?.toString()) problems.push('Esc lost the selection')
+      // Flip: with the controls shown, a selection on the page's first line has < 56 px above.
+      key('Escape', { code: 'Escape' })
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      await settled(200)
+      const top = firstLineRange()
+      const doc = pageDoc().doc
+      await showControls()
+      doc.getSelection()!.removeAllRanges()
+      doc.getSelection()!.addRange(top)
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      const flipped = await waitFor('bar', selBar)
+      await settled(150)
+      const t = Array.from(top.getClientRects())[0]
+      const f2 = doc.defaultView!.frameElement!.getBoundingClientRect()
+      const lastBottom = t.bottom + f2.top
+      if (t.top + f2.top - 52 < 56) {
+        if (!flipped.classList.contains('below')) problems.push('did not flip below near the top')
+        else if (Math.abs(flipped.getBoundingClientRect().top - (lastBottom + 12)) > 1)
+          problems.push('flipped bar is not 12 px below the selection')
+      } else problems.push(`test setup: first line at ${(t.top + f2.top).toFixed(0)} px`)
+      doc.getSelection()?.removeAllRanges()
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      if (selBar()) problems.push('the bar stayed after the selection went')
+      await hideControls()
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  let november = ''
+  checks.push({
+    id: 'A4-highlight',
+    description:
+      'A colour saves the highlight at once (no confirmation), drawn as the theme tint plus a 2 px underline; the selection and bar go',
+    run: async () => {
+      const before = annotationsOf().items.length
+      await selectPhrase(NOVEMBER)
+      await waitFor('bar', selBar)
+      await pressBar(/highlight yellow/i)
+      const problems: string[] = []
+      const a = annotationsOf().items.at(-1)
+      if (annotationsOf().items.length !== before + 1 || !a) return 'no highlight made'
+      november = a.id
+      if (a.color !== 'yellow' || a.quote.exact !== NOVEMBER)
+        problems.push(`${a.color} “${a.quote.exact}”`)
+      if ((await stored()).every((r) => r.id !== a.id)) problems.push('not saved')
+      if (selBar()) problems.push('bar stayed')
+      if (pageDoc().doc.getSelection()?.toString()) problems.push('selection stayed')
+      const d = drawn(a.id)
+      if (!d.behindText) problems.push('no tint behind the text')
+      if (!d.lines.length) problems.push('no underline')
+      // Older WebKit (no custom highlights): the tint is an overlay multiplied with the page.
+      const engine = reader()!.engine
+      engine.useCustomHighlights = false
+      engine.redrawHighlights()
+      const fallback = drawn(a.id)
+      if (fallback.behindText) problems.push('the fallback left the custom highlight')
+      if (!fallback.overlayTints.length || fallback.overlayTints.length !== fallback.lines.length)
+        problems.push(
+          `fallback: ${fallback.overlayTints.length} tints, ${fallback.lines.length} underlines`,
+        )
+      engine.useCustomHighlights = true
+      engine.redrawHighlights()
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'B4-overlaps',
+    description:
+      'Selecting a highlight’s exact range changes its colour; a partial overlap makes a second highlight; Copy copies plain text',
+    run: async () => {
+      const problems: string[] = []
+      const n = annotationsOf().items.length
+      await selectPhrase(NOVEMBER)
+      await pressBar(/highlight blue/i)
+      if (annotationsOf().items.length !== n) problems.push('same range made a new highlight')
+      if (annotationsOf().get(november)?.color !== 'blue') problems.push('colour did not change')
+      await selectPhrase('drizzly November in my soul; whenever')
+      await pressBar(/highlight green/i)
+      if (annotationsOf().items.length !== n + 1)
+        problems.push('partial overlap did not make a second')
+      // Copy: plain text only, and the reader's clipboard comes back afterwards.
+      const saved = await invoke<string | null>('spike_read_pasteboard')
+      try {
+        await selectPhrase(MANHATTOES)
+        await pressBar(/^copy$/i)
+        await settled(200)
+        const copied = await invoke<string | null>('spike_read_pasteboard')
+        if (copied !== MANHATTOES) problems.push(`copied “${copied}”`)
+      } finally {
+        if (saved !== null) await invoke('copy_text', { text: saved })
+      }
+      // Tidy: the partial one goes (not part of later checks).
+      const partial = annotationsOf().items.at(-1)!
+      annotationsOf().remove(partial.id)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A5-click-highlight',
+    description:
+      'A plain click on a highlight reopens the bar with its colour, Note, Copy and Delete; a drag starting on one begins a new selection',
+    run: async () => {
+      const problems: string[] = []
+      const range = await selectPhrase(NOVEMBER)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      clickOn(range)
+      const bar = await waitFor('bar for the highlight', selBar)
+      await settled(150)
+      if (!barButton(/^delete$/i)) problems.push('no Delete')
+      if (barButton(/^search$/i)) problems.push('Search shown for a highlight')
+      const current = bar.querySelector('button[aria-pressed="true"]')?.getAttribute('aria-label')
+      if (!/blue/i.test(current ?? '')) problems.push(`current colour “${current}”`)
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      // A drag that starts on the highlight: a new selection, with the new-selection bar.
+      await selectPhrase('drizzly November in my soul; whenever I find')
+      if (!barButton(/^search$/i))
+        problems.push('a drag from a highlight did not start a new selection')
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A7-delete-undo',
+    description:
+      'Delete is immediate with an Undo message; ⌘Z restores the exact annotation; after the message times out, ⌘K › Recently closed still does',
+    run: async () => {
+      const problems: string[] = []
+      const exact = annotationsOf().get(november)
+      if (!exact) return 'no highlight to delete'
+      const del = async () => {
+        const range = await selectPhrase(NOVEMBER)
+        pageDoc().doc.getSelection()?.removeAllRanges()
+        clickOn(range)
+        await waitFor('bar', selBar)
+        await pressBar(/^delete$/i)
+      }
+      await del()
+      if (annotationsOf().get(november)) problems.push('not deleted')
+      if (document.querySelector('dialog[open]')) problems.push('asked for confirmation')
+      if ((await stored()).some((r) => r.id === november)) problems.push('still stored')
+      const message = hooks.messages!.current
+      if (message?.text !== 'Highlight deleted' || message.action?.label !== 'Undo')
+        problems.push(`message “${message?.text}”`)
+      keyOnApp('z', { code: 'KeyZ', metaKey: true })
+      await settled(300)
+      if (JSON.stringify(annotationsOf().get(november)) !== JSON.stringify(exact))
+        problems.push('⌘Z did not restore the exact annotation')
+      if ((await stored()).every((r) => r.id !== november)) problems.push('restore not stored')
+      if (hooks.messages!.current?.id === message?.id) problems.push('the Undo message stayed')
+      // Again, and let the message time out.
+      await del()
+      const second = hooks.messages!.current!
+      await waitFor('message timed out', () => hooks.messages!.current?.id !== second.id, 15_000)
+      keyOnApp('k', { code: 'KeyK', metaKey: true })
+      await waitFor('palette', palette)
+      await settled(200)
+      const row = Array.from(palette()!.querySelectorAll<HTMLElement>('.row')).find((r) =>
+        /Restore highlight “damp, drizzly November/.test(r.textContent ?? ''),
+      )
+      if (!row) problems.push('not in Recently closed')
+      else {
+        row.click()
+        await settled(400)
+      }
+      if (palette()) await escModal()
+      if (JSON.stringify(annotationsOf().get(november)) !== JSON.stringify(exact))
+        problems.push('Recently closed did not restore it exactly')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A11-caret-browsing',
+    description:
+      'F7 shows a caret; the arrows move it without turning the page; ⇧ + arrows select, and the bar appears; F7 again hides it',
+    run: async () => {
+      const problems: string[] = []
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      const page = where()
+      const caret = () => pageDoc().overlayer?.element.querySelector('[data-linen-caret]')
+      key('F7', { code: 'F7' })
+      await settled(200)
+      if (!caret()) problems.push('no caret')
+      const sel = () => pageDoc().doc.getSelection()!
+      const before = sel().focusOffset
+      key('ArrowRight', { code: 'ArrowRight' })
+      await settled(150)
+      if (sel().focusOffset !== before + 1)
+        problems.push(`→ moved ${before} → ${sel().focusOffset}`)
+      if (where() !== page) problems.push('→ turned the page')
+      for (let i = 0; i < 12; i++) key('ArrowRight', { code: 'ArrowRight', shiftKey: true })
+      pageDoc().doc.body.dispatchEvent(
+        new KeyboardEvent('keyup', { key: 'Shift', shiftKey: false, bubbles: true }),
+      )
+      await settled(300)
+      if (sel().toString().length !== 12) problems.push(`selected “${sel().toString()}”`)
+      if (!selBar()) problems.push('no selection bar for a keyboard selection')
+      key('ArrowLeft', { code: 'ArrowLeft' })
+      key('F7', { code: 'F7' })
+      await settled(200)
+      if (caret()) problems.push('F7 did not hide the caret')
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      if (selBar()) key('Escape', { code: 'Escape' })
+      await settled(200)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A10-context-menu',
+    description:
+      'Right-click on a selection or a highlight gives the same actions (native menu); a colour change is undone by ⌘Z (B5)',
+    run: async () => {
+      const problems: string[] = []
+      const rightClick = (range: Range) => {
+        const r = Array.from(range.getClientRects()).find((x) => x.width > 4)!
+        const ev = new MouseEvent('contextmenu', {
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+          bubbles: true,
+          cancelable: true,
+        })
+        range.startContainer.parentElement!.dispatchEvent(ev)
+        return ev.defaultPrevented
+      }
+      const recorded = () => hooks.contextMenu
+      hooks.contextMenu = undefined
+      const range = await selectPhrase(MANHATTOES)
+      if (!rightClick(range)) problems.push('the WebKit menu was not replaced')
+      await settled(100)
+      const labels = recorded()?.labels.join(', ')
+      if (
+        labels !==
+        'Highlight Yellow, Highlight Green, Highlight Blue, Highlight Rose, Note, Copy, Search'
+      )
+        problems.push(`selection menu: ${labels}`)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      pageDoc().doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      hooks.contextMenu = undefined
+      const nov = await selectPhrase(NOVEMBER)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      pageDoc().doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      rightClick(nov)
+      await settled(100)
+      const menu = recorded()
+      if (!menu?.labels.includes('Delete'))
+        problems.push(`highlight menu: ${menu?.labels.join(', ')}`)
+      const before = annotationsOf().get(november)?.color
+      menu?.run('Highlight Rose')
+      await settled(200)
+      if (annotationsOf().get(november)?.color !== 'rose')
+        problems.push('the menu did not recolour')
+      keyOnApp('z', { code: 'KeyZ', metaKey: true })
+      await settled(200)
+      if (annotationsOf().get(november)?.color !== before)
+        problems.push('⌘Z did not undo the colour')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  let manhattoes = ''
+  checks.push({
+    id: 'A3-keys',
+    description: 'H and ⇧⌘H highlight in the last-used colour; N adds a note (focus in the note)',
+    run: async () => {
+      const problems: string[] = []
+      annotationsOf().lastColor = 'green'
+      await selectPhrase('Circumambulate the city of a dreamy Sabbath afternoon')
+      key('h', { code: 'KeyH' })
+      await settled(300)
+      const h = annotationsOf().items.at(-1)!
+      if (
+        h.quote.exact !== 'Circumambulate the city of a dreamy Sabbath afternoon' ||
+        h.color !== 'green'
+      )
+        problems.push(`H made ${h.color} “${h.quote.exact}”`)
+      await selectPhrase('Go from Corlears Hook to Coenties Slip')
+      key('H', { code: 'KeyH', metaKey: true, shiftKey: true })
+      await settled(300)
+      if (annotationsOf().items.at(-1)!.quote.exact !== 'Go from Corlears Hook to Coenties Slip')
+        problems.push('⇧⌘H did not highlight')
+      annotationsOf().remove(h.id)
+      annotationsOf().remove(annotationsOf().items.at(-1)!.id)
+      await selectPhrase(MANHATTOES)
+      key('n', { code: 'KeyN' })
+      const card = await waitFor('note card', noteCard)
+      await settled(200)
+      manhattoes = annotationsOf().items.at(-1)!.id
+      if (annotationsOf().get(manhattoes)?.quote.exact !== MANHATTOES)
+        problems.push('N did not highlight')
+      if (document.activeElement !== card.querySelector('textarea'))
+        problems.push('focus is not in the note')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A6-margin-note',
+    description:
+      'From 1240 px the note is a card in the margin joined to its dot; it saves as you type and says so; Esc closes it and focus returns to the text',
+    run: async () => {
+      const problems: string[] = []
+      const card = noteCard() ?? (await waitFor('note card', noteCard))
+      if (!card.classList.contains('margin'))
+        return `a ${card.className} at ${window.innerWidth} px`
+      typeNote('Ishmael frames the voyage as a cure for his own gloom.')
+      await settled(50)
+      const status = () => card.querySelector('[role="status"]')?.textContent?.trim()
+      if (status() === 'Saved') problems.push('said Saved before saving')
+      await waitFor('Saved', () => status() === 'Saved', 3000).catch(() =>
+        problems.push(`status “${status()}”`),
+      )
+      const row = (await stored()).find((r) => r.id === manhattoes)
+      if (row?.note !== 'Ishmael frames the voyage as a cure for his own gloom.')
+        problems.push(`stored ${row?.note}`)
+      const text = reader()!.engine.passageBox(annotationsOf().get(manhattoes)!.cfi)!
+      const c = card.getBoundingClientRect()
+      if (c.left < text.edge + 20) problems.push(`card at ${c.left}, column edge ${text.edge}`)
+      await settled(100)
+      if (!pageDoc().overlayer?.element.querySelector('[data-linen-note-dot]'))
+        problems.push('no margin dot')
+      card
+        .querySelector('textarea')!
+        .dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+        )
+      await settled(300)
+      if (noteCard()) problems.push('Esc did not close it')
+      if (
+        document.activeElement?.tagName !== 'IFRAME' &&
+        !document.activeElement?.closest('.reader')
+      )
+        problems.push(`focus on ${document.activeElement?.tagName}`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A6-empty-note',
+    description:
+      'An emptied note is discarded and its highlight kept (with Undo); a click elsewhere closes the card',
+    run: async () => {
+      const problems: string[] = []
+      const range = await selectPhrase(MANHATTOES)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      clickOn(range)
+      await waitFor('bar', selBar)
+      await pressBar(/^note$/i)
+      await waitFor('note card', noteCard)
+      typeNote('   ')
+      // A click in the text closes it.
+      pageDoc().doc.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      await settled(400)
+      if (noteCard()) problems.push('a click elsewhere did not close it')
+      const a = annotationsOf().get(manhattoes)
+      if (!a) problems.push('the highlight went')
+      else if (a.note !== null) problems.push(`note kept as “${a.note}”`)
+      if ((await stored()).find((r) => r.id === manhattoes)?.note !== null)
+        problems.push('stored note kept')
+      if (hooks.messages!.current?.text !== 'Note deleted')
+        problems.push(`message “${hooks.messages!.current?.text}”`)
+      keyOnApp('z', { code: 'KeyZ', metaKey: true })
+      await settled(300)
+      if (
+        annotationsOf().get(manhattoes)?.note !==
+        'Ishmael frames the voyage as a cure for his own gloom.'
+      )
+        problems.push('Undo did not bring the note back')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A6-note-sheet',
+    description: 'Below 1240 px the note is a bottom sheet with Delete and Done',
+    run: async () => {
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      await w.setSize(new LogicalSize(1000, 800))
+      await settled(1200)
+      try {
+        const range = await selectPhrase(MANHATTOES)
+        pageDoc().doc.getSelection()?.removeAllRanges()
+        clickOn(range)
+        await waitFor('bar', selBar)
+        await pressBar(/^note$/i)
+        const card = await waitFor('note', noteCard)
+        const problems: string[] = []
+        if (!card.classList.contains('sheet')) problems.push(`a ${card.className}`)
+        const r = card.getBoundingClientRect()
+        if (Math.abs(r.bottom - window.innerHeight) > 1 || r.left !== 0)
+          problems.push('not at the bottom')
+        const labels = Array.from(card.querySelectorAll('button')).map((b) => b.textContent?.trim())
+        if (!labels.includes('Delete') || !labels.includes('Done'))
+          problems.push(`buttons ${labels.join(',')}`)
+        if (!card.textContent?.includes('“There now is your insular city'))
+          problems.push('no quote')
+        Array.from(card.querySelectorAll('button'))
+          .find((b) => b.textContent?.trim() === 'Done')!
+          .click()
+        await settled(300)
+        if (noteCard()) problems.push('Done did not close it')
+        return problems.length ? problems.join('; ') : 'ok'
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+    },
+  })
+
+  checks.push({
+    id: 'A6-note-quit',
+    description: 'A note typed and then followed at once by a quit is saved',
+    run: async () => {
+      const range = await selectPhrase(MANHATTOES)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      clickOn(range)
+      await waitFor('bar', selBar)
+      await pressBar(/^note$/i)
+      await waitFor('note', noteCard)
+      const text = 'Typed just before quitting.'
+      typeNote(text) // no pause: the autosave has not run yet
+      hooks.quitRequested = false
+      await emit('app-quitting')
+      await waitFor('quit handled', () => hooks.quitRequested, 3000)
+      const row = (await stored()).find((r) => r.id === manhattoes)
+      noteCard()
+        ?.querySelector('textarea')
+        ?.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+        )
+      await settled(300)
+      await annotationsOf().setNote(
+        manhattoes,
+        'Ishmael frames the voyage as a cure for his own gloom.',
+      )
+      return row?.note === text ? 'ok' : `stored “${row?.note}”`
+    },
+  })
+
+  checks.push({
+    id: 'A8-notes-tab',
+    description:
+      'Notes tab: by chapter in reading order, “N highlights · M notes”, filter by colour and text; choosing one jumps, pulses it for 1.2 s and offers Back',
+    run: async () => {
+      const problems: string[] = []
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      const origin = loc()!.cfi
+      keyOnApp('a', { code: 'KeyA', metaKey: true, shiftKey: true })
+      const panel = await waitFor('notes tab', () =>
+        document.querySelector<HTMLElement>('.navigator .notes'),
+      )
+      await settled(300)
+      const counts = panel.querySelector('.counts')?.textContent
+      if (counts !== '2 highlights · 1 note') problems.push(`counts “${counts}”`)
+      const items = () => Array.from(panel.querySelectorAll<HTMLElement>('[data-annotation]'))
+      const order = items().map((i) => i.querySelector('.quote')?.textContent?.trim())
+      if (order[0] !== NOVEMBER || order[1] !== MANHATTOES)
+        problems.push(`order ${order.join(' | ')}`)
+      const group = panel.querySelector('.group')?.textContent ?? ''
+      if (!/Loomings/.test(group)) problems.push(`group “${group}”`)
+      // Filters.
+      panel.querySelector<HTMLButtonElement>('[aria-label="Only blue"]')!.click()
+      await settled(100)
+      if (items().length !== 1) problems.push(`blue filter shows ${items().length}`)
+      panel.querySelector<HTMLButtonElement>('.pill')!.click()
+      const field = panel.querySelector<HTMLInputElement>('input')!
+      field.value = 'gloom'
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      await settled(100)
+      if (items().length !== 1 || !/Manhattoes/.test(items()[0].textContent ?? ''))
+        problems.push('text filter did not match the note')
+      field.value = ''
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      await settled(100)
+      // Choose: jump, pulse, Back.
+      items()[1].click()
+      await settled(700)
+      const a = annotationsOf().get(manhattoes)!
+      const shown = reader()!.engine.passageBox(a.cfi)
+      if (!shown || shown.first.left < 0 || shown.first.left > window.innerWidth)
+        problems.push('did not land on it')
+      const pulse = () => !!pageDoc().overlayer?.element.querySelector('rect[stroke-width="3"]')
+      if (!pulse()) problems.push('no pulse')
+      await settled(1400)
+      if (pulse()) problems.push('pulse did not end')
+      if (!/^Back/.test(hooks.messages!.current?.text ?? ''))
+        problems.push(`message “${hooks.messages!.current?.text}”`)
+      await back()
+      if (loc()!.cfi !== origin) problems.push('Back did not return')
+      if (document.querySelector('.navigator')) key('Escape', { code: 'Escape' })
+      await settled(400)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A9-reflow',
+    description: 'Highlights stay on their text through reflow (window size, Scroll mode and back)',
+    run: async () => {
+      const problems: string[] = []
+      const verify = async (when: string) => {
+        await settled(900)
+        const a = annotationsOf().get(november)!
+        await reader()!.engine.goTo(a.cfi)
+        await settled(700)
+        const d = drawn(november)
+        const box = reader()!.engine.passageBox(a.cfi)
+        // The underline (overlay) sits under the text's first line; the tint (a custom
+        // highlight) holds the live range, so it moves with the text by construction.
+        const line = d.lines[0]?.getBBox()
+        const frame = pageDoc().doc.defaultView!.frameElement!.getBoundingClientRect()
+        if (!box || !line || !d.behindText) return problems.push(`${when}: not drawn`)
+        if (
+          Math.abs(line.x + frame.left - box.first.left) > 1 ||
+          Math.abs(line.y + 2 + frame.top - box.first.bottom) > 1
+        )
+          problems.push(
+            `${when}: underline at ${line.x + frame.left},${line.y + frame.top}, text at ${box.first.left},${box.first.bottom}`,
+          )
+      }
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      await verify('before')
+      try {
+        await w.setSize(new LogicalSize(1600, 900))
+        await verify('wider')
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+      }
+      await verify('restored')
+      hooks.run?.('layout.scroll')
+      await verify('Scroll mode')
+      hooks.run?.('layout.pages')
+      await verify('Pages mode')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A9-reimport',
+    description:
+      'Re-importing an edited edition re-anchors: an inserted paragraph and changed punctuation are survived; a deleted passage goes to “Couldn’t place”, never a wrong place; Re-attach (G11) places it again',
+    run: async () => {
+      const problems: string[] = []
+      const path = (name: string) => invoke<string>('spike_corpus_path', { name })
+      await invoke('library_import', { paths: [await path('anchoring-first.epub')] })
+      await backToLibrary()
+      await openFromLibrary(/Anchoring test/)
+      const make = async (phrase: string, color: RegExp) => {
+        await selectPhrase(phrase)
+        await pressBar(color)
+        return annotationsOf().items.at(-1)!.id
+      }
+      const pistol = 'This is my substitute for pistol and ball.'
+      const ids = {
+        manhattoes: await make(MANHATTOES, /highlight yellow/i),
+        november: await make(NOVEMBER, /highlight green/i),
+        pistol: await make(pistol, /highlight rose/i),
+      }
+      await hooks.writes!.idle()
+      await backToLibrary()
+      const [r] = await invoke<{ outcome: { kind: string } }[]>('library_import', {
+        paths: [await path('anchoring-revised.epub')],
+      })
+      if (r.outcome.kind !== 'replaced') return `import: ${r.outcome.kind}`
+      hooks.run?.('library.show') // the library lists the new edition, as after any import
+      await settled(500)
+      await openFromLibrary(/Anchoring test/)
+      await waitFor(
+        're-anchored',
+        () => !annotationsOf().stale.length && annotationsOf().items.length === 3,
+        10_000,
+      )
+      await settled(300)
+      const textAt = (id: string) => {
+        const a = annotationsOf().get(id)!
+        const { doc } = pageDoc()
+        const range = reader()!.engine.view.resolveCFI(a.cfi).anchor(doc) as Range
+        return range.toString()
+      }
+      await reader()!.engine.goTo(annotationsOf().get(ids.manhattoes)!.cfi)
+      await settled(600)
+      if (
+        annotationsOf().get(ids.manhattoes)?.status !== 'anchored' ||
+        textAt(ids.manhattoes) !== MANHATTOES
+      )
+        problems.push('inserted paragraph: not placed on its text')
+      await reader()!.engine.goTo(annotationsOf().get(ids.november)!.cfi)
+      await settled(600)
+      if (textAt(ids.november) !== 'damp; drizzly November in my soul')
+        problems.push(`changed punctuation: placed on “${textAt(ids.november)}”`)
+      const lost = annotationsOf().get(ids.pistol)!
+      if (lost.status !== 'unplaced') problems.push(`deleted passage is ${lost.status}`)
+      // Stored as such.
+      const rows = await stored()
+      if (rows.length !== 3) problems.push(`${rows.length} stored`)
+      // The Notes tab lists it under Couldn't place, with Re-attach.
+      keyOnApp('a', { code: 'KeyA', metaKey: true, shiftKey: true })
+      const panel = await waitFor('notes', () =>
+        document.querySelector<HTMLElement>('.navigator .notes'),
+      )
+      await settled(300)
+      const lostRow = panel.querySelector<HTMLElement>(`.unplaced[data-annotation="${ids.pistol}"]`)
+      if (!lostRow || !/Couldn’t place/.test(panel.textContent ?? ''))
+        problems.push('not under Couldn’t place')
+      lostRow?.querySelector<HTMLButtonElement>('.reattach')?.click()
+      await settled(300)
+      if (!document.querySelector('.reattach[role="status"]')) problems.push('no Re-attach prompt')
+      if (document.querySelector('.navigator') && !document.querySelector('.navigator.floating'))
+        key('Escape', { code: 'Escape' })
+      await settled(300)
+      await selectPhrase('With a philosophical flourish Cato throws himself upon his sword')
+      if (!barButton(/attach here/i)) {
+        problems.push(`no Attach here (bar: ${selBar()?.textContent?.trim()})`)
+        return problems.join('; ')
+      }
+      await pressBar(/attach here/i)
+      const re = annotationsOf().get(ids.pistol)!
+      if (
+        re.status !== 'anchored' ||
+        re.quote.exact !== 'With a philosophical flourish Cato throws himself upon his sword'
+      )
+        problems.push(`re-attached as ${re.status} “${re.quote.exact}”`)
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'A9-w3c-roundtrip',
+    description: 'Every stored annotation round-trips through W3C Web Annotation JSON without loss',
+    run: async () => {
+      const { toW3C, fromW3C } = await import('../lib/annotations/model')
+      const list = annotationsOf().items
+      if (!list.length) return 'nothing to round-trip'
+      const bad = list.filter(
+        (a) =>
+          JSON.stringify(fromW3C(JSON.parse(JSON.stringify(toW3C(a, 'urn:x'))), a.bookId)) !==
+          JSON.stringify(a),
+      )
+      return bad.length ? `${bad.length} changed` : 'ok'
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -2363,6 +3202,87 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await settled(900)
   await capture('05-navigator-search')
   key('Escape', { code: 'Escape' })
+  await settled(600)
+
+  // Phase 5 (Screens 06, 07, 08, 14, 15): the mocks' passages in Chapter 1.
+  const NOTE =
+    'Ishmael frames the voyage as a cure for his own gloom — the sea as medicine. Compare with Ahab’s reasons later.'
+  const clearMessage = () => {
+    const current = hooks.messages?.current
+    if (current) hooks.messages!.dismiss(current.id)
+  }
+  await selectPhrase(NOVEMBER)
+  await pressBar(/highlight yellow/i)
+  await selectPhrase(MANHATTOES)
+  await waitFor('selection bar', selBar)
+  clearMessage()
+  await capture('06-selection-bar')
+  await pressBar(/highlight green/i)
+  const manhattoesId = reader()!.annotations.items.at(-1)!.id
+  const openNoteOn = async () => {
+    const range = await selectPhrase(MANHATTOES)
+    pageDoc().doc.getSelection()?.removeAllRanges()
+    clickOn(range)
+    await waitFor('bar', selBar)
+    await pressBar(/^note$/i)
+    return waitFor('note', noteCard)
+  }
+  const card = await openNoteOn()
+  typeNote(NOTE)
+  await waitFor('saved', () =>
+    card.querySelector('[role="status"]')?.textContent?.includes('Saved'),
+  )
+  // The mock shows the card at rest, focus not in the field.
+  card.querySelector('textarea')!.blur()
+  clearMessage()
+  await capture('07-margin-note')
+  key('Escape', { code: 'Escape' })
+  await settled(400)
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  keyOnApp('a', { code: 'KeyA', metaKey: true, shiftKey: true })
+  const notes = await waitFor('notes', () =>
+    document.querySelector<HTMLElement>('.navigator .notes'),
+  )
+  await settled(400)
+  notes.querySelector<HTMLElement>(`[data-annotation="${manhattoesId}"]`)!.click()
+  await sleep(350) // mid-pulse, with the Back chip (Screen 08)
+  shots['08-navigator-notes'] = await invoke<string>('spike_capture', {
+    name: '08-navigator-notes',
+  })
+  log('captured 08-navigator-notes')
+  await settled(1200)
+  key('Escape', { code: 'Escape' })
+  await settled(400)
+  clearMessage()
+  await openIn('night')
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  // Screen 14 shows a plain selection beside a highlight: the green one is taken off for it.
+  await waitFor('highlights', () => reader()!.annotations.get(manhattoesId))
+  const kept = reader()!.annotations.remove(manhattoesId)!
+  await selectPhrase(MANHATTOES)
+  await showControls()
+  await waitFor('selection bar', selBar)
+  clearMessage()
+  await capture('14-night-selection')
+  await hideControls()
+  pageDoc().doc.getSelection()?.removeAllRanges()
+  reader()!.annotations.restore(kept)
+  await hooks.writes!.idle()
+  await openIn('paper')
+  await getCurrentWindow().setSize(new LogicalSize(760, 1000))
+  await settled(1500)
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  await openNoteOn()
+  await showControls()
+  noteCard()!.querySelector('textarea')!.blur()
+  clearMessage()
+  await capture('15-note-sheet')
+  key('Escape', { code: 'Escape' })
+  await getCurrentWindow().setSize(new LogicalSize(1280, 800))
+  await settled(1200)
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

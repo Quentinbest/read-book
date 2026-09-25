@@ -13,8 +13,8 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 3. **⋯ menu contents (provisional).** No design says what the reader's ⋯ menu holds. Built: every command, grouped, with shortcuts; unavailable ones at 40%. See the review page.
    *Recommendation:* approve; extension items join it in Phase 7 (G7).
 
-4. **Screens 03 and 14 baselines: two new top-bar buttons.** Contents and ⋯ now show in the top bar (46 pixels, within tolerance). The other buttons Screen 03 draws stay hidden until their phases.
-   *Recommendation:* approve the new captures as the baselines.
+4. **Screens 03 and 14 baselines: the top bar.** *Updated in Phase 5:* the top bar now has every button Screen 03 draws except Aa (Phase 6), in the mock's places. Contents is beside Library; Search, Notes and ⋯ are on the right. The new captures are on the Phase 5 review page (`docs/visual/phase5-review.html`).
+   *Recommendation:* approve the Phase 5 captures of 03 and 14 as the baselines.
 
 5. **Footnote peek shows notes as plain structure, not in the book's own styles.** For security (§7: book markup is untrusted), the note is copied as paragraphs and emphasis only. Screen 17 says “rendered with the book's own styles”. The alternative is a sandboxed frame with the book's CSS: more work, the same look for most books.
    *Recommendation:* keep the safe copy.
@@ -29,6 +29,30 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 
 8. **Phase 4 visual baseline (Screen 05).** Review `docs/visual/phase4-review.html`.
    *Recommendation:* approve.
+
+## Phase 5
+
+11. **Phase 5 visual baselines (Screens 06, 07, 08, 14 with the selection bar, and 15).** Review `docs/visual/phase5-review.html`: each mock beside the app in the same state, with the differences marked.
+    *Recommendation:* approve.
+
+12. **G11 Re-attach flow (provisional design).** The plan wanted G11 before Phase 5; it did not exist, so this is my proposal inside the approved system:
+    - Re-attach on a “Couldn't place” row closes a floating Navigator and shows a pill at the bottom: “Select the passage for “…” · Cancel”.
+    - The next selection shows the bar with just “Attach here” and “Cancel”.
+    - Attach moves the highlight (with its note and colour) to the new passage, and says “Highlight re-attached”.
+
+    See the review page.
+    *Recommendation:* approve as the G11 design.
+
+13. **Small choices the mocks do not settle (provisional).**
+    - **Selection bar on Sepia:** Sepia's tooltip colours (G5-derived, like item 6).
+    - **Screen 14:** its bar shows text-only actions, while Screen 06's has icons. The app shows the icons in every theme.
+    - **Clicked highlight (A5):** its bar shows Delete where a new selection's shows Search.
+    - **Margin dot (Screen 07):** drawn in the highlight's underline colour. The mock's `#8FA86A` is not a token.
+    - **Jump pulse (Screen 08):** a 3 px accent outline at 40%, as the mock draws, fading after 1.2 s.
+    - **Note status:** “Saving…”, then “Saved”; after a failed save, “Not saved yet” (the write queue's Retry message explains).
+    - **Caret browsing (F7, T3):** a steady 2 px caret in the ink colour.
+
+    *Recommendation:* approve.
 
 ## Carried over (need a person, not a decision)
 

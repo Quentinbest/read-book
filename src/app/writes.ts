@@ -3,7 +3,9 @@
 // Writes are keyed (a later write to the same key replaces a pending one, as a
 // newer reading position replaces an older one). A write that fails with
 // `saveFailed` stays queued and raises one persistent “Couldn't save notes to
-// disk · Retry” message; Retry re-sends everything pending, in order.
+// disk · Retry” message; Retry re-sends everything pending, in order. Any other
+// failure (the IPC call itself failing, seen rarely under load) is retried a few
+// times first, since the disk may be fine.
 
 import { t } from '../lib/strings/en'
 import { isCommandError } from './ipc'
@@ -15,6 +17,10 @@ interface Pending {
   key: string
   run: () => Promise<void>
 }
+
+/** Attempts for a write that failed without the core saying the disk refused it. */
+const TRANSIENT_ATTEMPTS = 3
+const TRANSIENT_BACKOFF_MS = 150
 
 export class WriteQueue {
   #pending: Pending[] = []
@@ -63,17 +69,27 @@ export class WriteQueue {
   }
 
   async #drain(): Promise<void> {
+    let attempts = 0
     while (this.#pending.length) {
       const next = this.#pending[0]
       try {
         await next.run()
+        attempts = 0
         // Only drop it if no newer write for the key replaced it meanwhile.
         if (this.#pending[0] === next) this.#pending.shift()
       } catch (e) {
-        // Disk trouble (saveFailed) or a bug: either way keep the data and say so.
-        if (!(isCommandError(e) && e.kind === 'saveFailed'))
-          console.error('write failed', next.key, e)
-        this.lastError = { key: next.key, error: JSON.stringify(e) }
+        const diskRefused = isCommandError(e) && e.kind === 'saveFailed'
+        this.lastError = {
+          key: next.key,
+          error: e instanceof Error ? `${e.name}: ${e.message}` : JSON.stringify(e),
+        }
+        if (!diskRefused && ++attempts < TRANSIENT_ATTEMPTS) {
+          console.warn('write failed; retrying', next.key, e)
+          await new Promise((r) => setTimeout(r, TRANSIENT_BACKOFF_MS * attempts))
+          continue
+        }
+        // Disk trouble (saveFailed) or a persistent failure: either way keep the data and say so.
+        if (!diskRefused) console.error('write failed', next.key, e)
         this.#fail()
         return
       }

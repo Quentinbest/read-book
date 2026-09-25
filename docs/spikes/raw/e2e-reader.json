@@ -362,6 +362,102 @@
       "evidence": "ok"
     },
     {
+      "id": "A1-selection-bar",
+      "description": "A selection shows the bar 12 px above its first line (below when < 56 px above), never over the selection; F6 moves focus in, arrows move, Esc returns to the text",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A4-highlight",
+      "description": "A colour saves the highlight at once (no confirmation), drawn as the theme tint plus a 2 px underline; the selection and bar go",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "B4-overlaps",
+      "description": "Selecting a highlight’s exact range changes its colour; a partial overlap makes a second highlight; Copy copies plain text",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A5-click-highlight",
+      "description": "A plain click on a highlight reopens the bar with its colour, Note, Copy and Delete; a drag starting on one begins a new selection",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A7-delete-undo",
+      "description": "Delete is immediate with an Undo message; ⌘Z restores the exact annotation; after the message times out, ⌘K › Recently closed still does",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A11-caret-browsing",
+      "description": "F7 shows a caret; the arrows move it without turning the page; ⇧ + arrows select, and the bar appears; F7 again hides it",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A10-context-menu",
+      "description": "Right-click on a selection or a highlight gives the same actions (native menu); a colour change is undone by ⌘Z (B5)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A3-keys",
+      "description": "H and ⇧⌘H highlight in the last-used colour; N adds a note (focus in the note)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A6-margin-note",
+      "description": "From 1240 px the note is a card in the margin joined to its dot; it saves as you type and says so; Esc closes it and focus returns to the text",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A6-empty-note",
+      "description": "An emptied note is discarded and its highlight kept (with Undo); a click elsewhere closes the card",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A6-note-sheet",
+      "description": "Below 1240 px the note is a bottom sheet with Delete and Done",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A6-note-quit",
+      "description": "A note typed and then followed at once by a quit is saved",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A8-notes-tab",
+      "description": "Notes tab: by chapter in reading order, “N highlights · M notes”, filter by colour and text; choosing one jumps, pulses it for 1.2 s and offers Back",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A9-reflow",
+      "description": "Highlights stay on their text through reflow (window size, Scroll mode and back)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A9-reimport",
+      "description": "Re-importing an edited edition re-anchors: an inserted paragraph and changed punctuation are survived; a deleted passage goes to “Couldn’t place”, never a wrong place; Re-attach (G11) places it again",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "A9-w3c-roundtrip",
+      "description": "Every stored annotation round-trips through W3C Web Annotation JSON without loss",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -398,7 +494,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790322404,
+    "time": 1790326476,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
