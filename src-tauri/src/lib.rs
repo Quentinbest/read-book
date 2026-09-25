@@ -40,6 +40,8 @@ pub fn run() {
                 commands::book_entries,
                 commands::book_entry,
                 commands::book_damage,
+                native::open_external,
+                native::copy_text,
                 commands::book_settings_get,
                 commands::book_settings_set,
                 commands::position_save,
@@ -71,6 +73,7 @@ pub fn run() {
         spikes::spike_memory,
         spikes::spike_capture,
         spikes::spike_scroll_wheel,
+        spikes::spike_read_pasteboard,
         spikes::spike_exit
     ));
     builder

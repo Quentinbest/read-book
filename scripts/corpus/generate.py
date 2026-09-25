@@ -338,6 +338,32 @@ def png(width: int, height: int, rng: random.Random) -> bytes:
             + chunk(b"IDAT", zlib.compress(raw, 1)) + chunk(b"IEND", b""))
 
 
+def note_books():
+    """N9, N10, N11: footnote asides referenced from every paragraph (so some markers sit at
+    the page foot), one very long note, a captioned image and an external link."""
+    words = ("Call me Ishmael. Some years ago never mind how long precisely having little or no "
+             "money in my purse, and nothing particular to interest me on shore, I thought I would "
+             "sail about a little and see the watery part of the world. ").split()
+    paras, notes = [], []
+    for i in range(1, 25):
+        text = " ".join(words[(i * 7) % len(words):] + words[:(i * 7) % len(words)])
+        paras.append(f'<p>{text} <a epub:type="noteref" role="doc-noteref" id="ref-{i}" '
+                     f'href="#fn-{i}">{i}</a> {text}</p>')
+        body = f"Footnote {i}: a short note about paragraph {i}."
+        if i == 2:
+            body = " ".join(f"Long note sentence {k} that keeps going so the peek must scroll." for k in range(80))
+        notes.append(f'<aside epub:type="footnote" role="doc-footnote" id="fn-{i}"><p>{body} '
+                     f'<a epub:type="backlink" role="doc-backlink" href="#ref-{i}">↩</a></p></aside>')
+    image = ('<figure><img src="plate.png" alt="A grey plate"/>'
+             '<figcaption>Plate 1. A test image with its caption.</figcaption></figure>')
+    link = '<p>See <a href="https://example.org/linen-test">example.org</a> for more.</p>'
+    rng = random.Random(7)
+    simple_book(OUT / "notes-and-images.epub", "Notes and images", [
+        ("Notes", "<h1>Notes</h1>" + "".join(paras) + "".join(notes)),
+        ("Image and link", "<h1>Image and link</h1>" + image + link),
+    ], resources={"plate.png": (png(320, 200, rng), "image/png")})
+
+
 def large_books(chapters):
     rng = random.Random(20260924)
     images = {f"plate-{i}.png": (png(1800, 1800, rng), "image/png") for i in range(10)}  # ~97 MB, incompressible
@@ -378,6 +404,7 @@ def main() -> int:
     xml_attacks(chapters)
     broken_books(chapters)
     large_books(chapters)
+    note_books()
     for p in sorted(OUT.iterdir()):
         print(f"{p.stat().st_size:>12,}  {p.name}")
     return 0

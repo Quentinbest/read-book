@@ -81,6 +81,22 @@ export const en = {
     open: 'Go to…',
     scrubber: 'Position in book',
   },
+  peek: {
+    label: (n: string) => `Note ${n}`,
+    title: (n: string) => `Note ${n}`,
+    hint: 'Esc closes · focus returns to the marker',
+    openInPlace: 'Open note in place',
+    copy: 'Copy',
+    copied: 'Note copied',
+    missing: 'This note couldn’t be found in the book.',
+  },
+  image: {
+    label: 'Image',
+    close: 'Close image',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    fit: 'Fit',
+  },
   messages: {
     region: 'Message',
     dismiss: 'Dismiss',

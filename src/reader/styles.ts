@@ -21,6 +21,16 @@ export function readerStyles(o: ReaderStyleOptions): string {
   const { theme } = o
   const night = theme.scheme === 'dark'
   return `
+    /* N9: the note reference keeps a focus ring while its peek is open. */
+    .linen-peek-marker {
+      outline: 2px solid ${theme.accent} !important;
+      outline-offset: 2px;
+      border-radius: 3px;
+    }
+    /* N11: images open the image view. */
+    img:not(a img), svg image:not(a image) {
+      cursor: zoom-in;
+    }
     html {
       font-size: ${o.fontPx}px !important;
       color: ${theme.ink} !important;

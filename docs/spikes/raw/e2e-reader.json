@@ -272,6 +272,36 @@
       "evidence": "ok"
     },
     {
+      "id": "N9-footnote-peek",
+      "description": "Footnote peek: never navigates; below the marker or above near the page foot, never over its line; scrolls up to 50%; marker keeps focus styling; Tab in; Esc returns focus; asides leave the flow",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N9-peek-actions",
+      "description": "Copy copies the note; Open note in place goes to the note (shown) and Back returns",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N9-endnote-peek",
+      "description": "A reference to an endnote in another chapter peeks at it without navigating",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N11-image-view",
+      "description": "Clicking an image opens the image view with its caption; ⌘+ zooms; Esc closes and focus returns to the image",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N10-external-links",
+      "description": "External links show their URL on hover; only http(s) and mailto can be opened",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -308,7 +338,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790306481,
+    "time": 1790307912,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

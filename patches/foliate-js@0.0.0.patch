@@ -85,16 +85,18 @@ index c582abad1496874a9265cad1ab69e12a475c684d..dd8df3a6e45ea06925aad3ae045b24f2
              })
              if (portrait && frame !== target) {
 diff --git a/paginator.js b/paginator.js
-index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..7794554c6b7df673471f3dfa4210ef6598fea06a 100644
+index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..5ad59d650198becf7850a7e70b65e6d9dd008af2 100644
 --- a/paginator.js
 +++ b/paginator.js
-@@ -97,6 +97,9 @@ const getVisibleRange = (doc, start, end, mapRect) => {
+@@ -97,6 +97,11 @@ const getVisibleRange = (doc, start, end, mapRect) => {
          const name = node.localName?.toLowerCase()
          // ignore all scripts, styles, and their children
          if (name === 'script' || name === 'style') return FILTER_REJECT
 +        // Linen (L16): blocks of a chunked chapter hidden with display: none have
 +        // empty rects that would read as “on the first page”
-+        if (node.nodeType === 1 && node.hasAttribute('data-linen-hidden')) return FILTER_REJECT
++        // and footnote asides taken out of the flow for the peek (N9)
++        if (node.nodeType === 1 && (node.hasAttribute('data-linen-hidden')
++            || node.hasAttribute('data-linen-footnote'))) return FILTER_REJECT
          if (node.nodeType === 1) {
              const { left, right } = mapRect(node.getBoundingClientRect())
              // no need to check child nodes if it's completely out of view

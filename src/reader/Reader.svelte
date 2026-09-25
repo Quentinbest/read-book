@@ -18,6 +18,10 @@
   import { navigatorTab } from '../lib/reader/state'
   import Navigator from './Navigator.svelte'
   import GoTo, { type GoToTarget } from './GoTo.svelte'
+  import FootnotePeek from './FootnotePeek.svelte'
+  import ImageView from './ImageView.svelte'
+  import { noteText } from './notes'
+  import type { ImageEvent, NoteEvent } from './engine'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
   import { bookMediaUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
@@ -107,7 +111,7 @@
   let stageShift = $state(0)
   let contents = $state<Contents | null>(null)
   let currentRow = $derived(contents && location ? currentIndex(contents.items, location) : -1)
-  let navigator: ReturnType<typeof Navigator> | undefined = $state()
+  let navPanel: ReturnType<typeof Navigator> | undefined = $state()
   // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
   $effect(() => {
     void ipc.setWindowControls(chromeVisible || navigatorOpen).catch(() => {})
@@ -139,7 +143,7 @@
   /** K3: open Contents (or, when it is open, focus it) on the current chapter (C2). */
   function openContents() {
     if (navigatorTab(lanes) !== 'contents') dispatch({ type: 'openNavigator', tab: 'contents' })
-    requestAnimationFrame(() => navigator?.focusCurrent())
+    requestAnimationFrame(() => navPanel?.focusCurrent())
   }
   // ---- Go to (N8) and the scrubber (N7)
   let gotoOpen = $derived(lanes.floating?.kind === 'goto')
@@ -216,10 +220,59 @@
   /** Floating popovers close on a click outside them (S2). */
   function onReaderPointerDown(e: PointerEvent) {
     const kind = lanes.floating?.kind
-    if (kind !== 'goto') return
-    const inside = (e.target as Element | null)?.closest?.('.goto, .goto-label, .nav-goto')
+    if (kind !== 'goto' && kind !== 'peek') return
+    const inside = (e.target as Element | null)?.closest?.('.goto, .goto-label, .nav-goto, .peek')
     if (!inside) dispatch({ type: 'closeFloating' })
   }
+
+  // ---- Footnote peek (N9), image view (N11), links (N10)
+  let note = $state<NoteEvent | null>(null)
+  let peek: ReturnType<typeof FootnotePeek> | undefined = $state()
+  let peekOpen = $derived(lanes.floating?.kind === 'peek')
+  let image = $state<ImageEvent | null>(null)
+  let imageZoom = $state(1)
+  let imageView: ReturnType<typeof ImageView> | undefined = $state()
+  let imageOpen = $derived(lanes.floating?.kind === 'image')
+  let hoverUrl = $state<string | null>(null)
+  function onNote(n: NoteEvent) {
+    note?.marker.classList.remove('linen-peek-marker')
+    // The marker keeps focus styling while the peek is open (N9).
+    n.marker.classList.add('linen-peek-marker')
+    note = n
+    dispatch({ type: 'openFloating', kind: 'peek' })
+  }
+  // Esc (or anything) closing the peek returns focus to the marker (N9).
+  $effect(() => {
+    if (peekOpen || !note) return
+    const marker = note.marker as HTMLElement
+    note = null
+    marker.classList.remove('linen-peek-marker')
+    marker.focus?.({ preventScroll: true })
+  })
+  function openNoteInPlace() {
+    if (!note) return
+    const n = note
+    if (location) pushJump(location, 'link')
+    dispatch({ type: 'closeFloating' })
+    void engine?.openNoteInPlace(n)
+  }
+  function copyNote() {
+    if (!note?.note) return
+    void ipc.copyText(noteText(note.note)).then(() => announce(t.peek.copied))
+  }
+  function onImage(i: ImageEvent) {
+    image = i
+    imageZoom = 1
+    dispatch({ type: 'openFloating', kind: 'image' })
+  }
+  // Closing the image view returns focus to the image in the text (G8).
+  $effect(() => {
+    if (imageOpen || !image) return
+    const el = image.element as HTMLElement
+    image = null
+    if (!el.hasAttribute('tabindex')) el.setAttribute('tabindex', '-1')
+    el.focus?.({ preventScroll: true })
+  })
 
   function closeNavigator() {
     dispatch({ type: 'closeNavigator' })
@@ -418,6 +471,12 @@
   }
 
   function onPageKey(e: KeyboardEvent, fromBook: boolean) {
+    // N9: Tab from the marker moves into the peek.
+    if (fromBook && peekOpen && e.key === 'Tab' && !e.shiftKey) {
+      e.preventDefault()
+      peek?.focusFirst()
+      return
+    }
     // Keys inside the book document never reach the app's command handler: route them here,
     // with the page counting as focused (single-key shortcuts, §2.8).
     if (fromBook) {
@@ -582,11 +641,29 @@
       // L15: a book font that fails or takes over 1.5 s falls back to Literata, without a prompt.
       cleanups.push(engine.onDocument((doc) => void fallBackFailedFonts(doc)))
       cleanups.push(engine.onDocument(panByDrag))
+      cleanups.push(engine.onNote(onNote))
+      cleanups.push(engine.onImage(onImage))
+      cleanups.push(engine.onLinkHover((href) => (hoverUrl = href)))
+      // A click in the text closes the peek (it is not a modal, S8).
+      cleanups.push(
+        engine.onDocument((doc) =>
+          doc.addEventListener('pointerdown', (e) => {
+            if (lanes.floating?.kind !== 'peek') return
+            if ((e.target as Element | null)?.closest?.('.linen-peek-marker')) return
+            dispatch({ type: 'closeFloating' })
+          }),
+        ),
+      )
       cleanups.push(
         engine.onLink((link) => {
           if (link.external) {
-            // N10: only http(s), in the system browser. Opening waits for the opener plugin.
-            if (/^https?:\/\//i.test(link.href)) console.info('external link', link.href)
+            // N10: in the system browser; the core accepts only http(s) and mailto.
+            if (testHooks)
+              testHooks.externalOpened = [...(testHooks.externalOpened ?? []), link.href]
+            else
+              void ipc
+                .openExternal(link.href)
+                .catch((e) => console.warn('external link refused', e))
             return
           }
           if (location?.cfi) pushJump(location, 'link')
@@ -696,10 +773,26 @@
           }),
         )
       // K8 on a fixed-layout book zooms the page (I17); text size itself arrives with Aa.
-      const fixed = () => engine?.fixedLayout === true
-      cleanups.push(registry.handle('text.larger', { run: () => zoomStep(1), enabled: fixed }))
-      cleanups.push(registry.handle('text.smaller', { run: () => zoomStep(-1), enabled: fixed }))
-      cleanups.push(registry.handle('text.reset', { run: () => setZoom(1), enabled: fixed }))
+      // In the image view (N11) they zoom the image.
+      const zoomable = () => engine?.fixedLayout === true || imageOpen
+      cleanups.push(
+        registry.handle('text.larger', {
+          run: () => (imageOpen ? imageView?.step(1) : zoomStep(1)),
+          enabled: zoomable,
+        }),
+      )
+      cleanups.push(
+        registry.handle('text.smaller', {
+          run: () => (imageOpen ? imageView?.step(-1) : zoomStep(-1)),
+          enabled: zoomable,
+        }),
+      )
+      cleanups.push(
+        registry.handle('text.reset', {
+          run: () => (imageOpen ? (imageZoom = 1) : setZoom(1)),
+          enabled: zoomable,
+        }),
+      )
     })()
 
     const onResize = () => {
@@ -761,7 +854,7 @@
 >
   {#if navigatorOpen}
     <Navigator
-      bind:this={navigator}
+      bind:this={navPanel}
       title={book.title}
       author={book.authors.join(', ')}
       coverUrl={book.cover_path ? bookMediaUrl(book.id, book.cover_path) : null}
@@ -837,6 +930,22 @@
       <!-- G8: the text runs under the window edges; the location line sits on the lower fade. -->
       <div class="fade top-fade" aria-hidden="true"></div>
       <div class="fade bottom-fade" aria-hidden="true"></div>
+    {/if}
+    {#if peekOpen && note}
+      <FootnotePeek bind:this={peek} {note} onopen={openNoteInPlace} oncopy={copyNote} />
+    {/if}
+    {#if imageOpen && image}
+      <ImageView
+        bind:this={imageView}
+        {image}
+        bind:zoom={imageZoom}
+        dim={theme.scheme === 'dark'}
+        onclose={() => dispatch({ type: 'closeFloating' })}
+      />
+    {/if}
+    {#if hoverUrl}
+      <!-- N10: where an external link goes. -->
+      <div class="link-url" role="status">{hoverUrl}</div>
     {/if}
     {#if gotoOpen && contents && gotoAnchor}
       <GoTo
@@ -998,6 +1107,22 @@
     bottom: 0;
     height: 88px;
     background: linear-gradient(transparent, var(--ground) 55%);
+  }
+  .link-url {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    z-index: 25;
+    max-width: min(480px, 60%);
+    padding: 4px 8px;
+    border-radius: 6px;
+    background: var(--tooltip);
+    color: var(--tooltip-ink);
+    font: 400 12px var(--font-ui);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
   }
   /* I17: a zoomed page takes the whole window for panning; keys still turn. */
   .margin.zoomed {

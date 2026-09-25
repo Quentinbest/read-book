@@ -19,6 +19,8 @@ export interface TestHooks {
   run?: (id: string) => boolean
   /** Set instead of quitting, so the harness can check what was saved (N5). */
   quitRequested?: boolean
+  /** External links the reader would have opened; tests never open the system browser (N10). */
+  externalOpened?: string[]
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

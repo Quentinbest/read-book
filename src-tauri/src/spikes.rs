@@ -356,3 +356,14 @@ pub fn spike_scroll_wheel<R: Runtime>(
     });
     Ok(())
 }
+
+/// The general pasteboard's plain text, so tests can check Copy.
+#[tauri::command]
+pub fn spike_read_pasteboard() -> String {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    // SAFETY: a static framework constant.
+    NSPasteboard::generalPasteboard()
+        .stringForType(unsafe { NSPasteboardTypeString })
+        .map(|s| s.to_string())
+        .unwrap_or_default()
+}

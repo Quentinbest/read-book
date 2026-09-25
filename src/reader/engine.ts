@@ -29,6 +29,7 @@ import {
   type Chunks,
 } from './chunks'
 import { transformContent } from './content'
+import { isNoteRef, noteContainer, referencedFootnoteAsides } from './notes'
 import { MIN_SIDE_MARGIN, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
@@ -55,6 +56,26 @@ export interface ReaderLocation {
   /** Place within the section, 0–1; set when `approximate` (page/pages then count the laid-out chunk only). */
   sectionFraction?: number
   reason: 'page' | 'navigation' | 'scroll' | 'selection' | 'anchor' | 'snap' | 'external'
+}
+
+/** N9: a note reference was followed; the app shows a peek instead of navigating. */
+export interface NoteEvent {
+  marker: Element
+  href: string
+  /** The marker's text, e.g. “1”. */
+  label: string
+  /** The note's container in its document, or null when it cannot be found. */
+  note: Element | null
+  /** The marker's box in window coordinates. */
+  rect: DOMRect
+}
+
+/** N11: an image in the text was clicked. */
+export interface ImageEvent {
+  src: string
+  alt: string
+  caption: string
+  element: Element
 }
 
 export type Turn = 'next' | 'prev'
@@ -120,6 +141,9 @@ export class ReaderEngine {
   #link = new Set<Listener<LinkEvent>>()
   #key = new Set<Listener<KeyboardEvent>>()
   #doc = new Set<Listener<Document>>()
+  #notes = new Set<Listener<NoteEvent>>()
+  #images = new Set<Listener<ImageEvent>>()
+  #hover = new Set<Listener<string | null>>()
   #chunks = new WeakMap<Document, Chunks>()
   /** Section index of every loaded document (fixed-layout contents lack it). */
   #docIndex = new WeakMap<Document, number>()
@@ -199,6 +223,30 @@ export class ReaderEngine {
   onDocument(l: Listener<Document>) {
     this.#doc.add(l)
     return () => this.#doc.delete(l)
+  }
+
+  /** N9: note references open a peek; they never navigate. */
+  onNote(l: Listener<NoteEvent>) {
+    this.#notes.add(l)
+    return () => this.#notes.delete(l)
+  }
+
+  /** N11: images open the image view. */
+  onImage(l: Listener<ImageEvent>) {
+    this.#images.add(l)
+    return () => this.#images.delete(l)
+  }
+
+  /** N10: the URL of the external link under the pointer, or null when it leaves. */
+  onLinkHover(l: Listener<string | null>) {
+    this.#hover.add(l)
+    return () => this.#hover.delete(l)
+  }
+
+  /** N9 “Open note in place”: go to the note, showing it if it was taken out of the flow. */
+  async openNoteInPlace(note: NoteEvent) {
+    note.note?.removeAttribute('data-linen-footnote')
+    await this.#navigate(note.href)
   }
 
   onLink(l: Listener<LinkEvent>) {
@@ -569,6 +617,41 @@ export class ReaderEngine {
     this.#host.replaceChildren()
   }
 
+  /** N9: find the note a reference points at, in this chapter or another. */
+  async #peek(view: View, marker: Element, href: string) {
+    const resolved = view.resolveNavigation(href) as
+      { index: number; anchor?: (doc: Document) => Range | Element | null } | undefined
+    let note: Element | null = null
+    try {
+      if (resolved?.anchor) {
+        const doc =
+          resolved.index === this.#indexOf(view)
+            ? marker.ownerDocument
+            : await this.#book?.sections[resolved.index]?.createDocument?.()
+        const target = doc ? resolved.anchor(doc) : null
+        const el =
+          target && 'startContainer' in target
+            ? target.startContainer.nodeType === 1
+              ? (target.startContainer as Element)
+              : target.startContainer.parentElement
+            : (target as Element | null)
+        note = el ? noteContainer(el) : null
+      }
+    } catch {
+      note = null
+    }
+    const r = marker.getBoundingClientRect()
+    const frame = marker.ownerDocument.defaultView?.frameElement?.getBoundingClientRect()
+    const rect = new DOMRect(
+      (frame?.left ?? 0) + r.left,
+      (frame?.top ?? 0) + r.top,
+      r.width,
+      r.height,
+    )
+    const event = { marker, href, label: marker.textContent?.trim() ?? '', note, rect }
+    this.#notes.forEach((l) => l(event))
+  }
+
   /** Diagnostics for the end-to-end tests. */
   debug() {
     return {
@@ -631,8 +714,14 @@ export class ReaderEngine {
       // The engine follows internal links itself, so the target's chunk is laid out
       // (L16), and the app hears about the jump first (N1, N10).
       e.preventDefault()
-      const href = String((e as CustomEvent<{ href: string }>).detail.href)
+      const { href: raw, a } = (e as CustomEvent<{ href: string; a?: Element }>).detail
+      const href = String(raw)
       if (/^\s*javascript:/i.test(href)) return
+      // N9: a note reference opens a peek; it never navigates.
+      if (a && isNoteRef(a)) {
+        void this.#peek(view, a, href)
+        return
+      }
       this.#link.forEach((l) => l({ href, external: false }))
       void this.#navigate(href)
     })
@@ -1211,6 +1300,50 @@ export class ReaderEngine {
       }
     }
     doc.addEventListener('keydown', (e) => this.#key.forEach((l) => l(e)))
+    // N9: footnote asides that the text refers to are read in the peek, not in the flow.
+    const asides = referencedFootnoteAsides(doc)
+    if (asides.length) {
+      const style = doc.createElement('style')
+      style.textContent = '[data-linen-footnote] { display: none !important; }'
+      doc.head?.append(style)
+      for (const el of asides) el.setAttribute('data-linen-footnote', '')
+    }
+    if (!view.isFixedLayout) {
+      // N11: an image (not one inside a link) opens the image view.
+      doc.addEventListener('click', (e) => {
+        const el = (e.target as Element | null)?.closest?.('img, image')
+        if (!el || el.closest('a[href]')) return
+        const src =
+          (el as HTMLImageElement).currentSrc ||
+          el.getAttribute('src') ||
+          el.getAttribute('href') ||
+          el.getAttributeNS('http://www.w3.org/1999/xlink', 'href') ||
+          ''
+        if (!src) return
+        const caption = el.closest('figure')?.querySelector('figcaption')?.textContent ?? ''
+        const alt = el.getAttribute('alt') ?? ''
+        const event = {
+          src,
+          alt,
+          caption: (caption || alt).replace(/\s+/g, ' ').trim(),
+          element: el,
+        }
+        this.#images.forEach((l) => l(event))
+      })
+      // N10: show where an external link goes.
+      const external = (t: EventTarget | null) => {
+        const a = (t as Element | null)?.closest?.('a[href]')
+        const href = a?.getAttribute('href') ?? ''
+        return /^(https?:|mailto:)/i.test(href) ? href : null
+      }
+      doc.addEventListener('mouseover', (e) => {
+        const href = external(e.target)
+        if (href) this.#hover.forEach((l) => l(href))
+      })
+      doc.addEventListener('mouseout', (e) => {
+        if (external(e.target)) this.#hover.forEach((l) => l(null))
+      })
+    }
     // L12: wide tables and code scroll inside their own box.
     for (const el of doc.querySelectorAll('table, pre')) {
       if (el.parentElement?.classList.contains('linen-scroll')) continue

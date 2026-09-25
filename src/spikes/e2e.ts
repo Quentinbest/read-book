@@ -110,6 +110,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'broken-missing-items.epub',
     // N8: a print page list.
     'idpf-childrens-literature.epub',
+    // N9–N11: footnote asides, a long note, an image with a caption, an external link.
+    'notes-and-images.epub',
+    // N9: endnotes in another chapter.
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -1218,6 +1221,188 @@ export async function spikeE2E(): Promise<SpikeResult> {
       return onPage
         ? 'ok'
         : `page 175 not on the page shown (section ${loc()!.sectionIndex}, target ${index})`
+    },
+  })
+
+  /** Click something in the book, as the reader does. */
+  const clickInBook = (el: Element) =>
+    el.dispatchEvent(
+      new MouseEvent('click', {
+        bubbles: true,
+        cancelable: true,
+        view: el.ownerDocument.defaultView,
+      }),
+    )
+  const liveText = () =>
+    document.querySelector('[role="status"][aria-live="polite"]')?.textContent ?? ''
+
+  checks.push({
+    id: 'N9-footnote-peek',
+    description:
+      'Footnote peek: never navigates; below the marker or above near the page foot, never over its line; scrolls up to 50%; marker keeps focus styling; Tab in; Esc returns focus; asides leave the flow',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Notes and images/)
+      await reader()!.engine.goTo(0)
+      await settled(800)
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const asides = Array.from(doc.querySelectorAll('aside'))
+      if (!asides.length || asides.some((a) => getComputedStyle(a).display !== 'none'))
+        return 'referenced footnote asides are still in the flow'
+      const shown = reader()!.engine.view.lastLocation!.range
+      const markers = Array.from(doc.querySelectorAll('a[role="doc-noteref"]')).filter((a) =>
+        shown.intersectsNode(a),
+      ) as HTMLElement[]
+      if (markers.length < 3) return `${markers.length} markers on the first page`
+      let above = 0
+      for (const m of markers) {
+        const before = loc()!.cfi
+        clickInBook(m)
+        const peek = await waitFor('peek', () => document.querySelector<HTMLElement>('.peek'))
+        await settled(250)
+        const frame = doc.defaultView!.frameElement!.getBoundingClientRect()
+        const mr = m.getBoundingClientRect()
+        const line = { top: frame.top + mr.top, bottom: frame.top + mr.bottom }
+        const pr = peek.getBoundingClientRect()
+        if (!(pr.top >= line.bottom || pr.bottom <= line.top))
+          return `peek for ${m.textContent} covers the marker's line`
+        if (pr.bottom <= line.top) above++
+        if (loc()!.cfi !== before)
+          return `the peek navigated: ${before} → ${loc()!.cfi} (${loc()!.reason}, page ${loc()!.page}); scroll ${doc.scrollingElement?.scrollLeft}/${doc.scrollingElement?.scrollTop}`
+        if (!m.classList.contains('linen-peek-marker')) return 'the marker lost its focus styling'
+        const body = peek.querySelector<HTMLElement>('.body')!
+        if (m.textContent === '2') {
+          if (body.scrollHeight <= body.clientHeight) return 'the long note does not scroll'
+          if (body.clientHeight > innerHeight * 0.5 + 1) return 'the long note is taller than 50%'
+        } else if (!body.textContent!.includes(`Footnote ${m.textContent}:`))
+          return `peek ${m.textContent} shows “${body.textContent}”`
+        key('Escape', { code: 'Escape' })
+        await settled(250)
+        if (document.querySelector('.peek')) return 'Esc did not close the peek'
+        if (doc.activeElement !== m || m.classList.contains('linen-peek-marker'))
+          return 'focus did not return to the marker'
+      }
+      if (!above) return 'no marker near the page foot put its peek above'
+      // Tab from the marker moves into the peek.
+      clickInBook(markers[0])
+      await waitFor('peek', () => document.querySelector('.peek'))
+      key('Tab', { code: 'Tab' })
+      await settled(100)
+      const inPeek = !!document.activeElement?.closest('.peek')
+      key('Escape', { code: 'Escape' })
+      await settled(250)
+      return inPeek ? 'ok' : 'Tab did not move into the peek'
+    },
+  })
+
+  checks.push({
+    id: 'N9-peek-actions',
+    description:
+      'Copy copies the note; Open note in place goes to the note (shown) and Back returns',
+    run: async () => {
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const m = doc.querySelector<HTMLElement>('#ref-1')!
+      const start = loc()!.cfi
+      // Copy writes the real pasteboard: keep what was on it and put it back.
+      const kept = await invoke<string>('spike_read_pasteboard')
+      clickInBook(m)
+      const peek = await waitFor('peek', () => document.querySelector<HTMLElement>('.peek'))
+      peek.querySelector<HTMLButtonElement>('.copy')!.click()
+      await settled(300)
+      if (liveText() !== 'Note copied') return `announced “${liveText()}”`
+      const pasted = await invoke<string>('spike_read_pasteboard')
+      if (kept) await invoke('copy_text', { text: kept })
+      if (pasted !== 'Footnote 1: a short note about paragraph 1.') return `copied “${pasted}”`
+      clickInBook(m)
+      const again = await waitFor('peek', () => document.querySelector<HTMLElement>('.peek'))
+      again.querySelector<HTMLButtonElement>('.open')!.click()
+      await settled(900)
+      const note = reader()!.engine.view.renderer.getContents()[0].doc.getElementById('fn-1')!
+      if (getComputedStyle(note).display === 'none') return 'the note is still hidden'
+      const range = reader()!.engine.view.lastLocation!.range
+      if (!range.intersectsNode(note)) return 'the note is not on the page shown'
+      await back()
+      return loc()!.cfi === start ? 'ok' : 'Back did not return to the reference'
+    },
+  })
+
+  checks.push({
+    id: 'N9-endnote-peek',
+    description: 'A reference to an endnote in another chapter peeks at it without navigating',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const sections = reader()!.engine.book!.sections
+      await reader()!.engine.goTo(sections.findIndex((x) => x.id.endsWith('/chapter-109.xhtml')))
+      await settled(900)
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const m = doc.querySelector<HTMLElement>('#noteref-21')
+      if (!m)
+        return `no #noteref-21 in section ${loc()!.sectionIndex} (${doc.querySelectorAll('[role="doc-noteref"]').length} refs)`
+      const before = loc()!
+      clickInBook(m)
+      const peek = await waitFor('peek', () => document.querySelector<HTMLElement>('.peek'))
+      await settled(300)
+      const text = peek.querySelector('.body')?.textContent?.trim() ?? ''
+      key('Escape', { code: 'Escape' })
+      await settled(250)
+      if (loc()!.sectionIndex !== before.sectionIndex) return 'the peek navigated'
+      return text.length > 20 ? 'ok' : `peek text “${text}”`
+    },
+  })
+
+  checks.push({
+    id: 'N11-image-view',
+    description:
+      'Clicking an image opens the image view with its caption; ⌘+ zooms; Esc closes and focus returns to the image',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Notes and images/)
+      await reader()!.engine.goTo(1)
+      await settled(900)
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const img = doc.querySelector('img')!
+      clickInBook(img)
+      const view = await waitFor('image view', () =>
+        document.querySelector<HTMLElement>('.image-view'),
+      )
+      await settled(300)
+      const caption = view.querySelector('.caption')?.textContent ?? ''
+      const shown = view.querySelector<HTMLImageElement>('img')!
+      const loaded = shown.complete && shown.naturalWidth === 320
+      keyOnApp('=', { code: 'Equal', metaKey: true })
+      await settled(200)
+      const zoomLabel = view.querySelector('.fit')?.textContent ?? ''
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      if (!loaded) return 'the image did not load in the view'
+      if (caption !== 'Plate 1. A test image with its caption.') return `caption “${caption}”`
+      if (zoomLabel !== '150%') return `zoom label “${zoomLabel}”`
+      if (document.querySelector('.image-view')) return 'Esc did not close it'
+      return doc.activeElement === img ? 'ok' : 'focus did not return to the image'
+    },
+  })
+
+  checks.push({
+    id: 'N10-external-links',
+    description: 'External links show their URL on hover; only http(s) and mailto can be opened',
+    run: async () => {
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const a = doc.querySelector('a[href^="https:"]')!
+      a.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+      await settled(100)
+      const shown = document.querySelector('.link-url')?.textContent ?? ''
+      a.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }))
+      await settled(100)
+      if (shown !== 'https://example.org/linen-test') return `hover showed “${shown}”`
+      if (document.querySelector('.link-url')) return 'the URL stayed after the pointer left'
+      const refused: string[] = []
+      for (const url of ['file:///etc/hosts', 'javascript:alert(1)', 'x-apple-reminder://x'])
+        await invoke('open_external', { url }).then(
+          () => refused.push(`OPENED ${url}`),
+          () => refused.push('refused'),
+        )
+      return refused.every((r) => r === 'refused') ? 'ok' : refused.join(', ')
     },
   })
 

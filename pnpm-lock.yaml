@@ -5,7 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
-  foliate-js@0.0.0: 73c01e0832fa0d175da6ad929f96632f59d312e996b595fcff0254c0dc773f15
+  foliate-js@0.0.0: e441e07aa30f52aefd612b6152a0f24f9a93f585f00eb1d68f14a1d9a366fe4f
 
 importers:
 
@@ -22,7 +22,7 @@ importers:
         version: 2.9.2
       foliate-js:
         specifier: github:johnfactotum/foliate-js#78914aef4466eb960965702401634c2cb348e9b1
-        version: https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=73c01e0832fa0d175da6ad929f96632f59d312e996b595fcff0254c0dc773f15)
+        version: https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=e441e07aa30f52aefd612b6152a0f24f9a93f585f00eb1d68f14a1d9a366fe4f)
     devDependencies:
       '@axe-core/playwright':
         specifier: ^4.13.0
@@ -1978,7 +1978,7 @@ snapshots:
 
   flatted@3.4.4: {}
 
-  foliate-js@https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=73c01e0832fa0d175da6ad929f96632f59d312e996b595fcff0254c0dc773f15): {}
+  foliate-js@https://codeload.github.com/johnfactotum/foliate-js/tar.gz/78914aef4466eb960965702401634c2cb348e9b1(patch_hash=e441e07aa30f52aefd612b6152a0f24f9a93f585f00eb1d68f14a1d9a366fe4f): {}
 
   fsevents@2.3.3:
     optional: true

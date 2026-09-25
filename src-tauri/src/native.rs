@@ -2,6 +2,41 @@
 
 /// T6: is a screen reader running? On macOS this is VoiceOver. Single-key
 /// shortcuts switch off while it runs (§2.8), and so do page-turn motion (V9).
+/// N10: open an external link in the system browser. Only http(s) and mailto are
+/// accepted; anything else (file:, custom schemes, app launch URLs) is refused.
+#[tauri::command]
+pub fn open_external(url: String) -> Result<(), String> {
+    let parsed = tauri::Url::parse(&url).map_err(|e| e.to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
+        return Err(format!("refused to open a {} link", parsed.scheme()));
+    }
+    let ns = objc2_foundation::NSString::from_str(parsed.as_str());
+    let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
+    let opened = objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url);
+    if opened {
+        Ok(())
+    } else {
+        Err("the system could not open the link".into())
+    }
+}
+
+/// N9 Copy (and later selection Copy): put plain text on the general pasteboard.
+/// Native, so it does not depend on WebKit's user-gesture rules for the clipboard API.
+#[tauri::command]
+pub fn copy_text(text: String) -> Result<(), String> {
+    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+    let board = NSPasteboard::generalPasteboard();
+    board.clearContents();
+    let s = objc2_foundation::NSString::from_str(&text);
+    // SAFETY: NSPasteboardTypeString is a static framework constant.
+    let ok = board.setString_forType(&s, unsafe { NSPasteboardTypeString });
+    if ok {
+        Ok(())
+    } else {
+        Err("the pasteboard refused the text".into())
+    }
+}
+
 #[tauri::command]
 pub fn screen_reader_running() -> bool {
     #[cfg(target_os = "macos")]
