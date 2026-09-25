@@ -39,6 +39,25 @@ The plan wanted D4 decided and the G1 and G7 designs before Phase 7. None existe
 25. **Not met in Phase 7: the P6 memory budget.** WebKit gives a page no way to measure a Worker's memory; `measureUserAgentSpecificMemory` is Chromium-only. CPU is budgeted through the heartbeat; memory is not.
     *Recommendation:* accept for the MVP. Revisit if a native per-WebContent-process measure (like Phase 2's `proc_pid_rusage`) proves attributable to one extension.
 
+## Phase 8
+
+The plan wants D1 and D6 decided before Phase 8 (D3 and D5 are). Phase 8 goes ahead on everything that does not depend on them.
+
+26. **D1 — telemetry and crash reporting.** *Recommendation:* none. Nothing leaves the Mac. Screen 12 promises that books “stay on this device”, and a reading app does not need usage data. Crashes are written to a local log (`~/Library/Logs/Linen`), and Settings › About offers “Show crash log” for attaching to an email by choice.
+
+27. **D6 — auto-update and release cadence.** *Recommendation:*
+    - Tauri's updater, checking once a day, with updates signed by a Linen update key and served from GitHub Releases.
+    - It downloads in the background and installs on the next launch, after a quiet “Update ready · Restart” message. It never interrupts reading.
+    - A minor release about every six weeks, and fixes as needed.
+
+    **Needs from the owner:** the update signing key (kept out of the repo) and the release host. The updater is wired up, but it is off until both exist.
+
+28. **Code signing and notarisation (D3: a signed, notarised DMG).** *Needs from the owner:*
+    - a Developer ID Application certificate in the keychain;
+    - an App Store Connect API key (or an Apple ID app password) for `notarytool`.
+
+    `scripts/release-macos.sh` is ready to build, sign, notarise, staple and verify once they are there. Until then, releases are unsigned development builds.
+
 ## Carried over (need a person, not a decision)
 
 9. **VoiceOver re-check of the reader (X3).** About 5 minutes: `scripts/run-spikes.sh x3`, turn VoiceOver on, Control + Option + A, follow the panel.

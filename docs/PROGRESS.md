@@ -13,8 +13,8 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | 4 Search | Done | Met; baseline approved 2026-09-25 | `docs/phase4-status.md` |
 | 5 Selection and annotation | Done | Met; baselines approved 2026-09-25 | `docs/phase5-status.md` |
 | 6 Settings and library | Done | Met; baselines approved 2026-09-25 | `docs/phase6-status.md` |
-| 7 Extensions | Done, pending approval | All met on macOS except the visual baselines (item 24), which wait for the owner, and the P6 memory budget, which WebKit cannot measure (item 25) | `docs/phase7-status.md` |
-| 8 Hardening and release | Next | — | — |
+| 7 Extensions | Done, pending approval | Verified 2026-09-25: the full suite passed 98/98 on Desktop 2, and the unit tests pass. Waiting: the visual baselines (item 24) and the P6 memory budget (item 25) | `docs/phase7-status.md` |
+| 8 Hardening and release | In progress | — | `docs/phase8-status.md` |
 
 ## How the work is checked
 
