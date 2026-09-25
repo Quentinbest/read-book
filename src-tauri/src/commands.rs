@@ -595,11 +595,15 @@ pub fn book_info(state: State<AppState>, book_id: String) -> CmdResult<serde_jso
         )
         .map_err(|e| failed(e.to_string()))?;
     let size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-    let md = std::panic::catch_unwind(|| crate::epub::open(&path))
+    let package = std::panic::catch_unwind(|| crate::epub::open(&path))
         .ok()
         .and_then(|r| r.ok())
-        .map(|(_, p)| p.metadata)
-        .unwrap_or_default();
+        .map(|(_, p)| p);
+    let chapters = package
+        .as_ref()
+        .map(|p| p.spine.len() + p.damage.len())
+        .unwrap_or(0);
+    let md = package.map(|p| p.metadata).unwrap_or_default();
     Ok(serde_json::json!({
         "a11y": serde_json::from_str::<serde_json::Value>(&a11y).unwrap_or_default(),
         "file_size": size,
@@ -608,6 +612,7 @@ pub fn book_info(state: State<AppState>, book_id: String) -> CmdResult<serde_jso
         "published": md.date,
         "identifier": md.package_identifier,
         "description": md.description,
+        "chapters": chapters,
     }))
 }
 

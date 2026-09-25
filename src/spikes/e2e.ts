@@ -76,6 +76,12 @@ function libraryTile(title: RegExp): HTMLButtonElement | undefined {
 async function openFromLibrary(title: RegExp) {
   const row = await waitFor('library tile', () => libraryTile(title))
   row.click()
+  // E3: a damaged book shows its card first; the checks read it anyway.
+  const card = await waitFor(
+    'reader or damaged card',
+    () => loc()?.cfi || document.querySelector<HTMLElement>('dialog[open] .card'),
+  )
+  if (card instanceof HTMLElement) card.querySelector<HTMLButtonElement>('.primary')!.click()
   await waitFor('reader location', () => loc()?.cfi)
   await settled(800)
 }
@@ -3023,6 +3029,51 @@ export async function spikeE2E(): Promise<SpikeResult> {
       )
       await settled(300)
       if (document.querySelector('dialog[open] .info')) problems.push('Esc did not close it')
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'E3-damaged-card',
+    description:
+      'Opening a book with damaged chapters shows the card (how many of how many, Read anyway, Show file, Remove) until Read anyway',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      const id = (await invoke<{ id: string; title: string }[]>('library_list')).find((b) =>
+        /missing/i.test(b.title),
+      )?.id
+      if (!id) return 'no damaged book in the library'
+      // Forget any earlier Read anyway, as a fresh library has none.
+      await invoke('setting_set', { key: `damageAck:${id}`, value: '' })
+      const tile = Array.from(document.querySelectorAll<HTMLElement>('.library .tile')).find(
+        (t) => t.dataset.book === id,
+      )!
+      tile.querySelector<HTMLButtonElement>('.open')!.click()
+      const card = await waitFor('card', () =>
+        document.querySelector<HTMLElement>('dialog[open] .card'),
+      )
+      await waitFor(
+        'counts',
+        () => /of \d+ chapters? (is|are) damaged/.test(card.textContent ?? ''),
+        3000,
+      ).catch(() => problems.push(`text “${card.querySelector('.body')?.textContent}”`))
+      const labels = Array.from(card.querySelectorAll('button')).map((b) => b.textContent?.trim())
+      if (labels.join(', ') !== 'Read anyway, Show file, Remove')
+        problems.push(`buttons ${labels.join(', ')}`)
+      card.querySelector<HTMLButtonElement>('.primary')!.click()
+      await waitFor('reader', () => loc()?.cfi)
+      await backToLibrary()
+      Array.from(document.querySelectorAll<HTMLElement>('.library .tile'))
+        .find((t) => t.dataset.book === id)!
+        .querySelector<HTMLButtonElement>('.open')!
+        .click()
+      await settled(800)
+      if (document.querySelector('dialog[open] .card'))
+        problems.push('the card came back after Read anyway')
+      await waitFor('reader', () => loc()?.cfi)
+      await backToLibrary()
       await openFromLibrary(/Moby Dick(?!;)/)
       return problems.length ? problems.join('; ') : 'ok'
     },

@@ -31,6 +31,13 @@ export const en = {
     removed: (title: string) => `Removed “${title}”`,
     restore: (title: string) => `Restore “${title}”`,
     noMatches: (q: string) => `No books match “${q}”`,
+    // E3; Screen 12
+    damagedTitle: 'Part of this book couldn’t be opened',
+    damagedBody: (n: number, total: number) =>
+      `${total ? `${n} of ${total}` : n} ${(total || n) === 1 ? 'chapter is' : 'chapters are'} damaged. You can read the rest; damaged chapters are marked in Contents so nothing looks silently missing.`,
+    damagedFile: (title: string, size: string) => `${title} · ${size}`,
+    readAnyway: 'Read anyway',
+    showFileShort: 'Show file',
     clear: 'Clear',
   },
   // Settings window (G2, PROVISIONAL; Screen 11 for Extensions)

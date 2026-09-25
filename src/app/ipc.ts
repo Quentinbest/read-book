@@ -36,6 +36,8 @@ export interface BookInfo {
   published: string | null
   identifier: string | null
   description: string | null
+  /** Spine items, damaged ones included (E3: “3 of 62 chapters are damaged”). */
+  chapters: number
 }
 
 export type ImportOutcome =

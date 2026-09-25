@@ -11,6 +11,7 @@
   import { ipc, type Book } from './ipc'
   import BookCover from './BookCover.svelte'
   import BookInfo from './BookInfo.svelte'
+  import DamagedBook from './DamagedBook.svelte'
   import { popUpMenu } from './nativeMenu'
   import { searchAndSort, type SortKey } from '../lib/library/order'
   import { openedAgo, openedLine } from '../lib/library/when'
@@ -40,6 +41,21 @@
   let query = $state('')
   let sort = $state<SortKey>('recent')
   let infoFor = $state<Book | null>(null)
+  let damagedFor = $state<Book | null>(null)
+
+  /** E3: a book with damaged chapters shows the card first, until Read anyway. */
+  async function open(book: Book) {
+    if (book.damaged_items > 0 && (await ipc.settingGet(`damageAck:${book.id}`)) !== '1') {
+      damagedFor = book
+      return
+    }
+    onopenbook(book)
+  }
+  function readAnyway(book: Book) {
+    damagedFor = null
+    void ipc.settingSet(`damageAck:${book.id}`, '1')
+    onopenbook(book)
+  }
   let now = $state(Date.now())
   const undo = new UndoStack()
 
@@ -110,9 +126,9 @@
       const target = e.target as Element | null
       if (target && target !== document.body && target.closest('button, input, a, [tabindex]'))
         return
-      if (!current || infoFor) return
+      if (!current || infoFor || damagedFor) return
       e.preventDefault()
-      onopenbook(current)
+      void open(current)
     }
     window.addEventListener('keydown', onkeydown)
     const offUndo = registry.handle('edit.undo', {
@@ -181,7 +197,7 @@
               class="cover-button"
               tabindex="-1"
               aria-hidden="true"
-              onclick={() => onopenbook(current)}
+              onclick={() => void open(current)}
             >
               <BookCover book={current} width={112} height={168} />
             </button>
@@ -199,7 +215,7 @@
                 >
               </div>
               <div class="resume-row">
-                <button type="button" class="resume" onclick={() => onopenbook(current)}
+                <button type="button" class="resume" onclick={() => void open(current)}
                   >{t.library.resume}</button
                 >
                 {#if current.opened_at}<span class="opened"
@@ -214,7 +230,7 @@
                 <button
                   type="button"
                   class="small"
-                  onclick={() => onopenbook(b)}
+                  onclick={() => void open(b)}
                   oncontextmenu={(e) => {
                     e.preventDefault()
                     itemMenu(b)
@@ -250,7 +266,7 @@
               <button
                 type="button"
                 class="open"
-                onclick={() => onopenbook(b)}
+                onclick={() => void open(b)}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   itemMenu(b)
@@ -288,6 +304,15 @@
   {/if}
 </main>
 <BookInfo book={infoFor} onclose={() => (infoFor = null)} />
+<DamagedBook
+  book={damagedFor}
+  onread={readAnyway}
+  onremove={(b) => {
+    damagedFor = null
+    void remove(b)
+  }}
+  onclose={() => (damagedFor = null)}
+/>
 
 <style>
   /* The window's title bar is an overlay; this strip keeps it draggable. */
