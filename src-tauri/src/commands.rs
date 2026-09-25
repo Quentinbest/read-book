@@ -526,6 +526,56 @@ pub fn book_show_file(state: State<AppState>, book_id: String) -> CmdResult<()> 
         })
 }
 
+/// D2 (provisional): the folder that holds everything (books, covers, the database).
+#[tauri::command]
+pub fn library_folder(state: State<AppState>) -> CmdResult<String> {
+    let root = state
+        .library
+        .books_dir
+        .parent()
+        .map(PathBuf::from)
+        .unwrap_or_default();
+    Ok(root.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub fn library_folder_show(state: State<AppState>) -> CmdResult<()> {
+    let root = PathBuf::from(library_folder(state)?);
+    std::process::Command::new("/usr/bin/open")
+        .arg(&root)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })
+}
+
+/// D2 export: write one file into a folder the reader chose in the save dialog.
+/// The name is a plain file name (no folders); an existing file is not overwritten.
+#[tauri::command]
+pub fn export_write(dir: String, name: String, contents: String) -> CmdResult<String> {
+    let failed = |m: String| CommandError::Failed { message: m };
+    if name.is_empty() || name.contains(['/', '\\', '\0']) || name.starts_with('.') {
+        return Err(failed(format!("bad file name: {name}")));
+    }
+    let dir = PathBuf::from(dir);
+    if !dir.is_dir() {
+        return Err(failed("not a folder".into()));
+    }
+    let (stem, ext) = name.rsplit_once('.').unwrap_or((&name, ""));
+    let mut path = dir.join(&name);
+    for n in 2..1000 {
+        if !path.exists() {
+            break;
+        }
+        path = dir.join(format!("{stem} {n}.{ext}"));
+    }
+    std::fs::write(&path, contents).map_err(|e| CommandError::SaveFailed {
+        message: e.to_string(),
+    })?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// E10, G3: what the book info sheet shows, read-only: the stored metadata, the
 /// EPUB accessibility metadata, the file's size, and the publisher and date from
 /// the package (read from the library copy now, as they are not stored).

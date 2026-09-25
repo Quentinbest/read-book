@@ -111,9 +111,11 @@ fn write_atomic(dest: &Path, mut data: impl Read) -> std::io::Result<()> {
 
 /// A stable tint for the generated typographic cover (E4), derived from the title.
 pub fn cover_tint(title: &str) -> String {
-    // Muted tints that keep ink text above 7:1 (X1); chosen by a hash of the title.
-    const TINTS: [&str; 8] = [
-        "#E8DCC8", "#D9E2D0", "#D6DEE6", "#E6D5D2", "#E2DCC0", "#D8D4E4", "#E4D9C0", "#D2E0DD",
+    // Screen 01's cover tints (the same list as src/lib/library/tint.ts, whose test
+    // keeps the lettering above 7:1, X1); chosen by a hash of the title.
+    const TINTS: [&str; 14] = [
+        "#B9C6CC", "#D8C8A8", "#C9BED6", "#BCC9A8", "#E0C4BE", "#A9B4A4", "#D6CFC0", "#CDB592",
+        "#D9B8A0", "#C8D3B6", "#C9A9A6", "#B8B3A6", "#D8C3CF", "#CFC39A",
     ];
     let h = title
         .bytes()
@@ -291,6 +293,19 @@ fn extract_cover<R: Read + std::io::Seek>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cover_tints_match_the_ui_list() {
+        // src/lib/library/tint.ts holds the same list, with the contrast test.
+        let ts = include_str!("../../src/lib/library/tint.ts");
+        for n in 0..40 {
+            let tint = cover_tint(&format!("Title {n}"));
+            assert!(
+                ts.contains(&format!("'{tint}'")),
+                "{tint} is not in tint.ts"
+            );
+        }
+    }
 
     fn corpus(name: &str) -> Option<PathBuf> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

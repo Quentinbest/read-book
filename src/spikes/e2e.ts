@@ -64,12 +64,17 @@ function click(selector: string) {
   el.click()
 }
 
-async function openFromLibrary(title: RegExp) {
-  const row = await waitFor('library row', () =>
-    Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-      title.test(b.textContent ?? ''),
-    ),
+/** A book's tile in the library grid (E6), found by its title. */
+function libraryTile(title: RegExp): HTMLButtonElement | undefined {
+  return (
+    Array.from(document.querySelectorAll<HTMLElement>('.library .tile'))
+      .find((t) => title.test(t.querySelector('.tt')?.textContent ?? ''))
+      ?.querySelector<HTMLButtonElement>('.open') ?? undefined
   )
+}
+
+async function openFromLibrary(title: RegExp) {
+  const row = await waitFor('library tile', () => libraryTile(title))
   row.click()
   await waitFor('reader location', () => loc()?.cfi)
   await settled(800)
@@ -77,7 +82,7 @@ async function openFromLibrary(title: RegExp) {
 
 async function backToLibrary() {
   key('l', { code: 'KeyL', metaKey: true })
-  await waitFor('library', () => document.querySelector('.library .row, .library .empty'))
+  await waitFor('library', () => document.querySelector('.library .tile, .library .empty'))
   await settled(300)
 }
 
@@ -582,11 +587,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await backToLibrary()
       hooks.openDelayMs = 900
       try {
-        const row = await waitFor('row', () =>
-          Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-            /Moby Dick(?!;)/.test(b.textContent ?? ''),
-          ),
-        )
+        const row = await waitFor('row', () => libraryTile(/Moby Dick(?!;)/))
         row.click()
         await sleep(300)
         const early = document.querySelector('.location-line')?.textContent ?? ''
@@ -748,11 +749,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       'A 1 MB+ chapter opens within the open-book budget (< 500 ms, click → first location) and shows “≈” pages',
     run: async () => {
       await backToLibrary()
-      const row = await waitFor('row', () =>
-        Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-          /one file/i.test(b.textContent ?? ''),
-        ),
-      )
+      const row = await waitFor('row', () => libraryTile(/one file/i))
       const previous = reader()?.engine
       const t0 = performance.now()
       row.click()
@@ -2877,6 +2874,208 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Phase 6: library (E6–E10)
+  const tiles = () =>
+    Array.from(document.querySelectorAll<HTMLElement>('.library .tile')).map(
+      (t) => t.querySelector('.tt')?.textContent?.trim() ?? '',
+    )
+  const typeSearch = async (q: string) => {
+    const field = document.querySelector<HTMLInputElement>('#lib-search')!
+    field.value = q
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await settled(200)
+  }
+  const menuNow = () => hooks.contextMenu
+  const tileMenu = async (title: RegExp) => {
+    hooks.contextMenu = undefined
+    const tile = libraryTile(title)!.closest('.tile')!
+    tile.querySelector<HTMLButtonElement>('.more')!.click()
+    await settled(100)
+    return hooks.contextMenu!
+  }
+
+  checks.push({
+    id: 'E6-library',
+    description:
+      'Library: Continue reading shows the last book with its chapter and Resume reading; All books has every book with its count; search and sort order the grid',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      const listed = await invoke<{ title: string }[]>('library_list')
+      if (tiles().length !== listed.length)
+        problems.push(`${tiles().length} tiles for ${listed.length} books`)
+      const count = document.querySelector('.library .all-head .count')?.textContent
+      if (count !== String(listed.length)) problems.push(`count ${count}`)
+      const cr = document.querySelector<HTMLElement>('.library .continue')
+      if (!cr) problems.push('no Continue reading')
+      else {
+        if (!/Moby Dick(?!;)/.test(cr.querySelector('.big-title')?.textContent ?? ''))
+          problems.push(`current book “${cr.querySelector('.big-title')?.textContent}”`)
+        if (!cr.querySelector('.resume')) problems.push('no Resume reading')
+        if (!/Loomings|·/.test(cr.querySelector('.where')?.textContent ?? ''))
+          problems.push(`where “${cr.querySelector('.where')?.textContent}”`)
+        if (!/^Opened /.test(cr.querySelector('.opened')?.textContent ?? ''))
+          problems.push('no opened time')
+      }
+      await typeSearch('sous le')
+      if (tiles().length !== 1 || !/Sous le vent/.test(tiles()[0]))
+        problems.push(`search: ${tiles().join(' | ')}`)
+      if (document.querySelector('.library .continue'))
+        problems.push('Continue reading shown while searching')
+      await typeSearch('xyzzy')
+      if (!document.querySelector('.library .no-matches')) problems.push('no “No books match”')
+      await typeSearch('')
+      hooks.contextMenu = undefined
+      document.querySelector<HTMLButtonElement>('.library .sort')!.click()
+      await settled(100)
+      menuNow()?.run('Title')
+      await settled(300)
+      const { titleKey } = await import('../lib/library/order')
+      const keys = tiles().map(titleKey)
+      const sorted = [...keys].sort(
+        new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' }).compare,
+      )
+      if (keys.join('|') !== sorted.join('|'))
+        problems.push(`title order: ${tiles().slice(0, 5).join(' | ')}…`)
+      if ((await invoke<string | null>('setting_get', { key: 'librarySort' })) !== 'title')
+        problems.push('sort not remembered')
+      hooks.contextMenu = undefined
+      document.querySelector<HTMLButtonElement>('.library .sort')!.click()
+      await settled(100)
+      menuNow()?.run('Recent')
+      await settled(300)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'E8-return-resumes',
+    description: 'Return in the library opens the current book at its saved position',
+    run: async () => {
+      await backToLibrary()
+      document.body.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+      )
+      await waitFor('reader', () => loc()?.cfi)
+      await settled(600)
+      const books = await invoke<{ id: string; title: string }[]>('library_list')
+      const title = books.find((b) => b.id === reader()?.bookId)?.title ?? ''
+      return /Moby Dick(?!;)/.test(title) ? 'ok' : `Return opened “${title}”`
+    },
+  })
+
+  checks.push({
+    id: 'E7-remove-undo',
+    description:
+      'The item menu has Book info, Show in Finder and Remove; Remove is immediate with Undo (⌘Z and the message)',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      const menu = await tileMenu(/Notes and images/)
+      if (menu.labels.join(', ') !== 'Book info, Show in Finder, Remove')
+        problems.push(`menu: ${menu.labels.join(', ')}`)
+      menu.run('Remove')
+      await settled(500)
+      if (libraryTile(/Notes and images/)) problems.push('not removed')
+      if (document.querySelector('dialog[open]')) problems.push('asked to confirm')
+      if (hooks.messages!.current?.text !== 'Removed “Notes and images”')
+        problems.push(`message “${hooks.messages!.current?.text}”`)
+      keyOnApp('z', { code: 'KeyZ', metaKey: true })
+      await settled(600)
+      if (!libraryTile(/Notes and images/)) problems.push('⌘Z did not bring it back')
+      // Again, with the message's Undo.
+      ;(await tileMenu(/Notes and images/)).run('Remove')
+      await settled(500)
+      hooks.messages!.act(hooks.messages!.current!.id)
+      await settled(600)
+      if (!libraryTile(/Notes and images/)) problems.push('Undo did not bring it back')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'E10-book-info',
+    description:
+      'Book info: a read-only modal sheet with the metadata and accessibility metadata; Esc closes it',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      ;(await tileMenu(/Moby Dick(?!;)/)).run('Book info')
+      const sheet = await waitFor('info', () =>
+        document.querySelector<HTMLElement>('dialog[open] .info'),
+      )
+      await waitFor(
+        'details',
+        () => sheet.querySelector('dd') && /File size/.test(sheet.textContent ?? ''),
+      )
+      const text = sheet.textContent ?? ''
+      for (const want of ['Moby Dick', 'Herman Melville', 'Language', 'English', 'Accessibility'])
+        if (!text.includes(want)) problems.push(`no “${want}”`)
+      if (sheet.querySelector('input, textarea, [contenteditable]'))
+        problems.push('editable fields')
+      ;(document.activeElement ?? document.body).dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      await settled(300)
+      if (document.querySelector('dialog[open] .info')) problems.push('Esc did not close it')
+      await openFromLibrary(/Moby Dick(?!;)/)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'G2-settings',
+    description:
+      'Settings… (⌘,) asks for the Settings window; a change there (text size, announcements) reaches the open book at once and is saved',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const before = hooks.settingsOpened ?? 0
+      keyOnApp(',', { code: 'Comma', metaKey: true })
+      await settled(200)
+      if ((hooks.settingsOpened ?? 0) !== before + 1) problems.push('⌘, did not ask for the window')
+      // The window's page, mounted here (the harness drives one WebView).
+      const { default: Preferences } = await import('../prefs/Preferences.svelte')
+      const { unmount } = await import('svelte')
+      const host = document.createElement('div')
+      host.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground)'
+      document.body.append(host)
+      const prefs = mount(Preferences, { target: host })
+      try {
+        await settled(500)
+        host.querySelector<HTMLButtonElement>('#prefs-reading')!.click()
+        await settled(200)
+        const size = host.querySelector<HTMLSelectElement>('#prefs-size')!
+        size.value = '22'
+        size.dispatchEvent(new Event('change', { bubbles: true }))
+        await settled(800)
+        if (bodyFontPx() !== 22) problems.push(`the book is at ${bodyFontPx()} px`)
+        const announce = Array.from(host.querySelectorAll<HTMLButtonElement>('[role="switch"]'))[1]
+        announce.click()
+        await settled(300)
+        if (
+          (await invoke<string | null>('setting_get', { key: 'pageTurnAnnouncements' })) !== 'off'
+        )
+          problems.push('announcements not saved')
+        announce.click()
+        size.value = '19'
+        size.dispatchEvent(new Event('change', { bubbles: true }))
+        await settled(600)
+      } finally {
+        void unmount(prefs)
+        host.remove()
+      }
+      if (bodyFontPx() !== 19) problems.push(`not reset: ${bodyFontPx()} px`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -2885,11 +3084,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const times: number[] = []
       for (let i = 0; i < 5; i++) {
         await backToLibrary()
-        const row = await waitFor('row', () =>
-          Array.from(document.querySelectorAll<HTMLButtonElement>('.row')).find((b) =>
-            /Moby Dick(?!;)/.test(b.textContent ?? ''),
-          ),
-        )
+        const row = await waitFor('row', () => libraryTile(/Moby Dick(?!;)/))
         const previous = reader()?.engine
         const t0 = performance.now()
         row.click()
@@ -3441,6 +3636,21 @@ export async function spikeVisual(): Promise<SpikeResult> {
   key('Escape', { code: 'Escape' })
   await getCurrentWindow().setSize(new LogicalSize(1280, 800))
   await settled(1200)
+
+  // Phase 6 (Screens 09 and 01): Aa over Chapter 1, then the library.
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  await showControls()
+  hooks.run?.('reader.settings')
+  await waitFor('Aa', () => document.querySelector('.aa[role="dialog"]'))
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  clearMessage()
+  await capture('09-reading-settings')
+  key('Escape', { code: 'Escape' })
+  await settled(300)
+  await backToLibrary()
+  clearMessage()
+  await capture('01-library')
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

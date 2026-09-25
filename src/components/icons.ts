@@ -18,6 +18,9 @@ export const ICONS = {
   copy: 'M10.5 8.5h7a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2zM15.5 5.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v9A1.5 1.5 0 0 0 5 15.5h.5',
   trash: 'M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13',
   check: 'M5 12.5l4.5 4.5L19 7.5',
+  // Screen 01: the sort menu's chevron and Open….
+  'chevron-down': 'M6 9l6 6 6-6',
+  plus: 'M12 5v14M5 12h14',
 } as const
 
 export type IconName = keyof typeof ICONS

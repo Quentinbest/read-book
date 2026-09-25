@@ -31,6 +31,8 @@ export interface TestHooks {
   externalOpened?: string[]
   /** A10: the native context menu's items, recorded instead of shown (menus block the harness). */
   contextMenu?: { labels: string[]; run: (label: string) => void }
+  /** G2: times Settings… asked for the Settings window (not opened under test). */
+  settingsOpened?: number
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

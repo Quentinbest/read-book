@@ -27,7 +27,11 @@ export default defineConfig({
     minify: !process.env.TAURI_ENV_DEBUG,
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     rollupOptions: {
-      input: spikes ? { main: 'index.html', spikes: 'spikes.html' } : { main: 'index.html' },
+      input: {
+        main: 'index.html',
+        settings: 'settings.html',
+        ...(spikes ? { spikes: 'spikes.html' } : {}),
+      },
     },
   },
 })

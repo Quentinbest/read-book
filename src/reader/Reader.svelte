@@ -33,11 +33,12 @@
   import NotesPanel from './NotesPanel.svelte'
   import { Annotations, COLOR_NAMES, COLORS, UndoStack } from './annotations.svelte'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
-  import { Menu, MenuItem, PredefinedMenuItem } from '@tauri-apps/api/menu'
-  import { multipliedTint, parseColor } from '../lib/theme/tokens'
+  import { popUpMenu, type MenuEntry } from '../app/nativeMenu'
+  import { MOTION, multipliedTint, parseColor } from '../lib/theme/tokens'
   import AaPopover from './AaPopover.svelte'
   import { clampTextSize, DEFAULT_TEXT_SIZE, stepTextSize } from './textSizes'
   import { applyTheme, type ThemeChoice } from '../app/theme'
+  import { changeSetting, onSettingChanged } from '../app/settingsSync'
   import { buildContents, currentIndex, type Contents, type ContentsItem } from './contents'
   import { coverUrl as bookCoverUrl } from './loader'
   import Kbd from '../components/Kbd.svelte'
@@ -624,7 +625,7 @@
     const existing = hit ? annotations.get(hit) : null
     if (!sel && !existing) return
     e.preventDefault()
-    const entries: ({ label: string; run: () => void } | null)[] = [
+    const entries: MenuEntry[] = [
       ...(['yellow', 'green', 'blue', 'rose'] as const).map((c) => ({
         label: `Highlight ${COLOR_NAMES[c]}`,
         run: () => void (existing ? recolor(existing.id, c) : highlightSelection(c)),
@@ -642,23 +643,7 @@
         ? { label: t.annotations.delete, run: () => deleteAnnotation(existing.id) }
         : { label: t.annotations.search, run: () => searchFor(sel?.text ?? '') },
     ]
-    // The harness cannot dismiss a native menu: it gets the entries instead.
-    if (testHooks) {
-      const actions = entries.filter((x) => x !== null)
-      testHooks.contextMenu = {
-        labels: actions.map((x) => x.label),
-        run: (label) => actions.find((x) => x.label === label)?.run(),
-      }
-      return
-    }
-    const items = await Promise.all(
-      entries.map((x) =>
-        x
-          ? MenuItem.new({ text: x.label, action: x.run })
-          : PredefinedMenuItem.new({ item: 'Separator' }),
-      ),
-    )
-    await (await Menu.new({ items })).popup()
+    await popUpMenu(entries)
   }
 
   // ---- The ⋯ menu (Screen 03): every command, as in the menu bar and ⌘K
@@ -754,14 +739,14 @@
     const next = clampTextSize(px)
     if (next === fontPx) return
     fontPx = next
-    void ipc.settingSet('fontPx', String(next))
+    void changeSetting('fontPx', String(next))
     relayout()
   }
   /** L5: all books. */
   function setSpacing(next: Spacing) {
     if (next === spacing) return
     spacing = next
-    void ipc.settingSet('lineSpacing', next)
+    void changeSetting('lineSpacing', next)
     relayout()
   }
   /** B8: this book only. */
@@ -775,12 +760,14 @@
   async function setTheme(choice: ThemeChoice) {
     themeChoice = choice
     applyTheme(choice)
-    await ipc.settingSet('theme', choice)
+    await changeSetting('theme', choice)
     theme = await resolveTheme()
     relayout()
   }
   let edges = { topStart: 0, bottomOff: false }
   let announceTurns = true
+  /** V8, G2: the page-turn crossfade preference (off by default: turns are instant). */
+  let crossfadeTurns = false
   let fontFaces = ''
   const history = new LocationHistory()
   let pace = new ReadingPace()
@@ -939,6 +926,13 @@
     recentTurns.push(now)
     while (recentTurns.length && now - recentTurns[0] > RAPID_WINDOW_MS) recentTurns.shift()
     void engine.turn(dir).then(() => {
+      // The new page fades in over 120 ms (a cross-fade needs a picture of the old page,
+      // which a WebView cannot take cheaply); never with reduced motion (V9).
+      if (crossfadeTurns && !matchMedia('(prefers-reduced-motion: reduce)').matches)
+        host.animate([{ opacity: 0.25 }, { opacity: 1 }], {
+          duration: MOTION.pageTurnCrossfade,
+          easing: 'ease-out',
+        })
       if (recentTurns.length > RAPID_TURNS && rapidStart) {
         pushJump(rapidStart, 'pages')
         rapidStart = null
@@ -1133,6 +1127,7 @@
       if (savedSpacing === 'compact' || savedSpacing === 'loose') spacing = savedSpacing
       themeChoice = ((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto'
       announceTurns = (await ipc.settingGet('pageTurnAnnouncements')) !== 'off'
+      crossfadeTurns = (await ipc.settingGet('pageTurnCrossfade')) === 'on'
       await refreshEdges()
       const savedPace = await ipc.settingGet('readingPace')
       if (savedPace) pace = new ReadingPace(JSON.parse(savedPace))
@@ -1398,6 +1393,20 @@
         }),
       )
       cleanups.push(registry.handle('reader.settings', { run: openAa }))
+      // G2: changes made in the Settings window apply here at once.
+      cleanups.push(
+        await onSettingChanged(({ key, value }) => {
+          if (key === 'fontPx') setFont(Number(value))
+          else if (
+            key === 'lineSpacing' &&
+            (value === 'compact' || value === 'default' || value === 'loose')
+          )
+            setSpacing(value)
+          else if (key === 'theme' && value !== themeChoice) void setTheme(value as ThemeChoice)
+          else if (key === 'pageTurnAnnouncements') announceTurns = value !== 'off'
+          else if (key === 'pageTurnCrossfade') crossfadeTurns = value === 'on'
+        }),
+      )
       // L18: how much of the book is code or tables, measured once in idle time.
       const shareKey = `codeShare:${book.id}`
       const known = await ipc.settingGet(shareKey)

@@ -14,6 +14,8 @@
   import CommandPalette from './app/CommandPalette.svelte'
   import CheatSheet from './app/CheatSheet.svelte'
   import { applyTheme, type ThemeChoice } from './app/theme'
+  import { onSettingChanged } from './app/settingsSync'
+  import { openSettingsWindow } from './app/settingsWindow'
   import { WriteQueue } from './app/writes'
   import { testHooks } from './app/testHooks'
   import { isTextField, type KeyContext } from './lib/commands/keys'
@@ -119,6 +121,13 @@
       applyTheme(((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto')
       singleKeysEnabled = (await ipc.settingGet('singleKeyShortcuts')) !== 'off'
       await refresh()
+      // G2 (provisional): “When Linen opens: Reopen the last book”.
+      if ((await ipc.settingGet('openAtLaunch')) === 'book' && !reading) {
+        const last = books
+          .filter((b) => b.opened_at !== null && !b.finished_at)
+          .sort((a, b) => (b.opened_at ?? 0) - (a.opened_at ?? 0))[0]
+        if (last) reading = last
+      }
       // T6: VoiceOver has no web-visible signal; ask the core, and keep asking.
       const pollScreenReader = async () => {
         screenReaderRunning = await ipc.screenReaderRunning()
@@ -133,6 +142,22 @@
       cleanups.push(registry.handle('book.open', { run: () => void openBookDialog() }))
       cleanups.push(registry.handle('palette.open', { run: () => (paletteOpen = !paletteOpen) }))
       cleanups.push(registry.handle('shortcuts.show', { run: () => (cheatSheetOpen = true) }))
+      // G2: Settings… (⌘,) opens the Settings window; its changes reach this window.
+      cleanups.push(
+        registry.handle('app.settings', {
+          run: () => {
+            if (testHooks) testHooks.settingsOpened = (testHooks.settingsOpened ?? 0) + 1
+            else void openSettingsWindow()
+          },
+        }),
+      )
+      cleanups.push(
+        await onSettingChanged(({ key, value }) => {
+          if (key === 'theme') applyTheme(value as ThemeChoice)
+          if (key === 'singleKeyShortcuts') singleKeysEnabled = value !== 'off'
+        }),
+      )
+      cleanups.push(await listen('show-shortcuts', () => (cheatSheetOpen = true)))
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),
@@ -193,7 +218,15 @@
     />
   {/key}
 {:else}
-  <Library {books} {dropActive} onopen={() => void openBookDialog()} onopenbook={openBook} />
+  <Library
+    {books}
+    {dropActive}
+    {messages}
+    {registry}
+    onopen={() => void openBookDialog()}
+    onopenbook={openBook}
+    onchanged={refresh}
+  />
 {/if}
 <CommandPalette open={paletteOpen} {registry} {messages} onclose={() => (paletteOpen = false)} />
 <CheatSheet open={cheatSheetOpen} {registry} onclose={() => (cheatSheetOpen = false)} />
