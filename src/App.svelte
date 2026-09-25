@@ -37,6 +37,7 @@
   if (testHooks) {
     testHooks.run = (id) => registry.run(id)
     testHooks.registry = registry
+    testHooks.writes = writes
   }
   // N5: work to finish before the app quits (the reader saves its position).
   // Not reactive state: nothing renders from it.

@@ -10,6 +10,7 @@ const boards = {
   10: '10 Reading themes',
   14: '14 Night — controls and selection',
   '04': '04 Navigator — Contents',
+  '05': '05 Navigator — Search',
   16: '16 Command palette',
   17: '17 Footnote peek · Go to location',
   12: '12 Empty and error states',

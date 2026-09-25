@@ -21,6 +21,9 @@
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
   import MoreMenu from './MoreMenu.svelte'
+  import SearchPanel from './SearchPanel.svelte'
+  import { SearchState, type Hit } from './search.svelte'
+  import { BookSearch } from './bookSearch'
   import ImageView from './ImageView.svelte'
   import { noteText } from './notes'
   import type { ImageEvent, NoteEvent } from './engine'
@@ -230,6 +233,100 @@
     )
     if (!inside) dispatch({ type: 'closeFloating' })
   }
+
+  // ---- Search (F1–F8; Screen 05)
+  let bookSearch: BookSearch | null = null
+  let searchPanel: ReturnType<typeof SearchPanel> | undefined = $state()
+  const searchState = new SearchState(
+    () => (bookSearch ??= engine?.book ? new BookSearch(book.id, engine.book) : null),
+    () => location?.sectionIndex ?? 0,
+    () => updateMarks(),
+  )
+  let searchOpen = $derived(navigatorTab(lanes) === 'search')
+  /** F7: where the reader was when Search opened, and what they did since. */
+  let searchOrigin: ReaderLocation | null = null
+  let searchBrowsed = false
+  let searchChosen = false
+  function chapterLabelFor(index: number): string {
+    const items = contents?.items ?? []
+    return items[currentIndex(items, { sectionIndex: index })]?.label ?? ''
+  }
+  /** F5: marks in the page, only while Search is open; redrawn at most once a frame. */
+  let marksFrame = 0
+  function updateMarks() {
+    if (marksFrame) return
+    marksFrame = requestAnimationFrame(() => {
+      marksFrame = 0
+      drawMarks()
+    })
+  }
+  function drawMarks() {
+    if (!engine) return
+    if (!searchOpen) return engine.setSearchMarks(null)
+    const a = searchState.active
+    const hit = a ? searchState.groups.find((g) => g.index === a.index)?.matches[a.n] : null
+    engine.setSearchMarks({
+      bySection: new Map(searchState.groups.map((g) => [g.index, g.matches])),
+      active: a && hit ? { index: a.index, start: hit.start, end: hit.end } : null,
+      colors: theme.search,
+    })
+  }
+  /** F1: ⌘F, the search button or ⌘K; a selection pre-fills the field. */
+  function openSearch() {
+    if (!searchOpen) {
+      searchOrigin = location
+      searchBrowsed = false
+      searchChosen = false
+      const selected = engine?.selectionText ?? ''
+      if (selected) {
+        searchState.setQuery(selected)
+        searchState.run()
+      }
+      dispatch({ type: 'openNavigator', tab: 'search' })
+    }
+    requestAnimationFrame(() => {
+      searchPanel?.focusField()
+      updateMarks()
+    })
+  }
+  async function goToHit(hit: Hit) {
+    searchState.active = { index: hit.index, n: hit.n }
+    updateMarks()
+    await engine?.goToText(hit.index, hit.match.start, hit.match.end)
+  }
+  /** F6: ↵ ⇧↵ ↑ ↓ ⌘G: browse; the page follows, and Esc can still go back (F7). */
+  function browseHit(hit: Hit) {
+    searchBrowsed = true
+    void goToHit(hit)
+  }
+  /** F7: choosing a result stays there; Back returns to where Search began. */
+  function chooseHit(hit: Hit) {
+    if (!searchChosen && searchOrigin) pushJump(searchOrigin, 'search')
+    searchChosen = true
+    void goToHit(hit)
+  }
+  function stepResult(dir: 1 | -1) {
+    if (!searchState.count) return
+    if (!searchOpen) openSearch()
+    const hit = searchState.step(dir)
+    if (hit) browseHit(hit)
+  }
+  // Leaving Search removes the marks; closing it after only browsing returns to the
+  // original page (F7). Switching to another tab stays where you are.
+  let wasSearchOpen = false
+  $effect(() => {
+    const open = searchOpen
+    const navigatorClosed = navigatorTab(lanes) === null
+    if (wasSearchOpen && !open) {
+      engine?.setSearchMarks(null)
+      if (navigatorClosed && searchBrowsed && !searchChosen && searchOrigin)
+        void engine?.goTo(searchOrigin.cfi)
+      searchBrowsed = false
+      searchChosen = false
+      searchOrigin = null
+    }
+    wasSearchOpen = open
+  })
 
   // ---- The ⋯ menu (Screen 03): every command, as in the menu bar and ⌘K
   let moreOpen = $derived(lanes.floating?.kind === 'more')
@@ -622,6 +719,13 @@
   // ---- location line (L9, B2)
   let locationText = $derived.by(() => {
     if (!location) return ''
+    // Screen 05: while Search is open, the line says which result is on the page.
+    if (searchOpen && searchState.position && searchState.active)
+      return t.search.result(
+        searchState.position,
+        searchState.count,
+        chapterLabelFor(searchState.active.index),
+      )
     if (location.fixedPages?.length)
       return t.reader.fixedPages(location.fixedPages, location.sectionCount)
     const minutes = pace.minutesLeft(location.sectionCharsLeft)
@@ -649,6 +753,7 @@
           history,
           bookId: book.id,
           pagesExact: () => pages?.exact ?? false,
+          search: searchState,
         }
       }
       relayout()
@@ -797,6 +902,14 @@
       cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
       cleanups.push(registry.handle('navigator.contents', { run: openContents }))
       cleanups.push(registry.handle('goto.open', { run: () => openGoTo() }))
+      cleanups.push(registry.handle('search.open', { run: openSearch }))
+      const hasResults = () => searchState.count > 0
+      cleanups.push(
+        registry.handle('search.next', { run: () => stepResult(1), enabled: hasResults }),
+      )
+      cleanups.push(
+        registry.handle('search.previous', { run: () => stepResult(-1), enabled: hasResults }),
+      )
       // B8: Pages and Scroll (the Aa popover's control arrives in Phase 6).
       const switchMode = async (mode: ReadingMode) => {
         if (!engine || !(await engine.setMode(mode))) return
@@ -865,6 +978,8 @@
       saveNow()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
       stopCounting()
+      searchState.stop()
+      bookSearch?.close()
       engine?.close()
       for (const id of jumpMessages) messages.withdraw(id)
       if (testHooks) testHooks.reader = undefined
@@ -906,7 +1021,20 @@
       onclose={closeNavigator}
       onlibrary={leave}
       ongoto={openGoTo}
-    />
+      tab={searchOpen ? 'search' : 'contents'}
+      ontab={(tab) => (tab === 'search' ? openSearch() : dispatch({ type: 'openNavigator', tab }))}
+    >
+      {#snippet search()}
+        <SearchPanel
+          bind:this={searchPanel}
+          search={searchState}
+          chapterLabel={chapterLabelFor}
+          currentSection={location?.sectionIndex ?? -1}
+          onbrowse={browseHit}
+          onchoose={chooseHit}
+        />
+      {/snippet}
+    </Navigator>
   {/if}
   <!-- The reading area: everything right of a docked Navigator. -->
   <div

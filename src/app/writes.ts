@@ -22,6 +22,8 @@ export class WriteQueue {
   #messages: MessageQueue
   #failureMessageId: number | null = null
   #failed = false
+  /** The last failure, for diagnostics. */
+  lastError: { key: string; error: string } | null = null
 
   constructor(messages: MessageQueue) {
     this.#messages = messages
@@ -71,6 +73,7 @@ export class WriteQueue {
         // Disk trouble (saveFailed) or a bug: either way keep the data and say so.
         if (!(isCommandError(e) && e.kind === 'saveFailed'))
           console.error('write failed', next.key, e)
+        this.lastError = { key: next.key, error: JSON.stringify(e) }
         this.#fail()
         return
       }

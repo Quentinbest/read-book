@@ -94,6 +94,16 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (ext_id, key)
     );
     "#,
+    // 2: the search index's extracted chapter text (F8), valid for one version of the file
+    r#"
+    CREATE TABLE search_text (
+        book_id TEXT NOT NULL REFERENCES books(id) ON DELETE CASCADE,
+        content_hash TEXT NOT NULL,
+        section INTEGER NOT NULL,
+        text TEXT NOT NULL,
+        PRIMARY KEY (book_id, section)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

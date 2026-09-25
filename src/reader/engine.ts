@@ -30,6 +30,7 @@ import {
 } from './chunks'
 import { transformContent } from './content'
 import { isNoteRef, noteContainer, referencedFootnoteAsides } from './notes'
+import { extractText, rangeFor, type ExtractedText } from '../lib/search/extract'
 import { MIN_SIDE_MARGIN, type Layout } from './layout'
 import type { EntryLoader } from './loader'
 import { PARAGRAPH_SPACING_CSS } from './styles'
@@ -68,6 +69,48 @@ export interface NoteEvent {
   note: Element | null
   /** The marker's box in window coordinates. */
   rect: DOMRect
+}
+
+/** F5: search marks: every match per section, the active one, and the theme's colours. */
+export interface SearchMarks {
+  bySection: Map<number, { start: number; end: number }[]>
+  active: { index: number; start: number; end: number } | null
+  colors: { tint: string; outline: string; activeTint: string; activeOutline: string }
+}
+
+interface MarkLayer {
+  add(
+    key: string,
+    range: Range,
+    draw: (rects: DOMRectList, o: MarkStyle) => SVGElement,
+    o: MarkStyle,
+  ): void
+  remove(key: string): void
+}
+interface MarkStyle {
+  fill: string
+  stroke: string
+  width: number
+}
+
+/** F5: a soft tint with a 1 px outline; the active match a stronger tint and a 2 px accent outline. */
+function drawMark(rects: DOMRectList, o: MarkStyle): SVGElement {
+  const ns = 'http://www.w3.org/2000/svg'
+  const g = document.createElementNS(ns, 'g')
+  for (const r of Array.from(rects)) {
+    const el = document.createElementNS(ns, 'rect')
+    const inset = o.width / 2
+    el.setAttribute('x', String(r.left - inset))
+    el.setAttribute('y', String(r.top - inset))
+    el.setAttribute('width', String(r.width + o.width))
+    el.setAttribute('height', String(r.height + o.width))
+    el.setAttribute('rx', '2')
+    el.setAttribute('fill', o.fill)
+    el.setAttribute('stroke', o.stroke)
+    el.setAttribute('stroke-width', String(o.width))
+    g.append(el)
+  }
+  return g
 }
 
 /** N11: an image in the text was clicked. */
@@ -144,6 +187,19 @@ export class ReaderEngine {
   #notes = new Set<Listener<NoteEvent>>()
   #images = new Set<Listener<ImageEvent>>()
   #hover = new Set<Listener<string | null>>()
+  /** Extracted text of live documents, for search offsets (F5). */
+  #texts = new WeakMap<Document, ExtractedText>()
+  #marks: SearchMarks | null = null
+  #markKeys = new WeakMap<object, string[]>()
+  /** What each overlay last drew, so an unchanged page is not redrawn. */
+  #markDrawn = new WeakMap<object, { list: unknown; active: string; set: SearchMarks | null }>()
+  /** What the last mark drawing did, for the end-to-end tests (F5). */
+  #markStats = {
+    drawn: 0,
+    ms: 0,
+    active: null as MarkStyle | null,
+    soft: null as MarkStyle | null,
+  }
   #chunks = new WeakMap<Document, Chunks>()
   /** Section index of every loaded document (fixed-layout contents lack it). */
   #docIndex = new WeakMap<Document, number>()
@@ -241,6 +297,113 @@ export class ReaderEngine {
   onLinkHover(l: Listener<string | null>) {
     this.#hover.add(l)
     return () => this.#hover.delete(l)
+  }
+
+  /** F5: a Range for extracted-text offsets in a live document (same extractor as the index). */
+  textRange(doc: Document, start: number, end: number): Range | null {
+    let text = this.#texts.get(doc)
+    if (!text) {
+      text = extractText(doc.body ?? doc.documentElement)
+      this.#texts.set(doc, text)
+    }
+    return rangeFor(text, start, end)
+  }
+
+  /** The selected text in the book, to pre-fill search (F1). */
+  get selectionText(): string {
+    return this.#docOf(this.#current)?.getSelection()?.toString().replace(/\s+/g, ' ').trim() ?? ''
+  }
+
+  /**
+   * F4–F6: go to a search match, given as offsets into the chapter's extracted
+   * text. Lays out the chunk holding it (L16) and shows it if it is in a footnote
+   * taken out of the flow (N9). Returns false when the match cannot be placed.
+   */
+  async goToText(index: number, start: number, end: number): Promise<boolean> {
+    const view = this.#current
+    const node = (doc: Document) => this.textRange(doc, start, end)?.startContainer ?? null
+    if (this.#indexOf(view) !== index) {
+      this.#requests.set(view, { kind: 'node', node })
+      await view.goTo(index)
+    } else {
+      const c = this.#chunksOf(view)
+      const doc = this.#docOf(view)
+      if (c && doc) {
+        const k = chunkOf(c, node(doc))
+        if (k !== c.current) {
+          showChunk(doc, c, k)
+          view.renderer.render()
+          await nextFrame()
+        }
+      }
+    }
+    const doc = this.#docOf(view)
+    const range = doc ? this.textRange(doc, start, end) : null
+    if (!range) return false
+    const el =
+      range.startContainer.nodeType === 1
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement
+    el?.closest('[data-linen-footnote]')?.removeAttribute('data-linen-footnote')
+    if (this.#mode === 'scroll') await this.#scrollToTarget(view, range)
+    else {
+      await view.renderer.goTo({ index, anchor: range })
+      this.#prepareNeighbours()
+    }
+    this.#drawMarks(view)
+    return true
+  }
+
+  /** F5: show search marks (null removes them; marks exist only while Search is open). */
+  setSearchMarks(marks: SearchMarks | null) {
+    this.#marks = marks
+    for (const view of this.#views()) this.#drawMarks(view)
+  }
+
+  #drawMarks(view: View) {
+    const t0 = performance.now()
+    if (view === this.#current) this.#markStats = { drawn: 0, ms: 0, active: null, soft: null }
+    for (const c of view.renderer?.getContents() ?? []) {
+      const layer = c.overlayer as MarkLayer | undefined
+      if (!layer || !c.doc) continue
+      const m = this.#marks
+      const list = m?.bySection.get(c.index) ?? []
+      // Results stream in chapter by chapter: most updates change nothing on this page.
+      const activeKey = m?.active?.index === c.index ? `${m.active.start}:${m.active.end}` : ''
+      const last = this.#markDrawn.get(layer)
+      if (last && last.list === list && last.active === activeKey && !!last.set === !!m) continue
+      this.#markDrawn.set(layer, { list, active: activeKey, set: m })
+      for (const key of this.#markKeys.get(layer) ?? []) layer.remove(key)
+      const keys: string[] = []
+      let activeRange: Range | null = null
+      list.forEach((mark, i) => {
+        const range = this.textRange(c.doc, mark.start, mark.end)
+        if (!range || !m) return
+        const active =
+          m.active?.index === c.index && m.active.start === mark.start && m.active.end === mark.end
+        if (active) return void (activeRange = range)
+        const key = `linen-search:${i}`
+        const style = { fill: m.colors.tint, stroke: m.colors.outline, width: 1 }
+        layer.add(key, range, drawMark, style)
+        keys.push(key)
+        if (view === this.#current) {
+          this.#markStats.drawn++
+          this.#markStats.soft = style
+        }
+      })
+      // The active match last, so it sits on top.
+      if (activeRange && m) {
+        const style = { fill: m.colors.activeTint, stroke: m.colors.activeOutline, width: 2 }
+        layer.add('linen-search:active', activeRange, drawMark, style)
+        keys.push('linen-search:active')
+        if (view === this.#current) {
+          this.#markStats.drawn++
+          this.#markStats.active = style
+        }
+      }
+      this.#markKeys.set(layer, keys)
+    }
+    if (view === this.#current) this.#markStats.ms += Math.round(performance.now() - t0)
   }
 
   /** N9 “Open note in place”: go to the note, showing it if it was taken out of the flow. */
@@ -665,6 +828,7 @@ export class ReaderEngine {
       next: this.#next.unit,
       prev: this.#prev.unit,
       mode: this.#mode,
+      marks: { ...this.#markStats },
       slots: this.#slots.map((x) => ({
         unit: `${x.unit.index}:${x.unit.chunk}`,
         top: Math.round(x.top),
@@ -729,6 +893,8 @@ export class ReaderEngine {
       const { doc, index } = (e as CustomEvent<{ doc: Document; index: number }>).detail
       this.#onLoad(view, doc, index)
     })
+    // A new document's overlay is ready: draw any search marks for it (F5).
+    view.addEventListener('create-overlay', () => this.#drawMarks(view))
     return view
   }
 
@@ -1074,7 +1240,7 @@ export class ReaderEngine {
   }
 
   /** Scroll mode after a navigation: rebuild the stack around `view` and bring the target to the top. */
-  async #scrollToTarget(view: View, target: string | number | { fraction: number }) {
+  async #scrollToTarget(view: View, target: string | number | { fraction: number } | Range) {
     this.#stackBusy = true
     try {
       await this.#settled(view)
@@ -1100,8 +1266,10 @@ export class ReaderEngine {
   }
 
   /** Where a navigation target sits within its view, in px from the unit's top. */
-  #targetOffset(view: View, target: string | number | { fraction: number }): number {
+  #targetOffset(view: View, target: string | number | { fraction: number } | Range): number {
     if (typeof target === 'number') return 0
+    if (typeof target === 'object' && 'startContainer' in target)
+      return Math.max(0, (target.getClientRects()[0] ?? target.getBoundingClientRect()).top)
     const doc = this.#docOf(view)
     const height = view.renderer.viewSize
     const resolved = view.resolveNavigation(target) as

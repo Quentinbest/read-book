@@ -2,7 +2,9 @@
   // The Navigator (S2, S3, N6; Screen 04): Library, the book and its progress in
   // the header, then Contents. It docks from 1100 px and floats below. Search and
   // Notes join the tabs in Phases 4 and 5.
+  import type { Snippet } from 'svelte'
   import Icon from '../components/Icon.svelte'
+  import Tabs from '../components/Tabs.svelte'
   import { t } from '../lib/strings/en'
   import type { Contents, ContentsItem } from './contents'
 
@@ -19,6 +21,9 @@
     onclose,
     onlibrary,
     ongoto,
+    tab,
+    ontab,
+    search,
   }: {
     title: string
     author: string
@@ -33,6 +38,11 @@
     onlibrary: () => void
     /** N8: the progress label opens Go to (S3: the header stands in for the chrome). */
     ongoto: (anchor: DOMRect) => void
+    /** The open tab; Notes joins in Phase 5. */
+    tab: 'contents' | 'search'
+    ontab: (tab: 'contents' | 'search') => void
+    /** The Search tab's panel (F1–F7). */
+    search: Snippet
   } = $props()
 
   let rows: HTMLButtonElement[] = $state([])
@@ -75,64 +85,88 @@
     </button>
   </header>
 
-  <div class="book">
-    <div class="cover" style:background={coverTint ?? 'var(--hairline)'} aria-hidden="true">
-      {#if coverUrl && !coverFailed}
-        <img src={coverUrl} alt="" onerror={() => (coverFailed = true)} />
-      {/if}
-    </div>
-    <div class="meta">
-      <div class="title">{title}</div>
-      {#if author}<div class="author">{author}</div>{/if}
-      <div class="progress">
-        <div class="track" aria-hidden="true">
-          <div class="fill" style:width="{fraction * 100}%"></div>
+  {#if tab === 'contents'}
+    <div class="book">
+      <div class="cover" style:background={coverTint ?? 'var(--hairline)'} aria-hidden="true">
+        {#if coverUrl && !coverFailed}
+          <img src={coverUrl} alt="" onerror={() => (coverFailed = true)} />
+        {/if}
+      </div>
+      <div class="meta">
+        <div class="title">{title}</div>
+        {#if author}<div class="author">{author}</div>{/if}
+        <div class="progress">
+          <div class="track" aria-hidden="true">
+            <div class="fill" style:width="{fraction * 100}%"></div>
+          </div>
+          <button
+            type="button"
+            class="nav-goto"
+            aria-haspopup="dialog"
+            aria-label="{Math.round(fraction * 100)}% · {t.goto.open}"
+            onclick={(e) => ongoto(e.currentTarget.getBoundingClientRect())}
+            >{Math.round(fraction * 100)}%</button
+          >
         </div>
-        <button
-          type="button"
-          class="nav-goto"
-          aria-haspopup="dialog"
-          aria-label="{Math.round(fraction * 100)}% · {t.goto.open}"
-          onclick={(e) => ongoto(e.currentTarget.getBoundingClientRect())}
-          >{Math.round(fraction * 100)}%</button
-        >
       </div>
     </div>
+  {/if}
+  <div class="tabs">
+    <Tabs
+      label={t.navigator.tabs}
+      idPrefix="navigator"
+      tabs={[
+        { value: 'contents', label: t.navigator.contents },
+        { value: 'search', label: t.navigator.search },
+      ]}
+      bind:selected={() => tab, (v) => ontab(v)}
+    />
   </div>
-
-  <nav class="list" aria-label={t.navigator.contents}>
-    {#if !contents}
-      <p class="note">{t.navigator.loading}</p>
-    {:else}
-      {#if contents.source === 'headings'}
-        <p class="note">{t.navigator.generated}</p>
+  {#if tab === 'search'}
+    <div
+      class="panel"
+      id="navigator-panel-search"
+      role="tabpanel"
+      aria-labelledby="navigator-tab-search"
+    >
+      {@render search()}
+    </div>
+  {:else}
+    <nav class="list" aria-label={t.navigator.contents}>
+      {#if !contents}
+        <p class="note">{t.navigator.loading}</p>
+      {:else}
+        {#if contents.source === 'headings'}
+          <p class="note">{t.navigator.generated}</p>
+        {/if}
+        <ol>
+          {#each contents.items as item, i (i)}
+            <li>
+              <button
+                type="button"
+                bind:this={rows[i]}
+                class="row"
+                class:current={i === current}
+                style:padding-left="{12 + item.depth * 16}px"
+                tabindex={i === Math.max(0, current) ? 0 : -1}
+                aria-current={i === current ? 'location' : undefined}
+                onclick={() => onselect(item)}
+                onkeydown={(e) => onkeydown(e, i)}
+              >
+                <span class="label">{item.label}</span>
+                {#if item.damaged}
+                  <span class="damaged"><Icon name="warning" size={14} />{t.navigator.damaged}</span
+                  >
+                {:else if i === current}
+                  <span class="here">{t.navigator.youAreHere}</span>
+                {/if}
+              </button>
+            </li>
+          {/each}
+        </ol>
       {/if}
-      <ol>
-        {#each contents.items as item, i (i)}
-          <li>
-            <button
-              type="button"
-              bind:this={rows[i]}
-              class="row"
-              class:current={i === current}
-              style:padding-left="{12 + item.depth * 16}px"
-              tabindex={i === Math.max(0, current) ? 0 : -1}
-              aria-current={i === current ? 'location' : undefined}
-              onclick={() => onselect(item)}
-              onkeydown={(e) => onkeydown(e, i)}
-            >
-              <span class="label">{item.label}</span>
-              {#if item.damaged}
-                <span class="damaged"><Icon name="warning" size={14} />{t.navigator.damaged}</span>
-              {:else if i === current}
-                <span class="here">{t.navigator.youAreHere}</span>
-              {/if}
-            </button>
-          </li>
-        {/each}
-      </ol>
-    {/if}
-  </nav>
+    </nav>
+  {/if}
 </aside>
 
 <style>
@@ -275,6 +309,30 @@
     color: var(--accent);
     font-weight: 600;
     background: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+  .tabs {
+    flex: none;
+    padding: 0 16px 8px;
+  }
+  /* Screen 04/05: the tab track on the panel. */
+  .tabs :global(.tabs) {
+    background: var(--control-track);
+  }
+  .tabs :global(button) {
+    font: 500 13px var(--font-ui);
+    color: var(--track-ink);
+  }
+  .tabs :global(button[aria-selected='true']) {
+    background: var(--raised);
+    border-color: var(--segment-ring);
+    color: var(--ink);
+    font-weight: 600;
+  }
+  .panel {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
   }
   .list {
     flex: 1;

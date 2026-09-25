@@ -48,6 +48,9 @@ export const ipc = {
   /** The book file for the reader (library files only). */
   bookBytes: (bookId: string) => invoke<ArrayBuffer>('book_bytes', { bookId }),
   bookDamage: (bookId: string) => invoke<string[]>('book_damage', { bookId }),
+  searchTextGet: (bookId: string) => invoke<[number, string][]>('search_text_get', { bookId }),
+  searchTextPut: (bookId: string, chapters: [number, string][]) =>
+    invoke<void>('search_text_put', { bookId, chapters }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
   copyText: (text: string) => invoke<void>('copy_text', { text }),
   bookSettingsGet: (bookId: string) =>

@@ -14,9 +14,12 @@ export interface TestHooks {
     bookId: string
     /** B1: whether every section's pages have been counted at this layout. */
     pagesExact: () => boolean
+    /** F1–F8: the reader's search state. */
+    search: import('../reader/search.svelte').SearchState
   }
   messages?: MessageQueue
   registry?: CommandRegistry
+  writes?: import('./writes').WriteQueue
   /** Run a command as the menu or ⌘K would. */
   run?: (id: string) => boolean
   /** Set instead of quitting, so the harness can check what was saved (N5). */

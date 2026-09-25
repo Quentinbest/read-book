@@ -146,7 +146,13 @@ fn read_xml<R: Read + Seek>(
 /// Refuse a DOCTYPE that declares entities (internal subset). Plain `<!DOCTYPE html>`
 /// and public XHTML doctypes without an internal subset are fine.
 pub fn check_xml_entities(name: &str, text: &str) -> Result<(), Rejection> {
-    let head = &text[..text.len().min(64 * 1024)];
+    // The first 64 KB, cut at a character boundary: a multi-byte character (CJK
+    // text) can straddle the limit, and slicing inside it would panic.
+    let mut cut = text.len().min(64 * 1024);
+    while !text.is_char_boundary(cut) {
+        cut -= 1;
+    }
+    let head = &text[..cut];
     if let Some(start) = find_ci(head, "<!DOCTYPE") {
         let rest = &text[start..];
         let end = rest.find('>').unwrap_or(rest.len());
@@ -551,6 +557,18 @@ mod tests {
             w.write_all(data).unwrap();
         }
         zip::ZipArchive::new(w.finish().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn a_multibyte_character_across_the_64_kb_scan_limit_does_not_panic() {
+        // 襟 is three bytes; put it across byte 65536 (a Japanese book crashed the importer).
+        let mut text = String::from("<?xml version=\"1.0\"?><html><body><p>");
+        while text.len() < 64 * 1024 - 1 {
+            text.push('a');
+        }
+        text.push_str("襟</p></body></html>");
+        assert!(!text.is_char_boundary(64 * 1024));
+        assert!(check_xml_entities("c.xhtml", &text).is_ok());
     }
 
     const CONTAINER: &[u8] = br#"<?xml version="1.0"?><container xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>"#;

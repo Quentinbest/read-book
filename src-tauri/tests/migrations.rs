@@ -14,6 +14,7 @@ const TABLES: &[&str] = &[
     "settings",
     "extensions",
     "extension_storage",
+    "search_text",
 ];
 
 fn dump(conn: &Connection, table: &str) -> Vec<Vec<String>> {
@@ -82,10 +83,25 @@ fn every_fixture_migrates_without_data_loss() {
         });
         let tmp = tempfile::tempdir().unwrap();
         let path = tmp.path().join("linen.db");
-        let before: Vec<_> = {
+        // Tables that exist at this version (later versions add some).
+        let (tables, before): (Vec<&str>, Vec<_>) = {
             let c = Connection::open(&path).unwrap();
             c.execute_batch(&sql).unwrap();
-            TABLES.iter().map(|t| dump(&c, t)).collect()
+            let tables: Vec<&str> = TABLES
+                .iter()
+                .copied()
+                .filter(|t| {
+                    c.query_row(
+                        "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+                        [t],
+                        |r| r.get::<_, i64>(0),
+                    )
+                    .unwrap()
+                        == 1
+                })
+                .collect();
+            let rows = tables.iter().map(|t| dump(&c, t)).collect();
+            (tables, rows)
         };
         assert!(
             before.iter().all(|rows| !rows.is_empty()),
@@ -94,7 +110,7 @@ fn every_fixture_migrates_without_data_loss() {
 
         let store = Store::open(&path).unwrap();
         assert_eq!(store.schema_version().unwrap(), MIGRATIONS.len() as i64);
-        for (table, rows) in TABLES.iter().zip(&before) {
+        for (table, rows) in tables.iter().zip(&before) {
             let after = dump(store.conn(), table);
             // Later migrations may add columns; the original columns must be unchanged.
             for (old, new) in rows.iter().zip(&after) {

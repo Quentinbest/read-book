@@ -326,6 +326,42 @@
       "evidence": "ok"
     },
     {
+      "id": "F-golden-results",
+      "description": "Golden results for the corpus query sets (Spike F): English, quoted phrase, diacritics, CJK from one character",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F5-results-land",
+      "description": "Every result lands on its match on the page shown, marked as F5 says (tint + 1 px outline; active 2 px accent); marks go when Search closes",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F7-esc-return",
+      "description": "Esc returns to the original page after only browsing; after choosing a result you stay, and Back returns",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F6-keys",
+      "description": "⇧↵ goes back a result; ⌘G / ⇧⌘G move through results anywhere, reopening Search",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F3-F8-streaming-persisted",
+      "description": "The first search streams (“Searching N of M”, current chapter first); the index is saved, and a search after reopening meets the Spike F budget (< 300 ms)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F2-minimum-length",
+      "description": "Search starts from 2 characters, or 1 for CJK",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "budget-open",
       "description": "Open a book to its first page in < 500 ms (§6.4; click → first location, median and p95 of 5)",
       "verdict": "pass",
@@ -362,7 +398,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790309549,
+    "time": 1790322404,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

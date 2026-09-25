@@ -112,7 +112,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
     'idpf-childrens-literature.epub',
     // N9–N11: footnote asides, a long note, an image with a caption, an external link.
     'notes-and-images.epub',
-    // N9: endnotes in another chapter.
+    // F2: diacritics and CJK (golden results from Spike F).
+    'idpf-sous-le-vent.epub',
+    'idpf-kusamakura-japanese-vertical-writing.epub',
   ]
   const paths = await Promise.all(
     books.map((name) => invoke<string>('spike_corpus_path', { name })),
@@ -769,93 +771,102 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  const scrollModeCheck = async (): Promise<string> => {
+    const { compare } = await import('foliate-js/epubcfi.js')
+    const engine = reader()!.engine
+    await engine.goToTextStart()
+    await settled(600)
+    const before = loc()!
+    if (!hooks.run?.('layout.scroll')) return 'the Scroll Mode command did not run'
+    await settled(1500)
+    if (engine.mode !== 'scroll') return `mode is ${engine.mode}`
+    const host = engine.view.parentElement!
+    const at = loc()!
+    if (at.sectionIndex !== before.sectionIndex || Math.abs(at.fraction - before.fraction) > 0.005)
+      return `switching moved the place: ${before.sectionIndex}/${before.fraction} → ${at.sectionIndex}/${at.fraction}`
+    if (engine.debug().slots.length < 2) return `stack: ${JSON.stringify(engine.debug().slots)}`
+    // Down through three chapter joins; the place only ever moves forward.
+    let prev = loc()!
+    let crossings = 0
+    for (let i = 0; i < 600 && crossings < 3; i++) {
+      host.scrollBy(0, 300)
+      await sleep(40)
+      const l = loc()!
+      if (compare(l.cfi, prev.cfi) < 0) return `scrolling down went back: ${prev.cfi} → ${l.cfi}`
+      if (l.sectionIndex !== prev.sectionIndex) {
+        crossings++
+        if (!document.querySelector('.linen-join')) return 'no join between chapters'
+      }
+      prev = l
+    }
+    if (crossings < 3) return `only ${crossings} chapter crossings`
+    const views = engine.debug().slots.length
+    if (views > 3) return `${views} stacked views`
+    // I9: Space moves a screen less the fades and two lines; ↓ moves three lines.
+    await settled(300)
+    const lineHeight = 19 * 1.55
+    let y0 = host.scrollTop
+    key(' ')
+    await settled(300)
+    const screen = host.scrollTop - y0
+    const wantScreen = host.clientHeight - 40 - 88 - 2 * lineHeight
+    if (Math.abs(screen - wantScreen) > 2)
+      return `Space scrolled ${screen} px, expected ${Math.round(wantScreen)}`
+    y0 = host.scrollTop
+    key('ArrowDown')
+    await settled(300)
+    const lines = host.scrollTop - y0
+    if (Math.abs(lines - 3 * lineHeight) > 2)
+      return `↓ scrolled ${lines} px, expected ${Math.round(3 * lineHeight)}`
+    // Back up across a join; the place only moves backward.
+    prev = loc()!
+    const upFrom = prev.sectionIndex
+    for (let i = 0; i < 400 && loc()!.sectionIndex === upFrom; i++) {
+      host.scrollBy(0, -300)
+      await sleep(40)
+      const l = loc()!
+      if (compare(l.cfi, prev.cfi) > 0) return `scrolling up went forward: ${prev.cfi} → ${l.cfi}`
+      prev = l
+    }
+    if (loc()!.sectionIndex >= upFrom) return 'scrolling up did not reach the previous chapter'
+    // Remembered per book (S13), and the place survives reopening.
+    await settled(1200)
+    const saved = loc()!
+    await backToLibrary()
+    await openFromLibrary(/Moby Dick(?!;)/)
+    await settled(800)
+    const reopened = reader()!.engine
+    if (reopened.mode !== 'scroll') return 'reopened in Pages; the mode was not remembered'
+    if (
+      loc()!.sectionIndex !== saved.sectionIndex ||
+      Math.abs(loc()!.fraction - saved.fraction) > 0.003
+    )
+      return `reopened at ${loc()!.sectionIndex}/${loc()!.fraction}, saved ${saved.sectionIndex}/${saved.fraction}`
+    // And back to Pages at the same place.
+    const s0 = loc()!
+    hooks.run?.('layout.pages')
+    await settled(1500)
+    const mode = () => reopened.mode // read again: the command changed it
+    if (mode() !== 'pages') return 'did not return to Pages'
+    if (loc()!.sectionIndex !== s0.sectionIndex || Math.abs(loc()!.fraction - s0.fraction) > 0.01)
+      return `Pages moved the place: ${s0.sectionIndex}/${s0.fraction} → ${loc()!.sectionIndex}/${loc()!.fraction}`
+    return 'ok'
+  }
+
   checks.push({
     id: 'B8-scroll-mode',
     description:
       'Scroll mode (B8, G8): keeps the place, scrolls continuously across chapters (with the join), Space = a screen, ↓ = 3 lines, remembered per book',
     run: async () => {
-      const { compare } = await import('foliate-js/epubcfi.js')
-      const engine = reader()!.engine
-      await engine.goToTextStart()
-      await settled(600)
-      const before = loc()!
-      if (!hooks.run?.('layout.scroll')) return 'the Scroll Mode command did not run'
-      await settled(1500)
-      if (engine.mode !== 'scroll') return `mode is ${engine.mode}`
-      const host = engine.view.parentElement!
-      const at = loc()!
-      if (
-        at.sectionIndex !== before.sectionIndex ||
-        Math.abs(at.fraction - before.fraction) > 0.005
-      )
-        return `switching moved the place: ${before.sectionIndex}/${before.fraction} → ${at.sectionIndex}/${at.fraction}`
-      if (engine.debug().slots.length < 2) return `stack: ${JSON.stringify(engine.debug().slots)}`
-      // Down through three chapter joins; the place only ever moves forward.
-      let prev = loc()!
-      let crossings = 0
-      for (let i = 0; i < 600 && crossings < 3; i++) {
-        host.scrollBy(0, 300)
-        await sleep(40)
-        const l = loc()!
-        if (compare(l.cfi, prev.cfi) < 0) return `scrolling down went back: ${prev.cfi} → ${l.cfi}`
-        if (l.sectionIndex !== prev.sectionIndex) {
-          crossings++
-          if (!document.querySelector('.linen-join')) return 'no join between chapters'
+      try {
+        return await scrollModeCheck()
+      } finally {
+        // Never leave the book in Scroll mode for the checks after this one.
+        if (reader()?.engine.mode === 'scroll') {
+          hooks.run?.('layout.pages')
+          await settled(1200)
         }
-        prev = l
       }
-      if (crossings < 3) return `only ${crossings} chapter crossings`
-      const views = engine.debug().slots.length
-      if (views > 3) return `${views} stacked views`
-      // I9: Space moves a screen less the fades and two lines; ↓ moves three lines.
-      await settled(300)
-      const lineHeight = 19 * 1.55
-      let y0 = host.scrollTop
-      key(' ')
-      await settled(300)
-      const screen = host.scrollTop - y0
-      const wantScreen = host.clientHeight - 40 - 88 - 2 * lineHeight
-      if (Math.abs(screen - wantScreen) > 2)
-        return `Space scrolled ${screen} px, expected ${Math.round(wantScreen)}`
-      y0 = host.scrollTop
-      key('ArrowDown')
-      await settled(300)
-      const lines = host.scrollTop - y0
-      if (Math.abs(lines - 3 * lineHeight) > 2)
-        return `↓ scrolled ${lines} px, expected ${Math.round(3 * lineHeight)}`
-      // Back up across a join; the place only moves backward.
-      prev = loc()!
-      const upFrom = prev.sectionIndex
-      for (let i = 0; i < 400 && loc()!.sectionIndex === upFrom; i++) {
-        host.scrollBy(0, -300)
-        await sleep(40)
-        const l = loc()!
-        if (compare(l.cfi, prev.cfi) > 0) return `scrolling up went forward: ${prev.cfi} → ${l.cfi}`
-        prev = l
-      }
-      if (loc()!.sectionIndex >= upFrom) return 'scrolling up did not reach the previous chapter'
-      // Remembered per book (S13), and the place survives reopening.
-      await settled(1200)
-      const saved = loc()!
-      await backToLibrary()
-      await openFromLibrary(/Moby Dick(?!;)/)
-      await settled(800)
-      const reopened = reader()!.engine
-      if (reopened.mode !== 'scroll') return 'reopened in Pages; the mode was not remembered'
-      if (
-        loc()!.sectionIndex !== saved.sectionIndex ||
-        Math.abs(loc()!.fraction - saved.fraction) > 0.003
-      )
-        return `reopened at ${loc()!.sectionIndex}/${loc()!.fraction}, saved ${saved.sectionIndex}/${saved.fraction}`
-      // And back to Pages at the same place.
-      const s0 = loc()!
-      hooks.run?.('layout.pages')
-      await settled(1500)
-      const mode = () => reopened.mode // read again: the command changed it
-      if (mode() !== 'pages') return 'did not return to Pages'
-      if (loc()!.sectionIndex !== s0.sectionIndex || Math.abs(loc()!.fraction - s0.fraction) > 0.01)
-        return `Pages moved the place: ${s0.sectionIndex}/${s0.fraction} → ${loc()!.sectionIndex}/${loc()!.fraction}`
-      return 'ok'
     },
   })
 
@@ -1599,6 +1610,276 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  const searchField = () => document.querySelector<HTMLInputElement>('.navigator .search input')
+  /** Search as a reader does: ⌘F, type, and wait until every chapter is searched. */
+  const searchFor = async (query: string) => {
+    keyOnApp('f', { code: 'KeyF', metaKey: true })
+    const field = await waitFor('search field', searchField)
+    typeInto(field, query)
+    const search = reader()!.search
+    // Finished for this query: past the typing pause and every chapter searched.
+    await waitFor(
+      'search finished',
+      () => (search.query === query && search.settled && !search.running) || null,
+      60_000,
+    )
+    await settled(150)
+    return { results: search.count, chapters: search.groups.length }
+  }
+  const closeSearch = async () => {
+    key('Escape', { code: 'Escape' })
+    await settled(600)
+  }
+  const fold = (x: string) =>
+    x
+      .normalize('NFD')
+      .replace(/\p{M}+/gu, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+
+  checks.push({
+    id: 'F-golden-results',
+    description:
+      'Golden results for the corpus query sets (Spike F): English, quoted phrase, diacritics, CJK from one character',
+    run: async () => {
+      const golden: [RegExp, string, number, number][] = [
+        [/Moby Dick(?!;)/, 'whale', 1688, 120],
+        [/Moby Dick(?!;)/, 'Queequeg', 252, 42],
+        [/Moby Dick(?!;)/, 'harpoon', 256, 66],
+        [/Moby Dick(?!;)/, '"Call me Ishmael"', 1, 1],
+        [/Moby Dick(?!;)/, 'call me ishmael', 1, 1],
+        [/Moby Dick(?!;)/, 'xyzzy', 0, 0],
+        [/Sous le vent/, 'etait', 15, 3],
+        [/草枕/, '智に働けば', 1, 1],
+        [/草枕/, '山', 103, 13],
+      ]
+      const wrong: string[] = []
+      let open: RegExp | null = null
+      for (const [book, query, results, chapters] of golden) {
+        if (open !== book) {
+          await backToLibrary()
+          await openFromLibrary(book)
+          open = book
+        }
+        const got = await searchFor(query)
+        log(`F golden: ${query} → ${got.results} in ${got.chapters}`)
+        if (got.results !== results || got.chapters !== chapters)
+          wrong.push(
+            `${query}: ${got.results} in ${got.chapters}, expected ${results} in ${chapters}`,
+          )
+        await closeSearch()
+      }
+      return wrong.length ? wrong.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'F5-results-land',
+    description:
+      'Every result lands on its match on the page shown, marked as F5 says (tint + 1 px outline; active 2 px accent); marks go when Search closes',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      const got = await searchFor('water')
+      if (got.results < 50) return `${got.results} results for “water”`
+      const engine = reader()!.engine
+      const search = reader()!.search
+      // The colours of the theme the reader is in (Auto follows the system).
+      const css = getComputedStyle(document.querySelector('.reader')!)
+      // Computed values write “.26” as “0.26”; compare numbers, not spellings.
+      const norm = (c: string) => c.replace(/\s/g, '').replace(/(^|[^\d])\.(\d)/g, '$10.$2')
+      const colors = {
+        tint: norm(css.getPropertyValue('--search-tint')),
+        outline: norm(css.getPropertyValue('--search-outline')),
+        activeTint: norm(css.getPropertyValue('--search-active-tint')),
+        activeOutline: norm(css.getPropertyValue('--search-active-outline')),
+      }
+      const field = searchField()!
+      const problems: string[] = []
+      for (let i = 0; i < got.results && problems.length < 4; i++) {
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+        await waitFor('result', () => search.position === i + 1 || null)
+        await settled(i < 40 ? 250 : 120)
+        const a = search.active!
+        const hit = search.groups.find((g) => g.index === a.index)!.matches[a.n]
+        const shown = engine.view.lastLocation?.range
+        const doc = shown?.startContainer.ownerDocument
+        const range = doc ? engine.textRange(doc, hit.start, hit.end) : null
+        if (loc()!.sectionIndex !== a.index)
+          problems.push(`result ${i + 1}: in section ${loc()!.sectionIndex}, not ${a.index}`)
+        else if (!range || fold(range.toString()) !== 'water')
+          problems.push(`result ${i + 1}: range “${range?.toString()}”`)
+        else if (
+          shown!.compareBoundaryPoints(Range.START_TO_START, range) > 0 ||
+          shown!.compareBoundaryPoints(Range.END_TO_END, range) < 0
+        )
+          problems.push(`result ${i + 1}: not on the page shown`)
+        const raw = engine.debug().marks
+        const style = (x: typeof raw.active) =>
+          x && { ...x, fill: norm(x.fill), stroke: norm(x.stroke) }
+        const m = { ...raw, active: style(raw.active), soft: style(raw.soft) }
+        if (
+          !m.active ||
+          m.active.width !== 2 ||
+          m.active.stroke !== colors.activeOutline ||
+          m.active.fill !== colors.activeTint
+        )
+          problems.push(
+            `result ${i + 1}: active mark ${JSON.stringify(m.active)}, theme ${JSON.stringify(colors)}`,
+          )
+        if (
+          m.soft &&
+          (m.soft.width !== 1 || m.soft.stroke !== colors.outline || m.soft.fill !== colors.tint)
+        )
+          problems.push(`result ${i + 1}: mark ${JSON.stringify(m.soft)}`)
+      }
+      await closeSearch()
+      if (engine.debug().marks.drawn) problems.push('marks stayed after Search closed')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'F7-esc-return',
+    description:
+      'Esc returns to the original page after only browsing; after choosing a result you stay, and Back returns',
+    run: async () => {
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      const origin = loc()!.cfi
+      await searchFor('harpoon')
+      const field = searchField()!
+      for (let i = 0; i < 3; i++) {
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }),
+        )
+        await settled(300)
+      }
+      if (loc()!.cfi === origin) return 'browsing did not move the page'
+      await closeSearch()
+      if (loc()!.cfi !== origin) return `Esc after browsing stayed at ${loc()!.cfi}`
+      // Choose a result: stay, and Back returns.
+      await searchFor('harpoon')
+      document.querySelectorAll<HTMLButtonElement>('.navigator .search .hit')[1].click()
+      await settled(600)
+      const chosen = loc()!.cfi
+      await closeSearch()
+      if (loc()!.cfi !== chosen) return 'Esc after choosing did not stay'
+      await back()
+      return loc()!.cfi === origin ? 'ok' : 'Back did not return to where Search began'
+    },
+  })
+
+  checks.push({
+    id: 'F6-keys',
+    description: '⇧↵ goes back a result; ⌘G / ⇧⌘G move through results anywhere, reopening Search',
+    run: async () => {
+      await searchFor('Queequeg')
+      const field = searchField()!
+      const enter = (shiftKey = false) =>
+        field.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', shiftKey, bubbles: true, cancelable: true }),
+        )
+      enter()
+      await settled(250)
+      enter()
+      await settled(250)
+      enter(true)
+      await settled(250)
+      const search = reader()!.search
+      const position = () => search.position // read afresh: it changes with each key
+      if (position() !== 1) return `after ↵ ↵ ⇧↵ at result ${position()}`
+      await closeSearch()
+      keyOnApp('g', { code: 'KeyG', metaKey: true })
+      await settled(400)
+      if (!document.querySelector('.navigator .search')) return '⌘G did not reopen Search'
+      // The next result after the active one (result 1).
+      if (position() !== 2) return `⌘G moved to result ${position()}`
+      keyOnApp('g', { code: 'KeyG', metaKey: true })
+      await settled(300)
+      keyOnApp('g', { code: 'KeyG', metaKey: true, shiftKey: true })
+      await settled(300)
+      const at = search.position
+      await closeSearch()
+      return at === 2 ? 'ok' : `⌘G ⇧⌘G ended at result ${at}`
+    },
+  })
+
+  checks.push({
+    id: 'F3-F8-streaming-persisted',
+    description:
+      'The first search streams (“Searching N of M”, current chapter first); the index is saved, and a search after reopening meets the Spike F budget (< 300 ms)',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick; Or/)
+      await reader()!.engine.goTo(20)
+      await settled(700)
+      const current = loc()!.sectionIndex
+      keyOnApp('f', { code: 'KeyF', metaKey: true })
+      const field = await waitFor('search field', searchField)
+      // “Searching N of M chapters” can be brief: watch the panel for it.
+      let sawProgress = false
+      const watch = new MutationObserver(() => {
+        const status = document.querySelector('.navigator .search .status')?.textContent ?? ''
+        if (/Searching \d+ of \d+ chapters/.test(status)) sawProgress = true
+      })
+      watch.observe(document.querySelector('.navigator')!, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+      })
+      typeInto(field, 'the')
+      const search = reader()!.search
+      await waitFor(
+        'search finished',
+        () => (search.query === 'the' && search.settled && !search.running) || null,
+        60_000,
+      )
+      watch.disconnect()
+      const first = search.groups[0]?.index
+      await closeSearch()
+      if (!sawProgress) return 'no “Searching N of M chapters” while indexing'
+      if (first !== current) return `first results from section ${first}, reading ${current}`
+      const saved = await invoke<[number, string][]>('search_text_get', {
+        bookId: reader()!.bookId,
+      })
+      if (saved.length < search.total) return `${saved.length} of ${search.total} chapters saved`
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick; Or/)
+      await settled(500)
+      keyOnApp('f', { code: 'KeyF', metaKey: true })
+      const again = await waitFor('search field', searchField)
+      typeInto(again, 'the')
+      reader()!.search.run() // skip the 150 ms typing debounce for the timing
+      await waitFor('search finished', () => reader()!.search.settled || null, 10_000)
+      await settled(300)
+      // From starting the search to the results painted (Spike F: < 300 ms from the cache).
+      const timings = reader()!.search.timings!
+      const ms = timings.painted
+      await closeSearch()
+      log(`F8: search from the saved index painted in ${ms} ms (${JSON.stringify(timings)})`)
+      return ms < 300 ? 'ok' : `search from the saved index took ${ms} ms`
+    },
+  })
+
+  checks.push({
+    id: 'F2-minimum-length',
+    description: 'Search starts from 2 characters, or 1 for CJK',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const one = await searchFor('w')
+      await closeSearch()
+      return one.results === 0 && !document.querySelector('.navigator .search .hit')
+        ? 'ok'
+        : `“w” gave ${one.results} results`
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -1777,6 +2058,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
     let evidence: string
     try {
       evidence = await c.run()
+      const w = hooks.writes
+      if (evidence !== 'ok' && w?.failed)
+        evidence += ` [write queue failed: ${JSON.stringify(w.lastError)}; pending ${w.pendingKeys.join(', ')}]`
     } catch (e) {
       evidence = `error: ${e instanceof Error ? `${e.message} @ ${(e.stack ?? '').split('\n').slice(0, 6).join(' < ')}` : String(e)}`
     }

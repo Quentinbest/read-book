@@ -323,6 +323,64 @@ pub fn serve_book_media(
     }
 }
 
+/// F8: the book's extracted chapter text for search, if it was saved for this
+/// version of the file (a replaced file has a new content hash).
+#[tauri::command]
+pub fn search_text_get(state: State<AppState>, book_id: String) -> CmdResult<Vec<(u32, String)>> {
+    let failed = |e: rusqlite::Error| CommandError::Failed {
+        message: e.to_string(),
+    };
+    let store = state.store.lock().unwrap();
+    let mut stmt = store
+        .conn()
+        .prepare(
+            "SELECT s.section, s.text FROM search_text s JOIN books b ON b.id = s.book_id
+             WHERE s.book_id = ?1 AND s.content_hash = b.content_hash ORDER BY s.section",
+        )
+        .map_err(failed)?;
+    let rows = stmt
+        .query_map([&book_id], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(failed)?
+        .collect::<Result<Vec<(u32, String)>, _>>()
+        .map_err(failed)?;
+    Ok(rows)
+}
+
+/// F8: save extracted chapter text for search, stamped with the file's content hash.
+#[tauri::command]
+pub fn search_text_put(
+    state: State<AppState>,
+    book_id: String,
+    chapters: Vec<(u32, String)>,
+) -> CmdResult<()> {
+    let failed = |e: rusqlite::Error| CommandError::Failed {
+        message: e.to_string(),
+    };
+    let mut store = state.store.lock().unwrap();
+    let tx = store.conn_mut().transaction().map_err(failed)?;
+    let hash: String = tx
+        .query_row(
+            "SELECT content_hash FROM books WHERE id = ?1",
+            [&book_id],
+            |r| r.get(0),
+        )
+        .map_err(failed)?;
+    // Text from an older version of the file goes.
+    tx.execute(
+        "DELETE FROM search_text WHERE book_id = ?1 AND content_hash != ?2",
+        rusqlite::params![book_id, hash],
+    )
+    .map_err(failed)?;
+    for (section, text) in &chapters {
+        tx.execute(
+            "INSERT OR REPLACE INTO search_text (book_id, content_hash, section, text) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![book_id, hash, section, text],
+        )
+        .map_err(failed)?;
+    }
+    tx.commit().map_err(failed)
+}
+
 /// E3, N6: the book's damaged spine items (zip paths), recorded at import.
 #[tauri::command]
 pub fn book_damage(state: State<AppState>, book_id: String) -> CmdResult<Vec<String>> {

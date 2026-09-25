@@ -56,8 +56,26 @@ export const en = {
     /** G8: shown only when opening takes over 500 ms. */
     opening: (title: string) => `Opening “${title}”…`,
   },
+  search: {
+    label: 'Search in book',
+    placeholder: 'Search in book',
+    clear: 'Clear search',
+    count: (n: number, chapters: number) =>
+      `${n} ${n === 1 ? 'result' : 'results'} in ${chapters} ${chapters === 1 ? 'chapter' : 'chapters'}`,
+    soFar: 'so far',
+    searching: (n: number, of: number) => `Searching ${n} of ${of} chapters`,
+    showAll: (n: number) => `Show all ${n}`,
+    none: (q: string) => `No results for “${q}”`,
+    next: 'next',
+    previous: 'previous',
+    back: 'back to your page',
+    result: (i: number, n: number, chapter: string) =>
+      [`Result ${i} of ${n}`, chapter].filter(Boolean).join(' · '),
+  },
   navigator: {
     label: 'Navigator',
+    tabs: 'Navigator sections',
+    search: 'Search',
     close: 'Close navigator',
     contents: 'Contents',
     loading: 'Reading the contents…',

@@ -148,7 +148,12 @@ pub fn import_book(
     if let Some(book_id) = store.book_by_hash(&hash)? {
         return Ok(ImportOutcome::AlreadyInLibrary { book_id });
     }
-    let (mut archive, package) = match epub::open(source) {
+    // Parsing untrusted files must never take the app down: a panic here (a parser
+    // bug) rejects this one file. It could not unwind through the WebView's native
+    // callback, so uncaught it would abort the process.
+    let parsed = std::panic::catch_unwind(|| epub::open(source))
+        .unwrap_or_else(|_| Err(Rejection::BadPackage));
+    let (mut archive, package) = match parsed {
         Ok(x) => x,
         Err(r) => {
             return Ok(ImportOutcome::Rejected {
@@ -347,6 +352,32 @@ mod tests {
             "corpus_outcomes: {checked}/{} corpus files present and checked",
             expected.len()
         );
+    }
+
+    /// Every corpus file imports or is refused; none takes the importer down
+    /// (a Japanese book once panicked the entity check at a character boundary).
+    #[test]
+    fn every_corpus_file_imports_or_is_refused() {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../corpus");
+        let (_dir, mut store, lib) = setup();
+        let mut seen = 0;
+        for dir in ["cache", "generated"] {
+            let Ok(entries) = std::fs::read_dir(root.join(dir)) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_none_or(|e| e != "epub") {
+                    continue;
+                }
+                let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    import_book(&mut store, &lib, &path)
+                }));
+                assert!(outcome.is_ok(), "{} panicked", path.display());
+                seen += 1;
+            }
+        }
+        eprintln!("every_corpus_file_imports_or_is_refused: {seen} files");
     }
 
     #[test]

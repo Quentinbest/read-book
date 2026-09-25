@@ -40,6 +40,8 @@ pub fn run() {
                 commands::book_entries,
                 commands::book_entry,
                 commands::book_damage,
+                commands::search_text_get,
+                commands::search_text_put,
                 native::open_external,
                 native::copy_text,
                 commands::book_settings_get,

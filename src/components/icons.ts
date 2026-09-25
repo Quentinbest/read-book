@@ -9,6 +9,7 @@ export const ICONS = {
   more: 'M6 12h.01M12 12h.01M18 12h.01',
   close: 'M6 6l12 12M18 6L6 18',
   warning: 'M12 4 21 20H3zM12 10v4.5M12 17.5h.01',
+  chevron: 'M9 6l6 6-6 6',
   open: 'M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14',
   back: 'M10 7l-5 5 5 5M5 12h14',
 } as const
