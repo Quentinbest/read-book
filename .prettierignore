@@ -6,3 +6,5 @@ src-tauri/gen
 docs
 .claude
 corpus
+# Golden files are compared byte for byte.
+src/extensions/golden

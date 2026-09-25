@@ -23,6 +23,7 @@ export const SECTION_TITLES: Record<CommandSection, string> = {
   annotation: 'Highlights and notes',
   view: 'View',
   app: 'App',
+  extension: 'Extensions',
 }
 
 /** Page keys (I8 Pages, I9 Scroll): the reader's own, not registry commands. */
@@ -33,7 +34,15 @@ export const PAGE_KEYS: CheatRow[] = [
   { label: 'Scroll by lines (Scroll mode)', keys: ['↓', '↑'] },
 ]
 
-const ORDER: CommandSection[] = ['navigation', 'reading', 'search', 'annotation', 'view', 'app']
+const ORDER: CommandSection[] = [
+  'navigation',
+  'reading',
+  'search',
+  'annotation',
+  'view',
+  'app',
+  'extension',
+]
 
 export function cheatSheet(
   commands: Pick<Command, 'title' | 'section' | 'chord' | 'altChords' | 'singleKey'>[],

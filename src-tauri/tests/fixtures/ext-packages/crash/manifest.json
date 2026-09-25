@@ -1,0 +1,10 @@
+{
+  "id": "test.crash",
+  "version": "1.0.0",
+  "name": "Crash",
+  "engines": { "linen": "^1.0" },
+  "main": "main.js",
+  "activation": ["onCommand:boom"],
+  "contributes": { "commands": [{ "id": "boom", "title": "Boom" }] },
+  "permissions": []
+}

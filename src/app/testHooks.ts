@@ -31,6 +31,12 @@ export interface TestHooks {
   externalOpened?: string[]
   /** A10: the native context menu's items, recorded instead of shown (menus block the harness). */
   contextMenu?: { labels: string[]; run: (label: string) => void }
+  /** Phase 7: the path the install dialog would return (the harness cannot drive it). */
+  pickExtensionFile?: () => Promise<string | null>
+  /** Phase 7: where the save dialog would save (files.save). */
+  pickSavePath?: (suggested: string) => Promise<string | null>
+  /** Phase 7: the extension host. */
+  extensions?: import('../extensions/host.svelte').ExtensionHost
   /** G2: times Settings… asked for the Settings window (not opened under test). */
   settingsOpened?: number
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */

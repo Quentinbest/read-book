@@ -12,15 +12,31 @@
     registry,
     anchor,
     onclose,
-  }: { registry: CommandRegistry; anchor: DOMRect; onclose: () => void } = $props()
+    pinned = [],
+  }: {
+    registry: CommandRegistry
+    anchor: DOMRect
+    onclose: () => void
+    /** P8: extensions the reader pinned in Settings. */
+    pinned?: string[]
+  } = $props()
 
   const ORDER: CommandSection[] = ['navigation', 'reading', 'search', 'annotation', 'view', 'app']
   const groups = $derived.by(() => {
     const all = registry.available().filter((c) => c.palette)
-    return ORDER.map((s) => ({
-      title: SECTION_TITLES[s],
-      items: all.filter((c) => c.section === s),
-    })).filter((g) => g.items.length)
+    // P8: extensions have no top-bar slot; a pinned extension's commands lead the ⋯ menu.
+    const pinnedExt = all.filter((c) => c.extensionId && pinned.includes(c.extensionId))
+    const byExtension = [...new Set(pinnedExt.map((c) => c.extensionId!))].map((id) => ({
+      title: pinnedExt.find((c) => c.extensionId === id)?.extensionName ?? id,
+      items: pinnedExt.filter((c) => c.extensionId === id),
+    }))
+    return [
+      ...byExtension,
+      ...ORDER.map((s) => ({
+        title: SECTION_TITLES[s],
+        items: all.filter((c) => c.section === s),
+      })),
+    ].filter((g) => g.items.length)
   })
   let menu: HTMLElement | undefined = $state()
 

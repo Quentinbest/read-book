@@ -12,6 +12,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { ipc } from '../app/ipc'
+import { testHooks } from '../app/testHooks'
 import { contributionLabels } from '../lib/extensions/labels'
 import { packProblems, themeFromPack } from '../lib/extensions/themes'
 import type { InstalledExtension } from '../lib/extensions/types'
@@ -100,6 +101,12 @@ export class ExtensionHost {
       if (!this.active.some((x) => x.manifest.id === id)) this.unload(id)
   }
 
+  /** P6: slots keep a suspended extension, marked, with Restart (it is not run). */
+  get slotted(): InstalledExtension[] {
+    if (this.safeMode) return []
+    return this.extensions.filter((x) => x.enabled && !x.incompatible)
+  }
+
   get(id: string): InstalledExtension | undefined {
     return this.extensions.find((x) => x.manifest.id === id)
   }
@@ -118,7 +125,7 @@ export class ExtensionHost {
 
   /** P10: the actions whose `when` holds, in install order. */
   selectionActions(ctx: WhenContext) {
-    return this.active.flatMap((x) =>
+    return this.slotted.flatMap((x) =>
       x.manifest.contributes.selectionActions
         .filter((a) => when(a.when, ctx))
         .map((a) => ({
@@ -132,7 +139,7 @@ export class ExtensionHost {
   }
 
   navigatorTabs() {
-    return this.active.flatMap((x) =>
+    return this.slotted.flatMap((x) =>
       x.manifest.contributes.navigatorTabs.map((t) => ({
         extId: x.manifest.id,
         name: x.manifest.name,
@@ -327,7 +334,8 @@ export class ExtensionHost {
 
   /** CPU budget: a Worker busy in a loop cannot answer its heartbeat. */
   #beat(extId: string, run: Running) {
-    if (run.awaitingPong !== null) return
+    // During a call its own timeout (2 s or 10 s) governs; the heartbeat is for idle spinning.
+    if (run.awaitingPong !== null || run.calls.size) return
     const id = this.#nextCall++
     run.awaitingPong = id
     run.frame.contentWindow?.postMessage({ ping: id }, '*')
@@ -386,7 +394,15 @@ export class ExtensionHost {
       this.#touch(extId, run)
       this.#rpc(extId, String(m.method), (m.params ?? {}) as Record<string, unknown>).then(
         (r) => reply(r ?? null),
-        (err: unknown) => reply(null, err instanceof Error ? err.message : String(err)),
+        (err: unknown) =>
+          reply(
+            null,
+            err instanceof Error
+              ? err.message
+              : typeof err === 'object' && err && 'message' in err
+                ? String((err as { message: unknown }).message)
+                : String(err),
+          ),
       )
     }
   }
@@ -453,7 +469,9 @@ export class ExtensionHost {
       case 'files.save': {
         need('files.export')
         // Each use goes through the OS dialog (P3).
-        const path = await save({ defaultPath: String(params.suggestedName ?? 'export.txt') })
+        const path = testHooks?.pickSavePath
+          ? await testHooks.pickSavePath(String(params.suggestedName ?? 'export.txt'))
+          : await save({ defaultPath: String(params.suggestedName ?? 'export.txt') })
         if (!path) return { saved: false }
         await invoke('export_save_file', { path, contents: String(params.content ?? '') })
         return { saved: true }

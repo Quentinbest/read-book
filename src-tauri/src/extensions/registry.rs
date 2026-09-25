@@ -261,6 +261,20 @@ pub fn install(
     Ok(m)
 }
 
+/// Test builds only: install without the compatibility check, as if the app had
+/// been downgraded under an installed extension (P5: disabled at load, with a reason).
+#[cfg(feature = "spikes")]
+pub fn install_unchecked(store: &mut Store, dir: &Path, path: &Path) -> Result<Manifest, ExtError> {
+    let (m, mut zip) = read_package(path)?;
+    unpack(&mut zip, dir, &m.id)?;
+    store.conn().execute(
+        "INSERT OR REPLACE INTO extensions (id, version, enabled, granted_permissions, installed_at, crash_log)
+         VALUES (?1, ?2, 1, ?3, ?4, '{}')",
+        params![m.id, m.version, serde_json::to_string(&m.permissions).unwrap(), now_ms()],
+    )?;
+    Ok(m)
+}
+
 fn read_manifest(dir: &Path, id: &str) -> Option<Manifest> {
     let json = std::fs::read_to_string(dir.join(id).join("manifest.json")).ok()?;
     manifest::parse(&json).ok()

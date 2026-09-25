@@ -111,6 +111,8 @@ pub fn run() {
         spikes::spike_corpus_path,
         spikes::spike_corpus_dir,
         spikes::spike_install_ext,
+        spikes::spike_install_unchecked,
+        spikes::spike_read_file,
         spikes::spike_canary,
         spikes::spike_canary_log,
         spikes::spike_canary_clear,

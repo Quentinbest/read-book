@@ -411,6 +411,18 @@ def library_500(chapters):
         write_epub(out / f"book-{i:03d}.epub", files)
 
 
+def extension_packages():
+    """Phase 7: the sample extensions (examples/extensions) and the test ones
+    (src-tauri/tests/fixtures/ext-packages) as .linenext packages (D4)."""
+    root = Path(__file__).resolve().parent.parent.parent
+    for folder in [root / "examples/extensions", root / "src-tauri/tests/fixtures/ext-packages"]:
+        for ext in sorted(p for p in folder.iterdir() if p.is_dir()):
+            with zipfile.ZipFile(OUT / f"{ext.name}.linenext", "w") as zf:
+                for f in sorted(ext.rglob("*")):
+                    if f.is_file():
+                        zf.writestr(zinfo(str(f.relative_to(ext))), f.read_bytes())
+
+
 def large_books(chapters):
     rng = random.Random(20260924)
     images = {f"plate-{i}.png": (png(1800, 1800, rng), "image/png") for i in range(10)}  # ~97 MB, incompressible
@@ -454,6 +466,7 @@ def main() -> int:
     note_books()
     edited_books(chapters)
     library_500(chapters)
+    extension_packages()
     for p in sorted(OUT.iterdir()):
         if p.is_file():
             print(f"{p.stat().st_size:>12,}  {p.name}")

@@ -27,3 +27,11 @@ describe('P9 theme packs', () => {
     expect(packProblems(t)[0]).toMatch(/^text is/)
   })
 })
+
+describe('the Night Owl sample (examples/extensions/night-owl)', () => {
+  it('passes the pack checks', async () => {
+    const m = (await import('../../../examples/extensions/night-owl/manifest.json')).default
+    const pack = m.contributes.themes[0] as Parameters<typeof themeFromPack>[1]
+    expect(packProblems(themeFromPack(m.id, pack))).toEqual([])
+  })
+})

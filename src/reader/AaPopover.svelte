@@ -8,15 +8,17 @@
   import type { ThemeChoice } from '../app/theme'
   import type { Spacing } from './layout'
   import { TEXT_SIZES } from './textSizes'
-  import { THEMES } from '../lib/theme/tokens'
+  import { THEMES, type Theme } from '../lib/theme/tokens'
 
   /** Each swatch shows its theme's own page and ink (Screen 09); Auto shows Paper and Night. */
   const swatch = (choice: ThemeChoice) => {
     const { paper, night } = THEMES
     if (choice === 'auto')
       return `background: linear-gradient(135deg, ${paper.ground} 50%, ${night.ground} 50%); color: ${paper.accent}`
-    const th = THEMES[choice]
-    return `background: ${th.ground}; color: ${th.ink}`
+    const th = choice.startsWith('ext:')
+      ? packs.find((p) => p.value === choice)?.theme
+      : THEMES[choice as keyof typeof THEMES]
+    return th ? `background: ${th.ground}; color: ${th.ink}` : ''
   }
 
   let {
@@ -32,6 +34,7 @@
     onspacing,
     onlayout,
     onsettings,
+    packs = [],
   }: {
     anchor: DOMRect
     fontPx: number
@@ -45,6 +48,8 @@
     onspacing: (s: Spacing) => void
     onlayout: (l: 'pages' | 'scroll') => void
     onsettings: () => void
+    /** P9: theme packs from extensions, listed after the built-in themes. */
+    packs?: { value: ThemeChoice; label: string; theme: Theme }[]
   } = $props()
 
   const WIDTH = 300
@@ -61,12 +66,13 @@
     return i < 0 ? TEXT_SIZES.length - 1 : i
   })
 
-  const themes: { value: ThemeChoice; label: string }[] = [
+  const themes: { value: ThemeChoice; label: string }[] = $derived([
     { value: 'paper', label: t.aa.paper },
     { value: 'sepia', label: t.aa.sepia },
     { value: 'night', label: t.aa.night },
     { value: 'auto', label: t.aa.auto },
-  ]
+    ...packs.map((p) => ({ value: p.value, label: p.label })),
+  ])
   const spacings: { value: Spacing; label: string }[] = [
     { value: 'compact', label: t.aa.compact },
     { value: 'default', label: t.aa.normal },

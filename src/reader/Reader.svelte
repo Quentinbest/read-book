@@ -41,6 +41,10 @@
   import { popUpMenu, type MenuEntry } from '../app/nativeMenu'
   import { MOTION, multipliedTint, parseColor } from '../lib/theme/tokens'
   import AaPopover from './AaPopover.svelte'
+  import type { ExtensionHost, ReaderBridge } from '../extensions/host.svelte'
+  import ExtensionTab from './ExtensionTab.svelte'
+  import type { NavigatorTab } from '../lib/reader/state'
+  import { toW3C } from '../lib/annotations/model'
   import { clampTextSize, DEFAULT_TEXT_SIZE, stepTextSize } from './textSizes'
   import { applyTheme, type ThemeChoice } from '../app/theme'
   import { changeSetting, onSettingChanged } from '../app/settingsSync'
@@ -72,6 +76,7 @@
     onBeforeQuit,
     announce,
     onexit,
+    extensions,
   }: {
     book: Book
     messages: MessageQueue
@@ -83,6 +88,8 @@
     /** Screen-reader announcement (polite), for page turns (X3). */
     announce: (text: string) => void
     onexit: () => void
+    /** Phase 7: the extension host (slots, and the book as extensions may see it). */
+    extensions: ExtensionHost
   } = $props()
 
   // ---- constants from the design (S3, S9–S12, N2, I7)
@@ -651,6 +658,118 @@
     await popUpMenu(entries)
   }
 
+  // ---- Extensions (Phase 7): slots, and the book as extensions may see it (P2)
+  /** E2: a fixed-layout book (Aa keeps theme and zoom only). */
+  let fixedBook = $state(false)
+  /** P8: extensions pinned in the ⋯ menu (Settings › Extensions). */
+  let pinnedExtensions = $state<string[]>([])
+  const bridge: ReaderBridge = {
+    metadata: () => ({
+      title: book.title,
+      authors: book.authors,
+      language: book.language,
+      identifier: book.package_identifier,
+    }),
+    chapters: async () =>
+      Array.from({ length: engine?.chapterCount ?? 0 }, (_, index) => ({
+        index,
+        label: chapterLabelFor(index),
+      })),
+    text: async (chapter) => {
+      if (!engine) throw new Error('no book is open')
+      return engine.chapterText(chapter)
+    },
+    annotations: () => {
+      const source = book.package_identifier ?? `urn:linen:book:${book.id}`
+      const items = [...annotations.placed]
+        .sort((a, b) => cfiOrder(a.cfi, b.cfi))
+        .map((a) => ({
+          ...toW3C(a, source),
+          'linen:chapter': chapterLabelFor(engine?.cfiIndex(a.cfi) ?? -1),
+        }))
+      return {
+        '@context': 'http://www.w3.org/ns/anno.jsonld',
+        type: 'AnnotationCollection',
+        label: book.title,
+        total: items.length,
+        first: { type: 'AnnotationPage', items },
+      }
+    },
+  }
+  // Read-only annotation events (P§18): created, changed, deleted.
+  let seenAnnotations: Map<string, number> | null = null
+  $effect(() => {
+    const items = annotations.items
+    if (!annotationsReady) return
+    const now = new Map(items.map((a) => [a.id, a.updatedAt]))
+    const before = seenAnnotations
+    seenAnnotations = now
+    if (!before) return
+    const source = book.package_identifier ?? `urn:linen:book:${book.id}`
+    for (const a of items) {
+      if (!before.has(a.id)) extensions.emitAnnotationEvent('created', toW3C(a, source))
+      else if (before.get(a.id) !== a.updatedAt)
+        extensions.emitAnnotationEvent('changed', toW3C(a, source))
+    }
+    for (const id of before.keys())
+      if (!now.has(id)) extensions.emitAnnotationEvent('deleted', { id: `urn:uuid:${id}` })
+  })
+
+  /** P10: extension actions for the selection, whose `when` holds. */
+  const selectionExtensionActions = $derived(
+    bar?.mode === 'new' && selection
+      ? extensions.selectionActions({
+          'selection.words': selection.text.trim().split(/\s+/).filter(Boolean).length,
+          'selection.chars': selection.text.length,
+          'selection.language': book.language ?? '',
+          'book.language': book.language ?? '',
+          'book.fixedLayout': fixedBook,
+        })
+      : [],
+  )
+  /** Run an extension's selection action; its Navigator tab (if any) shows the result. */
+  async function runSelectionAction(a: { extId: string; command: string; name: string }) {
+    const sel = selection
+    if (!sel) return
+    closeBar(false)
+    const tab = extensions.navigatorTabs().find((x) => x.extId === a.extId)
+    if (tab) dispatch({ type: 'openNavigator', tab: `extension:${a.extId}/${tab.id}` })
+    try {
+      await extensions.invoke(
+        a.extId,
+        a.command,
+        // The text itself only through linen.book.selection(), which needs its permission.
+        { source: 'selection' },
+        { selection: { text: sel.text, cfi: sel.cfi } },
+      )
+    } catch {
+      messages.push({
+        text: t.extensions.stopped(a.name),
+        action: { label: t.extensions.restart, run: () => void extensions.restart(a.extId) },
+      })
+    }
+  }
+  /** Notes › Export (P§18): an exporter extension, e.g. Markdown Export. */
+  async function runExporter(e: { extId: string; command: string; name: string }) {
+    try {
+      const r = (await extensions.invoke(e.extId, e.command, { export: { book: book.title } })) as {
+        saved?: boolean
+      } | null
+      if (r?.saved) messages.push({ text: t.extensions.exported })
+    } catch {
+      messages.push({
+        text: t.extensions.exportFailed(e.name),
+        action: { label: t.extensions.restart, run: () => void extensions.restart(e.extId) },
+      })
+    }
+  }
+  /** The Navigator's extension tab showing now, if any (G7). */
+  const extensionTab = $derived.by(() => {
+    const tab = navigatorTab(lanes)
+    if (!tab?.startsWith('extension:')) return null
+    return extensions.navigatorTabs().find((x) => tab === `extension:${x.extId}/${x.id}`) ?? null
+  })
+
   // ---- The ⋯ menu (Screen 03): every command, as in the menu bar and ⌘K
   let moreOpen = $derived(lanes.floating?.kind === 'more')
   let moreAnchor = $state<DOMRect | null>(null)
@@ -728,8 +847,6 @@
   let aaAnchor = $state<DOMRect | null>(null)
   /** L18: over 30% of the book is code or tables (measured once per book, in idle time). */
   let codeHeavy = $state(false)
-  /** E2: a fixed-layout book (Aa keeps theme and zoom only). */
-  let fixedBook = $state(false)
   const CODE_HEAVY_SHARE = 0.3
   const CODE_SHARE_DELAY_MS = 5000
   let unmounted = false
@@ -766,7 +883,7 @@
   /** V1: all books, and the app around them; Auto follows the system. */
   async function setTheme(choice: ThemeChoice) {
     themeChoice = choice
-    applyTheme(choice)
+    applyTheme(choice, themePacks.find((p) => p.value === choice)?.theme)
     await changeSetting('theme', choice)
     theme = await resolveTheme()
     relayout()
@@ -838,8 +955,24 @@
   async function resolveTheme(): Promise<Theme> {
     const choice = (await ipc.settingGet('theme')) ?? 'auto'
     if (choice === 'sepia' || choice === 'night' || choice === 'paper') return THEMES[choice]
+    // P9: an extension's theme pack, while it is installed, on and passes its checks.
+    const pack = extensions
+      .themes()
+      .find((x) => `ext:${x.extId}/${x.id}` === choice && !x.problems.length)
+    if (pack) return pack.theme
     return matchMedia('(prefers-color-scheme: dark)').matches ? THEMES.night : THEMES.paper
   }
+  /** P9: theme packs for the Aa popover. */
+  const themePacks = $derived(
+    extensions
+      .themes()
+      .filter((x) => !x.problems.length)
+      .map((x) => ({
+        value: `ext:${x.extId}/${x.id}` as ThemeChoice,
+        label: x.title,
+        theme: x.theme,
+      })),
+  )
 
   function relayout() {
     height = window.innerHeight
@@ -1221,6 +1354,16 @@
       })
       readingMode = engine.mode
       pageList = engine.pageList
+      // Phase 7: the book, for extensions that were allowed to see it.
+      extensions.bridge = bridge
+      cleanups.push(() => {
+        if (extensions.bridge === bridge) extensions.bridge = null
+      })
+      // Not awaited: nothing in the opening sequence may wait on it (B8's restore is timing-sensitive).
+      void ipc
+        .settingGet('pinnedExtensions')
+        .then((v) => (pinnedExtensions = JSON.parse(v ?? '[]')))
+        .catch(() => {})
       // A4, A9: the book's highlights, placed again if the file changed (B3).
       void ipc
         .annotationsList(book.id)
@@ -1525,14 +1668,31 @@
       onclose={closeNavigator}
       onlibrary={leave}
       ongoto={openGoTo}
-      tab={searchOpen ? 'search' : notesOpen ? 'notes' : 'contents'}
+      tab={searchOpen ? 'search' : notesOpen ? 'notes' : (navigatorTab(lanes) ?? 'contents')}
+      extensionTabs={extensions
+        .navigatorTabs()
+        .map((x) => ({ value: `extension:${x.extId}/${x.id}`, label: x.title }))}
       ontab={(tab) =>
         tab === 'search'
           ? openSearch()
           : tab === 'notes'
             ? openNotes()
-            : dispatch({ type: 'openNavigator', tab })}
+            : dispatch({ type: 'openNavigator', tab: tab as NavigatorTab })}
     >
+      {#snippet extension()}
+        {#if extensionTab}
+          {#key extensionTab.extId + extensionTab.id}
+            <ExtensionTab
+              host={extensions}
+              extId={extensionTab.extId}
+              name={extensionTab.name}
+              title={extensionTab.title}
+              page={extensionTab.page}
+              {theme}
+            />
+          {/key}
+        {/if}
+      {/snippet}
       {#snippet notes()}
         <NotesPanel
           bind:this={notesPanel}
@@ -1544,6 +1704,8 @@
           current={jumpedTo}
           onchoose={(a) => void chooseAnnotation(a)}
           onreattach={startReattach}
+          exporters={extensions.exporters()}
+          onexport={(e) => void runExporter(e)}
         />
       {/snippet}
       {#snippet search()}
@@ -1623,6 +1785,7 @@
     {#if moreOpen && moreAnchor}
       <MoreMenu
         {registry}
+        pinned={pinnedExtensions}
         anchor={moreAnchor}
         onclose={() => dispatch({ type: 'closeFloating' })}
       />
@@ -1657,6 +1820,7 @@
     {/if}
     {#if aaOpen && aaAnchor}
       <AaPopover
+        packs={themePacks}
         anchor={aaAnchor}
         {fontPx}
         theme={themeChoice}
@@ -1694,6 +1858,16 @@
         onescape={() => engine?.focusPage()}
         onattach={attachSelection}
         oncancel={cancelReattach}
+        extensionActions={selectionExtensionActions.map((a) => ({
+          ...a,
+          status: extensions.status[a.extId] ?? 'idle',
+        }))}
+        onextension={(a) => void runSelectionAction(a)}
+        onrestart={(id) => void extensions.restart(id)}
+        onmanage={() => {
+          closeBar(false)
+          registry.run('app.settings')
+        }}
       />
     {/if}
     {#if noteOpen && noteFor}

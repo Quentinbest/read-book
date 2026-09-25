@@ -12,6 +12,7 @@
   import { changeSetting as change, onSettingChanged } from '../app/settingsSync'
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from '../reader/textSizes'
   import { exportAllAnnotations } from './exportAll'
+  import ExtensionsPane from './ExtensionsPane.svelte'
 
   /** This page's own changes are not applied back to it. */
   const source = crypto.randomUUID()
@@ -192,8 +193,7 @@
       </div>
       <p class="help">{t.prefs.uninstall}</p>
     {:else if section === 'extensions'}
-      <p class="intro">{t.prefs.extensionsIntro}</p>
-      <p class="help">{t.prefs.extensionsNone}</p>
+      <ExtensionsPane />
     {:else if section === 'shortcuts'}
       <Switch
         label={t.prefs.singleKeys}
@@ -352,7 +352,6 @@
     overflow-wrap: anywhere;
   }
   .help,
-  .intro,
   p {
     margin: 0;
     font-size: 13px;

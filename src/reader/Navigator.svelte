@@ -25,6 +25,8 @@
     ontab,
     search,
     notes,
+    extensionTabs = [],
+    extension,
   }: {
     title: string
     author: string
@@ -40,15 +42,20 @@
     /** N8: the progress label opens Go to (S3: the header stands in for the chrome). */
     ongoto: (anchor: DOMRect) => void
     /** The open tab. */
-    tab: 'contents' | 'search' | 'notes'
-    ontab: (tab: 'contents' | 'search' | 'notes') => void
+    tab: string
+    ontab: (tab: string) => void
     /** The Search tab's panel (F1–F7). */
     search: Snippet
     /** The Notes tab's panel (A8). */
     notes: Snippet
+    /** G7: extensions' tabs (`extension:<id>/<tab>`), after Notes. */
+    extensionTabs?: { value: string; label: string }[]
+    /** The panel of the extension tab that shows. */
+    extension?: Snippet
   } = $props()
 
   let rows: HTMLButtonElement[] = $state([])
+  const MORE = 'extension:more'
   let coverFailed = $state(false)
 
   /** K3, C2: Contents opens focused on the current chapter. */
@@ -122,8 +129,17 @@
         { value: 'contents', label: t.navigator.contents },
         { value: 'search', label: t.navigator.search },
         { value: 'notes', label: t.navigator.notes },
+        // G7: one extension tab shows by name; more collapse into “More”.
+        ...(extensionTabs.length === 1
+          ? extensionTabs
+          : extensionTabs.length
+            ? [{ value: MORE, label: t.navigator.more }]
+            : []),
       ]}
-      bind:selected={() => tab, (v) => ontab(v)}
+      bind:selected={
+        () => (extensionTabs.length > 1 && tab.startsWith('extension:') ? MORE : tab),
+        (v) => ontab(v)
+      }
     />
   </div>
   {#if tab === 'search'}
@@ -134,6 +150,30 @@
       aria-labelledby="navigator-tab-search"
     >
       {@render search()}
+    </div>
+  {:else if tab === MORE}
+    <div
+      class="panel"
+      id="navigator-panel-{MORE}"
+      role="tabpanel"
+      aria-labelledby="navigator-tab-{MORE}"
+    >
+      <ul class="more-tabs">
+        {#each extensionTabs as x (x.value)}
+          <li>
+            <button type="button" class="row" onclick={() => ontab(x.value)}>{x.label}</button>
+          </li>
+        {/each}
+      </ul>
+    </div>
+  {:else if tab.startsWith('extension:')}
+    <div
+      class="panel"
+      id="navigator-panel-{extensionTabs.length > 1 ? MORE : tab}"
+      role="tabpanel"
+      aria-labelledby="navigator-tab-{extensionTabs.length > 1 ? MORE : tab}"
+    >
+      {@render extension?.()}
     </div>
   {:else if tab === 'notes'}
     <div
@@ -340,6 +380,11 @@
     border-color: var(--segment-ring);
     color: var(--ink);
     font-weight: 600;
+  }
+  .more-tabs {
+    list-style: none;
+    margin: 0;
+    padding: 4px 8px;
   }
   .panel {
     flex: 1;

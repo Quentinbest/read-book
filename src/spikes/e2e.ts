@@ -1723,6 +1723,8 @@ export async function spikeE2E(): Promise<SpikeResult> {
         const enabled = c.enabled?.() ?? true
         if (enabled && inPalette.get(c.title) !== label)
           problems.push(`⌘K ${c.id} “${inPalette.get(c.title)}”`)
+        // Extension commands are in ⌘K; in ⋯ only when pinned (P8), never in the menu bar.
+        if (c.extensionId) continue
         if (!inMore.has(c.title) || inMore.get(c.title) !== label) problems.push(`⋯ ${c.id}`)
         if (c.menu && !inMenuBar.has(c.id)) problems.push(`menu bar ${c.id}`)
         // Settings… lives in the app menu, macOS's place for it (menubar.ts).
@@ -3135,6 +3137,400 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Phase 7: extensions
+  const pkg = (name: string) => invoke<string>('spike_corpus_path', { name: `${name}.linenext` })
+  const ext = () => hooks.extensions!
+  /** Chapter 1, where the phrases the checks select are. */
+  const toLoomings = async () => {
+    const sections = reader()!.engine.book!.sections
+    await reader()!.engine.goTo(sections.findIndex((x) => x.id.endsWith('/chapter-1.xhtml')))
+    await settled(600)
+  }
+  /** The Settings page, mounted here (the harness drives one WebView), on Extensions. */
+  const withSettings = async <T>(fn: (root: HTMLElement) => Promise<T>): Promise<T> => {
+    const { default: Preferences } = await import('../prefs/Preferences.svelte')
+    const { unmount } = await import('svelte')
+    const root = document.createElement('div')
+    root.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground);overflow:auto'
+    document.body.append(root)
+    const prefs = mount(Preferences, { target: root })
+    try {
+      await settled(400)
+      root.querySelector<HTMLButtonElement>('#prefs-extensions')!.click()
+      await settled(400)
+      return await fn(root)
+    } finally {
+      void unmount(prefs)
+      root.remove()
+    }
+  }
+  /** Install through the pane and the consent sheet (G1), as a reader does. */
+  const installViaSettings = async (root: HTMLElement, name: string) => {
+    const path = await pkg(name)
+    hooks.pickExtensionFile = async () => path
+    Array.from(root.querySelectorAll<HTMLButtonElement>('button'))
+      .find((b) => b.textContent?.includes('Install from file'))!
+      .click()
+    const sheet = await waitFor('sheet', () =>
+      document.querySelector<HTMLElement>(
+        'dialog[open] [data-install-sheet], dialog[open] [data-install-error]',
+      ),
+    )
+    await settled(200)
+    const text = sheet.textContent ?? ''
+    if (sheet.hasAttribute('data-install-sheet'))
+      Array.from(sheet.querySelectorAll<HTMLButtonElement>('button')).at(-1)!.click()
+    else sheet.querySelector<HTMLButtonElement>('button')!.click()
+    await settled(800)
+    return text
+  }
+
+  checks.push({
+    id: 'P5-install-consent',
+    description:
+      'Install from file shows what an extension can access and adds (G1), then installs it; an extension for an unsupported API major is refused with a reason',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await withSettings(async (root) => {
+        const consent = await installViaSettings(root, 'dictionary')
+        for (const want of [
+          'Install “Dictionary”?',
+          'Not verified by Linen',
+          'Read the text you select',
+          'Connect to api.dictionaryapi.dev',
+          'Navigator tab',
+        ])
+          if (!consent.includes(want)) problems.push(`sheet lacks “${want}”`)
+        for (const name of ['night-owl', 'hostile', 'hang', 'crash'])
+          await installViaSettings(root, name)
+        const future = await installViaSettings(root, 'future')
+        if (!/can’t be installed/.test(future) || !/\^2\.0/.test(future) || !/1\.x/.test(future))
+          problems.push(`future: “${future}”`)
+        await settled(300)
+        const listed = Array.from(root.querySelectorAll('[data-extension]')).map((e) =>
+          e.getAttribute('data-extension'),
+        )
+        for (const id of [
+          'app.linen.markdown-export',
+          'org.example.dictionary',
+          'org.example.night-owl',
+          'test.hostile',
+        ])
+          if (!listed.includes(id)) problems.push(`${id} not listed`)
+        if (listed.includes('test.future')) problems.push('the future extension was installed')
+        const builtin =
+          root.querySelector('[data-extension="app.linen.markdown-export"]')?.textContent ?? ''
+        if (!builtin.includes('Built-in') || builtin.includes('Remove'))
+          problems.push('Markdown Export not shown as built-in')
+      })
+      await waitFor('host reloaded', () => ext().get('org.example.dictionary'), 5000).catch(() =>
+        problems.push('the reader did not pick it up'),
+      )
+      if (
+        !hooks.registry!.available().some((c) => c.id === 'extension:org.example.dictionary:define')
+      )
+        problems.push('Define is not in ⌘K')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P5-incompatible-at-load',
+    description:
+      'An installed extension built for an unsupported major is turned off at load, with the reason shown',
+    run: async () => {
+      await invoke('spike_install_unchecked', { path: await pkg('future') })
+      await ext().load()
+      const x = ext().get('test.future')
+      const problems: string[] = []
+      if (!x?.incompatible) problems.push('not marked incompatible')
+      if (ext().active.some((a) => a.manifest.id === 'test.future')) problems.push('it is active')
+      await withSettings(async (root) => {
+        const row = root.querySelector('[data-extension="test.future"]')?.textContent ?? ''
+        if (!/Turned off: it was built for Linen API \^2\.0/.test(row))
+          problems.push(`row: “${row}”`)
+        root
+          .querySelector<HTMLElement>('[data-extension="test.future"]')
+          ?.querySelector<HTMLButtonElement>('.link')
+          ?.click()
+        await settled(300)
+        document
+          .querySelector<HTMLButtonElement>('dialog[open] [data-remove-sheet] .primary')
+          ?.click()
+        await settled(600)
+      })
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P10-selection-actions',
+    description:
+      'Extension actions sit behind “⋯” in the selection bar (their when-clauses decide); Define runs, with the selection only through its permission, and its Navigator tab shows',
+    run: async () => {
+      const problems: string[] = []
+      await toLoomings()
+      await selectPhrase('drizzly')
+      await waitFor('bar', selBar)
+      const more = barButton(/more actions from extensions/i)
+      if (!more) return 'no ⋯ in the bar'
+      more.click()
+      await settled(200)
+      const items = Array.from(selBar()!.querySelectorAll('.ext-menu [role="menuitem"]')).map((b) =>
+        b.textContent?.trim(),
+      )
+      if (!items.includes('Define') || !items.includes('Manage extensions…'))
+        problems.push(`menu: ${items.join(', ')}`)
+      Array.from(selBar()!.querySelectorAll<HTMLButtonElement>('.ext-menu [role="menuitem"]'))
+        .find((b) => b.textContent?.trim() === 'Define')!
+        .click()
+      await waitFor(
+        'tab',
+        () =>
+          document.querySelector('.navigator iframe[src^="linen-ext://org.example.dictionary/"]'),
+        5000,
+      ).catch(() => problems.push('the Definitions tab did not open'))
+      let saved: string | null = null
+      for (let i = 0; i < 60 && !(saved && !JSON.parse(saved).loading); i++) {
+        saved = await invoke<string | null>('extension_storage_get', {
+          id: 'org.example.dictionary',
+          key: 'last',
+        })
+        await sleep(250)
+      }
+      const r = saved ? JSON.parse(saved) : null
+      if (r?.word !== 'drizzly') problems.push(`looked up ${JSON.stringify(r)?.slice(0, 80)}`)
+      log(`P10: dictionary result ${JSON.stringify(r)?.slice(0, 160)}`)
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      // More than three words: Define's when-clause hides it.
+      await selectPhrase('damp, drizzly November in my soul')
+      barButton(/more actions from extensions/i)?.click()
+      await settled(200)
+      const long = Array.from(selBar()?.querySelectorAll('.ext-menu [role="menuitem"]') ?? []).map(
+        (b) => b.textContent?.trim(),
+      )
+      if (long.includes('Define')) problems.push('Define offered for six words')
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P2-hostile-extension',
+    description:
+      'A hostile extension reaches no undeclared host, no Tauri command, no book text or selection without permission, no other extension’s storage, and no more than 10 MB',
+    run: async () => {
+      await invoke('spike_canary_clear')
+      await invoke('extension_storage_set', {
+        id: 'org.example.dictionary',
+        key: 'secret-of-another-extension',
+        value: 'mine',
+      })
+      const r = (await ext().invoke('test.hostile', 'probe')) as Record<string, string>
+      await sleep(500)
+      const canary = await invoke<{ http: string[]; ipc: string[] }>('spike_canary_log')
+      log(`P2 hostile: ${JSON.stringify(r)}; canary ${JSON.stringify(canary)}`)
+      const problems: string[] = []
+      if (!/^reached/.test(r.declaredHost)) problems.push(`declared host: ${r.declaredHost}`)
+      for (const k of [
+        'undeclaredHost',
+        'undeclaredPort',
+        'redirectTrick',
+        'directFetch',
+        'bookText',
+        'bookSelection',
+        'annotations',
+        'library',
+        'tauri',
+        'unknownCall',
+        'storageQuota',
+      ])
+        if (!/^refused/.test(r[k])) problems.push(`${k}: ${r[k]}`)
+      if (!/nothing/.test(r.otherStorage)) problems.push(`otherStorage: ${r.otherStorage}`)
+      if (!/10 MB/.test(r.storageQuota)) problems.push(`quota: ${r.storageQuota}`)
+      const hits = canary.http.filter((h) => h.includes('/p7-'))
+      if (hits.length !== 1 || !hits[0].includes('/p7-declared'))
+        problems.push(`canary: ${hits.join(', ')}`)
+      if (canary.ipc.length) problems.push(`IPC: ${canary.ipc.join(', ')}`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P6-watchdog',
+    description:
+      'A stuck extension times out (10 s), is marked “Not responding” with Restart in the selection menu, is suspended after three failures, and reading carries on',
+    run: async () => {
+      const problems: string[] = []
+      await toLoomings()
+      const stall = () =>
+        ext()
+          .invoke('test.hang', 'stall')
+          .then(
+            () => 'answered',
+            (e: Error) => e.message,
+          )
+      const t0 = performance.now()
+      const pending = stall()
+      // Reading carries on while it spins.
+      const before = where()
+      await settled(500)
+      key('ArrowRight', { code: 'ArrowRight' })
+      await settled(700)
+      if (where() === before) problems.push('a page turn waited for the extension')
+      const first = await pending
+      const took = performance.now() - t0
+      if (!/did not answer within 10 s/.test(first) || took < 9500 || took > 12500)
+        problems.push(`first: ${first} after ${Math.round(took)} ms`)
+      if (ext().status['test.hang'] !== 'not-responding')
+        problems.push(`status ${ext().status['test.hang']}`)
+      await selectPhrase('drizzly')
+      barButton(/more actions from extensions/i)?.click()
+      await settled(200)
+      const menu = selBar()?.querySelector('.ext-menu')?.textContent ?? ''
+      if (!/Stall\s*Not responding/.test(menu) || !menu.includes('Restart Hang'))
+        problems.push(`menu: “${menu}”`)
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      key('Escape', { code: 'Escape' })
+      await stall()
+      await stall()
+      await settled(500)
+      const x = ext().get('test.hang')
+      if (!x?.suspended || ext().status['test.hang'] !== 'suspended')
+        problems.push(`after three: suspended ${x?.suspended}, ${ext().status['test.hang']}`)
+      // A crash at load counts too.
+      const boom = await ext()
+        .invoke('test.crash', 'boom')
+        .then(
+          () => 'ran',
+          (e: Error) => e.message,
+        )
+      if (boom === 'ran') problems.push('the crashing extension ran')
+      await ext().restart('test.hang')
+      if (ext().status['test.hang'] !== 'idle' || ext().get('test.hang')?.suspended)
+        problems.push('Restart did not clear it')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P9-theme-pack',
+    description:
+      'A theme pack is listed with the built-in themes in Aa and applies to the book and the app',
+    run: async () => {
+      const problems: string[] = []
+      const pop = await openAa()
+      const night = aaRadio('theme', 'Night Owl')
+      if (!night) return 'Night Owl is not in Aa'
+      night.click()
+      await settled(700)
+      const ground = getComputedStyle(document.querySelector('.reader')!)
+        .getPropertyValue('--ground')
+        .trim()
+        .toLowerCase()
+      if (ground !== '#1a1712') problems.push(`reader ground ${ground}`)
+      if (document.documentElement.dataset.theme !== 'extension')
+        problems.push(`app theme ${document.documentElement.dataset.theme}`)
+      void pop
+      aaRadio('theme', 'Auto').click()
+      await settled(500)
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P8-pinned-and-export',
+    description:
+      'A pinned extension’s commands lead the ⋯ menu (no top-bar slot); Notes › Export as Markdown saves the book’s highlights through the built-in extension',
+    run: async () => {
+      const problems: string[] = []
+      await withSettings(async (root) => {
+        root
+          .querySelector<HTMLInputElement>('[data-extension="org.example.dictionary"] .pin input')!
+          .click()
+        await settled(500)
+      })
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      await showControls()
+      document.querySelector<HTMLButtonElement>('.more-button')!.click()
+      const more = await waitFor('⋯ menu', () => document.querySelector<HTMLElement>('.more'))
+      const firstGroup = more.querySelector('.group')?.textContent ?? ''
+      if (!/Dictionary/.test(firstGroup ?? '') || !/Define/.test(more.textContent ?? ''))
+        problems.push(`⋯ menu starts “${firstGroup}”`)
+      key('Escape', { code: 'Escape' })
+      await hideControls()
+      // Export: a highlight, then Notes › Export as Markdown.
+      await toLoomings()
+      await selectPhrase(NOVEMBER)
+      await pressBar(/highlight yellow/i)
+      const out = `/tmp/linen-export-${Date.now()}.md`
+      hooks.pickSavePath = async () => out
+      keyOnApp('a', { code: 'KeyA', metaKey: true, shiftKey: true })
+      const panel = await waitFor('notes', () =>
+        document.querySelector<HTMLElement>('.navigator .notes'),
+      )
+      const button = await waitFor('export button', () =>
+        panel.querySelector<HTMLButtonElement>('.export-button'),
+      )
+      if (!/via Markdown Export extension/.test(panel.querySelector('.export')?.textContent ?? ''))
+        problems.push('no “via Markdown Export extension”')
+      button.click()
+      await waitFor('exported', () => hooks.messages!.current?.text === 'Exported', 12_000).catch(
+        () => problems.push(`message “${hooks.messages!.current?.text}”`),
+      )
+      const written = await invoke<string>('spike_read_file', { path: out }).catch(
+        (e) => `unreadable: ${e}`,
+      )
+      if (
+        !written.startsWith('# Moby Dick') ||
+        !written.includes('> damp, drizzly November in my soul')
+      )
+        problems.push(`file: ${written.slice(0, 120)}`)
+      key('Escape', { code: 'Escape' })
+      await settled(300)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'P7-safe-mode',
+    description:
+      'Safe mode (⇧ at launch or Restart without extensions) starts with every extension off; the next launch has them back',
+    run: async () => {
+      const safe = await invoke<boolean>('app_safe_mode')
+      if (!safe) {
+        // A normal run: the way back into safe mode is offered.
+        const offered = await withSettings(
+          async (root) =>
+            Array.from(root.querySelectorAll('button')).some((b) =>
+              b.textContent?.includes('Restart without extensions'),
+            ) && (root.textContent ?? '').includes('holding ⇧'),
+        )
+        log('P7: normal launch; safe mode itself is checked by a LINEN_SAFE_MODE=1 run')
+        return offered ? 'ok' : 'no Restart without extensions'
+      }
+      await ext().load()
+      const problems: string[] = []
+      if (ext().active.length) problems.push(`${ext().active.length} extensions active`)
+      if (hooks.registry!.available().some((c) => c.extensionId))
+        problems.push('extension commands in ⌘K')
+      const banner = await withSettings(
+        async (root) => root.querySelector('.banner')?.textContent ?? '',
+      )
+      if (!/without extensions/.test(banner)) problems.push(`banner “${banner}”`)
+      log('P7: checked in a safe-mode launch')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -3736,7 +4132,17 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await capture('12-empty-library')
   for (const b of all) await invoke('library_restore', { bookId: b.id })
 
-  // Screen 11: the Settings window's page (Extensions, the shell until Phase 7).
+  // Screen 11: Settings › Extensions with the samples installed, as the mock lists
+  // them: Markdown Export (built in), Dictionary (with a failure box), Night Owl, and
+  // one turned off.
+  for (const name of ['dictionary', 'night-owl', 'hang'])
+    await invoke('spike_install_unchecked', {
+      path: await invoke<string>('spike_corpus_path', { name: `${name}.linenext` }),
+    })
+  await invoke('extension_crashed', { id: 'org.example.dictionary' })
+  await invoke('extension_crashed', { id: 'org.example.dictionary' })
+  await invoke('extension_set_enabled', { id: 'test.hang', enabled: false })
+  await hooks.extensions!.load()
   const { default: Preferences } = await import('../prefs/Preferences.svelte')
   const prefsHost = document.createElement('div')
   prefsHost.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground)'
@@ -3745,8 +4151,26 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await settled(600)
   prefsHost.querySelector<HTMLButtonElement>('#prefs-extensions')!.click()
   ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(600)
   await capture('11-settings-extensions')
   prefsHost.remove()
+
+  // Screen 12: an extension failure, contained: the selection's “⋯” marks Define
+  // “Not responding” with Restart, and the core actions are unaffected.
+  hooks.run?.('library.show')
+  await settled(600)
+  await openFromLibrary(/Moby Dick(?!;)/)
+  await reader()!.engine.goTo(chapter1)
+  await settled(600)
+  hooks.extensions!.status['org.example.dictionary'] = 'not-responding'
+  await selectPhrase('spleen')
+  await waitFor('bar', selBar)
+  barButton(/more actions from extensions/i)?.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(300)
+  await capture('12-extension-failure')
+  pageDoc().doc.getSelection()?.removeAllRanges()
+  key('Escape', { code: 'Escape' })
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   return {
     spike: 'visual-candidates',

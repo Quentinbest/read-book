@@ -1,0 +1,16 @@
+{
+  "id": "org.example.dictionary",
+  "version": "0.4.2",
+  "name": "Dictionary",
+  "description": "Look up the selected word without leaving the page.",
+  "publisher": "Linen samples",
+  "engines": { "linen": "^1.0" },
+  "main": "main.js",
+  "activation": ["onCommand:define", "onNavigatorTab:definitions"],
+  "contributes": {
+    "commands": [{ "id": "define", "title": "Define" }],
+    "selectionActions": [{ "command": "define", "when": "selection.words <= 3" }],
+    "navigatorTabs": [{ "id": "definitions", "title": "Definitions", "page": "tab.html" }]
+  },
+  "permissions": ["book.selection", "network:api.dictionaryapi.dev"]
+}

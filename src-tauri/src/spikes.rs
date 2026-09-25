@@ -165,6 +165,22 @@ pub fn spike_install_ext(
     Ok(())
 }
 
+/// Phase 7: install a package without the compatibility check (see registry).
+#[tauri::command]
+pub fn spike_install_unchecked(
+    state: tauri::State<crate::commands::AppState>,
+    path: String,
+) -> Result<String, String> {
+    let mut store = state.store.lock().unwrap();
+    crate::extensions::registry::install_unchecked(
+        &mut store,
+        &state.library.extensions_dir,
+        std::path::Path::new(&path),
+    )
+    .map(|m| m.id)
+    .map_err(|e| e.to_string())
+}
+
 /// §6.4 cold start: every file in a corpus folder (the 500-book fixture).
 #[tauri::command]
 pub fn spike_corpus_dir(name: String) -> Result<Vec<String>, String> {
@@ -410,6 +426,19 @@ pub fn spike_scroll_wheel<R: Runtime>(
         }
     });
     Ok(())
+}
+
+/// Phase 7: read back a file an extension exported (test exports only).
+#[tauri::command]
+pub fn spike_read_file(path: String) -> Result<String, String> {
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or_default();
+    if !path.starts_with("/tmp/") || !name.starts_with("linen-export-") {
+        return Err("only test exports".into());
+    }
+    std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
 /// The general pasteboard's plain text, so tests can check Copy.

@@ -1,0 +1,13 @@
+{
+  "id": "test.hang",
+  "version": "1.0.0",
+  "name": "Hang",
+  "engines": { "linen": "^1.0" },
+  "main": "main.js",
+  "activation": ["onCommand:stall"],
+  "contributes": {
+    "commands": [{ "id": "stall", "title": "Stall" }],
+    "selectionActions": [{ "command": "stall" }]
+  },
+  "permissions": []
+}

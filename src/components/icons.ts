@@ -21,6 +21,9 @@ export const ICONS = {
   // Screen 01: the sort menu's chevron and Open….
   'chevron-down': 'M6 9l6 6 6-6',
   plus: 'M12 5v14M5 12h14',
+  // Screen 11: network permissions.
+  globe:
+    'M12 3.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17zM3.5 12h17M12 3.5c2.4 2.3 3.5 5.2 3.5 8.5s-1.1 6.2-3.5 8.5c-2.4-2.3-3.5-5.2-3.5-8.5s1.1-6.2 3.5-8.5z',
 } as const
 
 export type IconName = keyof typeof ICONS

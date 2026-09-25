@@ -22,6 +22,7 @@
   import { CommandRegistry } from './lib/commands/registry'
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings/en'
+  import { ExtensionHost } from './extensions/host.svelte'
 
   let books: Book[] = $state([])
   let reading: Book | null = $state(null)
@@ -36,10 +37,56 @@
   const writes = new WriteQueue(messages)
   if (testHooks) testHooks.messages = messages
   const registry = new CommandRegistry()
+  // Phase 7: extensions, run by the host in this window (P2, P4).
+  const extensions = new ExtensionHost()
   if (testHooks) {
     testHooks.run = (id) => registry.run(id)
     testHooks.registry = registry
     testHooks.writes = writes
+    testHooks.extensions = extensions
+  }
+
+  /** P9: the theme pack a choice names, when it is installed, on and passes its checks. */
+  function packTheme(choice: string) {
+    return extensions
+      .themes()
+      .find((x) => `ext:${x.extId}/${x.id}` === choice && !x.problems.length)?.theme
+  }
+  let themeChoice: ThemeChoice = 'auto'
+  function applyChoice(choice: ThemeChoice) {
+    themeChoice = choice
+    applyTheme(choice, packTheme(choice))
+  }
+
+  // P1: extension commands in ⌘K, while their extension is on (never with a shortcut, C4).
+  let extensionCommands: (() => void)[] = []
+  function syncExtensionCommands() {
+    for (const off of extensionCommands) off()
+    extensionCommands = extensions.commands().map((c) => {
+      const id = registry.defineExtension(c.extId, {
+        id: c.id,
+        title: c.title,
+        extensionName: c.name,
+      })
+      registry.handle(id, { run: () => void runExtensionCommand(c.extId, c.id, c.name) })
+      return () => registry.undefine(id)
+    })
+  }
+  /** P6: a failure shows one quiet line with Restart; reading carries on. */
+  async function runExtensionCommand(extId: string, command: string, name: string) {
+    try {
+      await extensions.invoke(extId, command)
+    } catch {
+      messages.push({
+        text: t.extensions.stopped(name),
+        action: { label: t.extensions.restart, run: () => void extensions.restart(extId) },
+      })
+    }
+  }
+  async function reloadExtensions() {
+    await extensions.load()
+    syncExtensionCommands()
+    applyChoice(themeChoice)
   }
   // N5: work to finish before the app quits (the reader saves its position).
   // Not reactive state: nothing renders from it.
@@ -125,7 +172,8 @@
         ipc.settingGet('openAtLaunch'),
         refresh(),
       ])
-      applyTheme((themeSetting as ThemeChoice | null) ?? 'auto')
+      await reloadExtensions()
+      applyChoice((themeSetting as ThemeChoice | null) ?? 'auto')
       singleKeysEnabled = singleKeys !== 'off'
       // G2 (provisional): “When Linen opens: Reopen the last book”.
       if (atLaunch === 'book' && !reading) {
@@ -164,11 +212,13 @@
       )
       cleanups.push(
         await onSettingChanged(({ key, value }) => {
-          if (key === 'theme') applyTheme(value as ThemeChoice)
+          if (key === 'theme') applyChoice(value as ThemeChoice)
           if (key === 'singleKeyShortcuts') singleKeysEnabled = value !== 'off'
         }),
       )
       cleanups.push(await listen('show-shortcuts', () => (cheatSheetOpen = true)))
+      // Settings installed, turned on or off, or removed an extension.
+      cleanups.push(await listen('extensions-changed', () => void reloadExtensions()))
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),
@@ -226,6 +276,7 @@
       {onBeforeQuit}
       announce={(text) => liveRegion?.announce(text, 'polite')}
       onexit={closeReader}
+      {extensions}
     />
   {/key}
 {:else}

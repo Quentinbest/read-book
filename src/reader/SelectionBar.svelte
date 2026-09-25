@@ -3,7 +3,8 @@
   // first selected line and flips below when there is less than 56 px above; it
   // never covers the selection. Ink-coloured, inverted to light at Night (V2).
   // F6 moves focus in, arrows move between actions, Esc returns to the text.
-  // The extension-actions area (P10) stays hidden until extensions arrive.
+  // Extension actions (P10; G7) sit behind “⋯”, after the core actions, which
+  // render at once; a stuck one is marked “Not responding” with Restart (Screen 12).
   import { fade } from 'svelte/transition'
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings/en'
@@ -25,6 +26,10 @@
     onescape,
     onattach,
     oncancel,
+    extensionActions = [],
+    onextension,
+    onrestart,
+    onmanage,
   }: {
     first: DOMRect
     last: DOMRect
@@ -42,7 +47,20 @@
     onescape: () => void
     onattach?: () => void
     oncancel?: () => void
+    extensionActions?: {
+      extId: string
+      command: string
+      title: string
+      name: string
+      status: string
+    }[]
+    onextension?: (a: { extId: string; command: string; name: string }) => void
+    onrestart?: (extId: string) => void
+    onmanage?: () => void
   } = $props()
+
+  let menuOpen = $state(false)
+  const stuck = (status: string) => status === 'not-responding' || status === 'suspended'
 
   const GAP = 12
   const FLIP_BELOW = 56
@@ -142,6 +160,64 @@
       <button type="button" class="action" tabindex="-1" onclick={onsearch}>
         <Icon name="search" size={16} />{t.annotations.search}
       </button>
+      {#if extensionActions.length}
+        <span class="divider" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="action more"
+          tabindex="-1"
+          aria-label={t.extensions.more}
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          onclick={() => {
+            menuOpen = !menuOpen
+            if (menuOpen)
+              requestAnimationFrame(() =>
+                bar?.querySelector<HTMLButtonElement>('.ext-menu button:not(:disabled)')?.focus(),
+              )
+          }}><Icon name="more" size={18} /></button
+        >
+        {#if menuOpen}
+          <div class="ext-menu" class:up={below} role="menu" aria-label={t.extensions.more}>
+            {#each extensionActions as a (a.extId + a.command)}
+              <button
+                type="button"
+                role="menuitem"
+                class="item"
+                disabled={stuck(a.status)}
+                onclick={() => {
+                  menuOpen = false
+                  onextension?.(a)
+                }}
+                ><span>{a.title}</span>{#if stuck(a.status)}<span class="stuck"
+                    >{t.extensions.notResponding}</span
+                  >{/if}</button
+              >
+              {#if stuck(a.status)}
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="item restart"
+                  onclick={() => {
+                    menuOpen = false
+                    onrestart?.(a.extId)
+                  }}>{t.extensions.restartNamed(a.name)}</button
+                >
+              {/if}
+            {/each}
+            <span class="sep" aria-hidden="true"></span>
+            <button
+              type="button"
+              role="menuitem"
+              class="item"
+              onclick={() => {
+                menuOpen = false
+                onmanage?.()
+              }}>{t.extensions.manage}</button
+            >
+          </div>
+        {/if}
+      {/if}
     {:else}
       <button type="button" class="action" tabindex="-1" onclick={ondelete}>
         <Icon name="trash" size={16} />{t.annotations.delete}
@@ -223,6 +299,62 @@
   }
   .dot.current {
     box-shadow: inset 0 0 0 1.5px var(--selbar-ring);
+  }
+  /* Screen 12: extension actions in a menu on the bar's own surface. */
+  .ext-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    min-width: 290px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    background: var(--selbar-ground);
+    color: var(--selbar-ink);
+    border-radius: 10px;
+    box-shadow: 0 10px 28px rgba(40, 30, 20, 0.24);
+  }
+  .ext-menu.up {
+    top: auto;
+    bottom: calc(100% + 8px);
+  }
+  .item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    min-height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: inherit;
+    font: 500 13px var(--font-ui);
+    text-align: left;
+  }
+  .item:hover:not(:disabled) {
+    background: var(--selbar-hover);
+  }
+  .item:disabled {
+    opacity: 0.7;
+  }
+  .item:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+  }
+  .stuck {
+    font-size: 12px;
+    font-weight: 400;
+  }
+  .restart {
+    font-size: 12px;
+    font-weight: 600;
+    color: color-mix(in srgb, var(--selbar-ink) 55%, var(--accent));
+  }
+  .sep {
+    height: 1px;
+    margin: 6px 4px;
+    background: var(--selbar-divider);
   }
   .divider {
     width: 1px;

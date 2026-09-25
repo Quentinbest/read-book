@@ -7,7 +7,8 @@
 import { t } from '../strings/en'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
 
-export type CommandSection = 'reading' | 'navigation' | 'search' | 'annotation' | 'view' | 'app'
+export type CommandSection =
+  'reading' | 'navigation' | 'search' | 'annotation' | 'view' | 'app' | 'extension'
 
 export interface CommandDef {
   id: string
@@ -25,6 +26,10 @@ export interface CommandDef {
   palette?: boolean
   /** Menu bar placement. */
   menu?: 'File' | 'Edit' | 'View' | 'Go' | 'Window'
+  /** The extension that contributed it (P1); it appears in ⌘K, and in ⋯ only when pinned (P8). */
+  extensionId?: string
+  /** For extension commands: the extension's name, shown beside the title. */
+  extensionName?: string
 }
 
 export interface Command extends CommandDef {
@@ -289,10 +294,28 @@ export class CommandRegistry {
    * Extension commands: never with a shortcut in the MVP (C4), never replacing
    * a core command.
    */
-  defineExtension(extensionId: string, def: Pick<CommandDef, 'title'> & { id: string }) {
+  defineExtension(
+    extensionId: string,
+    def: Pick<CommandDef, 'title'> & { id: string; extensionName?: string },
+  ) {
     const id = `extension:${extensionId}:${def.id}`
-    this.define({ id, rule: 'P1', title: def.title, section: 'app', palette: true })
+    this.define({
+      id,
+      rule: 'P1',
+      title: def.title,
+      section: 'extension',
+      palette: true,
+      extensionId,
+      extensionName: def.extensionName,
+    })
     return id
+  }
+
+  /** Remove a command (an extension turned off or removed). */
+  undefine(id: string) {
+    this.#defs.delete(id)
+    this.#handlers.delete(id)
+    this.#emit()
   }
 
   /** Attach a feature's handler. Returns a function that detaches it. */

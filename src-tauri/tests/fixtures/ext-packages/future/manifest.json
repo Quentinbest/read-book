@@ -1,0 +1,10 @@
+{
+  "id": "test.future",
+  "version": "3.0.0",
+  "name": "From the future",
+  "engines": { "linen": "^2.0" },
+  "main": "main.js",
+  "activation": ["onCommand:x"],
+  "contributes": { "commands": [{ "id": "x", "title": "Future" }] },
+  "permissions": []
+}

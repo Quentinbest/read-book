@@ -1,0 +1,24 @@
+{
+  "id": "org.example.night-owl",
+  "version": "1.1.0",
+  "name": "Night Owl",
+  "description": "A dim, low-blue theme for reading in bed.",
+  "publisher": "Linen samples",
+  "engines": { "linen": "^1.0" },
+  "contributes": {
+    "themes": [
+      {
+        "id": "night-owl",
+        "title": "Night Owl",
+        "scheme": "dark",
+        "tokens": {
+          "ground": "#1A1712",
+          "ink": "#D8CBB2",
+          "inkSecondary": "#A39683",
+          "accent": "#D8A25E",
+          "hairline": "#2E2922"
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": "test.hostile",
+  "version": "1.0.0",
+  "name": "Hostile",
+  "description": "Tries everything it should not be able to do.",
+  "engines": { "linen": "^1.0" },
+  "main": "main.js",
+  "activation": ["onCommand:probe"],
+  "contributes": { "commands": [{ "id": "probe", "title": "Probe" }] },
+  "permissions": ["network:127.0.0.1:8765"]
+}

@@ -791,6 +791,20 @@ export class ReaderEngine {
     return all ? code / all : 0
   }
 
+  /** Phase 7 (book.text): the reading text of one chapter, as search extracts it. */
+  async chapterText(index: number): Promise<string> {
+    const section = this.#book?.sections[index]
+    if (!section) throw new Error(`there is no chapter ${index}`)
+    const doc = await section.createDocument()
+    const root = doc.body ?? doc.documentElement
+    return root ? extractText(root).text : ''
+  }
+
+  /** Phase 7 (book.text): the book's chapters in reading order. */
+  get chapterCount(): number {
+    return this.#book?.sections.length ?? 0
+  }
+
   /** A8: the chapter a CFI points into, or null if it does not resolve in this book. */
   cfiIndex(cfi: string): number | null {
     try {

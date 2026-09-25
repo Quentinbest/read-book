@@ -4,7 +4,8 @@
   // one jumps to it (the reader pulses the passage and offers Back). Highlights
   // that could not be placed in this edition are listed under “Couldn't place”
   // with their quote, the reason and Re-attach; they are never dropped.
-  // “Export as Markdown” stays hidden until the Markdown Export extension (Phase 7).
+  // Exporters from extensions (Markdown Export is built in) sit in the footer,
+  // each naming the extension that does the work (Screen 08).
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings/en'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
@@ -19,6 +20,8 @@
     current,
     onchoose,
     onreattach,
+    exporters = [],
+    onexport,
     now = Date.now(),
   }: {
     placed: Annotation[]
@@ -32,6 +35,9 @@
     current: string | null
     onchoose: (a: Annotation) => void
     onreattach: (a: Annotation) => void
+    /** P§18: exporters contributed by extensions. */
+    exporters?: { extId: string; id: string; title: string; name: string; command: string }[]
+    onexport?: (e: { extId: string; command: string; name: string }) => void
     now?: number
   } = $props()
 
@@ -181,6 +187,14 @@
       {/each}
     {/if}
   </div>
+  {#if exporters.length && counts.highlights}
+    <footer class="export">
+      {#each exporters as e (e.extId + e.id)}
+        <button type="button" class="export-button" onclick={() => onexport?.(e)}>{e.title}</button>
+        <span class="via">{t.extensions.via(e.name)}</span>
+      {/each}
+    </footer>
+  {/if}
 </div>
 
 <style>
@@ -271,6 +285,31 @@
   }
   .counts {
     margin-left: auto;
+    font-size: 12px;
+    color: var(--ink-secondary);
+  }
+  /* Screen 08: the export footer, on the panel's hairline. */
+  .export {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 16px;
+    border-top: 1px solid var(--hairline);
+  }
+  .export-button {
+    height: 32px;
+    padding: 0 14px;
+    border: 1px solid var(--popover-border);
+    border-radius: 8px;
+    background: var(--raised);
+    color: var(--ink);
+    font: 500 13px var(--font-ui);
+  }
+  .export-button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .via {
     font-size: 12px;
     color: var(--ink-secondary);
   }

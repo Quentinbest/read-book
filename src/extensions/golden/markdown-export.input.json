@@ -1,0 +1,78 @@
+{
+  "@context": "http://www.w3.org/ns/anno.jsonld",
+  "type": "AnnotationCollection",
+  "label": "Moby Dick",
+  "total": 3,
+  "first": {
+    "type": "AnnotationPage",
+    "items": [
+      {
+        "id": "urn:uuid:1",
+        "type": "Annotation",
+        "motivation": "highlighting",
+        "body": [],
+        "target": {
+          "source": "urn:x",
+          "selector": [
+            { "type": "FragmentSelector", "value": "epubcfi(/6/4!/4/2,/1:0,/1:36)" },
+            {
+              "type": "TextQuoteSelector",
+              "exact": "a damp, drizzly November in my soul",
+              "prefix": "",
+              "suffix": ""
+            }
+          ]
+        },
+        "linen:color": "yellow",
+        "linen:chapter": "I: Loomings"
+      },
+      {
+        "id": "urn:uuid:2",
+        "type": "Annotation",
+        "motivation": "commenting",
+        "body": [
+          {
+            "type": "TextualBody",
+            "value": "Ishmael frames the voyage as a cure for his own gloom.",
+            "format": "text/plain",
+            "purpose": "commenting"
+          }
+        ],
+        "target": {
+          "source": "urn:x",
+          "selector": [
+            { "type": "FragmentSelector", "value": "epubcfi(/6/4!/4/4,/1:0,/1:48)" },
+            {
+              "type": "TextQuoteSelector",
+              "exact": "There now is your insular city of the Manhattoes,\nbelted round by wharves",
+              "prefix": "",
+              "suffix": ""
+            }
+          ]
+        },
+        "linen:color": "green",
+        "linen:chapter": "I: Loomings"
+      },
+      {
+        "id": "urn:uuid:3",
+        "type": "Annotation",
+        "motivation": "highlighting",
+        "body": [],
+        "target": {
+          "source": "urn:x",
+          "selector": [
+            { "type": "FragmentSelector", "value": "epubcfi(/6/6!/4/2,/1:0,/1:20)" },
+            {
+              "type": "TextQuoteSelector",
+              "exact": "I stuffed a shirt or two into my old carpetbag",
+              "prefix": "",
+              "suffix": ""
+            }
+          ]
+        },
+        "linen:color": "rose",
+        "linen:chapter": "II: The Carpetbag"
+      }
+    ]
+  }
+}
