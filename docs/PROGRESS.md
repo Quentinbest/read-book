@@ -13,8 +13,8 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | 4 Search | Done | Met; baseline approved 2026-09-25 | `docs/phase4-status.md` |
 | 5 Selection and annotation | Done | Met; baselines approved 2026-09-25 | `docs/phase5-status.md` |
 | 6 Settings and library | Done | Met; baselines approved 2026-09-25 | `docs/phase6-status.md` |
-| 7 Extensions | Done, pending approval | Verified 2026-09-25: the full suite passed 98/98 on Desktop 2, and the unit tests pass. Waiting: the visual baselines (item 24) and the P6 memory budget (item 25) | `docs/phase7-status.md` |
-| 8 Hardening and release | In progress: all work that does not need the owner is done | 2026-09-26: 107/107 on Desktop 2, unit tests and budgets pass on this Mac. The §6.5 checklist waits on the owner: signing (item 28), the updater (27), the VoiceOver run (9), the oldest reference machine (10) and the Phase 7 baselines (24) | `docs/phase8-status.md` |
+| 7 Extensions | Done | Verified 2026-09-25 (98/98 on Desktop 2); baselines and the P6 memory budget approved 2026-09-26 | `docs/phase7-status.md` |
+| 8 Hardening and release | Done, pending approval | 2026-09-26: 107/107 on Desktop 2; unit tests, CI steps (run locally) and budgets pass; items 9, 10 and 21–28 approved. Waiting: where updates are served from (item 29) and Screen 08's baseline (item 30). GitHub Actions is stopped by the account's billing | `docs/phase8-status.md` |
 
 ## How the work is checked
 

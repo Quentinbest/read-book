@@ -27,6 +27,7 @@ uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2"
 semver = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
+tauri-plugin-updater = "2"
 
 [features]
 # Phase 0 spike harness (docs/spikes/). Never enabled in product builds.

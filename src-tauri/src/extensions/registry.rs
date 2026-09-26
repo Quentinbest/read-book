@@ -149,7 +149,10 @@ fn read_package(path: &Path) -> Result<(Manifest, zip::ZipArchive<std::fs::File>
     Ok((m, zip))
 }
 
-fn row(store: &Store, id: &str) -> Result<Option<(String, bool, Vec<String>, String)>, ExtError> {
+/// An installed extension's row: version, enabled, granted permissions, crash log (JSON).
+type Row = (String, bool, Vec<String>, String);
+
+fn row(store: &Store, id: &str) -> Result<Option<Row>, ExtError> {
     Ok(store
         .conn()
         .query_row(

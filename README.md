@@ -18,6 +18,12 @@ macOS 13 or later, **with Safari 16.4 or later installed**. Linen reads books wi
 
 Linen sends nothing anywhere. If something goes wrong, the details go to a crash log on this Mac (`~/Library/Logs/app.linen.reader/crash.log`). Settings › About reveals it, so you can attach it to an email if you choose. Extensions reach the network only through hosts they declare, and only after you allow them (`docs/extensions/README.md`).
 
+## Updates and releases
+
+- **Updates.** Linen checks for an update once a day. It installs it in the background and says “Update ready · Restart”; otherwise the new version starts at the next launch. Updates must be signed with the Linen update key, and anything else is refused.
+- **Releases.** Pushing a tag `vX.Y.Z` that matches `version` in `src-tauri/tauri.conf.json` runs `.github/workflows/release.yml`. It makes a draft GitHub Release with DMGs for Apple silicon and Intel, the signed update archives and `latest.json`; publishing the draft releases it. Until there is an Apple Developer ID the builds are ad-hoc signed, so macOS asks before the first open.
+- **The update key** is `~/.tauri/linen-updater.key` (with `.password`) on the release Mac, and the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep a backup: without it, installed copies cannot be updated.
+
 ## Building
 
 ```sh

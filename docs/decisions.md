@@ -80,3 +80,20 @@ The owner reviewed the pending approvals and approved them as recommended. The d
 | G2 | Settings sections: General, Reading, Library, Extensions, Shortcuts, About. |
 | G12 | The Aa code-and-tables hint and the fixed-layout line. |
 | S14 transition | The cover-grow transition and a warm book after the library move to Phase 8. |
+
+## Approved 2026-09-26 (Phases 7–8 review)
+
+The owner reviewed items 9, 10 and 21–28 and approved them as recommended, with item 28 settled as below. The PROVISIONAL notes for these in the code refer to this record.
+
+| # | Approved |
+|---|---|
+| D4 (21) | Extension packages: a `*.linenext` zip with `manifest.json` at its root; no signing in the MVP (“Not verified by Linen”); the API reference in `docs/extensions/`; English only. |
+| G1 (22) | Install, update and remove sheets as built. |
+| G7 (23) | Extension surfaces as built: Navigator tab after Notes (“More” beyond one), the selection “⋯” menu, pinned commands in the ⋯ menu, built-ins listed and not removable, the suspended box, frames on the extension's own origin. |
+| Baselines (24) | Phase 7 baselines: Screen 11 with extensions, Screen 12's extension failure (see `docs/visual/APPROVAL.md`). |
+| P6 memory (25) | Accepted for the MVP: a Worker's memory cannot be measured in WebKit; CPU is budgeted through the heartbeat. |
+| D1 (26) | No telemetry. A crash log on this Mac only (`~/Library/Logs/app.linen.reader/crash.log`), revealed from Settings › About. |
+| D6 (27) | Tauri's updater, checked once a day, updates signed with the Linen update key and served from GitHub Releases; downloaded and installed in the background with a quiet “Update ready · Restart” line; a minor release about every six weeks. |
+| Signing (28) | No Apple Developer ID yet. Builds and signing need only meet what GitHub requires: the release workflow on GitHub builds ad-hoc-signed DMGs and signed updater archives. Developer ID signing and notarisation switch on when their secrets are added. |
+| X3 re-check (9), oldest Mac (10) | Approved by the owner without a recorded run. |
+| File associations | Tried by the owner on the installed app: Open With and a book dropped on the Dock icon both work (2026-09-26). |

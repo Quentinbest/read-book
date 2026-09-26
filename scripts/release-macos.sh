@@ -17,6 +17,10 @@
 #
 # Tauri signs with the hardened runtime and submits to notarytool itself when these
 # are set; this script checks them first and verifies the output afterwards.
+#
+# Updates (D6): with TAURI_SIGNING_PRIVATE_KEY (and _PASSWORD) set, for example from
+# ~/.tauri/linen-updater.key, it also makes the signed updater archive. Releases are
+# normally built by .github/workflows/release.yml.
 set -eu
 cd "$(dirname "$0")/.."
 
@@ -45,7 +49,11 @@ else
 fi
 
 pnpm install --frozen-lockfile
-pnpm tauri build --bundles app,dmg
+if [ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]; then
+  pnpm tauri build --bundles app,dmg --config src-tauri/tauri.release.conf.json
+else
+  pnpm tauri build --bundles app,dmg
+fi
 
 VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
 BUNDLE=src-tauri/target/release/bundle

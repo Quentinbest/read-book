@@ -1,0 +1,126 @@
+name: Release
+
+# A tag such as v0.2.0 builds Linen for macOS (Apple silicon and Intel) and attaches
+# the DMGs, the signed updater archives and latest.json to a draft GitHub Release (D6).
+# Publishing the draft is the owner's step; the updater only sees published releases.
+#
+# Secrets:
+#   TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+#       The Linen update key (D6). Required: the app refuses unsigned updates.
+#   APPLE_SIGNING_IDENTITY, APPLE_CERTIFICATE (base64 .p12), APPLE_CERTIFICATE_PASSWORD,
+#   and for notarisation APPLE_API_KEY, APPLE_API_ISSUER, APPLE_API_PRIVATE_KEY (the .p8
+#   file's text), or APPLE_ID, APPLE_PASSWORD, APPLE_TEAM_ID
+#       Developer ID signing and notarisation (D3, item 28). Optional: without them the
+#       builds are ad-hoc signed. They run, but Gatekeeper asks on first open.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    name: Build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ${{ matrix.target }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+
+      - name: The tag matches the app version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          test "v$version" = "${GITHUB_REF_NAME}" ||
+            { echo "tag ${GITHUB_REF_NAME} but tauri.conf.json says $version"; exit 1; }
+
+      # Tauri notarises when these variables exist, even empty, so only the secrets
+      # that are set are passed on.
+      - name: Signing environment
+        env:
+          UPDATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          UPDATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_API_PRIVATE_KEY: ${{ secrets.APPLE_API_PRIVATE_KEY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          [ -n "$UPDATE_KEY" ] || { echo "TAURI_SIGNING_PRIVATE_KEY is not set (D6)"; exit 1; }
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY<<EOF"; echo "$UPDATE_KEY"; echo "EOF"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD=$UPDATE_KEY_PASSWORD"
+          } >> "$GITHUB_ENV"
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+            security create-keychain -p ci build.keychain
+            security default-keychain -s build.keychain
+            security unlock-keychain -p ci build.keychain
+            security import "$RUNNER_TEMP/certificate.p12" -k build.keychain \
+              -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+            security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k ci build.keychain
+            rm "$RUNNER_TEMP/certificate.p12"
+            echo "APPLE_SIGNING_IDENTITY=$APPLE_SIGNING_IDENTITY" >> "$GITHUB_ENV"
+            if [ -n "$APPLE_API_PRIVATE_KEY" ]; then
+              printf '%s' "$APPLE_API_PRIVATE_KEY" > "$RUNNER_TEMP/AuthKey.p8"
+              {
+                echo "APPLE_API_KEY=$APPLE_API_KEY"
+                echo "APPLE_API_ISSUER=$APPLE_API_ISSUER"
+                echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/AuthKey.p8"
+              } >> "$GITHUB_ENV"
+            elif [ -n "$APPLE_ID" ]; then
+              {
+                echo "APPLE_ID=$APPLE_ID"
+                echo "APPLE_PASSWORD=$APPLE_PASSWORD"
+                echo "APPLE_TEAM_ID=$APPLE_TEAM_ID"
+              } >> "$GITHUB_ENV"
+            fi
+          else
+            # Ad-hoc until the Developer ID exists (item 28).
+            echo "APPLE_SIGNING_IDENTITY=-" >> "$GITHUB_ENV"
+          fi
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Linen ${{ github.ref_name }}
+          releaseBody: See the commits since the previous release.
+          releaseDraft: true
+          includeUpdaterJson: true
+          # The release config adds the signed updater archives (D6).
+          args: >-
+            --target ${{ matrix.target }} --bundles app,dmg
+            --config src-tauri/tauri.release.conf.json
+
+      - name: Check the bundle
+        run: |
+          app=src-tauri/target/${{ matrix.target }}/release/bundle/macos/Linen.app
+          plist="$app/Contents/Info.plist"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$plist")" = 13.0
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDocumentTypes:0:CFBundleTypeExtensions' "$plist" | grep -q epub
+          codesign --verify --deep --strict --verbose=2 "$app"
+          test -f "$app.tar.gz.sig"

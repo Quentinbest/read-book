@@ -87,7 +87,7 @@ export const en = {
     version: (v: string) => `Version ${v}`,
     aboutLine: 'A quiet EPUB reader. Your books stay on this device.',
     fonts: 'Literata is licensed under the SIL Open Font License.',
-    // D1 (provisional)
+    // D1 (approved 2026-09-26)
     privacy:
       'Linen sends nothing anywhere. If something goes wrong, the details are written to a crash log on this Mac, which you can attach to an email if you choose.',
     showCrashLog: 'Show crash log',
@@ -165,6 +165,11 @@ export const en = {
     description: 'Description',
   },
   // Import outcomes: wording PROVISIONAL until the G4 designs exist.
+  // D6: a quiet line; it never interrupts reading
+  update: {
+    ready: (version: string) => `Update ready · Linen ${version}`,
+    restart: 'Restart',
+  },
   import: {
     addedDamaged: (title: string, n: number) =>
       `“${title}” was added · ${n} damaged ${n === 1 ? 'chapter' : 'chapters'}`,

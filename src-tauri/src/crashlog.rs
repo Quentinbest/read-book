@@ -1,4 +1,4 @@
-//! D1 (provisional, pending item 26): no telemetry. Crashes and uncaught errors are
+//! D1 (approved 2026-09-26): no telemetry. Crashes and uncaught errors are
 //! written to a log on this Mac only (~/Library/Logs/app.linen.reader/crash.log);
 //! Settings › About reveals it, for the reader to attach to an email if they choose.
 

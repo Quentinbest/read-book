@@ -274,6 +274,15 @@
       cleanups.push(await listen('show-shortcuts', () => (cheatSheetOpen = true)))
       // Settings installed, turned on or off, or removed an extension.
       cleanups.push(await listen('extensions-changed', () => void reloadExtensions()))
+      // D6: an update was downloaded and installed; it starts at Restart or the next launch.
+      cleanups.push(
+        await listen<string>('update-ready', ({ payload }) =>
+          messages.push({
+            text: t.update.ready(payload),
+            action: { label: t.update.restart, run: () => void ipc.appRestart() },
+          }),
+        ),
+      )
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),

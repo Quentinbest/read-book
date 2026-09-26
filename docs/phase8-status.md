@@ -20,25 +20,25 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 | Item | State | Evidence |
 |---|---|---|
 | Every phase's Done-when list still passes | **Passes** | <ul><li>**In-app suite:** 107/107 on Desktop 2, the last check being that nothing uncaught happened.</li><li>**Unit tests:** 259 in TypeScript and 48 in Rust.</li><li>**Visual:** of the 22 captures with an approved baseline, 16 match. The 6 that differ are explained: the inactive window on Desktop 2 (focus rings, grey selection, traffic lights) and the clock (“Opened today at …”). Screen 11's Extensions pane and the Notes tab's export footer are compared with pre-Phase 7 baselines, because the Phase 7 baselines wait for item 24.</li></ul> |
-| Performance budgets hold | **Pass on this Mac** (M2, 8 GB, macOS 14.6) | <ul><li>**Cold start:** library p95 678 ms (budget 1000); book p95 658 ms (budget 1500); with 500 books.</li><li>**Memory:** RSS p95 376 MB, footprint p95 349 MB (budget 400); 20 fresh launches.</li><li>**Open and reflow:** `budget-open` and `budget-reflow` in the suite.</li></ul> The oldest reference machine (macOS 13 with Safari 16.4) is still to be run (item 10). |
-| The accessibility target is met, with manual runs recorded | **Automated part passes; the manual run waits** | axe WCAG 2.2 AA, X5 and X6 pass. The VoiceOver run needs a person (item 9). |
+| Performance budgets hold | **Pass** (M2, 8 GB, macOS 14.6) | <ul><li>**Cold start:** library p95 678 ms (budget 1000); book p95 658 ms (budget 1500); with 500 books.</li><li>**Memory:** RSS p95 376 MB, footprint p95 349 MB (budget 400); 20 fresh launches.</li><li>**Open and reflow:** `budget-open` and `budget-reflow` in the suite.</li></ul> The owner approved going ahead without a run on the oldest reference machine (item 10, 2026-09-26). |
+| The accessibility target is met, with manual runs recorded | **Approved** | axe WCAG 2.2 AA, X5 and X6 pass. The owner approved the VoiceOver re-check (item 9, 2026-09-26); no manual run is recorded. |
 | Hostile corpus results are unchanged | **Pass** | Rust `corpus_outcomes` and `every_corpus_file_imports_or_is_refused`; e2e `E-hostile-in-product` and `P2-hostile-extension` |
 | The backup and restore round-trip passes | **Pass** | Rust `a_library_folder_restored_elsewhere_still_opens_its_books`; e2e `A9-w3c-roundtrip` for export |
-| Builds are signed and notarised; file associations work | **Waits for the owner** | <ul><li>**Signing:** needs the credentials (item 28).</li><li>**What passes:** `scripts/release-macos.sh --unsigned` builds the app and the DMG. The bundle declares `.epub` with `org.idpf.epub-container` (Viewer), and `LSMinimumSystemVersion` is 13.0.</li><li>**Not tried:** Open With and Dock drop on the installed app. They would open the real library on this Mac, so they are for the owner, with the signed build.</li><li>**The updater (D6)** is not built (item 27).</li></ul> |
+| Builds are signed and notarised; file associations work | **Met as the owner settled it (item 28)** | <ul><li>**Signing:** there is no Developer ID yet, so builds need only meet what GitHub requires. `.github/workflows/release.yml` builds Apple silicon and Intel DMGs on a `v*` tag, ad-hoc signed, with signed updater archives and `latest.json`, into a draft release. Developer ID signing and notarisation switch on when their secrets exist.</li><li>**Checked locally:** the release build makes `Linen.app.tar.gz` and its signature; the signature verifies against the key in the app, and a changed byte is refused. The workflow's signing step was run with and without the update key.</li><li>**Not yet run on GitHub:** Actions is stopped by the account's billing.</li><li>**File associations:** the owner tried Open With and a drop on the Dock icon with the installed app; both work.</li></ul> |
 
-**Phase 8 is not done.** Everything that does not need the owner is done and verified. Six items wait on the owner: 9, 10, 24, 26 (provisional, built), 27 and 28.
+**Phase 8 is done, pending two owner items.** Everything is built and verified. The owner approved items 9, 10 and 21–28 on 2026-09-26. Still open: where updates are served from (item 29: the repository is private, so installed apps cannot reach its releases), and Screen 08's export footer (item 30). GitHub Actions also waits for the account's billing.
 
 ## Work items
 
 | Item | Status |
 |---|---|
-| Accessibility pass against D5 (WCAG 2.2 AA; X1 AAA body contrast) | **Automated part done.** **axe:** WCAG 2.2 A and AA over the library, the reader, its layers, and every Settings section, in Paper and Night (`X-axe-states`). **Zoom:** 200% and 400% (`X6-zoom`). **Text spacing:** WCAG 1.4.12 (`X5-text-spacing`). **Manual:** a VoiceOver run needs a person (pending item 9). NVDA, Orca and Windows high contrast (X7) are deferred with their platforms. |
+| Accessibility pass against D5 (WCAG 2.2 AA; X1 AAA body contrast) | **Done.** **axe:** WCAG 2.2 A and AA over the library, the reader, its layers, and every Settings section, in Paper and Night (`X-axe-states`). **Zoom:** 200% and 400% (`X6-zoom`). **Text spacing:** WCAG 1.4.12 (`X5-text-spacing`). **Manual:** the VoiceOver re-check was approved by the owner (item 9). NVDA, Orca and Windows high contrast (X7) are deferred with their platforms. |
 | EPUB edge cases: vertical writing (I16), RTL, huge books, broken CSS and fonts | Done. The details are below. |
 | The P§22 failure table | Done. Every row maps to a check; see below. |
 | Performance budgets on the reference machines | Open |
 | Backup and restore (D2); uninstall | Done; see below. Restoring the folder elsewhere used to break every book; fixed. |
-| Packaging: signing and notarisation, file associations, auto-update (D6) | **Partly done.** **File associations:** Open With and Dock drop, through the `.epub` association and the `org.idpf.epub-container` type; the minimum macOS is 13.0. **Release script:** `scripts/release-macos.sh`. **Waiting:** signing needs the owner's credentials (item 28); the updater is not built, pending D6 (item 27). |
-| D1: crash reporting | Built to the recommendation (item 26): a crash log on this Mac only; see below |
+| Packaging: signing and notarisation, file associations, auto-update (D6) | **Done.** **File associations:** `.epub` and `org.idpf.epub-container`; macOS 13.0 minimum; the owner confirmed Open With and Dock drop. **Releases:** `.github/workflows/release.yml` (ad-hoc signed until a Developer ID, item 28) and `scripts/release-macos.sh`. **Updater (D6):** see below. |
+| D1: crash reporting | Done (approved, item 26): a crash log on this Mac only; see below |
 
 ## EPUB edge cases
 
@@ -73,7 +73,17 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 - **Export.** Settings › Library › Export all highlights and notes writes W3C Web Annotation JSON; covered by `A9-w3c-roundtrip`.
 - **Uninstall.** Moving Linen to the Bin leaves the folder, and Settings › Library says so. To remove everything, also delete the folder above and `~/Library/Logs/app.linen.reader`.
 
-## Crash log (D1, provisional)
+## Updates (D6, approved)
+
+- **The check.** It runs in the core (`src-tauri/src/updater.rs`), so no page gets the updater plugin's permissions. It waits one minute after launch, then checks once a day; a Mac that was asleep checks when it wakes. Development and test builds never check.
+- **Installing.** An update downloads and installs in the background. The page shows “Update ready · Linen x.y.z · Restart”. Restart goes through the normal quit, so the reader saves first (N5). Otherwise the new version starts at the next launch.
+- **The key.** Updates are signed with the Linen update key, and the app refuses anything else.
+  - The private key and its password are in `~/.tauri/linen-updater.key` and `linen-updater.key.password` on this Mac, not in the repository. They are also stored as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+  - **Back up both files.** Without the key, installed copies can never be updated again.
+- **Checked.** A release build's archive verifies against the public key in `tauri.conf.json` (with `minisign-verify`, the library the updater uses), and a copy with one changed byte is refused. A unit test covers the once-a-day timing.
+- **Open (item 29).** The update address is this repository's latest release, which is private, so installed apps get 404 until releases are served from a public place.
+
+## Crash log (D1, approved)
 
 Nothing is sent anywhere.
 - **What is logged.** Panics, with a backtrace, and uncaught page errors go to `~/Library/Logs/app.linen.reader/crash.log`. The log starts again at 1 MB.

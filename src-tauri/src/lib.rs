@@ -7,6 +7,7 @@ pub mod import;
 pub mod native;
 pub mod native_input;
 pub mod store;
+pub mod updater;
 
 #[cfg(feature = "spikes")]
 mod spikes;
@@ -15,6 +16,8 @@ mod spikes;
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // D6: update checks run in the core (updater.rs); no page is granted the plugin.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // §6.4: book media straight from the zip, never as blobs (see commands::BOOK_SCHEME).
         .register_asynchronous_uri_scheme_protocol(
             commands::BOOK_SCHEME,
@@ -104,6 +107,7 @@ pub fn run() {
                 crashlog::crash_log_note,
                 crashlog::crash_log_exists,
                 crashlog::crash_log_show,
+                updater::app_restart,
                 $($extra),*
             ]
         };
@@ -161,6 +165,7 @@ pub fn run() {
             )));
             commands::flush_pending_opens(app.handle());
             native_input::install(app.handle());
+            updater::start(app.handle());
             #[cfg(feature = "spikes")]
             spikes::setup(app)?;
             Ok(())

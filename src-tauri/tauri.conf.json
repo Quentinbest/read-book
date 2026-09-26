@@ -67,5 +67,11 @@
     "macOS": {
       "minimumSystemVersion": "13.0"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ0RTY3RjJGRkVGRERBRjAKUldUdzJ2MytMMy9tMU5pTmtRM2pXK3ZhOUhLcE43TFExQVFScDYrOUQ0WGV0bDdvZEVKMVZiNlcK",
+      "endpoints": ["https://github.com/Quentinbest/read-book/releases/latest/download/latest.json"]
+    }
   }
 }
