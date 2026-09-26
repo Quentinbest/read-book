@@ -14,11 +14,11 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | 5 Selection and annotation | Done | Met; baselines approved 2026-09-25 | `docs/phase5-status.md` |
 | 6 Settings and library | Done | Met; baselines approved 2026-09-25 | `docs/phase6-status.md` |
 | 7 Extensions | Done, pending approval | Verified 2026-09-25: the full suite passed 98/98 on Desktop 2, and the unit tests pass. Waiting: the visual baselines (item 24) and the P6 memory budget (item 25) | `docs/phase7-status.md` |
-| 8 Hardening and release | In progress | — | `docs/phase8-status.md` |
+| 8 Hardening and release | In progress: all work that does not need the owner is done | 2026-09-26: 107/107 on Desktop 2, unit tests and budgets pass on this Mac. The §6.5 checklist waits on the owner: signing (item 28), the updater (27), the VoiceOver run (9), the oldest reference machine (10) and the Phase 7 baselines (24) | `docs/phase8-status.md` |
 
 ## How the work is checked
 
 - **Unit tests.** `pnpm test` (Vitest) and `cargo test` (Rust); CI runs both on every push.
-- **The in-app end-to-end suite.** `scripts/e2e.sh`, on Desktop 2 (owner's instruction, 2026-09-25). It has 98 checks in total. The safe-mode checks also run with `LINEN_SAFE_MODE=1`.
+- **The in-app end-to-end suite.** `scripts/e2e.sh`, on Desktop 2 (owner's instruction, 2026-09-25). It has 107 checks in total; the last fails on any uncaught error in the run. The safe-mode checks also run with `LINEN_SAFE_MODE=1`.
 - **Visual captures.** `scripts/e2e.sh v`, compared with the approved baselines by `node tests/visual/compare.mjs`.
 - **Budgets.** `scripts/perf-coldstart.py` and `scripts/perf-memory.sh`, on the reference machine.

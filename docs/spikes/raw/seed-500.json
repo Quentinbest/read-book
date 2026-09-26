@@ -1,0 +1,21 @@
+{
+  "spike": "seed-500",
+  "criteria": [
+    {
+      "id": "seeded",
+      "description": "The 500-book fixture is in the library",
+      "verdict": "pass",
+      "evidence": "500 of 500 imported in 12124 ms"
+    }
+  ],
+  "raw": {},
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "only": null,
+    "os": "14.6.1",
+    "time": 1790390004,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

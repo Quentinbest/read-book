@@ -13,7 +13,20 @@
 
 ## Done-when (plan §5, Phase 8)
 
-The release checklist in §6.5 passes, on macOS only (the scope decision). Its state is tracked at the end of this phase.
+The release checklist in §6.5 passes, on macOS only (the scope decision).
+
+### The release checklist (§6.5), 2026-09-26
+
+| Item | State | Evidence |
+|---|---|---|
+| Every phase's Done-when list still passes | **Passes** | <ul><li>**In-app suite:** 107/107 on Desktop 2, the last check being that nothing uncaught happened.</li><li>**Unit tests:** 259 in TypeScript and 48 in Rust.</li><li>**Visual:** of the 22 captures with an approved baseline, 16 match. The 6 that differ are explained: the inactive window on Desktop 2 (focus rings, grey selection, traffic lights) and the clock (“Opened today at …”). Screen 11's Extensions pane and the Notes tab's export footer are compared with pre-Phase 7 baselines, because the Phase 7 baselines wait for item 24.</li></ul> |
+| Performance budgets hold | **Pass on this Mac** (M2, 8 GB, macOS 14.6) | <ul><li>**Cold start:** library p95 678 ms (budget 1000); book p95 658 ms (budget 1500); with 500 books.</li><li>**Memory:** RSS p95 376 MB, footprint p95 349 MB (budget 400); 20 fresh launches.</li><li>**Open and reflow:** `budget-open` and `budget-reflow` in the suite.</li></ul> The oldest reference machine (macOS 13 with Safari 16.4) is still to be run (item 10). |
+| The accessibility target is met, with manual runs recorded | **Automated part passes; the manual run waits** | axe WCAG 2.2 AA, X5 and X6 pass. The VoiceOver run needs a person (item 9). |
+| Hostile corpus results are unchanged | **Pass** | Rust `corpus_outcomes` and `every_corpus_file_imports_or_is_refused`; e2e `E-hostile-in-product` and `P2-hostile-extension` |
+| The backup and restore round-trip passes | **Pass** | Rust `a_library_folder_restored_elsewhere_still_opens_its_books`; e2e `A9-w3c-roundtrip` for export |
+| Builds are signed and notarised; file associations work | **Waits for the owner** | <ul><li>**Signing:** needs the credentials (item 28).</li><li>**What passes:** `scripts/release-macos.sh --unsigned` builds the app and the DMG. The bundle declares `.epub` with `org.idpf.epub-container` (Viewer), and `LSMinimumSystemVersion` is 13.0.</li><li>**Not tried:** Open With and Dock drop on the installed app. They would open the real library on this Mac, so they are for the owner, with the signed build.</li><li>**The updater (D6)** is not built (item 27).</li></ul> |
+
+**Phase 8 is not done.** Everything that does not need the owner is done and verified. Six items wait on the owner: 9, 10, 24, 26 (provisional, built), 27 and 28.
 
 ## Work items
 
