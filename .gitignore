@@ -33,3 +33,6 @@ docs/visual/diff/
 *.key.password
 *.p8
 *.p12
+
+# Local agent guidance
+CLAUDE.md
