@@ -28,6 +28,11 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 
 **Phase 8 is done (2026-09-26).** The owner approved every item (9, 10, 21–30), made the repository public so installed apps can reach its releases (item 29), and GitHub Actions runs again: CI passed on GitHub for the checks, the macOS build and the integration tests.
 
+**First release: v0.1.0, published 2026-09-26** (https://github.com/Quentinbest/read-book/releases/tag/v0.1.0).
+- **Built by** the release workflow: Apple silicon and Intel DMGs, ad-hoc signed.
+- **Checked before publishing:** both update archives verify against the key in the app, and `latest.json` matches their signatures.
+- **After publishing:** the update address answers without logging in (HTTP 200, version 0.1.0).
+
 ## Work items
 
 | Item | Status |
