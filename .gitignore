@@ -19,3 +19,17 @@ test-results
 playwright-report
 dist-spikes/
 docs/visual/diff/
+
+# Claude Code session exports in the repository root
+/*.txt
+
+# Local agent settings
+.claude/settings.local.json
+
+# Secrets: the repository is public (the update key lives in ~/.tauri)
+.env
+.env.*
+*.key
+*.key.password
+*.p8
+*.p12
