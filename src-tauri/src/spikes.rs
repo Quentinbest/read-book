@@ -445,6 +445,12 @@ pub fn spike_read_file(path: String) -> Result<String, String> {
     std::fs::read_to_string(&path).map_err(|e| e.to_string())
 }
 
+/// D1: the crash log's text (empty if there is none), so tests can check what reached it.
+#[tauri::command]
+pub fn spike_crash_log(log: tauri::State<crate::crashlog::CrashLog>) -> String {
+    std::fs::read_to_string(log.file()).unwrap_or_default()
+}
+
 /// The general pasteboard's plain text, so tests can check Copy.
 #[tauri::command]
 pub fn spike_read_pasteboard() -> String {

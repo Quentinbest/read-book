@@ -19,6 +19,7 @@
 
 <div
   class="cover"
+  data-cover={book.id}
   class:image={!!src}
   style:width={width ? `${width}px` : undefined}
   style:height="{height}px"

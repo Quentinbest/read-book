@@ -7,7 +7,7 @@
   // The reader (plan Phase 2; Screens 02, 03, 14). Features that arrive in later
   // phases (Contents, Search, Notes, Aa, the ⋯ menu, Go to) are hidden until then.
   import { listen } from '@tauri-apps/api/event'
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import { ipc, type Book } from '../app/ipc'
   import { testHooks } from '../app/testHooks'
@@ -67,7 +67,7 @@
   import { readerStyles } from './styles'
 
   let {
-    book,
+    book: bookProp,
     messages,
     writes,
     registry,
@@ -77,6 +77,7 @@
     announce,
     onexit,
     extensions,
+    active = true,
   }: {
     book: Book
     messages: MessageQueue
@@ -90,7 +91,74 @@
     onexit: () => void
     /** Phase 7: the extension host (slots, and the book as extensions may see it). */
     extensions: ExtensionHost
+    /**
+     * S14: false while the library shows. The book stays warm (open, laid out, in
+     * memory) but takes no keys, wheel, commands or window buttons, and extensions
+     * do not see it.
+     */
+    active?: boolean
   } = $props()
+  /**
+   * The book, taken once: a reader is keyed to one book (App's {#key}). Read live, the
+   * prop would already name the next book while this reader is torn down (S14: a warm
+   * book replaced by another), and its last save would land on the wrong book.
+   */
+  const book = untrack(() => bookProp)
+
+  // S14: the reader's commands are attached only while it is active; a warm book in
+  // the library behind keeps them, detached. Not reactive state: nothing renders from it.
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity
+  const attached = new Map<
+    string,
+    { h: Parameters<CommandRegistry['handle']>[1]; off: (() => void) | null }
+  >()
+  function handle(id: string, h: Parameters<CommandRegistry['handle']>[1]): () => void {
+    const entry = { h, off: active ? registry.handle(id, h) : null }
+    attached.set(id, entry)
+    return () => {
+      entry.off?.()
+      if (attached.get(id) === entry) attached.delete(id)
+    }
+  }
+  $effect(() => {
+    if (active) {
+      for (const [id, e] of attached) e.off ??= registry.handle(id, e.h)
+      return
+    }
+    for (const e of attached.values()) {
+      e.off?.()
+      e.off = null
+    }
+  })
+
+  /** The book as the tests see it (`testHooks.reader`), while active. */
+  let hookReader: NonNullable<typeof testHooks>['reader']
+  let bridgeReady = $state(false)
+  // Extensions see the book only while it is open and the one being read.
+  $effect(() => {
+    const see = active && bridgeReady
+    untrack(() => {
+      if (see) extensions.bridge = bridge
+      else if (extensions.bridge === bridge) extensions.bridge = null
+    })
+  })
+  $effect(() => {
+    const on = active
+    untrack(() => {
+      if (testHooks && hookReader) testHooks.reader = on ? hookReader : undefined
+      if (on) {
+        // B2: time in the library is not time on this page.
+        pageShownAt = performance.now()
+        // Back from the library: the page has focus, as when the book opened.
+        requestAnimationFrame(() => engine?.focusPage())
+        return
+      }
+      // Its lines (Back to p. 12, highlights that couldn't be placed) leave with it.
+      for (const id of jumpMessages) messages.withdraw(id)
+      for (const id of annotationMessages) messages.withdraw(id)
+      saveNow()
+    })
+  })
 
   // ---- constants from the design (S3, S9–S12, N2, I7)
   const REVEAL_ZONE = 64
@@ -145,7 +213,8 @@
   let navPanel: ReturnType<typeof Navigator> | undefined = $state()
   // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
   $effect(() => {
-    void ipc.setWindowControls(chromeVisible || navigatorOpen).catch(() => {})
+    // S14: the library, over a warm book, always has its window buttons.
+    void ipc.setWindowControls(!active || chromeVisible || navigatorOpen).catch(() => {})
   })
   // V8: the Navigator slides in 220 ms while the column moves by transform; the
   // page reflows at the new width only after the slide, so the text never jumps.
@@ -1104,6 +1173,7 @@
   }
 
   function onPageKey(e: KeyboardEvent, fromBook: boolean) {
+    if (!active) return // S14: a warm book behind the library
     // N9: Tab from the marker moves into the peek.
     if (fromBook && peekOpen && e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault()
@@ -1276,7 +1346,7 @@
       engine = new ReaderEngine(host)
       if (testHooks) {
         const e = engine
-        testHooks.reader = {
+        testHooks.reader = hookReader = {
           engine: e,
           location: () => location,
           history,
@@ -1349,15 +1419,19 @@
         dispatch({ type: 'openNavigator', tab: 'contents' })
       restoredDock = true
       relayout()
-      const opened = await engine.open(await libraryLoader(book.id), {
+      const opening = engine.open(await libraryLoader(book.id), {
         cfi: saved?.[0],
         mode: readingMode,
       })
+      // B8 tests: relayouts that land while the book is still opening.
+      for (const ms of testHooks?.relayoutDuringOpenMs ?? []) setTimeout(relayout, ms)
+      const opened = await opening
       readingMode = engine.mode
       pageList = engine.pageList
       // Phase 7: the book, for extensions that were allowed to see it.
-      extensions.bridge = bridge
+      bridgeReady = true
       cleanups.push(() => {
+        bridgeReady = false
         if (extensions.bridge === bridge) extensions.bridge = null
       })
       // Not awaited: nothing in the opening sequence may wait on it (B8's restore is timing-sensitive).
@@ -1420,6 +1494,7 @@
       const turns = new NativeTurns()
       cleanups.push(
         await listen<NativeScroll>('native-scroll', ({ payload }) => {
+          if (!active) return // S14: the library is on top
           const panel = document
             .elementFromPoint(payload.x, payload.y)
             ?.closest('.chrome, dialog, .popover')
@@ -1443,27 +1518,28 @@
         }),
       )
       // X3: follow VoiceOver's scrolling while it runs.
-      const srTimer = window.setInterval(() => engine?.watchExternalScroll(screenReader()), 2000)
+      const srTimer = window.setInterval(
+        () => active && engine?.watchExternalScroll(screenReader()),
+        2000,
+      )
       engine.watchExternalScroll(screenReader())
       cleanups.push(() => clearInterval(srTimer))
 
+      cleanups.push(handle('history.back', { run: goBack, enabled: () => history.canGoBack }))
+      cleanups.push(handle('chapter.next', { run: () => void engine?.nextSection() }))
       cleanups.push(
-        registry.handle('history.back', { run: goBack, enabled: () => history.canGoBack }),
-      )
-      cleanups.push(registry.handle('chapter.next', { run: () => void engine?.nextSection() }))
-      cleanups.push(
-        registry.handle('chapter.previous', {
+        handle('chapter.previous', {
           run: () => void engine?.prevSection(),
         }),
       )
-      cleanups.push(registry.handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
-      cleanups.push(registry.handle('navigator.contents', { run: openContents }))
-      cleanups.push(registry.handle('goto.open', { run: () => openGoTo() }))
-      cleanups.push(registry.handle('search.open', { run: openSearch }))
+      cleanups.push(handle('layer.close', { run: () => dispatch({ type: 'escape' }) }))
+      cleanups.push(handle('navigator.contents', { run: openContents }))
+      cleanups.push(handle('goto.open', { run: () => openGoTo() }))
+      cleanups.push(handle('search.open', { run: openSearch }))
       // A3, K6: H and N (and ⇧⌘H, ⇧⌘N) on the selection or a clicked highlight.
       const onSelectionOrHighlight = () => !!selection || bar?.mode === 'existing'
       cleanups.push(
-        registry.handle('selection.highlight', {
+        handle('selection.highlight', {
           run: () => {
             if (selection) highlightSelection(annotations.lastColor)
             else if (bar?.id) recolor(bar.id, annotations.lastColor)
@@ -1472,22 +1548,22 @@
         }),
       )
       cleanups.push(
-        registry.handle('selection.note', {
+        handle('selection.note', {
           run: () => (selection ? noteOnSelection() : bar?.id && openNote(bar.id)),
           enabled: onSelectionOrHighlight,
         }),
       )
       // A2, K7: F6 moves focus into the bar.
       cleanups.push(
-        registry.handle('selection.focusBar', {
+        handle('selection.focusBar', {
           run: () => selectionBar?.focusFirst(),
           enabled: () => barOpen,
         }),
       )
-      cleanups.push(registry.handle('navigator.notes', { run: openNotes }))
+      cleanups.push(handle('navigator.notes', { run: openNotes }))
       // A11, K7: F7 caret browsing (T3: our own caret; WebKit has none).
       cleanups.push(
-        registry.handle('reader.caretBrowsing', {
+        handle('reader.caretBrowsing', {
           run: () => {
             const on = !engine?.caretBrowsing
             engine?.setCaretBrowsing(on ? theme.ink : null)
@@ -1501,22 +1577,18 @@
         return el instanceof HTMLTextAreaElement || el instanceof HTMLInputElement
       }
       cleanups.push(
-        registry.handle('edit.undo', {
+        handle('edit.undo', {
           run: () => (inTextField() ? document.execCommand('undo') : undo.undo()),
           enabled: () => inTextField() || undo.canUndo,
         }),
       )
       const hasResults = () => searchState.count > 0
-      cleanups.push(
-        registry.handle('search.next', { run: () => stepResult(1), enabled: hasResults }),
-      )
-      cleanups.push(
-        registry.handle('search.previous', { run: () => stepResult(-1), enabled: hasResults }),
-      )
+      cleanups.push(handle('search.next', { run: () => stepResult(1), enabled: hasResults }))
+      cleanups.push(handle('search.previous', { run: () => stepResult(-1), enabled: hasResults }))
       // B8: Pages and Scroll, from the commands and the Aa popover (this book only).
       for (const mode of ['pages', 'scroll'] as const)
         cleanups.push(
-          registry.handle(`layout.${mode}`, {
+          handle(`layout.${mode}`, {
             run: () => void switchMode(mode),
             enabled: () => readingMode !== mode && engine?.fixedLayout !== true,
           }),
@@ -1525,7 +1597,7 @@
       // page instead (I17, E2), and the image view zooms the image (N11).
       const zooms = () => engine?.fixedLayout === true || imageOpen
       cleanups.push(
-        registry.handle('text.larger', {
+        handle('text.larger', {
           run: () =>
             imageOpen
               ? imageView?.step(1)
@@ -1535,7 +1607,7 @@
         }),
       )
       cleanups.push(
-        registry.handle('text.smaller', {
+        handle('text.smaller', {
           run: () =>
             imageOpen
               ? imageView?.step(-1)
@@ -1545,12 +1617,12 @@
         }),
       )
       cleanups.push(
-        registry.handle('text.reset', {
+        handle('text.reset', {
           run: () =>
             imageOpen ? (imageZoom = 1) : zooms() ? setZoom(1) : setFont(DEFAULT_TEXT_SIZE),
         }),
       )
-      cleanups.push(registry.handle('reader.settings', { run: openAa }))
+      cleanups.push(handle('reader.settings', { run: openAa }))
       // G2: changes made in the Settings window apply here at once.
       cleanups.push(
         await onSettingChanged(({ key, value }) => {
@@ -1630,7 +1702,7 @@
       engine?.close()
       for (const id of jumpMessages) messages.withdraw(id)
       for (const id of annotationMessages) messages.withdraw(id)
-      if (testHooks) testHooks.reader = undefined
+      if (testHooks && testHooks.reader === hookReader) testHooks.reader = undefined
       void ipc.setWindowControls(true).catch(() => {})
     }
   })

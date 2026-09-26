@@ -324,6 +324,9 @@ export class CommandRegistry {
     this.#handlers.set(id, handler)
     this.#emit()
     return () => {
+      // Only this handler: another feature may have taken the id since (S14: the
+      // library and a warm reader both handle ⌘Z, and detach in either order).
+      if (this.#handlers.get(id) !== handler) return
       this.#handlers.delete(id)
       this.#emit()
     }

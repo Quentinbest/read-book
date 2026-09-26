@@ -69,6 +69,27 @@ impl Library {
         std::fs::create_dir_all(&lib.extensions_dir)?;
         Ok(lib)
     }
+
+    /// A book file the store recorded, found in this library by its file name. D2: the
+    /// folder is the whole backup and can come back somewhere else (a new Mac, another
+    /// user name), so the recorded folder is not trusted; nothing outside the library is.
+    pub fn book_file(&self, stored: &str) -> Option<PathBuf> {
+        inside(&self.books_dir, stored)
+    }
+
+    /// A cover the store recorded, found in this library by its file name (as `book_file`).
+    pub fn cover_file(&self, stored: &str) -> Option<PathBuf> {
+        inside(&self.covers_dir, stored)
+    }
+}
+
+/// `dir` joined with the file name of `stored`, if that is a file really inside `dir`
+/// (a symbolic link out of it does not count).
+fn inside(dir: &Path, stored: &str) -> Option<PathBuf> {
+    let name = Path::new(stored).file_name()?;
+    let file = dir.join(name).canonicalize().ok()?;
+    let dir = dir.canonicalize().ok()?;
+    (file.starts_with(&dir) && file.is_file()).then_some(file)
 }
 
 pub fn sha256_file(path: &Path) -> std::io::Result<String> {
@@ -399,6 +420,47 @@ mod tests {
             }
         }
         eprintln!("every_corpus_file_imports_or_is_refused: {seen} files");
+    }
+
+    /// D2: the library folder is the whole backup. Put back in another place (another
+    /// user name on a new Mac), its books and covers still open.
+    #[test]
+    fn a_library_folder_restored_elsewhere_still_opens_its_books() {
+        let Some(path) = corpus("standardebooks-moby-dick.epub") else {
+            return;
+        };
+        let (dir, mut store, lib) = setup();
+        import_book(&mut store, &lib, &path).unwrap();
+        drop(store);
+        let moved = tempfile::tempdir().unwrap();
+        let root = moved.path().join("app.linen.reader");
+        copy_dir(dir.path(), &root);
+        drop(dir); // the old place is gone
+
+        let store = Store::open(&root.join("linen.db")).unwrap();
+        let lib = Library::new(&root).unwrap();
+        let book = &store.books().unwrap()[0];
+        let file = lib.book_file(&book.file_path).expect("the book file");
+        assert!(file.starts_with(root.canonicalize().unwrap()));
+        crate::epub::open(&file).unwrap();
+        let cover = book.cover_path.as_deref().expect("Moby Dick has a cover");
+        assert!(lib.cover_file(cover).is_some());
+        // Nothing outside the library resolves, whatever the store says.
+        assert!(lib.book_file("/etc/hosts").is_none());
+        assert!(lib.book_file("/etc/..").is_none());
+    }
+
+    fn copy_dir(from: &Path, to: &Path) {
+        std::fs::create_dir_all(to).unwrap();
+        for entry in std::fs::read_dir(from).unwrap() {
+            let entry = entry.unwrap();
+            let dest = to.join(entry.file_name());
+            if entry.file_type().unwrap().is_dir() {
+                copy_dir(&entry.path(), &dest);
+            } else {
+                std::fs::copy(entry.path(), dest).unwrap();
+            }
+        }
     }
 
     #[test]

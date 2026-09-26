@@ -43,20 +43,34 @@ The plan wanted D4 decided and the G1 and G7 designs before Phase 7. None existe
 
 The plan wants D1 and D6 decided before Phase 8 (D3 and D5 are). Phase 8 goes ahead on everything that does not depend on them.
 
-26. **D1 — telemetry and crash reporting.** *Recommendation:* none. Nothing leaves the Mac. Screen 12 promises that books “stay on this device”, and a reading app does not need usage data. Crashes are written to a local log (`~/Library/Logs/Linen`), and Settings › About offers “Show crash log” for attaching to an email by choice.
+26. **D1 — telemetry and crash reporting.** *Recommendation:* none. Nothing leaves the Mac. Screen 12 promises that books “stay on this device”, and a reading app does not need usage data. Crashes are written to a local log, and Settings › About offers “Show crash log” for attaching to an email by choice.
+
+    **Built to this recommendation (provisional):**
+    - Rust panics, with a backtrace, and uncaught page errors go to `~/Library/Logs/app.linen.reader/crash.log`. The log starts again at 1 MB, keeping one previous file. There are at most 20 page entries per window session.
+    - About says “Linen sends nothing anywhere…” and shows “Show crash log” when there is one.
+    - The e2e suite now fails on any uncaught error in a run. That found two late-callback errors in foliate-js, now fixed.
+    - If you choose otherwise, it is removed by deleting `src-tauri/src/crashlog.rs` and its three commands.
 
 27. **D6 — auto-update and release cadence.** *Recommendation:*
     - Tauri's updater, checking once a day, with updates signed by a Linen update key and served from GitHub Releases.
     - It downloads in the background and installs on the next launch, after a quiet “Update ready · Restart” message. It never interrupts reading.
     - A minor release about every six weeks, and fixes as needed.
 
-    **Needs from the owner:** the update signing key (kept out of the repo) and the release host. The updater is wired up, but it is off until both exist.
+    **Needs from the owner:** the update signing key (kept out of the repo) and the release host.
+
+    **Not built yet.** It depends on this decision (the mechanism) and on the key. With both, it is about half a day: `tauri-plugin-updater`, the daily check, and the “Update ready · Restart” line. (An earlier version of this item said it was already wired up; it was not.)
 
 28. **Code signing and notarisation (D3: a signed, notarised DMG).** *Needs from the owner:*
     - a Developer ID Application certificate in the keychain;
     - an App Store Connect API key (or an Apple ID app password) for `notarytool`.
 
-    `scripts/release-macos.sh` is ready to build, sign, notarise, staple and verify once they are there. Until then, releases are unsigned development builds.
+    `scripts/release-macos.sh` builds the DMG once they are there. Tauri itself signs with the hardened runtime and notarises, from the environment variables the script lists. The script then checks:
+    - the minimum macOS version (13.0) and the `.epub` file association;
+    - `codesign --verify --deep --strict`;
+    - the stapled tickets, on the app and the DMG;
+    - Gatekeeper (`spctl`).
+
+    Until then, `scripts/release-macos.sh --unsigned` makes an ad-hoc-signed development DMG.
 
 ## Carried over (need a person, not a decision)
 

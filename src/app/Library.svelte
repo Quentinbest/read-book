@@ -33,7 +33,8 @@
     messages: MessageQueue
     registry: CommandRegistry
     onopen: () => void
-    onopenbook: (book: Book) => void
+    /** `cover`: the cover the book was opened from, for the cover-grow transition (V8). */
+    onopenbook: (book: Book, cover?: HTMLElement | null) => void
     /** The library changed in the core (a book removed or restored). */
     onchanged: () => Promise<void>
   } = $props()
@@ -44,17 +45,22 @@
   let damagedFor = $state<Book | null>(null)
 
   /** E3: a book with damaged chapters shows the card first, until Read anyway. */
-  async function open(book: Book) {
+  async function open(book: Book, from?: EventTarget | null) {
     if (book.damaged_items > 0 && (await ipc.settingGet(`damageAck:${book.id}`)) !== '1') {
       damagedFor = book
       return
     }
-    onopenbook(book)
+    onopenbook(book, coverOf(book, from))
+  }
+  /** The cover clicked, or else the book's first cover on screen. */
+  function coverOf(book: Book, from?: EventTarget | null): HTMLElement | null {
+    const inTile = from instanceof HTMLElement ? from.querySelector<HTMLElement>('.cover') : null
+    return inTile ?? document.querySelector<HTMLElement>(`.library [data-cover="${book.id}"]`)
   }
   function readAnyway(book: Book) {
     damagedFor = null
     void ipc.settingSet(`damageAck:${book.id}`, '1')
-    onopenbook(book)
+    onopenbook(book, coverOf(book))
   }
   let now = $state(Date.now())
   const undo = new UndoStack()
@@ -197,7 +203,7 @@
               class="cover-button"
               tabindex="-1"
               aria-hidden="true"
-              onclick={() => void open(current)}
+              onclick={(e) => void open(current, e.currentTarget)}
             >
               <BookCover book={current} width={112} height={168} />
             </button>
@@ -215,8 +221,10 @@
                 >
               </div>
               <div class="resume-row">
-                <button type="button" class="resume" onclick={() => void open(current)}
-                  >{t.library.resume}</button
+                <button
+                  type="button"
+                  class="resume"
+                  onclick={(e) => void open(current, e.currentTarget)}>{t.library.resume}</button
                 >
                 {#if current.opened_at}<span class="opened"
                     >{openedLine(current.opened_at, now)}</span
@@ -230,7 +238,7 @@
                 <button
                   type="button"
                   class="small"
-                  onclick={() => void open(b)}
+                  onclick={(e) => void open(b, e.currentTarget)}
                   oncontextmenu={(e) => {
                     e.preventDefault()
                     itemMenu(b)
@@ -266,7 +274,7 @@
               <button
                 type="button"
                 class="open"
-                onclick={() => void open(b)}
+                onclick={(e) => void open(b, e.currentTarget)}
                 oncontextmenu={(e) => {
                   e.preventDefault()
                   itemMenu(b)

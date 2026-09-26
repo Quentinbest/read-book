@@ -1,4 +1,5 @@
 pub mod commands;
+pub mod crashlog;
 pub mod epub;
 pub mod ext_commands;
 pub mod extensions;
@@ -63,6 +64,7 @@ pub fn run() {
                 commands::search_text_get,
                 commands::search_text_put,
                 native::open_external,
+                native::open_software_update,
                 native::copy_text,
                 commands::book_settings_get,
                 commands::book_settings_set,
@@ -99,6 +101,9 @@ pub fn run() {
                 native::keyboard_layout_labels,
                 native::screen_edges,
                 native::set_window_controls,
+                crashlog::crash_log_note,
+                crashlog::crash_log_exists,
+                crashlog::crash_log_show,
                 $($extra),*
             ]
         };
@@ -123,6 +128,7 @@ pub fn run() {
         spikes::spike_capture,
         spikes::spike_scroll_wheel,
         spikes::spike_read_pasteboard,
+        spikes::spike_crash_log,
         spikes::spike_exit
     ));
     builder
@@ -134,8 +140,12 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            let state = commands::init(app)?;
+            // D1: crashes go to a log on this Mac, nowhere else.
+            let logs = crashlog::dir(app);
+            crashlog::install_panic_hook(logs.clone());
             use tauri::Manager;
+            app.manage(crashlog::CrashLog(logs));
+            let state = commands::init(app)?;
             // P7: safe mode is decided before anything else reads the extensions.
             let safe = ext_commands::launch_in_safe_mode(&state);
             if let Err(e) = extensions::registry::ensure_builtins(

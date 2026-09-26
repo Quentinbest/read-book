@@ -23,6 +23,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "src-tauri/target/release/linen"
+# Measured on Desktop 2 like the e2e runs (owner's instruction, 2026-09-25), with the
+# display kept awake (a sleeping display stops WebKit's frames; see scripts/e2e.sh).
+SPACE = os.environ.get("LINEN_SPACE", "2")
+CAFFEINATE = ["caffeinate", "-di"]
 BUDGETS = {"library": 1000, "book": 1500}
 
 
@@ -35,10 +39,10 @@ def launch(data: Path, until: str) -> float:
     log = data / "startup.log"
     log.unlink(missing_ok=True)
     env = dict(os.environ, LINEN_DATA_DIR=str(data), LINEN_STARTUP_LOG=str(log),
-               LINEN_EXIT_AFTER_STARTUP=until)
+               LINEN_EXIT_AFTER_STARTUP=until, LINEN_SPACE=SPACE)
     env.pop("LINEN_SPIKE", None)
     t0 = time.time() * 1000
-    subprocess.run([str(APP)], env=env, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(CAFFEINATE + [str(APP)], env=env, timeout=60, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     for line in log.read_text().splitlines():
         what, at = line.split()
         if what == until:
@@ -53,8 +57,8 @@ def main() -> int:
         return 1
     data = Path(tempfile.mkdtemp(prefix="linen-coldstart-"))
     seed = dict(os.environ, LINEN_DATA_DIR=str(data), LINEN_SPIKE="seed500", LINEN_SPIKE_TIMEOUT="600",
-                LINEN_REPO=str(ROOT))
-    subprocess.run([str(APP)], env=seed, timeout=900, check=True, stdout=subprocess.DEVNULL)
+                LINEN_REPO=str(ROOT), LINEN_SPACE=SPACE)
+    subprocess.run(CAFFEINATE + [str(APP)], env=seed, timeout=900, check=True, stdout=subprocess.DEVNULL)
     db = sqlite3.connect(data / "linen.db")
     count = db.execute("SELECT COUNT(*) FROM books").fetchone()[0]
     if count != 500:

@@ -23,9 +23,15 @@
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings/en'
   import { ExtensionHost } from './extensions/host.svelte'
+  import WebKitTooOld from './app/WebKitTooOld.svelte'
+  import { readerEngineSupported } from './lib/reader/webkit'
 
   let books: Book[] = $state([])
   let reading: Book | null = $state(null)
+  /** S14: the last book read stays open behind the library, so returning to it is instant. */
+  let warm: Book | null = $state(null)
+  /** D7-WebKit: a book was opened on a WebKit too old for the reader engine. */
+  let webkitTooOld = $state(false)
   let dropActive = $state(false)
   let liveRegion: LiveRegion | undefined = $state()
   let singleKeysEnabled = true
@@ -99,6 +105,9 @@
 
   async function refresh() {
     books = await ipc.libraryList()
+    // S14: a warm book that was removed, or replaced by an updated file, is let go.
+    const w = warm && books.find((b) => b.id === warm!.id)
+    if (warm && !reading && (!w || w.content_hash !== warm.content_hash)) warm = null
   }
 
   async function importPaths(paths: string[]) {
@@ -124,12 +133,58 @@
     })
   }
 
-  function openBook(book: Book) {
-    reading = book
+  /**
+   * V8: library → book, a 240 ms cover grow. A copy of the cover grows from its tile
+   * to the height of the window and fades, over the reader opening beneath it.
+   * Under reduced motion there is no movement (V9); the reader simply appears.
+   */
+  function coverGrow(cover: HTMLElement | null | undefined) {
+    if (!cover || matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    const r = cover.getBoundingClientRect()
+    if (!r.width || !r.height) return
+    const ghost = cover.cloneNode(true) as HTMLElement
+    ghost.classList.add('cover-grow')
+    Object.assign(ghost.style, {
+      position: 'fixed',
+      left: `${r.left}px`,
+      top: `${r.top}px`,
+      width: `${r.width}px`,
+      height: `${r.height}px`,
+      margin: '0',
+      zIndex: '40',
+      pointerEvents: 'none',
+      transformOrigin: 'top left',
+    })
+    document.body.append(ghost)
+    const scale = window.innerHeight / r.height
+    const dx = (window.innerWidth - r.width * scale) / 2 - r.left
+    const grow = ghost.animate(
+      [
+        { transform: 'none', opacity: 1 },
+        { transform: `translate(${dx}px, ${-r.top}px) scale(${scale})`, opacity: 1, offset: 0.6 },
+        { transform: `translate(${dx}px, ${-r.top}px) scale(${scale})`, opacity: 0 },
+      ],
+      { duration: 240, easing: 'cubic-bezier(0.2, 0, 0, 1)' },
+    )
+    grow.onfinish = grow.oncancel = () => ghost.remove()
+    if (testHooks) testHooks.coverGrows = (testHooks.coverGrows ?? 0) + 1
+  }
+
+  function openBook(book: Book, cover?: HTMLElement | null) {
+    if (testHooks?.webkitTooOld || !readerEngineSupported()) {
+      webkitTooOld = true
+      return
+    }
+    coverGrow(cover)
+    // Another book takes the warm one's place (one book is kept, for memory).
+    if (warm?.id !== book.id) warm = book
+    reading = warm
   }
 
   function closeReader() {
     reading = null
+    // Tests of opening and restoring need a cold open each time (S14 has its own check).
+    if (testHooks?.noWarm) warm = null
     void refresh()
   }
 
@@ -180,7 +235,7 @@
         const last = books
           .filter((b) => b.opened_at !== null && !b.finished_at)
           .sort((a, b) => (b.opened_at ?? 0) - (a.opened_at ?? 0))[0]
-        if (last) reading = last
+        if (last) openBook(last)
       }
       // §6.4: the library's first paint (the reader marks its first page itself).
       if (!reading)
@@ -264,22 +319,27 @@
 
 <svelte:window {onkeydown} />
 
-{#if reading}
-  {#key reading.id}
-    <Reader
-      book={reading}
-      {messages}
-      {writes}
-      {registry}
-      screenReader={() => screenReaderRunning}
-      {keyContext}
-      {onBeforeQuit}
-      announce={(text) => liveRegion?.announce(text, 'polite')}
-      onexit={closeReader}
-      {extensions}
-    />
+{#if warm}
+  {#key warm.id}
+    <!-- S14: behind the library the book stays warm: hidden and inert, not unloaded. -->
+    <div class="reader-layer" class:warm={!reading} inert={!reading}>
+      <Reader
+        book={warm}
+        active={reading !== null}
+        {messages}
+        {writes}
+        {registry}
+        screenReader={() => screenReaderRunning}
+        {keyContext}
+        {onBeforeQuit}
+        announce={(text) => liveRegion?.announce(text, 'polite')}
+        onexit={closeReader}
+        {extensions}
+      />
+    </div>
   {/key}
-{:else}
+{/if}
+{#if !reading}
   <Library
     {books}
     {dropActive}
@@ -292,5 +352,21 @@
 {/if}
 <CommandPalette open={paletteOpen} {registry} {messages} onclose={() => (paletteOpen = false)} />
 <CheatSheet open={cheatSheetOpen} {registry} onclose={() => (cheatSheetOpen = false)} />
+<WebKitTooOld open={webkitTooOld} onclose={() => (webkitTooOld = false)} />
 <MessageBar queue={messages} />
 <LiveRegion bind:this={liveRegion} />
+
+<style>
+  .reader-layer {
+    display: contents;
+  }
+  /* S14: a warm book. Not display: none (the book would lay out again at zero size)
+     and not visibility: hidden (the engine's views set their own visibility). */
+  .reader-layer.warm {
+    display: block;
+    position: fixed;
+    inset: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+</style>

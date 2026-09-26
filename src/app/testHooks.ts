@@ -39,6 +39,14 @@ export interface TestHooks {
   extensions?: import('../extensions/host.svelte').ExtensionHost
   /** G2: times Settings… asked for the Settings window (not opened under test). */
   settingsOpened?: number
+  /** B8: relayout this many ms after the book starts opening (a race the restore must survive). */
+  relayoutDuringOpenMs?: number[]
+  /** S14: let the book go on leaving it, so every open is cold (the default under test). */
+  noWarm?: boolean
+  /** V8: cover-grow transitions started (library → book). */
+  coverGrows?: number
+  /** D7-WebKit: act as if this WebKit were older than Safari 16.4. */
+  webkitTooOld?: boolean
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

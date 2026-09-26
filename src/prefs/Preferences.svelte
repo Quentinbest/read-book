@@ -31,6 +31,8 @@
   let singleKeys = $state(true)
   let folder = $state('')
   let version = $state('')
+  /** D1: a crash log on this Mac, if anything has been written to it. */
+  let crashLog = $state(false)
   let status = $state('')
   let loaded = false
 
@@ -100,6 +102,7 @@
       singleKeys = (await get('singleKeyShortcuts')) !== 'off'
       folder = await ipc.libraryFolder().catch(() => '')
       version = await getVersion().catch(() => '')
+      crashLog = await ipc.crashLogExists().catch(() => false)
       loaded = true
     })()
     // The reader's Aa popover may change the same settings.
@@ -210,6 +213,14 @@
       {#if version}<p class="help">{t.prefs.version(version)}</p>{/if}
       <p>{t.prefs.aboutLine}</p>
       <p class="help">{t.prefs.fonts}</p>
+      <p class="help">{t.prefs.privacy}</p>
+      {#if crashLog}
+        <div>
+          <button type="button" class="btn" onclick={() => void ipc.crashLogShow().catch(() => {})}
+            >{t.prefs.showCrashLog}</button
+          >
+        </div>
+      {/if}
     {/if}
   </div>
 </div>

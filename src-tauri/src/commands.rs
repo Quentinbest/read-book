@@ -92,20 +92,11 @@ pub fn purge_removed(store: &mut Store, library: &Library) {
     let Ok(gone) = store.purge_removed() else {
         return;
     };
-    let inside = |p: &str, dir: &std::path::Path| {
-        let (Ok(p), Ok(d)) = (PathBuf::from(p).canonicalize(), dir.canonicalize()) else {
-            return None;
-        };
-        p.starts_with(&d).then_some(p)
-    };
     for (file, cover) in gone {
-        if let Some(p) = inside(&file, &library.books_dir) {
+        if let Some(p) = library.book_file(&file) {
             let _ = std::fs::remove_file(p);
         }
-        if let Some(p) = cover
-            .as_deref()
-            .and_then(|c| inside(c, &library.covers_dir))
-        {
+        if let Some(p) = cover.as_deref().and_then(|c| library.cover_file(c)) {
             let _ = std::fs::remove_file(p);
         }
     }
@@ -168,18 +159,11 @@ fn library_book_path(state: &AppState, book_id: &str) -> CmdResult<PathBuf> {
             |r| r.get(0),
         )
         .map_err(|e| failed(e.to_string()))?;
-    let books_dir = state
+    // D2: found by name in the library as it is now, wherever it was restored.
+    state
         .library
-        .books_dir
-        .canonicalize()
-        .map_err(|e| failed(e.to_string()))?;
-    let resolved = PathBuf::from(path)
-        .canonicalize()
-        .map_err(|e| failed(e.to_string()))?;
-    if !resolved.starts_with(&books_dir) {
-        return Err(failed("book file is outside the library".into()));
-    }
-    Ok(resolved)
+        .book_file(&path)
+        .ok_or_else(|| failed("the book file is not in the library".into()))
 }
 
 /// The whole book file (spikes and tests; the reader reads entries on demand, L17).
@@ -390,10 +374,7 @@ fn serve_cover(
         )
         .ok()
         .flatten();
-    let (Some(path), Ok(dir)) = (path, state.library.covers_dir.canonicalize()) else {
-        return reply(StatusCode::NOT_FOUND);
-    };
-    let Ok(file) = PathBuf::from(&path).canonicalize() else {
+    let Some(file) = path.and_then(|p| state.library.cover_file(&p)) else {
         return reply(StatusCode::NOT_FOUND);
     };
     let mime = match file
@@ -408,9 +389,6 @@ fn serve_cover(
         },
         None => return reply(StatusCode::FORBIDDEN),
     };
-    if !file.starts_with(&dir) {
-        return reply(StatusCode::FORBIDDEN);
-    }
     match std::fs::read(&file) {
         Ok(bytes) => Response::builder()
             .status(StatusCode::OK)

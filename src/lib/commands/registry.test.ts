@@ -126,6 +126,18 @@ describe('registry', () => {
     expect(r.run('goto.open')).toBe(false)
   })
 
+  it('detaching removes only the handler it attached', () => {
+    const r = new CommandRegistry()
+    const [a, b] = [vi.fn(), vi.fn()]
+    const offA = r.handle('edit.undo', { run: a })
+    const offB = r.handle('edit.undo', { run: b })
+    offA() // stale: B took the id
+    expect(r.run('edit.undo')).toBe(true)
+    expect(b).toHaveBeenCalledOnce()
+    offB()
+    expect(r.run('edit.undo')).toBe(false)
+  })
+
   it('does not run disabled commands', () => {
     const r = new CommandRegistry()
     const run = vi.fn()

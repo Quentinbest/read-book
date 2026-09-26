@@ -303,6 +303,10 @@ interface Neighbour {
 }
 
 /** Scroll mode: a view stacked in the scroller at `top`, showing `unit` at full height. */
+/** Where a Scroll-mode navigation goes: a CFI or href, a section, a fraction, or a range. */
+type ScrollTarget = string | number | { fraction: number } | Range
+const isRange = (t: ScrollTarget): t is Range => typeof t === 'object' && 'startContainer' in t
+
 interface Slot {
   view: View
   unit: Unit
@@ -353,6 +357,13 @@ export class ReaderEngine {
   #caret: { color: string } | null = null
   #closed = false
   #extraStyles = ''
+  /**
+   * I16: Scroll for a vertical-writing book runs sideways. It is foliate-js's own
+   * scrolled flow (which scrolls vertical text horizontally) in the page box, one
+   * chapter at a time; the next or previous chapter loads at either end. Internally
+   * the engine stays in Pages (one view and its neighbours).
+   */
+  #sideways = false
   /** Tests turn this off to exercise the overlay path older WebKit takes (A4). */
   useCustomHighlights = true
   /** Extracted text of live documents, for search offsets (F5). */
@@ -389,6 +400,15 @@ export class ReaderEngine {
   #joins: HTMLElement[] = []
   #spacer: HTMLElement | null = null
   #stackBusy = false
+  /** The newest stack build; an older one still running gives way to it. */
+  #stackSeq = 0
+  /**
+   * B8: the place a Scroll-mode navigation asked for. Until the reader moves, a
+   * relayout or a late change of height returns to it, not to whatever the screen
+   * happens to show at that moment (which, mid-build, can be a neighbouring chapter).
+   * `y` is the scroll position the engine set; any other position means the reader moved.
+   */
+  #scrollPin: { target: ScrollTarget; view: View | null; y: number } | null = null
   #scrollFrame = 0
   #heightTimer = 0
   /** Set while the engine reports a scroll location, so foliate's own reports are ignored. */
@@ -1032,7 +1052,7 @@ export class ReaderEngine {
   }
 
   get mode(): ReadingMode {
-    return this.#mode
+    return this.#sideways ? 'scroll' : this.#mode
   }
 
   /**
@@ -1040,8 +1060,14 @@ export class ReaderEngine {
    * vertical books stay in Pages. Returns whether the mode is now `mode`.
    */
   async setMode(mode: ReadingMode): Promise<boolean> {
+    if (this.fixedLayout && mode === 'scroll') return false
+    // I16: vertical writing scrolls sideways in its own flow.
+    if (mode === 'scroll' && this.#vertical() && this.#mode === 'pages') {
+      if (this.#sideways) return true
+      return this.#setSideways(true)
+    }
+    if (mode === 'pages' && this.#sideways) return this.#setSideways(false)
     if (mode === this.#mode) return true
-    if (mode === 'scroll' && (this.fixedLayout || this.#vertical())) return false
     const cfi = this.location?.cfi
     if (mode === 'scroll') this.#enterScroll()
     else this.#leaveScroll()
@@ -1058,16 +1084,60 @@ export class ReaderEngine {
    * the host scroller, so the engine scrolls it (found with real posted events).
    */
   scrollPixels(dy: number) {
+    if (this.#sideways) return this.#scrollSideways(dy)
     if (this.#mode !== 'scroll') return
     this.#lastInputAt = performance.now()
+    this.#scrollPin = null
     this.#host.scrollTop += dy
   }
 
   /** I9: scroll by lines in Scroll mode (↓ ↑). */
   scrollLines(n: number) {
-    if (this.#mode !== 'scroll' || !this.#layout) return
+    if (!this.#layout) return
+    if (this.#sideways) return this.#scrollSideways(n * this.#layout.lineHeightPx)
+    if (this.#mode !== 'scroll') return
     this.#lastInputAt = performance.now()
+    this.#scrollPin = null
     this.#host.scrollBy(0, n * this.#layout.lineHeightPx)
+  }
+
+  async #setSideways(on: boolean): Promise<boolean> {
+    const cfi = this.location?.cfi
+    this.#sideways = on
+    for (const view of this.#views()) if (view.renderer) this.#configureRenderer(view)
+    await this.#navigate(cfi ?? this.#textStart())
+    return true
+  }
+
+  /**
+   * I16: sideways scrolling. foliate's `next(distance)` and `prev(distance)` scroll the
+   * scrolled flow and, at either end of the chapter, load the next or previous one.
+   * A call runs at a time; deltas that arrive meanwhile add up and follow.
+   */
+  #sidewaysPending = 0
+  #sidewaysBusy = false
+  #scrollSideways(delta: number) {
+    this.#lastInputAt = performance.now()
+    this.#sidewaysPending += delta
+    if (this.#sidewaysBusy) return
+    void this.#drainSideways()
+  }
+  async #drainSideways() {
+    this.#sidewaysBusy = true
+    try {
+      while (Math.abs(this.#sidewaysPending) >= 1 && this.#sideways && !this.#closed) {
+        const d = this.#sidewaysPending
+        this.#sidewaysPending = 0
+        const r = this.#current.renderer as unknown as {
+          next(distance: number): Promise<void>
+          prev(distance: number): Promise<void>
+        }
+        await (d > 0 ? r.next(d) : r.prev(-d))
+      }
+    } finally {
+      this.#sidewaysPending = 0
+      this.#sidewaysBusy = false
+    }
   }
 
   /** I17: zoom of a fixed-layout page relative to fit (1 = fit). */
@@ -1156,7 +1226,11 @@ export class ReaderEngine {
     for (const view of this.#views()) if (view.renderer) this.#configureRenderer(view)
     if (this.#mode === 'scroll') {
       await this.#navigate(start?.cfi ?? this.#textStart())
-      if (this.#vertical()) await this.setMode('pages') // G8: vertical books read in Pages
+      // I16: a vertical book remembered in Scroll scrolls sideways instead.
+      if (this.#vertical()) {
+        await this.setMode('pages')
+        await this.setMode('scroll')
+      }
       return book
     }
     if (start?.cfi) {
@@ -1186,10 +1260,12 @@ export class ReaderEngine {
     this.#layout = layout
     this.#styles = styles
     if (this.#mode === 'scroll') {
-      const cfi = this.location?.cfi
+      // Heights change with the width and font: lay the stack out again at the same
+      // place. Until the reader moves, that is the place last asked for (B8).
+      const pinned = this.#pinned()?.target
+      const target = pinned !== undefined && !isRange(pinned) ? pinned : this.location?.cfi
       for (const view of this.#views()) if (view.renderer) this.#configureRenderer(view)
-      // Heights change with the width and font: lay the stack out again at the same place.
-      if (this.#book && cfi) void this.#navigate(cfi)
+      if (this.#book && target !== undefined) void this.#navigate(target)
       return
     }
     for (const view of this.#views()) {
@@ -1219,6 +1295,7 @@ export class ReaderEngine {
   /** Turn a page. A turn requested while one is running is queued (at most one, I6). */
   turn(dir: Turn): Promise<void> {
     this.#lastInputAt = performance.now()
+    this.#scrollPin = null
     if (this.#turning) {
       this.#pending = dir
       return this.#turning
@@ -1551,6 +1628,16 @@ export class ReaderEngine {
     if (!layout || !r) return
     // Fixed layout (E2): foliate-js scales pages to the view; no paginator settings or book styles.
     if (view.isFixedLayout) return
+    if (this.#sideways && view !== this.#counter) {
+      // I16: foliate's scrolled flow runs vertical text sideways, in the page box.
+      r.setAttribute('flow', 'scrolled')
+      r.setAttribute('margin', '0px')
+      r.setAttribute('gap', '0%')
+      r.setAttribute('max-column-count', '1')
+      r.setAttribute('max-inline-size', `${Math.ceil(layout.pageHeight)}px`)
+      r.setStyles(this.#styles + this.#extraStyles)
+      return
+    }
     if (this.#mode === 'scroll' && view !== this.#counter) {
       // B8: one unit at full height; the column is the measure, with no gap of its own.
       r.setAttribute('flow', 'scrolled')
@@ -1678,6 +1765,8 @@ export class ReaderEngine {
    * holds the target is laid out first, so foliate never anchors to hidden text.
    */
   async #navigate(target: string | number | { fraction: number }) {
+    const seq = this.#mode === 'scroll' ? ++this.#stackSeq : 0
+    if (seq) this.#scrollPin = { target, view: null, y: NaN }
     const view = this.#current
     const resolved = view.resolveNavigation(target) as { index: number } | undefined
     if (!resolved) return
@@ -1700,7 +1789,7 @@ export class ReaderEngine {
       await view.goTo(target)
     }
     if (this.#mode === 'scroll') {
-      await this.#scrollToTarget(view, target)
+      if (seq === this.#stackSeq) await this.#scrollToTarget(view, target, seq)
       return
     }
     await this.#settleChunkAnchor(view, target)
@@ -1845,6 +1934,7 @@ export class ReaderEngine {
 
   #leaveScroll() {
     this.#mode = 'pages'
+    this.#scrollPin = null
     this.#host.removeEventListener('wheel', this.#blockWheel)
     clearInterval(this.#heightTimer)
     this.#host.scrollTop = 0
@@ -1878,33 +1968,53 @@ export class ReaderEngine {
   }
 
   /** Scroll mode after a navigation: rebuild the stack around `view` and bring the target to the top. */
-  async #scrollToTarget(view: View, target: string | number | { fraction: number } | Range) {
+  async #scrollToTarget(view: View, target: ScrollTarget, seq = ++this.#stackSeq) {
+    if (this.#scrollPin?.target !== target) this.#scrollPin = { target, view: null, y: NaN }
+    const stale = () => seq !== this.#stackSeq
     this.#stackBusy = true
     try {
       await this.#settled(view)
       const unit = this.#unitOf(view)
-      if (!unit) return
+      if (!unit || stale()) return
       const centre: Slot = { view, unit, top: 0, height: view.renderer.viewSize }
       const others = this.#views().filter((v) => v !== view && v !== this.#counter)
       const before = this.#adjacentUnit(-1, view)
       const after = this.#adjacentUnit(1, view)
       const slots: Slot[] = [centre]
       if (before) slots.unshift(await this.#loadUnit(others[0], before))
+      if (stale()) return
       if (after) slots.push(await this.#loadUnit(others[1], after))
+      if (stale()) return
+      // Heights read now, after the neighbours loaded (fonts may have changed them).
+      for (const x of slots) x.height = x.view.renderer?.viewSize ?? x.height
       this.#slots = slots
       this.#current = view
       this.#placeSlots(0)
-      const y = this.#targetOffset(view, target)
-      const layoutTop = this.#layout?.top ?? 88
-      this.#host.scrollTop = y < 1 ? centre.top - layoutTop : centre.top + y - SCROLL_FADE_TOP
+      if (this.#scrollPin) this.#scrollPin.view = view
+      this.#alignTo(centre, target)
     } finally {
-      this.#stackBusy = false
+      if (!stale()) this.#stackBusy = false
     }
-    this.#emitScrollLocation()
+    if (!stale()) this.#emitScrollLocation()
+  }
+
+  /** Scroll so that `target` (in `slot`) sits at the top of the window, below the fade. */
+  #alignTo(slot: Slot, target: ScrollTarget) {
+    const y = this.#targetOffset(slot.view, target)
+    const layoutTop = this.#layout?.top ?? 88
+    this.#host.scrollTop = y < 1 ? slot.top - layoutTop : slot.top + y - SCROLL_FADE_TOP
+    if (this.#scrollPin) this.#scrollPin.y = this.#host.scrollTop
+  }
+
+  /** The pinned place (B8), while the reader has not moved away from it. */
+  #pinned() {
+    const p = this.#scrollPin
+    if (p && !Number.isNaN(p.y) && Math.abs(this.#host.scrollTop - p.y) > 1) this.#scrollPin = null
+    return this.#scrollPin
   }
 
   /** Where a navigation target sits within its view, in px from the unit's top. */
-  #targetOffset(view: View, target: string | number | { fraction: number } | Range): number {
+  #targetOffset(view: View, target: ScrollTarget): number {
     if (typeof target === 'number') return 0
     if (typeof target === 'object' && 'startContainer' in target)
       return Math.max(0, (target.getClientRects()[0] ?? target.getBoundingClientRect()).top)
@@ -1950,8 +2060,10 @@ export class ReaderEngine {
     const shift = want - first.top
     if (shift !== 0) {
       for (const x of slots) x.top += shift
+      const pinned = this.#pinned()
       if (!atStart || shift > 0) this.#host.scrollTop += shift
       else this.#host.scrollTop = Math.max(0, this.#host.scrollTop + shift)
+      if (pinned && !Number.isNaN(pinned.y)) pinned.y = this.#host.scrollTop
     }
     const used = new Set(slots.map((x) => x.view))
     for (const x of slots)
@@ -2004,8 +2116,12 @@ export class ReaderEngine {
     }
     if (!changed) return
     // Keep the slot under the reader still.
+    const pinned = this.#pinned()
     const i = Math.max(0, this.#slotIndexAt(this.#host.scrollTop + SCROLL_FADE_TOP))
     this.#placeSlots(i)
+    // B8: until the reader moves, the place asked for stays at the top as text above it grows.
+    const slot = pinned?.view && this.#slots.find((x) => x.view === pinned.view)
+    if (slot) this.#alignTo(slot, pinned.target)
   }
 
   #slotIndexAt(y: number): number {
@@ -2018,6 +2134,7 @@ export class ReaderEngine {
 
   #onScroll() {
     if (this.#mode !== 'scroll' || !this.#slots.length) return
+    this.#pinned() // the reader moved: the pin goes
     this.#checkHeights()
     // The chapter under the middle of the window is the current one (G8 note 3).
     const i = this.#slotIndexAt(this.#host.scrollTop + this.#host.clientHeight / 2)

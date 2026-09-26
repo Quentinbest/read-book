@@ -20,6 +20,21 @@ pub fn open_external(url: String) -> Result<(), String> {
     }
 }
 
+/// D7-WebKit: open System Settings at Software Update, where Safari (and so the
+/// system WebKit) is updated. A fixed URL: the page cannot open other settings panes.
+#[tauri::command]
+pub fn open_software_update() -> Result<(), String> {
+    let ns = objc2_foundation::NSString::from_str(
+        "x-apple.systempreferences:com.apple.preferences.softwareupdate",
+    );
+    let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
+    if objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url) {
+        Ok(())
+    } else {
+        Err("the system could not open Software Update".into())
+    }
+}
+
 /// N9 Copy (and later selection Copy): put plain text on the general pasteboard.
 /// Native, so it does not depend on WebKit's user-gesture rules for the clipboard API.
 #[tauri::command]

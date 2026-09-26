@@ -10,7 +10,8 @@ import type { TestHooks } from '../app/testHooks'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
 import { step } from './interactive'
 
-const hooks: TestHooks = {}
+// Cold opens unless a check asks for the warm book (S14).
+const hooks: TestHooks = { noWarm: true }
 ;(globalThis as { __LINEN_E2E__?: TestHooks }).__LINEN_E2E__ = hooks
 
 async function waitFor<T>(
@@ -275,6 +276,8 @@ export async function spikeE2E(): Promise<SpikeResult> {
   const { installThemeCss } = await import('../app/theme')
   await import('../app/base.css')
   installThemeCss()
+  // As src/main.ts: uncaught errors reach the crash log (D1).
+  ;(await import('../app/log')).installErrorLogging()
   document.getElementById('log')!.style.display = 'none'
   document.getElementById('chrome-top')!.style.display = 'none'
   const { default: App } = await import('../App.svelte')
@@ -978,11 +981,28 @@ export async function spikeE2E(): Promise<SpikeResult> {
       Math.abs(loc()!.fraction - saved.fraction) > 0.003
     )
       return `reopened at ${loc()!.sectionIndex}/${loc()!.fraction}, saved ${saved.sectionIndex}/${saved.fraction}`
+    // The restore survives relayouts that land while the book is still opening
+    // (Phase 7 found it 2% early after one extra await in the opening sequence).
+    for (const ms of [0, 40, 120, 300, 700]) {
+      await backToLibrary()
+      hooks.relayoutDuringOpenMs = [ms, ms + 60]
+      try {
+        await openFromLibrary(/Moby Dick(?!;)/)
+      } finally {
+        hooks.relayoutDuringOpenMs = undefined
+      }
+      await settled(1200)
+      if (
+        loc()!.sectionIndex !== saved.sectionIndex ||
+        Math.abs(loc()!.fraction - saved.fraction) > 0.003
+      )
+        return `with a relayout at ${ms} ms, reopened at ${loc()!.sectionIndex}/${loc()!.fraction}, saved ${saved.sectionIndex}/${saved.fraction}`
+    }
     // And back to Pages at the same place.
     const s0 = loc()!
     hooks.run?.('layout.pages')
     await settled(1500)
-    const mode = () => reopened.mode // read again: the command changed it
+    const mode = () => reader()!.engine.mode // read again: the command changed it
     if (mode() !== 'pages') return 'did not return to Pages'
     if (loc()!.sectionIndex !== s0.sectionIndex || Math.abs(loc()!.fraction - s0.fraction) > 0.01)
       return `Pages moved the place: ${s0.sectionIndex}/${s0.fraction} → ${loc()!.sectionIndex}/${loc()!.fraction}`
@@ -2852,6 +2872,53 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'P22-font-change-place',
+    description:
+      'P§22: after a text-size or line-spacing change the reading position stays on screen (anchor-based reflow)',
+    run: async () => {
+      const problems: string[] = []
+      const engine = reader()!.engine
+      await engine.goTo(engine.chapterCount > 6 ? 6 : 1)
+      await settled(700)
+      for (let i = 0; i < 3; i++) await turnBy(() => key('ArrowRight'), 'next')
+      const start = engine.view.lastLocation?.range.cloneRange()
+      if (!start) return 'no location'
+      start.collapse(true)
+      const onScreen = () => {
+        const r = engine.view.lastLocation?.range
+        return (
+          !!r &&
+          r.startContainer.ownerDocument === start.startContainer.ownerDocument &&
+          r.compareBoundaryPoints(Range.START_TO_START, start) <= 0 &&
+          r.compareBoundaryPoints(Range.START_TO_END, start) >= 0
+        )
+      }
+      const step = async (what: string, change: () => void | Promise<unknown>) => {
+        await change()
+        await settled(900)
+        if (!onScreen()) problems.push(`${what}: the place moved to ${loc()?.fraction.toFixed(4)}`)
+      }
+      try {
+        for (let i = 0; i < 4; i++)
+          await step(`⌘+ ×${i + 1}`, () => keyOnApp('=', { code: 'Equal', metaKey: true }))
+        await step('⌘0', () => keyOnApp('0', { code: 'Digit0', metaKey: true }))
+        await step('⌘− ×2', () => {
+          keyOnApp('-', { code: 'Minus', metaKey: true })
+          keyOnApp('-', { code: 'Minus', metaKey: true })
+        })
+        // As from the Settings window (G2): another source, so the reader applies it.
+        const { changeSetting } = await import('../app/settingsSync')
+        await step('line spacing', () => changeSetting('lineSpacing', 'loose', crypto.randomUUID()))
+        await changeSetting('lineSpacing', 'default', crypto.randomUUID())
+      } finally {
+        await resetReading()
+        await settled(900)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
     id: 'L18-E2-aa-hints',
     description:
       'Aa hints: a book over 30% code or tables suggests Scroll (L18); a fixed-layout book keeps only theme, with one line of explanation (E2)',
@@ -3715,6 +3782,122 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Phase 8: EPUB edge cases
+  checks.push({
+    id: 'I16-vertical',
+    description:
+      'I16: vertical writing (vertical-rl) paginates right to left with ruby kept; ← turns forward; Scroll runs sideways',
+    run: async () => {
+      const problems: string[] = []
+      await backToLibrary()
+      await openFromLibrary(/草枕/)
+      const engine = reader()!.engine
+      await engine.goTo(3)
+      await settled(900)
+      const doc = pageDoc().doc
+      const mode = getComputedStyle(doc.documentElement).writingMode
+      if (!mode.startsWith('vertical')) problems.push(`writing mode ${mode}`)
+      if (doc.querySelector('ruby') && !doc.querySelector('rt')) problems.push('ruby text lost')
+      const before = loc()!.fraction
+      key('ArrowLeft', { code: 'ArrowLeft' })
+      await settled(700)
+      const afterLeft = loc()!.fraction
+      if (!(afterLeft > before))
+        problems.push(`← went ${before.toFixed(4)} → ${afterLeft.toFixed(4)}`)
+      key('ArrowRight', { code: 'ArrowRight' })
+      await settled(700)
+      if (!(loc()!.fraction < afterLeft)) problems.push('→ did not go back')
+      hooks.run?.('layout.scroll')
+      await settled(1500)
+      // Sideways Scroll is foliate's scrolled flow: the vertical text scrolls horizontally.
+      const flow = engine.view.renderer.getAttribute('flow')
+      const start = loc()!.fraction
+      for (let i = 0; i < 6; i++) {
+        engine.scrollPixels(300)
+        await sleep(120)
+      }
+      await settled(700)
+      const scrolled = loc()!.fraction
+      log(
+        `I16 scroll: mode ${engine.mode}, flow ${flow}, ${start.toFixed(4)} → ${scrolled.toFixed(4)}`,
+      )
+      if (engine.mode !== 'scroll') problems.push(`Scroll mode is ${engine.mode}`)
+      else if (flow !== 'scrolled') problems.push(`flow ${flow}`)
+      else if (!(scrolled > start)) problems.push('Scroll does not move through the text')
+      else {
+        // Past the end of the chapter, the next one follows.
+        const section = loc()!.sectionIndex
+        for (let i = 0; i < 80 && loc()!.sectionIndex === section; i++) {
+          engine.scrollPixels(1200)
+          await sleep(350)
+        }
+        await settled(600)
+        if (loc()!.sectionIndex <= section)
+          problems.push(`Scroll stayed in section ${section} (${loc()!.fraction.toFixed(4)})`)
+        else if (engine.view.renderer.getAttribute('flow') !== 'scrolled')
+          problems.push('the next chapter is not in the sideways flow')
+      }
+      hooks.run?.('layout.pages')
+      await settled(1200)
+      if (engine.mode !== 'pages') problems.push('Pages mode did not come back')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'D7-webkit-message',
+    description:
+      'D7-WebKit: on WebKit older than Safari 16.4, opening a book shows “Books need a newer Safari” instead of a blank reader',
+    run: async () => {
+      await backToLibrary()
+      hooks.webkitTooOld = true
+      try {
+        const tile = await waitFor('library tile', () => libraryTile(/Moby Dick(?!;)/))
+        tile.click()
+        const card = await waitFor('the Safari card', () =>
+          document.querySelector<HTMLElement>('dialog[open] [data-webkit-too-old]'),
+        )
+        await settled(300)
+        const problems: string[] = []
+        if (reader()) problems.push('the reader opened')
+        if (!/Safari 16\.4/.test(card.textContent ?? '')) problems.push('no version named')
+        if (!card.querySelector('button.primary')) problems.push('no Software Update button')
+        // Not now closes it (the primary button would open System Settings).
+        card.querySelector<HTMLButtonElement>('button.plain')!.click()
+        await settled(400)
+        if (document.querySelector('dialog[open] [data-webkit-too-old]'))
+          problems.push('Not now left the card open')
+        return problems.length ? problems.join('; ') : 'ok'
+      } finally {
+        hooks.webkitTooOld = false
+      }
+    },
+  })
+
+  checks.push({
+    id: 'D1-crash-log',
+    description:
+      'D1: an uncaught error in the page is written to the crash log on this Mac (nothing is sent); Settings › About can reveal it',
+    run: async () => {
+      const marker = `e2e crash-log probe ${Date.now()}`
+      setTimeout(() => {
+        throw new Error(marker)
+      })
+      void Promise.reject(new Error(`${marker} (rejection)`))
+      await settled(800)
+      const text = await invoke<string>('spike_crash_log')
+      const problems: string[] = []
+      if (!text.includes(marker))
+        problems.push(
+          `the uncaught error is not in the log (${text.split('\n--- ').length - 1} entries; last: ${text.slice(-300)})`,
+        )
+      if (!text.includes(`${marker} (rejection)`)) problems.push('the rejection is not in the log')
+      if (!/Linen \d+\.\d+\.\d+ · macOS \d+/.test(text)) problems.push('no version line')
+      if (!(await invoke<boolean>('crash_log_exists'))) problems.push('crash_log_exists says no')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   checks.push({
     id: 'budget-open',
     description:
@@ -3768,6 +3951,78 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   // The memory budget runs as its own fresh session: spike 'm' (spikeMemory below).
+
+  checks.push({
+    id: 'S14-warm-book',
+    description:
+      'S14, V8: after the library the book stays warm: returning is instant, at the same place, with the cover grow; in the library it takes no keys, wheel or commands; opening another book lets it go',
+    run: async () => {
+      const problems: string[] = []
+      hooks.noWarm = false
+      try {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        const engine = reader()!.engine
+        if (!hooks.extensions?.bridge) problems.push('extensions do not see the open book')
+        const turned = await turnBy(() => key('ArrowRight'), 'next')
+        if (turned !== 'ok') problems.push(`before: ${turned}`)
+        const at = loc()!.cfi
+        await backToLibrary()
+        if (reader()) problems.push('the reader hook is still set in the library')
+        if (!engine.view.isConnected) problems.push('the book was unloaded')
+        if (!document.querySelector('.reader-layer.warm[inert]'))
+          problems.push('the warm book is not inert')
+        if (hooks.extensions?.bridge) problems.push('extensions still see the book in the library')
+        if (hooks.registry!.get('chapter.next'))
+          problems.push('Next Chapter is on offer in the library')
+        // Keys (at the window and inside the book's own document) and the wheel reach nothing.
+        keyOnApp('ArrowRight', { code: 'ArrowRight' })
+        keyOnApp(' ', { code: 'Space' })
+        const doc = engine.view.renderer.getContents()[0]?.doc
+        doc?.body.dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'ArrowRight', code: 'ArrowRight', bubbles: true }),
+        )
+        await invoke('spike_scroll_wheel', { x: 640, y: 400, delta: -3, count: 3, pixels: false })
+        await settled(900)
+        const grows = hooks.coverGrows ?? 0
+        const t0 = performance.now()
+        libraryTile(/Moby Dick(?!;)/)!.click()
+        await waitFor('reader', () => reader())
+        const ms = Math.round(performance.now() - t0)
+        log(`S14: back to the warm book in ${ms} ms`)
+        if (reader()!.engine !== engine) problems.push('the book was opened again, not kept warm')
+        else if (ms > 100) problems.push(`returning took ${ms} ms`)
+        await settled(400)
+        if (loc()!.cfi !== at)
+          problems.push(`the place moved while in the library: ${at} → ${loc()!.cfi}`)
+        if ((hooks.coverGrows ?? 0) <= grows) problems.push('no cover grow')
+        if (!hooks.registry!.get('chapter.next'))
+          problems.push('the reader commands did not come back')
+        if (!hooks.extensions?.bridge) problems.push('extensions did not get the book back')
+        const again = await turnBy(() => key('ArrowRight'), 'next')
+        if (again !== 'ok') problems.push(`after: ${again}`)
+        // Another book takes its place; the warm one is closed, and its last save is its own.
+        const warmId = hooks.reader!.bookId
+        const warmAt = loc()!.cfi
+        await backToLibrary()
+        await openFromLibrary(/one file/i)
+        if (engine.view.isConnected) problems.push('the previous book is still loaded')
+        await settled(600)
+        const otherId = hooks.reader!.bookId
+        const [mine, other] = await Promise.all([
+          invoke<[string, number] | null>('position_get', { bookId: warmId }),
+          invoke<[string, number] | null>('position_get', { bookId: otherId }),
+        ])
+        if (mine?.[0] !== warmAt) problems.push(`the warm book's place was not kept: ${mine?.[0]}`)
+        if (other?.[0] === warmAt) problems.push('the warm book saved its place over the next book')
+        if (document.querySelectorAll('.reader-layer').length !== 1)
+          problems.push(`${document.querySelectorAll('.reader-layer').length} reader layers`)
+      } finally {
+        hooks.noWarm = true
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
 
   checks.push({
     id: 'reader-cleanup',
@@ -3879,6 +4134,22 @@ export async function spikeE2E(): Promise<SpikeResult> {
         ...(overlay === 'static' ? [] : [`overlay position: ${overlay}`]),
       ]
       return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
+  checks.push({
+    id: 'D1-no-uncaught-errors',
+    description:
+      'No uncaught error or unhandled rejection in the whole run (read from the crash log)',
+    run: async () => {
+      const entries = (await invoke<string>('spike_crash_log'))
+        .split(/^--- /m)
+        .slice(1)
+        .filter((e) => !e.includes('e2e crash-log probe'))
+      return entries.length
+        ? `${entries.length} in the log, first: ${entries[0].split('\n').slice(1, 4).join(' < ')}`
+        : 'ok'
     },
   })
 

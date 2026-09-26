@@ -60,8 +60,12 @@
         "mimeType": "application/epub+zip",
         "name": "EPUB book",
         "role": "Viewer",
-        "description": "EPUB book"
+        "description": "EPUB book",
+        "contentTypes": ["org.idpf.epub-container"]
       }
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
   }
 }

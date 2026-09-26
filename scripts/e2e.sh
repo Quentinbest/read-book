@@ -7,8 +7,11 @@
 # Build first: LINEN_SPIKES=1 pnpm tauri build --no-bundle --features spikes \
 #              --config src-tauri/tauri.spikes.conf.json
 set -e
+# caffeinate -d: a sleeping display stops WebKit's display link, and with it
+# requestAnimationFrame, so a run longer than the display-sleep delay stalls when
+# nobody is at the Mac (seen 2026-09-26: a 100 s stall). Only while the run lasts.
 cd "$(dirname "$0")/.."
 DATA=$(mktemp -d)
 LINEN_SPACE="${LINEN_SPACE:-2}" LINEN_DATA_DIR="$DATA" LINEN_SPIKE="${1:-r}" \
   LINEN_E2E_ONLY="${2:-}" LINEN_SPIKE_TIMEOUT="${LINEN_SPIKE_TIMEOUT:-3000}" \
-  ./src-tauri/target/release/linen
+  caffeinate -di ./src-tauri/target/release/linen

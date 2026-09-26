@@ -33,7 +33,9 @@ i=1
 while [ "$i" -le "$RUNS" ]; do
   DATA=$(mktemp -d)
   rm -f "$RAW"
-  LINEN_DATA_DIR="$DATA" LINEN_SPIKE=m LINEN_SPIKE_TIMEOUT=900 "$APP" >"$OUT/run-$i.log" 2>&1 || true
+  # On Desktop 2, like the e2e runs; the display kept awake (see scripts/e2e.sh).
+  LINEN_SPACE="${LINEN_SPACE:-2}" LINEN_DATA_DIR="$DATA" LINEN_SPIKE=m LINEN_SPIKE_TIMEOUT=900 \
+    caffeinate -di "$APP" >"$OUT/run-$i.log" 2>&1 || true
   if [ ! -f "$RAW" ]; then
     echo "Run $i produced no result. The end of its log ($OUT/run-$i.log):" >&2
     tail -20 "$OUT/run-$i.log" >&2

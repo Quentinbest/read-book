@@ -39,6 +39,12 @@ export const en = {
     readAnyway: 'Read anyway',
     showFileShort: 'Show file',
     clear: 'Clear',
+    // D7-WebKit (provisional: no screen shows it)
+    webkitTitle: 'Books need a newer Safari',
+    webkitBody:
+      'Linen reads books with the Mac’s own web engine, which comes with Safari. This Mac has an older version than Linen needs: Safari 16.4 or later. Update it in Software Update, then open the book again. Your library and notes are safe.',
+    webkitUpdate: 'Open Software Update',
+    webkitClose: 'Not now',
   },
   // Settings window (G2, PROVISIONAL; Screen 11 for Extensions)
   prefs: {
@@ -81,6 +87,10 @@ export const en = {
     version: (v: string) => `Version ${v}`,
     aboutLine: 'A quiet EPUB reader. Your books stay on this device.',
     fonts: 'Literata is licensed under the SIL Open Font License.',
+    // D1 (provisional)
+    privacy:
+      'Linen sends nothing anywhere. If something goes wrong, the details are written to a crash log on this Mac, which you can attach to an email if you choose.',
+    showCrashLog: 'Show crash log',
   },
   // Extensions (Phase 7; Screens 11, 12; G1, G7 PROVISIONAL)
   extensions: {

@@ -85,7 +85,7 @@ index c582abad1496874a9265cad1ab69e12a475c684d..dd8df3a6e45ea06925aad3ae045b24f2
              })
              if (portrait && frame !== target) {
 diff --git a/paginator.js b/paginator.js
-index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..5ad59d650198becf7850a7e70b65e6d9dd008af2 100644
+index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..8c86c05dfc1c0e96c2a339f4925799d8dc686511 100644
 --- a/paginator.js
 +++ b/paginator.js
 @@ -97,6 +97,11 @@ const getVisibleRange = (doc, start, end, mapRect) => {
@@ -100,3 +100,49 @@ index 7980c20297049e38b5e5a1d44a9eee11b1fbd68e..5ad59d650198becf7850a7e70b65e6d9
          if (node.nodeType === 1) {
              const { left, right } = mapRect(node.getBoundingClientRect())
              // no need to check child nodes if it's completely out of view
+@@ -283,7 +288,9 @@ class View {
+         })
+     }
+     render(layout) {
+-        if (!layout) return
++        // Linen (D1): a view destroyed meanwhile has no document; late font and resize
++        // callbacks for it are dropped rather than thrown
++        if (!layout || !this.document) return
+         this.#column = layout.flow !== 'scrolled'
+         this.#layout = layout
+         if (this.#column) this.columnize(layout)
+@@ -360,6 +367,7 @@ class View {
+         }
+     }
+     expand() {
++        if (!this.document) return // Linen (D1): see render()
+         const { documentElement } = this.document
+         if (this.#column) {
+             const side = this.#vertical ? 'height' : 'width'
+@@ -752,7 +760,7 @@ export class Paginator extends HTMLElement {
+         return { height, width, margin, gap, columnWidth }
+     }
+     render() {
+-        if (!this.#view) return
++        if (!this.#view?.document) return // Linen (D1): see View.render()
+         this.#view.render(this.#beforeRender({
+             vertical: this.#vertical,
+             rtl: this.#rtl,
+@@ -1109,11 +1117,14 @@ export class Paginator extends HTMLElement {
+         } else $style.textContent = styles
+ 
+         // NOTE: needs `requestAnimationFrame` in Chromium
+-        requestAnimationFrame(() =>
+-            this.#background.style.background = getBackground(this.#view.document))
++        requestAnimationFrame(() => {
++            // Linen (D1): no view yet, or one destroyed since
++            if (this.#view?.document)
++                this.#background.style.background = getBackground(this.#view.document)
++        })
+ 
+         // needed because the resize observer doesn't work in Firefox
+-        this.#view?.document?.fonts?.ready?.then(() => this.#view.expand())
++        this.#view?.document?.fonts?.ready?.then(() => this.#view?.expand())
+     }
+     focusView() {
+         this.#view.document.defaultView.focus()

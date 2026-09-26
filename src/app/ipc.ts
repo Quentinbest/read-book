@@ -72,6 +72,7 @@ export const ipc = {
   annotationDelete: (id: string) => invoke<void>('annotation_delete', { id }),
   annotationRestore: (id: string) => invoke<void>('annotation_restore', { id }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
+  openSoftwareUpdate: () => invoke<void>('open_software_update'),
   copyText: (text: string) => invoke<void>('copy_text', { text }),
   bookSettingsGet: (bookId: string) =>
     invoke<[string, string | null] | null>('book_settings_get', { bookId }),
@@ -87,6 +88,8 @@ export const ipc = {
   /** §6.4: first paint of the library or of the resumed book (timed in test builds). */
   startupMark: (what: 'library' | 'book') => invoke<void>('startup_mark', { what }),
   libraryFolderShow: () => invoke<void>('library_folder_show'),
+  crashLogExists: () => invoke<boolean>('crash_log_exists'),
+  crashLogShow: () => invoke<void>('crash_log_show'),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),
   settingGet: (key: string) => invoke<string | null>('setting_get', { key }),
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),
