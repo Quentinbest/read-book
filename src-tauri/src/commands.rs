@@ -902,36 +902,279 @@ mod tests {
     }
 }
 
-/// N5: on quit the reader saves its position before the app exits. The core asks
-/// the frontend (`app-quitting`), which saves and calls `quit_ready`; a fallback
-/// timer quits anyway if no answer comes.
+/// N5: on quit or restart the reader saves before the app exits. The core asks
+/// the frontend (`app-quitting`), which saves and answers `quit_ready(saved)`.
+/// A failed save keeps the app open (E5: nothing is dropped silently) until the
+/// reader retries or chooses to quit anyway (`quit_discard`). A fallback timer
+/// leaves only when the frontend does not answer at all.
+///
+/// Restarts go through the same gate: Tauri ignores `prevent_exit` for its
+/// restart exit code, so a restart is only requested once the save is done.
 #[derive(Default)]
-pub struct QuitState(pub std::sync::atomic::AtomicBool);
+pub struct QuitState(std::sync::Mutex<QuitMachine>);
 
-#[tauri::command]
-pub fn quit_ready<R: Runtime>(app: AppHandle<R>) {
-    if let Some(q) = app.try_state::<QuitState>() {
-        q.0.store(true, std::sync::atomic::Ordering::SeqCst);
-    }
-    app.exit(0);
+/// How long a silent frontend is waited for, and how long once it said it is saving.
+const QUIT_ANSWER_WAIT: std::time::Duration = std::time::Duration::from_millis(1500);
+const QUIT_SAVE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+enum QuitPhase {
+    #[default]
+    Running,
+    /// The frontend was asked to save; `restart` is what happens after.
+    Saving { restart: bool },
+    /// A save failed; the app stayed open. `quit_discard` still leaves.
+    Blocked { restart: bool },
+    /// Saved (or no answer came): exit requests go through.
+    Leaving,
 }
 
-/// Handle an exit request: hold it once so the frontend can save. Returns true
-/// when the exit should be prevented now.
-pub fn hold_exit_for_save<R: Runtime>(app: &AppHandle<R>) -> bool {
-    let Some(q) = app.try_state::<QuitState>() else {
-        return false;
-    };
-    if q.0.swap(true, std::sync::atomic::Ordering::SeqCst) {
-        return false; // already saved (or timed out): let it exit
+/// The quit sequence, apart from the app so it can be tested. `generation` tells
+/// a stale fallback timer from the current one.
+#[derive(Debug, Default)]
+struct QuitMachine {
+    phase: QuitPhase,
+    generation: u64,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum QuitStep {
+    /// Ask the frontend to save; start a fallback timer for this generation.
+    AskToSave(u64),
+    /// Already asked; nothing more to do (the exit stays held).
+    Wait,
+    /// Leave now (restart when true).
+    Leave(bool),
+    /// Let this exit request through.
+    Allow,
+}
+
+impl QuitMachine {
+    /// A quit (or a restart) was asked for.
+    fn request(&mut self, restart: bool) -> QuitStep {
+        match self.phase {
+            QuitPhase::Leaving => QuitStep::Allow,
+            QuitPhase::Saving { restart: r } => {
+                // A restart asked for during a quit's save wins: the app comes back.
+                self.phase = QuitPhase::Saving {
+                    restart: r || restart,
+                };
+                QuitStep::Wait
+            }
+            QuitPhase::Running | QuitPhase::Blocked { .. } => {
+                self.phase = QuitPhase::Saving { restart };
+                self.generation += 1;
+                QuitStep::AskToSave(self.generation)
+            }
+        }
     }
-    let _ = app.emit("app-quitting", ());
+
+    /// The frontend's answer.
+    fn answer(&mut self, saved: bool) -> QuitStep {
+        let QuitPhase::Saving { restart } = self.phase else {
+            return QuitStep::Wait;
+        };
+        self.generation += 1; // the fallback timer no longer applies
+        if saved {
+            self.phase = QuitPhase::Leaving;
+            QuitStep::Leave(restart)
+        } else {
+            self.phase = QuitPhase::Blocked { restart };
+            QuitStep::Wait
+        }
+    }
+
+    /// The frontend is alive and saving: a longer timer replaces the first one.
+    fn saving(&mut self) -> Option<u64> {
+        matches!(self.phase, QuitPhase::Saving { .. }).then(|| {
+            self.generation += 1;
+            self.generation
+        })
+    }
+
+    /// A fallback timer ran out.
+    fn timeout(&mut self, generation: u64) -> QuitStep {
+        match self.phase {
+            QuitPhase::Saving { restart } if generation == self.generation => {
+                self.phase = QuitPhase::Leaving;
+                QuitStep::Leave(restart)
+            }
+            _ => QuitStep::Wait,
+        }
+    }
+
+    /// The reader chose to quit without the unsaved changes.
+    fn discard(&mut self) -> QuitStep {
+        let restart = match self.phase {
+            QuitPhase::Blocked { restart } | QuitPhase::Saving { restart } => restart,
+            QuitPhase::Running | QuitPhase::Leaving => false,
+        };
+        self.phase = QuitPhase::Leaving;
+        QuitStep::Leave(restart)
+    }
+}
+
+fn quit_step<R: Runtime>(
+    app: &AppHandle<R>,
+    f: impl FnOnce(&mut QuitMachine) -> QuitStep,
+) -> QuitStep {
+    match app.try_state::<QuitState>() {
+        Some(q) => f(&mut q.0.lock().unwrap_or_else(|e| e.into_inner())),
+        None => QuitStep::Allow,
+    }
+}
+
+fn run_quit_step<R: Runtime>(app: &AppHandle<R>, step: QuitStep) {
+    match step {
+        QuitStep::AskToSave(generation) => {
+            let _ = app.emit("app-quitting", ());
+            quit_fallback(app, generation, QUIT_ANSWER_WAIT);
+        }
+        QuitStep::Leave(true) => app.request_restart(),
+        QuitStep::Leave(false) => app.exit(0),
+        QuitStep::Wait | QuitStep::Allow => {}
+    }
+}
+
+fn quit_fallback<R: Runtime>(app: &AppHandle<R>, generation: u64, wait: std::time::Duration) {
     let handle = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(std::time::Duration::from_millis(1500));
-        handle.exit(0);
+        std::thread::sleep(wait);
+        let step = quit_step(&handle, |m| m.timeout(generation));
+        run_quit_step(&handle, step);
     });
-    true
+}
+
+/// Quit or restart once the reader has saved (N5). Restarts (the update line's
+/// Restart, D6; Restart without extensions, P7) must come through here.
+pub fn request_quit<R: Runtime>(app: &AppHandle<R>, restart: bool) {
+    let step = quit_step(app, |m| m.request(restart));
+    // Nothing to hold (no quit state): leave at once.
+    let step = if step == QuitStep::Allow {
+        QuitStep::Leave(restart)
+    } else {
+        step
+    };
+    run_quit_step(app, step);
+}
+
+/// The frontend's answer to `app-quitting`: everything saved, or not.
+#[tauri::command]
+pub fn quit_ready<R: Runtime>(app: AppHandle<R>, saved: bool) {
+    let step = quit_step(&app, |m| m.answer(saved));
+    run_quit_step(&app, step);
+}
+
+/// The frontend got `app-quitting` and is saving: wait longer than for silence.
+#[tauri::command]
+pub fn quit_saving<R: Runtime>(app: AppHandle<R>) {
+    let generation = app
+        .try_state::<QuitState>()
+        .and_then(|q| q.0.lock().unwrap_or_else(|e| e.into_inner()).saving());
+    if let Some(generation) = generation {
+        quit_fallback(&app, generation, QUIT_SAVE_WAIT);
+    }
+}
+
+/// “Quit Anyway” after a failed save: the reader chose to lose the unsaved changes.
+#[tauri::command]
+pub fn quit_discard<R: Runtime>(app: AppHandle<R>) {
+    let step = quit_step(&app, |m| m.discard());
+    run_quit_step(&app, step);
+}
+
+/// Handle an exit request (⌘Q, the Dock's Quit, logging out). Returns true when
+/// the exit should be prevented now, while the frontend saves.
+pub fn hold_exit_for_save<R: Runtime>(app: &AppHandle<R>, code: Option<i32>) -> bool {
+    // A restart cannot be held (Tauri ignores prevent_exit for it); ours are
+    // only requested after the save (request_quit).
+    if code == Some(tauri::RESTART_EXIT_CODE) {
+        return false;
+    }
+    let step = quit_step(app, |m| m.request(false));
+    let hold = step != QuitStep::Allow;
+    run_quit_step(app, step);
+    hold
+}
+
+#[cfg(test)]
+mod quit_tests {
+    use super::{QuitMachine, QuitStep};
+
+    #[test]
+    fn a_saved_quit_leaves_once_and_lets_its_exit_through() {
+        let mut m = QuitMachine::default();
+        let QuitStep::AskToSave(g) = m.request(false) else {
+            panic!("the first request asks the frontend to save");
+        };
+        assert_eq!(
+            m.request(false),
+            QuitStep::Wait,
+            "a second ⌘Q waits for the same save"
+        );
+        assert_eq!(m.answer(true), QuitStep::Leave(false));
+        assert_eq!(
+            m.request(false),
+            QuitStep::Allow,
+            "the exit it caused goes through"
+        );
+        assert_eq!(m.timeout(g), QuitStep::Wait, "the old timer does nothing");
+    }
+
+    #[test]
+    fn a_failed_save_keeps_the_app_open_and_the_timer_cannot_override_it() {
+        let mut m = QuitMachine::default();
+        let QuitStep::AskToSave(g) = m.request(true) else {
+            panic!()
+        };
+        assert_eq!(m.answer(false), QuitStep::Wait);
+        assert_eq!(
+            m.timeout(g),
+            QuitStep::Wait,
+            "E5: a known failure is not overridden"
+        );
+        // Quit Anyway keeps what was asked for (here a restart).
+        assert_eq!(m.discard(), QuitStep::Leave(true));
+    }
+
+    #[test]
+    fn a_failed_save_can_be_retried_by_quitting_again() {
+        let mut m = QuitMachine::default();
+        m.request(false);
+        m.answer(false);
+        assert!(matches!(m.request(false), QuitStep::AskToSave(_)));
+        assert_eq!(m.answer(true), QuitStep::Leave(false));
+    }
+
+    #[test]
+    fn a_silent_frontend_is_left_after_the_timer_and_saving_extends_it() {
+        let mut m = QuitMachine::default();
+        let QuitStep::AskToSave(first) = m.request(false) else {
+            panic!()
+        };
+        let longer = m.saving().expect("saving while asked");
+        assert_eq!(
+            m.timeout(first),
+            QuitStep::Wait,
+            "the short timer was replaced"
+        );
+        assert_eq!(m.timeout(longer), QuitStep::Leave(false));
+    }
+
+    #[test]
+    fn a_restart_asked_for_during_a_quit_restarts() {
+        let mut m = QuitMachine::default();
+        m.request(false);
+        assert_eq!(m.request(true), QuitStep::Wait);
+        assert_eq!(m.answer(true), QuitStep::Leave(true));
+    }
+
+    #[test]
+    fn a_late_answer_is_ignored() {
+        let mut m = QuitMachine::default();
+        assert_eq!(m.answer(true), QuitStep::Wait, "no quit was asked for");
+        assert_eq!(m.saving(), None);
+    }
 }
 
 #[cfg(test)]

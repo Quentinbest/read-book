@@ -55,6 +55,17 @@ export class WriteQueue {
     return this.#flushing ?? Promise.resolve()
   }
 
+  /**
+   * N5, E5: before quitting. Failed writes are tried once more, then this waits
+   * for the queue. True only when everything is saved: an idle queue can still
+   * hold failed writes, and those must not be lost by quitting.
+   */
+  async settle(): Promise<boolean> {
+    if (this.#failed) await this.retry()
+    await this.idle()
+    return !this.#failed && this.#pending.length === 0
+  }
+
   /** Retry everything pending (the message's Retry action). */
   retry(): Promise<void> {
     this.#failed = false

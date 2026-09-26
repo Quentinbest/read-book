@@ -100,6 +100,8 @@ pub fn run() {
                 commands::setting_set,
                 commands::opened_take,
                 commands::quit_ready,
+                commands::quit_saving,
+                commands::quit_discard,
                 native::screen_reader_running,
                 native::keyboard_layout_labels,
                 native::screen_edges,
@@ -176,7 +178,9 @@ pub fn run() {
             #[cfg(any(target_os = "macos", target_os = "ios"))]
             tauri::RunEvent::Opened { urls } => commands::handle_opened(app, urls),
             // Hold the first exit request so the reader can save (N5).
-            tauri::RunEvent::ExitRequested { api, .. } if commands::hold_exit_for_save(app) => {
+            tauri::RunEvent::ExitRequested { api, code, .. }
+                if commands::hold_exit_for_save(app, code) =>
+            {
                 api.prevent_exit()
             }
             _ => {}

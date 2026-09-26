@@ -224,21 +224,49 @@ pub fn import_book(
         .map(|(id, _)| id.clone())
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
 
-    let dest = lib.books_dir.join(format!("{book_id}.epub"));
-    write_atomic(&dest, std::fs::File::open(source)?)?;
-
-    let cover_path = match &package.cover {
-        Some(href) => extract_cover(&mut archive, href, &lib.covers_dir, &book_id)?,
-        None => None,
+    // B3, E5: each version of a book has files of its own. A replacement is written
+    // beside the copy it replaces, and the old files go only once the store points at
+    // the new ones: a failure anywhere before that leaves the book as it was.
+    let stem = format!("{book_id}-{}", &hash[..12]);
+    let dest = lib.books_dir.join(format!("{stem}.epub"));
+    let old_files: Vec<PathBuf> = match &existing {
+        Some((_, old_path)) => {
+            let old_cover: Option<String> = store
+                .conn()
+                .query_row(
+                    "SELECT cover_path FROM books WHERE id = ?1",
+                    [&book_id],
+                    |r| r.get(0),
+                )
+                .ok()
+                .flatten();
+            [
+                lib.book_file(old_path),
+                old_cover.and_then(|c| lib.cover_file(&c)),
+            ]
+            .into_iter()
+            .flatten()
+            .collect()
+        }
+        None => Vec::new(),
     };
-    let tint = cover_path.is_none().then(|| cover_tint(&title));
-    let authors = serde_json::to_string(&md.authors).unwrap_or_else(|_| "[]".into());
-    let a11y = serde_json::to_string(&md.a11y).unwrap_or_else(|_| "[]".into());
-    let now = now_ms();
+    let mut new_cover: Option<String> = None;
+    let stored = (|| -> Result<(), ImportError> {
+        write_atomic(&dest, std::fs::File::open(source)?)?;
 
-    let tx = store.conn_mut().transaction()?;
-    if existing.is_some() {
-        tx.execute(
+        let cover_path = match &package.cover {
+            Some(href) => extract_cover(&mut archive, href, &lib.covers_dir, &stem)?,
+            None => None,
+        };
+        new_cover.clone_from(&cover_path);
+        let tint = cover_path.is_none().then(|| cover_tint(&title));
+        let authors = serde_json::to_string(&md.authors).unwrap_or_else(|_| "[]".into());
+        let a11y = serde_json::to_string(&md.a11y).unwrap_or_else(|_| "[]".into());
+        let now = now_ms();
+
+        let tx = store.conn_mut().transaction()?;
+        if existing.is_some() {
+            tx.execute(
             "UPDATE books SET content_hash = ?2, file_path = ?3, title = ?4, title_source = ?5, authors = ?6,
                  language = ?7, page_direction = ?8, layout = ?9, has_page_list = ?10, a11y_metadata = ?11,
                  cover_path = ?12, generated_cover_tint = ?13, replaced_at = ?14, removed_at = NULL
@@ -248,14 +276,14 @@ pub fn import_book(
                 md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now
             ],
         )?;
-        // Annotations were anchored to the old file; re-anchoring runs when the book opens (B3, Phase 5).
-        tx.execute(
+            // Annotations were anchored to the old file; re-anchoring runs when the book opens (B3, Phase 5).
+            tx.execute(
             "UPDATE annotations SET anchor_status = 'reanchor' WHERE book_id = ?1 AND anchored_content_hash != ?2",
             params![book_id, hash],
         )?;
-        tx.execute("DELETE FROM book_damage WHERE book_id = ?1", [&book_id])?;
-    } else {
-        tx.execute(
+            tx.execute("DELETE FROM book_damage WHERE book_id = ?1", [&book_id])?;
+        } else {
+            tx.execute(
             "INSERT INTO books (id, content_hash, package_identifier, file_path, title, title_source, authors,
                  language, page_direction, layout, has_page_list, a11y_metadata, cover_path, generated_cover_tint,
                  added_at)
@@ -265,14 +293,28 @@ pub fn import_book(
                 md.language, md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now
             ],
         )?;
-    }
-    for d in &package.damage {
-        tx.execute(
+        }
+        for d in &package.damage {
+            tx.execute(
             "INSERT OR REPLACE INTO book_damage (book_id, item_href, error_kind) VALUES (?1, ?2, ?3)",
             params![book_id, d.item_href, d.error_kind],
         )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })();
+    let new_files: Vec<PathBuf> = std::iter::once(dest.clone())
+        .chain(new_cover.map(PathBuf::from))
+        .collect();
+    if let Err(e) = stored {
+        for f in new_files.iter().filter(|f| !old_files.contains(f)) {
+            let _ = std::fs::remove_file(f);
+        }
+        return Err(e);
     }
-    tx.commit()?;
+    for f in old_files.iter().filter(|f| !new_files.contains(f)) {
+        let _ = std::fs::remove_file(f);
+    }
 
     let damaged = package.damage.len();
     Ok(if existing.is_some() {
@@ -294,7 +336,7 @@ fn extract_cover<R: Read + std::io::Seek>(
     archive: &mut zip::ZipArchive<R>,
     href: &str,
     dir: &Path,
-    book_id: &str,
+    stem: &str,
 ) -> std::io::Result<Option<String>> {
     let Ok(entry) = archive.by_name(href) else {
         return Ok(None);
@@ -310,7 +352,7 @@ fn extract_cover<R: Read + std::io::Seek>(
         })
         .unwrap_or("img")
         .to_ascii_lowercase();
-    let dest = dir.join(format!("{book_id}.{ext}"));
+    let dest = dir.join(format!("{stem}.{ext}"));
     write_atomic(&dest, entry.take(MAX_COVER_BYTES))?;
     Ok(Some(dest.to_string_lossy().into_owned()))
 }
@@ -524,6 +566,82 @@ mod tests {
             .unwrap();
         assert_eq!(status, "reanchor");
         assert!(std::fs::read_dir(&lib.books_dir).unwrap().count() == 1);
+    }
+
+    #[test]
+    fn a_replacement_that_fails_to_commit_keeps_the_previous_book() {
+        let Some(path) = corpus("standardebooks-moby-dick.epub") else {
+            return;
+        };
+        let (dir, mut store, lib) = setup();
+        let ImportOutcome::Imported { book_id, .. } = import_book(&mut store, &lib, &path).unwrap()
+        else {
+            panic!()
+        };
+        let (old_hash, old_file): (String, String) = store
+            .conn()
+            .query_row(
+                "SELECT content_hash, file_path FROM books WHERE id = ?1",
+                [&book_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let old_bytes = std::fs::read(&old_file).unwrap();
+        let listing = |d: &Path| {
+            let mut names: Vec<_> = std::fs::read_dir(d)
+                .unwrap()
+                .map(|e| e.unwrap().file_name())
+                .collect();
+            names.sort();
+            names
+        };
+        let (books_before, covers_before) = (listing(&lib.books_dir), listing(&lib.covers_dir));
+
+        let changed = dir.path().join("moby-changed.epub");
+        let mut bytes = old_bytes.clone();
+        bytes.extend_from_slice(b"trailing bytes change the hash, not the archive");
+        std::fs::write(&changed, bytes).unwrap();
+        // The store refuses writes: the transaction fails after the files are written.
+        store
+            .conn()
+            .pragma_update(None, "query_only", true)
+            .unwrap();
+        assert!(import_book(&mut store, &lib, &changed).is_err());
+        store
+            .conn()
+            .pragma_update(None, "query_only", false)
+            .unwrap();
+
+        let hash: String = store
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM books WHERE id = ?1",
+                [&book_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(hash, old_hash);
+        assert_eq!(
+            std::fs::read(&old_file).unwrap(),
+            old_bytes,
+            "the old copy is intact"
+        );
+        assert_eq!(listing(&lib.books_dir), books_before, "no stray new copy");
+        assert_eq!(
+            listing(&lib.covers_dir),
+            covers_before,
+            "no stray new cover"
+        );
+
+        // Once the store accepts writes, the replacement goes through and the old files go.
+        let replaced = import_book(&mut store, &lib, &changed).unwrap();
+        assert!(
+            matches!(replaced, ImportOutcome::Replaced { .. }),
+            "{replaced:?}"
+        );
+        assert!(!Path::new(&old_file).exists());
+        assert_eq!(listing(&lib.books_dir).len(), 1);
+        assert_eq!(listing(&lib.covers_dir).len(), covers_before.len());
     }
 
     #[test]

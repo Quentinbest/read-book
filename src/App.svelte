@@ -106,8 +106,12 @@
   async function refresh() {
     books = await ipc.libraryList()
     // S14: a warm book that was removed, or replaced by an updated file, is let go.
+    // B3: the book being read, replaced, reopens as the new file: its reader must
+    // not keep the old file's chapters and state while entries come from the new one.
     const w = warm && books.find((b) => b.id === warm!.id)
-    if (warm && !reading && (!w || w.content_hash !== warm.content_hash)) warm = null
+    if (!warm || (w && w.content_hash === warm.content_hash)) return
+    if (!reading) warm = null
+    else if (w) warm = reading = w
   }
 
   async function importPaths(paths: string[]) {
@@ -177,7 +181,7 @@
     }
     coverGrow(cover)
     // Another book takes the warm one's place (one book is kept, for memory).
-    if (warm?.id !== book.id) warm = book
+    if (warm?.id !== book.id || warm.content_hash !== book.content_hash) warm = book
     reading = warm
   }
 
@@ -305,10 +309,21 @@
       showResults(await ipc.openedTake(), true)
       cleanups.push(
         await listen('app-quitting', async () => {
+          if (!testHooks) void ipc.quitSaving().catch(() => {})
           beforeQuit.forEach((fn) => fn())
-          await writes.idle()
-          if (testHooks) testHooks.quitRequested = true
-          else await ipc.quitReady()
+          // E5: quitting must not drop writes that failed; the app stays open instead.
+          const saved = await writes.settle()
+          if (testHooks) {
+            testHooks.quitRequested = true
+            testHooks.quitSaved = saved
+          } else await ipc.quitReady(saved)
+          if (!saved)
+            messages.push({
+              text: t.messages.quitUnsaved,
+              politeness: 'assertive',
+              persistent: true,
+              action: { label: t.messages.quitAnyway, run: () => void ipc.quitDiscard() },
+            })
         }),
       )
       cleanups.push(
@@ -329,7 +344,8 @@
 <svelte:window {onkeydown} />
 
 {#if warm}
-  {#key warm.id}
+  <!-- One Reader per book file: an updated file is a new instance (B3). -->
+  {#key `${warm.id}:${warm.content_hash}`}
     <!-- S14: behind the library the book stays warm: hidden and inert, not unloaded. -->
     <div class="reader-layer" class:warm={!reading} inert={!reading}>
       <Reader

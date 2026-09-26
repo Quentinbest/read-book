@@ -149,26 +149,137 @@ fn read_xml<R: Read + Seek>(
 
 /// Refuse a DOCTYPE that declares entities (internal subset). Plain `<!DOCTYPE html>`
 /// and public XHTML doctypes without an internal subset are fine.
+///
+/// The whole prolog is scanned, however long: whitespace or comments before the
+/// DOCTYPE must not push its declarations past a fixed window.
 pub fn check_xml_entities(name: &str, text: &str) -> Result<(), Rejection> {
+    let refuse = || Err(Rejection::XmlEntities(name.to_string()));
     // The first 64 KB, cut at a character boundary: a multi-byte character (CJK
     // text) can straddle the limit, and slicing inside it would panic.
     let mut cut = text.len().min(64 * 1024);
     while !text.is_char_boundary(cut) {
         cut -= 1;
     }
-    let head = &text[..cut];
-    if let Some(start) = find_ci(head, "<!DOCTYPE") {
-        let rest = &text[start..];
-        let end = rest.find('>').unwrap_or(rest.len());
-        let subset_start = rest[..end].find('[');
-        if subset_start.is_some() || find_ci(rest, "<!ENTITY").is_some_and(|i| i < 64 * 1024) {
-            return Err(Rejection::XmlEntities(name.to_string()));
+    if find_ci(&text[..cut], "<!ENTITY").is_some() {
+        return refuse();
+    }
+    match scan_prolog(&without_nuls(text.as_bytes())) {
+        Prolog::Declares => refuse(),
+        Prolog::Clean | Prolog::Unfinished => Ok(()),
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Prolog {
+    /// The root element starts, and nothing before it declares anything.
+    Clean,
+    /// A DOCTYPE with an internal subset, or a markup declaration (`<!ENTITY`…).
+    Declares,
+    /// The bytes ended before the root element.
+    Unfinished,
+}
+
+/// Walk the prolog (before the root element): the XML declaration, processing
+/// instructions, comments and the DOCTYPE. Anything else is skipped rather than
+/// trusted, so stray bytes (a UTF-16 byte order mark, text) cannot end the scan early.
+fn scan_prolog(b: &[u8]) -> Prolog {
+    let starts =
+        |i: usize, p: &[u8]| b.len() >= i + p.len() && b[i..i + p.len()].eq_ignore_ascii_case(p);
+    let find = |from: usize, p: &[u8]| {
+        b.get(from..)
+            .and_then(|rest| rest.windows(p.len()).position(|w| w == p))
+            .map(|i| from + i)
+    };
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'<' {
+            i += 1;
+        } else if starts(i, b"<?") {
+            match find(i + 2, b"?>") {
+                Some(end) => i = end + 2,
+                None => return Prolog::Unfinished,
+            }
+        } else if starts(i, b"<!--") {
+            match find(i + 4, b"-->") {
+                Some(end) => i = end + 3,
+                None => return Prolog::Unfinished,
+            }
+        } else if starts(i, b"<!DOCTYPE") {
+            // The DOCTYPE ends at `>`; a `[` first opens an internal subset. Quoted
+            // public and system identifiers may hold either character.
+            let mut j = i + 9;
+            let mut quote = None;
+            loop {
+                match (b.get(j), quote) {
+                    (None, _) => return Prolog::Unfinished,
+                    (Some(&c), Some(q)) if c == q => quote = None,
+                    (Some(_), Some(_)) => {}
+                    (Some(&c), None) if c == b'"' || c == b'\'' => quote = Some(c),
+                    (Some(b'['), None) => return Prolog::Declares,
+                    (Some(b'>'), None) => break,
+                    _ => {}
+                }
+                j += 1;
+            }
+            i = j + 1;
+        } else if starts(i, b"<!") {
+            // `<!ENTITY`, `<!ELEMENT`… outside a DOCTYPE (or a CDATA section before
+            // the root): not a document the WebView should parse.
+            return Prolog::Declares;
+        } else {
+            return Prolog::Clean;
         }
     }
-    if find_ci(head, "<!ENTITY").is_some() {
-        return Err(Rejection::XmlEntities(name.to_string()));
+    Prolog::Unfinished
+}
+
+/// How much of a document too large to read whole is read to check its prolog.
+const MAX_PROLOG_BYTES: u64 = 1 << 20;
+
+/// Check an XML document the WebView will parse. Documents too large to read
+/// whole have their prolog checked from the start of the file; one whose prolog
+/// does not end within `MAX_PROLOG_BYTES` cannot be checked, and is refused.
+fn check_xml_entry<R: Read + Seek>(
+    archive: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Result<(), Rejection> {
+    let size = match archive.by_name(name) {
+        Ok(entry) => entry.size(),
+        Err(_) => return Ok(()),
+    };
+    if size <= MAX_XML_BYTES {
+        return match read_xml(archive, name) {
+            Err(Rejection::XmlEntities(n)) => Err(Rejection::XmlEntities(n)),
+            // An unreadable entry is reported as damage when it is opened.
+            _ => Ok(()),
+        };
     }
-    Ok(())
+    let Ok(entry) = archive.by_name(name) else {
+        return Ok(());
+    };
+    let mut head = Vec::new();
+    if entry.take(MAX_PROLOG_BYTES).read_to_end(&mut head).is_err() {
+        return Ok(());
+    }
+    let bytes = without_nuls(&head);
+    match scan_prolog(&bytes) {
+        Prolog::Clean => Ok(()),
+        Prolog::Declares | Prolog::Unfinished => Err(Rejection::XmlEntities(name.to_string())),
+    }
+}
+
+/// UTF-16 text read as bytes: ASCII markup with NULs between. Dropped, the markup
+/// is scanned like UTF-8.
+fn without_nuls(b: &[u8]) -> std::borrow::Cow<'_, [u8]> {
+    if b.contains(&0) {
+        b.iter()
+            .copied()
+            .filter(|&c| c != 0)
+            .collect::<Vec<_>>()
+            .into()
+    } else {
+        b.into()
+    }
 }
 
 fn find_ci(hay: &str, needle: &str) -> Option<usize> {
@@ -449,9 +560,7 @@ pub fn read_package<R: Read + Seek>(
     for item in manifest.values() {
         let xml = item.media_type.contains("xml") || item.href.ends_with(".ncx");
         if xml && entries.contains(&item.href) {
-            if let Err(Rejection::XmlEntities(n)) = read_xml(archive, &item.href) {
-                return Err(Rejection::XmlEntities(n));
-            }
+            check_xml_entry(archive, &item.href)?;
         }
     }
 
@@ -725,6 +834,73 @@ mod tests {
             read_package(&mut locked),
             Err(Rejection::Drm("OEBPS/c1.xhtml".into()))
         );
+    }
+
+    #[test]
+    fn declarations_pushed_past_64_kb_are_still_refused() {
+        let evil = r#"<!DOCTYPE p [<!ENTITY a "aaaa">]><p>&a;</p>"#;
+        let spaces = format!("<?xml version=\"1.0\"?>{}{evil}", " ".repeat(70 * 1024));
+        assert!(check_xml_entities("x", &spaces).is_err());
+        let comment = format!("<!--{}-->{evil}", "x".repeat(70 * 1024));
+        assert!(check_xml_entities("x", &comment).is_err());
+        // An internal subset without ENTITY is refused too (parameter entities…).
+        let subset = format!("{}<!DOCTYPE p [ ]><p/>", " ".repeat(70 * 1024));
+        assert!(check_xml_entities("x", &subset).is_err());
+    }
+
+    #[test]
+    fn the_prolog_scan_reads_doctypes_and_utf16() {
+        // A `[` inside a quoted identifier is not an internal subset.
+        assert!(check_xml_entities("x", r#"<!DOCTYPE p SYSTEM "a[1].dtd"><p/>"#).is_ok());
+        // Declarations after the root element are text the parser never reads as such.
+        assert!(
+            check_xml_entities("x", &format!("<p>{}&lt;!DOCTYPE [</p>", " ".repeat(70_000)))
+                .is_ok()
+        );
+        // UTF-16 (LE, with a byte order mark): the markup is found between the NULs.
+        let utf16: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(
+                r#"<!DOCTYPE p [<!ENTITY a "aaaa">]><p>&a;</p>"#
+                    .encode_utf16()
+                    .flat_map(|u| u.to_le_bytes()),
+            )
+            .collect();
+        let lossy = String::from_utf8_lossy(&utf16);
+        assert!(check_xml_entities("x", &lossy).is_err());
+    }
+
+    #[test]
+    fn xml_too_large_to_read_whole_is_checked_from_its_prolog() {
+        let package = opf(
+            "<dc:title>T</dc:title>",
+            r#"<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>"#,
+            r#"><itemref idref="c1"/>"#,
+        );
+        let big = |prolog: &str| {
+            let mut doc = prolog.as_bytes().to_vec();
+            doc.extend_from_slice(b"<html><body><p>");
+            doc.resize(MAX_XML_BYTES as usize + 1024, b'a');
+            doc.extend_from_slice(b"</p></body></html>");
+            doc
+        };
+        let open = |doc: &[u8]| {
+            read_package(&mut build(&[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                ("OEBPS/c1.xhtml", doc),
+            ]))
+            .map(|_| ())
+        };
+        let refused = Err(Rejection::XmlEntities("OEBPS/c1.xhtml".into()));
+        assert_eq!(open(&big("<!DOCTYPE html>")), Ok(()));
+        assert_eq!(open(&big(r#"<!DOCTYPE p [<!ENTITY a "aaaa">]>"#)), refused);
+        // A prolog that does not end within the part read cannot be checked.
+        let padded = format!(
+            "{}<!DOCTYPE html>",
+            " ".repeat(MAX_PROLOG_BYTES as usize + 1)
+        );
+        assert_eq!(open(&big(&padded)), refused);
     }
 
     #[test]

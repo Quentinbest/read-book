@@ -43,6 +43,8 @@ export interface ReaderBridge {
 }
 
 interface Running {
+  /** The package it runs: an update (a new version) must not keep the old code running. */
+  version: string
   frame: HTMLIFrameElement
   started: Promise<void>
   calls: Map<number, { resolve(v: unknown): void; reject(e: Error): void; timer: number }>
@@ -96,9 +98,14 @@ export class ExtensionHost {
       this.status[x.manifest.id] = x.suspended
         ? 'suspended'
         : (this.status[x.manifest.id] ?? 'idle')
-    // Anything no longer active stops.
-    for (const id of [...this.#running.keys()])
-      if (!this.active.some((x) => x.manifest.id === id)) this.unload(id)
+    // Anything no longer active stops, and anything updated stops to run its new
+    // package. A tab showing starts again at once (its contributions are the new ones).
+    for (const [id, run] of [...this.#running]) {
+      const x = this.active.find((e) => e.manifest.id === id)
+      if (x && x.manifest.version === run.version) continue
+      this.unload(id)
+      if (x && this.visibleTabs.has(id)) void this.activate(id).catch(() => {})
+    }
   }
 
   /** P6: slots keep a suspended extension, marked, with Restart (it is not run). */
@@ -219,6 +226,7 @@ export class ExtensionHost {
     let started!: () => void
     let failed!: (e: Error) => void
     const run: Running = {
+      version: x.manifest.version,
       frame,
       started: new Promise<void>((res, rej) => ((started = res), (failed = rej))),
       // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
@@ -277,6 +285,10 @@ export class ExtensionHost {
     await invoke('extension_restart', { id: extId })
     this.status[extId] = 'idle'
     await this.load()
+    // A showing tab mounted while stopped never activated its worker: start it now,
+    // or the tab would show with nothing behind it.
+    if (this.visibleTabs.has(extId) && this.active.some((x) => x.manifest.id === extId))
+      await this.activate(extId).catch(() => {})
   }
 
   /** A8 events to extensions that listen (annotations.read; read-only, P§18). */

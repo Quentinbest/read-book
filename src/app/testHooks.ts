@@ -27,6 +27,8 @@ export interface TestHooks {
   run?: (id: string) => boolean
   /** Set instead of quitting, so the harness can check what was saved (N5). */
   quitRequested?: boolean
+  /** N5: what the quit handler would answer (everything saved or not). */
+  quitSaved?: boolean
   /** External links the reader would have opened; tests never open the system browser (N10). */
   externalOpened?: string[]
   /** A10: the native context menu's items, recorded instead of shown (menus block the harness). */

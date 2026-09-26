@@ -164,12 +164,12 @@ export const en = {
     noAccessibility: 'The book gives no accessibility information.',
     description: 'Description',
   },
-  // Import outcomes: wording PROVISIONAL until the G4 designs exist.
   // D6: a quiet line; it never interrupts reading
   update: {
     ready: (version: string) => `Update ready · Linen ${version}`,
     restart: 'Restart',
   },
+  // Import outcomes: wording PROVISIONAL until the G4 designs exist.
   import: {
     addedDamaged: (title: string, n: number) =>
       `“${title}” was added · ${n} damaged ${n === 1 ? 'chapter' : 'chapters'}`,
@@ -373,6 +373,9 @@ export const en = {
     dismiss: 'Dismiss',
     saveFailed: 'Couldn’t save notes to disk',
     retry: 'Retry',
+    // N5, E5: wording PROVISIONAL (docs/pending-approvals.md).
+    quitUnsaved: 'Some notes aren’t saved, so Linen stayed open',
+    quitAnyway: 'Quit Anyway',
   },
   commands: {
     'chapter.next': 'Next chapter',

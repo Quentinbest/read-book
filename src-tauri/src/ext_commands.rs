@@ -181,7 +181,9 @@ pub fn app_restart_safe<R: Runtime>(app: AppHandle<R>) -> CmdResult<()> {
         .lock()
         .unwrap()
         .set_setting("safeModeOnce", "1")?;
-    app.restart();
+    // N5: the reader saves first, as for any quit.
+    crate::commands::request_quit(&app, true);
+    Ok(())
 }
 
 /// Whether this launch is in safe mode: ⇧ held, LINEN_SAFE_MODE=1, or a restart asked for it.

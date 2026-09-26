@@ -204,7 +204,9 @@ pub fn inspect(store: &Store, path: &Path) -> Result<Inspection, ExtError> {
 
 /// Unpack into `<extensions>/<id>`, replacing an older version only once the new one is out.
 fn unpack(zip: &mut zip::ZipArchive<std::fs::File>, dir: &Path, id: &str) -> Result<(), ExtError> {
-    let staging = dir.join(format!("{id}.installing"));
+    // Names starting with a dot are never valid extension IDs (`valid_id`), so the
+    // staging and backup folders cannot be another extension's package.
+    let staging = dir.join(format!(".installing-{id}"));
     let _ = std::fs::remove_dir_all(&staging);
     std::fs::create_dir_all(&staging)?;
     for i in 0..zip.len() {
@@ -222,7 +224,7 @@ fn unpack(zip: &mut zip::ZipArchive<std::fs::File>, dir: &Path, id: &str) -> Res
         std::io::copy(&mut (&mut entry).take(MAX_PACKAGE), &mut out)?;
     }
     let target = dir.join(id);
-    let old = dir.join(format!("{id}.old"));
+    let old = dir.join(format!(".old-{id}"));
     let _ = std::fs::remove_dir_all(&old);
     if target.exists() {
         std::fs::rename(&target, &old)?;
@@ -553,6 +555,52 @@ mod tests {
             "contributes": {{ "commands": [{{ "id": "define", "title": "Define" }}] }},
             "permissions": [{perms}] }}"#
         )
+    }
+
+    #[test]
+    fn installing_leaves_extensions_named_like_its_temporary_folders_alone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("Extensions");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let named = |id: &str| {
+            let m = manifest("1.0.0", "").replace("org.example.dictionary", id);
+            package(
+                tmp.path(),
+                &format!("{id}.linenext"),
+                &[("manifest.json", &m), ("main.js", id)],
+            )
+        };
+        // Both are valid IDs, and were once the backup and staging folders of the third.
+        for id in [
+            "org.review.base.old",
+            "org.review.base.installing",
+            "org.review.base",
+        ] {
+            install(&mut store, &dir, &named(id), &[]).unwrap();
+        }
+        // An update of the third, with its old version moved aside and back.
+        install(&mut store, &dir, &named("org.review.base"), &[]).unwrap();
+        let mut ids: Vec<_> = list(&store, &dir)
+            .unwrap()
+            .into_iter()
+            .map(|x| x.manifest.id)
+            .collect();
+        ids.sort();
+        assert_eq!(
+            ids,
+            [
+                "org.review.base",
+                "org.review.base.installing",
+                "org.review.base.old"
+            ]
+        );
+        for id in ids {
+            assert_eq!(
+                std::fs::read_to_string(dir.join(&id).join("main.js")).unwrap(),
+                id
+            );
+        }
     }
 
     #[test]

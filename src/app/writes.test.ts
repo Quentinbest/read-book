@@ -90,3 +90,30 @@ describe('E5 transient failures', () => {
     expect(messages.current?.text).toBe(SAVE_FAILED_TEXT)
   })
 })
+
+describe('N5 quitting with writes pending', () => {
+  it('settles true once everything is saved', async () => {
+    const { queue, saved, write } = setup()
+    void write('position', 'p1')
+    expect(await queue.settle()).toBe(true)
+    expect(saved).toEqual(['position=p1'])
+  })
+
+  it('settles false while a failed write is still unsaved, keeping it', async () => {
+    const { queue, write, setFull } = setup()
+    setFull(true)
+    await write('note:1', 'draft')
+    expect(await queue.idle()).toBeUndefined() // idle, yet not saved
+    expect(await queue.settle()).toBe(false)
+    expect(queue.pendingKeys).toEqual(['note:1'])
+  })
+
+  it('tries failed writes once more before quitting', async () => {
+    const { queue, saved, write, setFull } = setup()
+    setFull(true)
+    await write('note:1', 'draft')
+    setFull(false)
+    expect(await queue.settle()).toBe(true)
+    expect(saved).toEqual(['note:1=draft'])
+  })
+})

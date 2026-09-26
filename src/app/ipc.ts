@@ -106,8 +106,12 @@ export const ipc = {
     }>('screen_edges'),
   /** Screens 02/03: the window buttons show with the reader's controls. */
   setWindowControls: (visible: boolean) => invoke<void>('set_window_controls', { visible }),
-  /** N5: saving is done; the app may quit. */
-  quitReady: () => invoke<void>('quit_ready'),
+  /** N5: the answer to `app-quitting`: saved (the app quits or restarts), or not (it stays open). */
+  quitReady: (saved: boolean) => invoke<void>('quit_ready', { saved }),
+  /** N5: `app-quitting` arrived and saving is under way (the core waits longer). */
+  quitSaving: () => invoke<void>('quit_saving'),
+  /** E5: “Quit Anyway”: leave without the changes that could not be saved. */
+  quitDiscard: () => invoke<void>('quit_discard'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */
   screenReaderRunning: () => invoke<boolean>('screen_reader_running'),
   /** T7: what each physical key prints in the current layout, keyed by KeyboardEvent.code. */

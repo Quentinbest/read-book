@@ -111,7 +111,9 @@ export class Annotations {
     const note = text && text.trim() ? text : null
     const a = this.get(id)
     if (!a) return Promise.resolve()
-    if (a.note === note) return this.#writes.write(`annotation:${id}`, async () => {})
+    // Unchanged text still saves the current annotation: a no-op under the same
+    // key would replace a pending (for example failed) save of it.
+    if (a.note === note) return this.#save(a)
     return this.#save(this.#update(id, { note }, false)!)
   }
 

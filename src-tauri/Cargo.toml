@@ -28,6 +28,8 @@ tauri-plugin-dialog = "2"
 semver = "1"
 ureq = { version = "2", default-features = false, features = ["tls"] }
 tauri-plugin-updater = "2"
+# Already in the tree through tauri; the updater's daily timer (D6).
+tokio = { version = "1", features = ["time"] }
 
 [features]
 # Phase 0 spike harness (docs/spikes/). Never enabled in product builds.

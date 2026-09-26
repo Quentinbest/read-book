@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { Annotations, UndoStack } from './annotations.svelte'
 import type { AnnotationRow } from '../lib/annotations/model'
+import { WriteQueue } from '../app/writes'
+import { MessageQueue } from '../lib/reader/messages'
 
 function setup() {
   const saved = new Map<string, AnnotationRow>()
@@ -65,6 +67,36 @@ describe('A6 notes', () => {
     expect(store.get(annotation.id)?.note).toBeNull()
     expect(saved.get(annotation.id)?.note).toBeNull()
     expect(store.items).toHaveLength(1)
+  })
+
+  it('E5: the same text again after a failed save does not drop that save', async () => {
+    // Typing then deleting a character sends the unchanged note while its failed
+    // save is still pending; Retry must then save the note, not a no-op.
+    const writes = new WriteQueue(new MessageQueue({ now: () => 0 }))
+    const saved = new Map<string, AnnotationRow>()
+    let full = false
+    const store = new Annotations({
+      bookId: 'b1',
+      contentHash: 'h2',
+      writes,
+      api: {
+        save: async (row) => {
+          if (full) throw { kind: 'saveFailed', message: 'database or disk is full' }
+          saved.set(row.id, row)
+        },
+        delete: async () => {},
+      },
+    })
+    const { annotation } = store.highlight(at('epubcfi(/6/4!/4/2,/1:0,/1:10)'), 'green')
+    await writes.idle()
+    full = true
+    await store.setNote(annotation.id, 'A thought')
+    await store.setNote(annotation.id, 'A thought')
+    expect(writes.pendingKeys).toEqual([`annotation:${annotation.id}`])
+    full = false
+    await writes.retry()
+    expect(saved.get(annotation.id)?.note).toBe('A thought')
+    expect(writes.pendingKeys).toEqual([])
   })
 })
 
