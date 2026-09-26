@@ -97,3 +97,5 @@ The owner reviewed items 9, 10 and 21–28 and approved them as recommended, wit
 | Signing (28) | No Apple Developer ID yet. Builds and signing need only meet what GitHub requires: the release workflow on GitHub builds ad-hoc-signed DMGs and signed updater archives. Developer ID signing and notarisation switch on when their secrets are added. |
 | X3 re-check (9), oldest Mac (10) | Approved by the owner without a recorded run. |
 | File associations | Tried by the owner on the installed app: Open With and a book dropped on the Dock icon both work (2026-09-26). |
+| Update source (29) | The owner made `Quentinbest/read-book` public (2026-09-26), so installed apps can reach its releases. The update address stays `https://github.com/Quentinbest/read-book/releases/latest/download/latest.json`; no separate releases repository is needed. |
+| Screen 08 (30) | The Notes tab with the Phase 7 export footer is the new baseline (see `docs/visual/APPROVAL.md`). |

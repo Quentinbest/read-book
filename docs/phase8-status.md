@@ -24,9 +24,9 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 | The accessibility target is met, with manual runs recorded | **Approved** | axe WCAG 2.2 AA, X5 and X6 pass. The owner approved the VoiceOver re-check (item 9, 2026-09-26); no manual run is recorded. |
 | Hostile corpus results are unchanged | **Pass** | Rust `corpus_outcomes` and `every_corpus_file_imports_or_is_refused`; e2e `E-hostile-in-product` and `P2-hostile-extension` |
 | The backup and restore round-trip passes | **Pass** | Rust `a_library_folder_restored_elsewhere_still_opens_its_books`; e2e `A9-w3c-roundtrip` for export |
-| Builds are signed and notarised; file associations work | **Met as the owner settled it (item 28)** | <ul><li>**Signing:** there is no Developer ID yet, so builds need only meet what GitHub requires. `.github/workflows/release.yml` builds Apple silicon and Intel DMGs on a `v*` tag, ad-hoc signed, with signed updater archives and `latest.json`, into a draft release. Developer ID signing and notarisation switch on when their secrets exist.</li><li>**Checked locally:** the release build makes `Linen.app.tar.gz` and its signature; the signature verifies against the key in the app, and a changed byte is refused. The workflow's signing step was run with and without the update key.</li><li>**Not yet run on GitHub:** Actions is stopped by the account's billing.</li><li>**File associations:** the owner tried Open With and a drop on the Dock icon with the installed app; both work.</li></ul> |
+| Builds are signed and notarised; file associations work | **Met as the owner settled it (item 28)** | <ul><li>**Signing:** there is no Developer ID yet, so builds need only meet what GitHub requires. `.github/workflows/release.yml` builds Apple silicon and Intel DMGs on a `v*` tag, ad-hoc signed, with signed updater archives and `latest.json`, into a draft release. Developer ID signing and notarisation switch on when their secrets exist.</li><li>**Checked locally:** the release build makes `Linen.app.tar.gz` and its signature; the signature verifies against the key in the app, and a changed byte is refused. The workflow's signing step was run with and without the update key.</li><li>**On GitHub:** CI runs again since the repository went public. The release workflow runs at the first `v*` tag.</li><li>**File associations:** the owner tried Open With and a drop on the Dock icon with the installed app; both work.</li></ul> |
 
-**Phase 8 is done, pending two owner items.** Everything is built and verified. The owner approved items 9, 10 and 21–28 on 2026-09-26. Still open: where updates are served from (item 29: the repository is private, so installed apps cannot reach its releases), and Screen 08's export footer (item 30). GitHub Actions also waits for the account's billing.
+**Phase 8 is done (2026-09-26).** The owner approved every item (9, 10, 21–30), made the repository public so installed apps can reach its releases (item 29), and GitHub Actions runs again: CI passed on GitHub for the checks, the macOS build and the integration tests.
 
 ## Work items
 
@@ -81,7 +81,7 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
   - The private key and its password are in `~/.tauri/linen-updater.key` and `linen-updater.key.password` on this Mac, not in the repository. They are also stored as the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
   - **Back up both files.** Without the key, installed copies can never be updated again.
 - **Checked.** A release build's archive verifies against the public key in `tauri.conf.json` (with `minisign-verify`, the library the updater uses), and a copy with one changed byte is refused. A unit test covers the once-a-day timing.
-- **Open (item 29).** The update address is this repository's latest release, which is private, so installed apps get 404 until releases are served from a public place.
+- **The address.** It is this repository's latest published release. The repository has been public since 2026-09-26 (item 29).
 
 ## Crash log (D1, approved)
 
