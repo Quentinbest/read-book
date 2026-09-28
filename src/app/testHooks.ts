@@ -19,6 +19,8 @@ export interface TestHooks {
     /** A4–A9: the book's highlights and notes, and what ⌘Z can undo. */
     annotations: import('../reader/annotations.svelte').Annotations
     undo: import('../reader/annotations.svelte').UndoStack
+    /** Both bars, as Tab or ⌘J shows them (an edge reveals one bar only, S9). */
+    showControls: () => void
   }
   messages?: MessageQueue
   registry?: CommandRegistry

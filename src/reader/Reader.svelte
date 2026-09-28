@@ -193,6 +193,9 @@
   const OPENING_LINE_AFTER_MS = 500
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
+  /** S9: a bar the pointer revealed shows alone; Tab, ⌘J and Aa bring both. */
+  let topBarShown = $derived(chromeVisible && lanes.chromePeek !== 'bottom')
+  let bottomBarShown = $derived(chromeVisible && lanes.chromePeek !== 'top')
   /** Every theme token, for panels and controls that the inline colours below do not cover. */
   let themeStyle = $derived(
     Object.entries(themeVariables(theme))
@@ -214,7 +217,7 @@
   // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
   $effect(() => {
     // S14: the library, over a warm book, always has its window buttons.
-    void ipc.setWindowControls(!active || chromeVisible || navigatorOpen).catch(() => {})
+    void ipc.setWindowControls(!active || topBarShown || navigatorOpen).catch(() => {})
   })
   // V8: the Navigator slides in 220 ms while the column moves by transform; the
   // page reflows at the new width only after the slide, so the text never jumps.
@@ -1207,7 +1210,7 @@
       target.closest('button, input, textarea, select, [contenteditable]')
     )
       return
-    if (e.key === 'Tab' && !fromBook && !chromeVisible) {
+    if (e.key === 'Tab' && !fromBook && (!chromeVisible || lanes.chromePeek)) {
       // S9: Tab reveals the chrome and focuses its first control.
       dispatch({ type: 'showChrome' })
       e.preventDefault()
@@ -1269,7 +1272,10 @@
 
   // ---- chrome reveal (S9–S11)
   let dwellTimer = 0
+  let dwellEdge: 'top' | 'bottom' | null = null
   let hideTimer = 0
+  let topBar: HTMLElement | undefined = $state()
+  let bottomBar: HTMLElement | undefined = $state()
   /** S11: in full screen the top zone starts below the menu bar; the bottom zone yields to an auto-hiding Dock. */
   async function refreshEdges() {
     try {
@@ -1283,22 +1289,55 @@
     }
   }
 
-  function onPointerMove(e: PointerEvent) {
-    const nearTop = e.clientY >= edges.topStart && e.clientY <= edges.topStart + REVEAL_ZONE
-    const nearBottom = !edges.bottomOff && e.clientY >= window.innerHeight - REVEAL_ZONE
+  /** `y` is in the reader's coordinates. */
+  function onPointerAt(y: number) {
+    const nearTop = y >= edges.topStart && y <= edges.topStart + REVEAL_ZONE
+    const nearBottom = !edges.bottomOff && y >= window.innerHeight - REVEAL_ZONE
+    const edge = nearTop ? 'top' : nearBottom ? 'bottom' : null
     clearTimeout(hideTimer)
-    if (nearTop || nearBottom) {
-      if (!chromeVisible && !dwellTimer)
+    const peek = lanes.chromePeek
+    if (peek) {
+      // S9: a bar the pointer revealed stays while the pointer is on it or in its zone,
+      // and goes the moment it leaves (no delay, so reading resumes at once).
+      const bar = (peek === 'top' ? topBar : bottomBar)?.getBoundingClientRect()
+      if (edge === peek || (bar && y >= bar.top && y <= bar.bottom)) {
+        clearTimeout(dwellTimer)
+        dwellTimer = 0
+        dwellEdge = null
+        return
+      }
+      dispatch({ type: 'hideChrome' })
+    }
+    if (edge) {
+      if (!chromeVisible && dwellEdge !== edge) {
+        clearTimeout(dwellTimer)
+        dwellEdge = edge
         dwellTimer = window.setTimeout(() => {
           dwellTimer = 0
-          dispatch({ type: 'showChrome' })
+          dwellEdge = null
+          dispatch({ type: 'showChrome', edge })
         }, REVEAL_DWELL_MS)
+      }
     } else {
       clearTimeout(dwellTimer)
       dwellTimer = 0
-      if (chromeVisible)
+      dwellEdge = null
+      // S10: the full controls (Tab, ⌘J, Aa) still wait 3 s after the pointer leaves an edge.
+      if (chromeVisible && !lanes.chromePeek)
         hideTimer = window.setTimeout(() => dispatch({ type: 'hideChrome' }), HIDE_AFTER_MS)
     }
+  }
+  const onPointerMove = (e: PointerEvent) => onPointerAt(e.clientY)
+  /** The book's frames swallow pointer moves; without these a bar would stay up over the text. */
+  function onBookPointerMove(doc: Document) {
+    doc.addEventListener('pointermove', (e) => {
+      if (!lanes.chromePeek && !dwellTimer) return
+      const frame = doc.defaultView?.frameElement?.getBoundingClientRect()
+      if (!frame) return
+      // Fixed layout scales the frame (I17); map the pointer through it.
+      const scale = frame.height / (doc.defaultView?.innerHeight || frame.height || 1)
+      onPointerAt(frame.top + e.clientY * scale)
+    })
   }
 
   // ---- margins (I11): click targets for previous / next; the activating click never turns
@@ -1355,6 +1394,7 @@
           search: searchState,
           annotations,
           undo,
+          showControls: () => dispatch({ type: 'showChrome' }),
         }
       }
       relayout()
@@ -1363,6 +1403,7 @@
       // L15: a book font that fails or takes over 1.5 s falls back to Literata, without a prompt.
       cleanups.push(engine.onDocument((doc) => void fallBackFailedFonts(doc)))
       cleanups.push(engine.onDocument(panByDrag))
+      cleanups.push(engine.onDocument(onBookPointerMove))
       cleanups.push(engine.onNote(onNote))
       cleanups.push(engine.onImage(onImage))
       cleanups.push(engine.onLinkHover((href) => (hoverUrl = href)))
@@ -1917,7 +1958,7 @@
         bind:this={selectionBar}
         first={bar.first}
         last={bar.last}
-        top={chromeVisible ? 52 : 0}
+        top={topBarShown ? 52 : 0}
         mode={bar.mode}
         color={existing?.color ?? annotations.lastColor}
         onhighlight={(c) => (bar?.id ? recolor(bar.id, c) : highlightSelection(c))}
@@ -1973,10 +2014,11 @@
         >
       </div>
     {/if}
-    {#if chromeVisible}
+    {#if topBarShown}
       <header
         class="chrome top"
         class:docked={dockedWidth > 0}
+        bind:this={topBar}
         data-tauri-drag-region
         out:chromeOut={{ from: -4 }}
       >
@@ -1987,7 +2029,10 @@
           <Icon name="contents" size={18} />
         </button>
         <div class="title" aria-live="off">
-          <span class="book">{book.title}</span>{#if location?.chapterLabel}&nbsp;· {location.chapterLabel}{/if}
+          <!-- S9: a bar the pointer revealed names the book only. -->
+          <span class="book">{book.title}</span
+          >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
+            {location.chapterLabel}{/if}
         </div>
         <!-- Screen 03: Search · Notes · Aa · ⋯ -->
         <div class="tools">
@@ -2024,7 +2069,9 @@
           </button>
         </div>
       </header>
-      <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
+    {/if}
+    {#if bottomBarShown}
+      <footer class="chrome bottom" bind:this={bottomBar} out:chromeOut={{ from: 4 }}>
         <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
           <div
             class="track"

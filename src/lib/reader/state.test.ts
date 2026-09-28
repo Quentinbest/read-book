@@ -238,6 +238,58 @@ describe('S8 only modals suspend reader input', () => {
   })
 })
 
+describe('S9 edge reveal', () => {
+  it('an edge reveals its bar alone, and hiding clears it', () => {
+    const top = run(initialState(WIDE), { type: 'showChrome', edge: 'top' })
+    expect(top.s.chrome).toBe('controls')
+    expect(top.s.chromePeek).toBe('top')
+    const hidden = run(top.s, { type: 'hideChrome' })
+    expect(hidden.s.chrome).toBe('immersive')
+    expect(hidden.s.chromePeek).toBeNull()
+  })
+
+  it('an edge never takes a bar away from the full controls; Tab or ⌘J brings both', () => {
+    const full = run(
+      initialState(WIDE),
+      { type: 'showChrome' },
+      { type: 'showChrome', edge: 'top' },
+    )
+    expect(full.s.chromePeek).toBeNull()
+    const upgraded = run(
+      initialState(WIDE),
+      { type: 'showChrome', edge: 'top' },
+      { type: 'showChrome' },
+    )
+    expect(upgraded.s.chromePeek).toBeNull()
+  })
+
+  it('page turns, Esc and the Navigator clear a revealed bar; closing the Navigator does not bring it back', () => {
+    for (const e of [{ type: 'pageTurn' }, { type: 'escape' }] as const)
+      expect(
+        run(initialState(WIDE), { type: 'showChrome', edge: 'top' }, e).s.chromePeek,
+      ).toBeNull()
+    const nav = run(
+      initialState(WIDE),
+      { type: 'showChrome', edge: 'top' },
+      { type: 'openNavigator', tab: 'contents' },
+      { type: 'closeNavigator' },
+    )
+    expect(nav.s.chrome).toBe('immersive')
+    expect(nav.s.chromePeek).toBeNull()
+  })
+
+  it('a revealed bar stays while its popover is open (S10)', () => {
+    const { s } = run(
+      initialState(WIDE),
+      { type: 'showChrome', edge: 'top' },
+      { type: 'openFloating', kind: 'aa' },
+      { type: 'hideChrome' },
+    )
+    expect(s.chrome).toBe('controls')
+    expect(s.chromePeek).toBe('top')
+  })
+})
+
 describe('S10 chrome hiding', () => {
   it('never hides while a chrome control has focus or a chrome popover is open', () => {
     const focused = run(

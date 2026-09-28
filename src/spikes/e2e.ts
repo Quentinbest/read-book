@@ -93,11 +93,10 @@ async function backToLibrary() {
   await settled(300)
 }
 
-/** Reveal the controls the way a reader does: dwell at the top edge (S9). */
+/** Reveal both bars (Screen 03). The top edge alone shows the top bar only (S9-top-peek). */
 async function showControls() {
-  const area = document.querySelector('.reader')!
-  area.dispatchEvent(new PointerEvent('pointermove', { clientX: 640, clientY: 20, bubbles: true }))
-  await sleep(600) // 150 ms dwell + 160 ms fade in
+  reader()!.showControls()
+  await sleep(600) // 160 ms fade in
 }
 
 async function hideControls() {
@@ -586,6 +585,34 @@ export async function spikeE2E(): Promise<SpikeResult> {
       if (!top || midway >= 0.95)
         return `80 ms after Esc the top bar was ${top ? `at opacity ${midway}` : 'already gone'}`
       return gone ? 'ok' : 'the top bar was still there after 380 ms'
+    },
+  })
+
+  checks.push({
+    id: 'S9-top-peek',
+    description:
+      'The top edge reveals the top bar alone, naming the book only; it stays while the pointer is on it and goes as soon as the pointer leaves (S9)',
+    run: async () => {
+      await hideControls()
+      const area = document.querySelector('.reader')!
+      const move = (y: number) =>
+        area.dispatchEvent(
+          new PointerEvent('pointermove', { clientX: 640, clientY: y, bubbles: true }),
+        )
+      move(20)
+      await sleep(600) // 150 ms dwell + 160 ms fade in
+      const top = document.querySelector('.chrome.top')
+      if (!top) return 'the top edge did not reveal the top bar'
+      if (document.querySelector('.chrome.bottom')) return 'the bottom bar came with the top bar'
+      const title = top.querySelector('.title')?.textContent?.trim()
+      const book = top.querySelector('.title .book')?.textContent?.trim()
+      if (title !== book) return `the top bar said “${title}”, not just “${book}”`
+      for (const y of [30, 50, 60, 10]) move(y)
+      await sleep(400)
+      if (!document.querySelector('.chrome.top')) return 'the bar left while the pointer was on it'
+      move(300)
+      await sleep(400) // the 220 ms fade out, well short of the 3 s full-controls delay
+      return document.querySelector('.chrome.top') ? 'the bar stayed after the pointer left' : 'ok'
     },
   })
 

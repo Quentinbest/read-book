@@ -39,6 +39,11 @@ export interface ReaderState {
   chromeBeforeNavigator: 'immersive' | 'controls' | null
   /** A control in the chrome has focus (S10: the chrome never hides then). */
   chromeFocused: boolean
+  /**
+   * S9: the pointer revealed only this edge's bar. It stays while the pointer is on the bar
+   * or in its zone and goes the moment the pointer leaves. Null: both bars, or none.
+   */
+  chromePeek: 'top' | 'bottom' | null
 }
 
 export type ReaderEvent =
@@ -49,7 +54,8 @@ export type ReaderEvent =
   | { type: 'escape' }
   | { type: 'pageTurn' }
   | { type: 'selectionStart' }
-  | { type: 'showChrome' }
+  /** With an edge, the pointer's dwell there: that bar only (S9). Without, both bars. */
+  | { type: 'showChrome'; edge?: 'top' | 'bottom' }
   | { type: 'hideChrome' }
   | { type: 'chromeFocus'; focused: boolean }
   | { type: 'resize'; width: number }
@@ -87,6 +93,7 @@ export function initialState(width: number, dockedTab: NavigatorTab | null = nul
     width,
     chromeBeforeNavigator: dockedTab ? 'immersive' : null,
     chromeFocused: false,
+    chromePeek: null,
   }
 }
 
@@ -147,7 +154,8 @@ export function reduce(state: ReaderState, event: ReaderEvent): Transition {
         break
       }
       // Chrome and Navigator alternate (S3): opening it hides the bars.
-      const before = s.chrome
+      // A bar the pointer revealed is not restored: the pointer has left it.
+      const before = s.chromePeek ? 'immersive' : s.chrome
       if (isWide(s)) {
         s = { ...s, docked: event.tab }
       } else {
@@ -191,7 +199,11 @@ export function reduce(state: ReaderState, event: ReaderEvent): Transition {
     }
     case 'showChrome': {
       // The chrome and the Navigator alternate (S3); the Navigator header stands in for it.
-      if (navigatorTab(s) === null) s = { ...s, chrome: 'controls' }
+      if (navigatorTab(s) !== null) break
+      // S9: an edge reveals its bar alone; it never takes a bar away from the full controls.
+      if (!event.edge) s = { ...s, chrome: 'controls', chromePeek: null }
+      else if (s.chrome === 'immersive' || s.chromePeek)
+        s = { ...s, chrome: 'controls', chromePeek: event.edge }
       break
     }
     case 'hideChrome': {
@@ -221,5 +233,6 @@ export function reduce(state: ReaderState, event: ReaderEvent): Transition {
       break
     }
   }
+  if (s.chrome === 'immersive' && s.chromePeek) s = { ...s, chromePeek: null }
   return { state: s, effects }
 }
