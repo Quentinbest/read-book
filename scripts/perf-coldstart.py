@@ -23,9 +23,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "src-tauri/target/release/linen"
-# Measured on Desktop 2 like the e2e runs (owner's instruction, 2026-09-25), with the
-# display kept awake (a sleeping display stops WebKit's frames; see scripts/e2e.sh).
-SPACE = os.environ.get("LINEN_SPACE", "2")
+# Measured on the current desktop unless LINEN_SPACE names one, with the display
+# kept awake (a sleeping display stops WebKit's frames; see scripts/e2e.sh).
+SPACE = os.environ.get("LINEN_SPACE", "")
 CAFFEINATE = ["caffeinate", "-di"]
 BUDGETS = {"library": 1000, "book": 1500}
 

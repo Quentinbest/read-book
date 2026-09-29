@@ -40,10 +40,10 @@ pnpm test && pnpm check && pnpm lint                  # TypeScript
 (cd src-tauri && cargo test --features spikes)        # Rust
 LINEN_SPIKES=1 pnpm tauri build --no-bundle --features spikes \
   --config src-tauri/tauri.spikes.conf.json           # the test build
-scripts/e2e.sh                                        # the in-app suite, on Desktop 2
+scripts/e2e.sh                                        # the in-app suite
 scripts/e2e.sh r '^(N3-bodymatter|B8)'                # some checks
 scripts/e2e.sh v && node tests/visual/compare.mjs     # captures against the approved baselines
 python3 scripts/perf-coldstart.py; scripts/perf-memory.sh   # budgets (§6.4)
 ```
 
-The in-app suite runs on macOS Desktop 2 (`LINEN_SPACE`), so it never covers the screen in use. It keeps the display awake while it runs.
+The in-app suite runs on the current desktop; `LINEN_SPACE=2 scripts/e2e.sh` moves its window to Desktop 2 instead, off the screen in use. It keeps the display awake while it runs.

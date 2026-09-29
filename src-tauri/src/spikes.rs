@@ -221,9 +221,9 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::
     let window = app
         .get_webview_window("main")
         .ok_or("main window missing")?;
-    // The owner's instruction (2026-09-25): end-to-end runs happen on another desktop
-    // (LINEN_SPACE=2), so the harness never takes over the screen being used. The
-    // window starts hidden (tauri.spikes.conf.json), moves, then shows.
+    // LINEN_SPACE=N moves the harness to desktop N, off the screen being used
+    // (optional since the owner's 2026-09-29 instruction; unset: the current desktop).
+    // The window starts hidden (tauri.spikes.conf.json), moves, then shows.
     let desktop = std::env::var("LINEN_SPACE")
         .ok()
         .and_then(|s| s.parse::<usize>().ok());
