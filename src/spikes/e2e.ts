@@ -591,14 +591,19 @@ export async function spikeE2E(): Promise<SpikeResult> {
   checks.push({
     id: 'S9-top-peek',
     description:
-      'The top edge reveals the top bar alone, naming the book only; it stays while the pointer is on it and goes as soon as the pointer leaves (S9)',
+      'Immersive reading shows nothing at the bottom, even with the pointer there; the top edge reveals the top bar alone, naming the book only; it stays while the pointer is on it and goes as soon as the pointer leaves (S9)',
     run: async () => {
       await hideControls()
+      if (document.querySelector('.location-line'))
+        return `a location line showed: “${document.querySelector('.location-line')!.textContent}”`
       const area = document.querySelector('.reader')!
       const move = (y: number) =>
         area.dispatchEvent(
           new PointerEvent('pointermove', { clientX: 640, clientY: y, bubbles: true }),
         )
+      move(window.innerHeight - 10)
+      await sleep(600)
+      if (document.querySelector('.chrome')) return 'the bottom edge revealed a bar'
       move(20)
       await sleep(600) // 150 ms dwell + 160 ms fade in
       const top = document.querySelector('.chrome.top')
@@ -735,8 +740,11 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const engine = reader()!.engine
       const r = engine.view.renderer
       const zoom = () => engine.zoom
-      const line = document.querySelector('.location-line')?.textContent ?? ''
-      if (!/^Pages? \d+(–\d+)? of \d+$/.test(line)) return `location line “${line}”`
+      // G12: the real pages are in the bottom bar (immersive reading has no location line).
+      await showControls()
+      const line = document.querySelector('.goto-label .rest')?.textContent?.trim() ?? ''
+      await hideControls()
+      if (!/^\d+% · Pages? \d+(–\d+)? of \d+$/.test(line)) return `progress label “${line}”`
       const cmd = (code: string, k: string) => keyOnApp(k, { code, metaKey: true })
       cmd('Equal', '=')
       await settled(300)

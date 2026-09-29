@@ -40,10 +40,11 @@ export interface ReaderState {
   /** A control in the chrome has focus (S10: the chrome never hides then). */
   chromeFocused: boolean
   /**
-   * S9: the pointer revealed only this edge's bar. It stays while the pointer is on the bar
-   * or in its zone and goes the moment the pointer leaves. Null: both bars, or none.
+   * S9: the pointer at the top edge revealed the top bar alone. It stays while the pointer
+   * is on the bar or in its zone and goes the moment the pointer leaves. Null: both bars, or none.
+   * There is no bottom trigger (owner decision, 2026-09-29).
    */
-  chromePeek: 'top' | 'bottom' | null
+  chromePeek: 'top' | null
 }
 
 export type ReaderEvent =
@@ -54,8 +55,8 @@ export type ReaderEvent =
   | { type: 'escape' }
   | { type: 'pageTurn' }
   | { type: 'selectionStart' }
-  /** With an edge, the pointer's dwell there: that bar only (S9). Without, both bars. */
-  | { type: 'showChrome'; edge?: 'top' | 'bottom' }
+  /** With an edge, the pointer's dwell there: the top bar only (S9). Without, both bars. */
+  | { type: 'showChrome'; edge?: 'top' }
   | { type: 'hideChrome' }
   | { type: 'chromeFocus'; focused: boolean }
   | { type: 'resize'; width: number }

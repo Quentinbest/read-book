@@ -193,9 +193,9 @@
   const OPENING_LINE_AFTER_MS = 500
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
-  /** S9: a bar the pointer revealed shows alone; Tab, ⌘J and Aa bring both. */
-  let topBarShown = $derived(chromeVisible && lanes.chromePeek !== 'bottom')
-  let bottomBarShown = $derived(chromeVisible && lanes.chromePeek !== 'top')
+  /** S9: the top edge reveals the top bar alone; Tab, ⌘J and Aa bring both bars. */
+  let topBarShown = $derived(chromeVisible)
+  let bottomBarShown = $derived(chromeVisible && !lanes.chromePeek)
   /** Every theme token, for panels and controls that the inline colours below do not cover. */
   let themeStyle = $derived(
     Object.entries(themeVariables(theme))
@@ -961,7 +961,7 @@
     theme = await resolveTheme()
     relayout()
   }
-  let edges = { topStart: 0, bottomOff: false }
+  let edges = { topStart: 0 }
   let announceTurns = true
   /** V8, G2: the page-turn crossfade preference (off by default: turns are instant). */
   let crossfadeTurns = false
@@ -1272,17 +1272,17 @@
 
   // ---- chrome reveal (S9–S11)
   let dwellTimer = 0
-  let dwellEdge: 'top' | 'bottom' | null = null
   let hideTimer = 0
   let topBar: HTMLElement | undefined = $state()
-  let bottomBar: HTMLElement | undefined = $state()
-  /** S11: in full screen the top zone starts below the menu bar; the bottom zone yields to an auto-hiding Dock. */
+  /**
+   * S11: in full screen the top zone starts below the menu bar. There is no bottom zone:
+   * immersive reading shows nothing at the bottom (owner decision, 2026-09-29).
+   */
   async function refreshEdges() {
     try {
       const e = await ipc.screenEdges()
       edges = {
         topStart: e.fullscreen ? e.menu_bar_height : 0,
-        bottomOff: e.dock_edge === 'bottom' && (e.dock_autohide || e.fullscreen),
       }
     } catch {
       // keep the defaults
@@ -1292,36 +1292,27 @@
   /** `y` is in the reader's coordinates. */
   function onPointerAt(y: number) {
     const nearTop = y >= edges.topStart && y <= edges.topStart + REVEAL_ZONE
-    const nearBottom = !edges.bottomOff && y >= window.innerHeight - REVEAL_ZONE
-    const edge = nearTop ? 'top' : nearBottom ? 'bottom' : null
     clearTimeout(hideTimer)
-    const peek = lanes.chromePeek
-    if (peek) {
-      // S9: a bar the pointer revealed stays while the pointer is on it or in its zone,
+    if (lanes.chromePeek) {
+      // S9: the bar the pointer revealed stays while the pointer is on it or in its zone,
       // and goes the moment it leaves (no delay, so reading resumes at once).
-      const bar = (peek === 'top' ? topBar : bottomBar)?.getBoundingClientRect()
-      if (edge === peek || (bar && y >= bar.top && y <= bar.bottom)) {
+      const bar = topBar?.getBoundingClientRect()
+      if (nearTop || (bar && y >= bar.top && y <= bar.bottom)) {
         clearTimeout(dwellTimer)
         dwellTimer = 0
-        dwellEdge = null
         return
       }
       dispatch({ type: 'hideChrome' })
     }
-    if (edge) {
-      if (!chromeVisible && dwellEdge !== edge) {
-        clearTimeout(dwellTimer)
-        dwellEdge = edge
+    if (nearTop) {
+      if (!chromeVisible && !dwellTimer)
         dwellTimer = window.setTimeout(() => {
           dwellTimer = 0
-          dwellEdge = null
-          dispatch({ type: 'showChrome', edge })
+          dispatch({ type: 'showChrome', edge: 'top' })
         }, REVEAL_DWELL_MS)
-      }
     } else {
       clearTimeout(dwellTimer)
       dwellTimer = 0
-      dwellEdge = null
       // S10: the full controls (Tab, ⌘J, Aa) still wait 3 s after the pointer leaves an edge.
       if (chromeVisible && !lanes.chromePeek)
         hideTimer = window.setTimeout(() => dispatch({ type: 'hideChrome' }), HIDE_AFTER_MS)
@@ -2071,7 +2062,7 @@
       </header>
     {/if}
     {#if bottomBarShown}
-      <footer class="chrome bottom" bind:this={bottomBar} out:chromeOut={{ from: 4 }}>
+      <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
         <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
           <div
             class="track"
@@ -2128,7 +2119,13 @@
               onclick={(e) => openGoTo(e.currentTarget.getBoundingClientRect())}
             >
               <span class="rest"
-                >{[progressText, locationText.split(' · ')[1]].filter(Boolean).join(' · ')}</span
+                >{[
+                  progressText,
+                  // G12: a fixed-layout book's real pages, here now that the location line is gone.
+                  location?.fixedPages?.length ? locationText : locationText.split(' · ')[1],
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}</span
               >
               <span class="hint">{progressText} · {t.goto.open} ⌘J</span>
             </button>
@@ -2136,8 +2133,11 @@
         </div>
       </footer>
     {:else if openingShown && !location}
+      <!-- G8: the slow-open notice. Immersive reading shows no location line (owner
+           decision, 2026-09-29): the chapter, time left and pages are in the bottom bar. -->
       <div class="location-line">{t.reader.opening(book.title)}</div>
-    {:else if showLocationLine(height) && locationText}
+    {:else if searchOpen && searchState.position && searchState.active && showLocationLine(height)}
+      <!-- Screen 05: while Search is open, the line says which result is on the page. -->
       <div class="location-line" aria-hidden="true">{locationText}</div>
     {/if}
   </div>

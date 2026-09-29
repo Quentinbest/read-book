@@ -99,3 +99,13 @@ The owner reviewed items 9, 10 and 21–28 and approved them as recommended, wit
 | File associations | Tried by the owner on the installed app: Open With and a book dropped on the Dock icon both work (2026-09-26). |
 | Update source (29) | The owner made `Quentinbest/read-book` public (2026-09-26), so installed apps can reach its releases. The update address stays `https://github.com/Quentinbest/read-book/releases/latest/download/latest.json`; no separate releases repository is needed. |
 | Screen 08 (30) | The Notes tab with the Phase 7 export footer is the new baseline (see `docs/visual/APPROVAL.md`). |
+
+## Decided 2026-09-29 (immersive reading, like macOS Books)
+
+The owner asked for immersive reading to match the macOS Books app. These override the plan where they differ; the code cites this record.
+
+| Rule | Decided |
+|---|---|
+| S9 (top edge) | The top edge reveals the top bar alone, naming the book only (no chapter). It stays while the pointer is on the bar or in its 64 px zone and hides as soon as the pointer leaves; the 3 s delay (S10) applies only to the full controls (Tab, ⌘J, Aa), which still show both bars and the chapter. |
+| S9, S11 (bottom edge) | No bottom trigger: the pointer at the bottom edge reveals nothing, so the Dock exclusion of S11 no longer applies. The bottom bar comes only with the full controls. |
+| L9, B2, G12 (location line) | Immersive reading shows no location line. The chapter and “N min left” are in the bottom bar's labels, and so are a fixed-layout book's real pages. The “Opening …” line of a slow open (G8) stays. |
