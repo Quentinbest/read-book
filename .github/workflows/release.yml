@@ -55,10 +55,11 @@ jobs:
           }
           id=$(find_draft)
           if [ -z "$id" ]; then
-            gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft \
-              --verify-tag --title "Linen $GITHUB_REF_NAME" \
-              --notes "See the commits since the previous release."
-            id=$(find_draft)
+            # The id comes from the create call itself: the release list can lag behind
+            # a new draft for a few seconds (v0.1.1's first run failed on that).
+            id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
+              -f tag_name="$GITHUB_REF_NAME" -f name="Linen $GITHUB_REF_NAME" \
+              -f body="See the commits since the previous release." -F draft=true --jq .id)
           fi
           test -n "$id"
           echo "id=$id" >> "$GITHUB_OUTPUT"
