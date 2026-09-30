@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Linen Icon</title>
+<style>
+  :root {
+    --ground: #F7F3EC; --ink: #22201C; --ink-2: #6B645A; --hairline: #E3DCD0; --accent: #8C4A2F;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #1B1A18; --ink: #D9D3C7; --ink-2: #9A9386; --hairline: #34312C; --accent: #D39A73;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #1B1A18; --ink: #D9D3C7; --ink-2: #9A9386; --hairline: #34312C; --accent: #D39A73;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Iowan Old Style", Georgia, serif;
+  }
+  main { max-width: 880px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font: 600 28px/1.2 "Iowan Old Style", Georgia, serif; margin: 0 0 6px; }
+  p { color: var(--ink-2); margin: 0 0 20px; max-width: 60ch; }
+  .stage { display: grid; place-items: center; padding: 8px 0 24px; }
+  #hero { width: min(512px, 100%); height: auto; aspect-ratio: 1; }
+  .controls { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 28px; }
+  button {
+    font: inherit; color: var(--ink); background: transparent; cursor: pointer;
+    border: 1px solid var(--hairline); border-radius: 8px; padding: 6px 14px;
+  }
+  button[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); }
+  .ladder { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: center; gap: 24px;
+            border-top: 1px solid var(--hairline); padding-top: 24px; }
+  .ladder figure { margin: 0; text-align: center; }
+  .ladder figcaption { font-size: 12px; color: var(--ink-2); margin-top: 6px; }
+  ul { color: var(--ink-2); padding-left: 20px; max-width: 64ch; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Linen</h1>
+  <p>An open book on a linen-woven paper tile. Its rust ribbon marks your exact place, the way Linen reopens a book where you left it. Everything is drawn with Canvas 2D in <code>icon.js</code> on Apple's 1024&nbsp;px icon grid, in the reader's own theme colours.</p>
+
+  <div class="stage"><canvas id="hero" width="1024" height="1024" aria-label="Linen app icon"></canvas></div>
+
+  <div class="controls" role="group" aria-label="Icon variant">
+    <button data-variant="paper" aria-pressed="true">Paper</button>
+    <button data-variant="night" aria-pressed="false">Night</button>
+    <button id="download">Download 1024 PNG</button>
+  </div>
+
+  <div class="ladder" id="ladder"></div>
+
+  <ul>
+    <li><b>Tile:</b> Paper <code>#F7F3EC</code> fading toward Sepia <code>#F1E6D2</code>, with a faint woven thread for the name. The weave is omitted below 128&nbsp;px.</li>
+    <li><b>Book:</b> two curved page stacks on a rust cover (<code>#8C4A2F</code>). The pages are blank: this is a quiet reader.</li>
+    <li><b>Ribbon:</b> the one saturated mark, readable down to 16&nbsp;px.</li>
+  </ul>
+</main>
+<script src="icon.js"></script>
+<script>
+  const hero = document.getElementById('hero')
+  const ladder = document.getElementById('ladder')
+  const SIZES = [16, 32, 64, 128, 256]
+  let variant = 'paper'
+
+  function render() {
+    LinenIcon.draw(hero, { size: 1024, variant })
+    ladder.replaceChildren(...SIZES.map((size) => {
+      const fig = document.createElement('figure')
+      const c = document.createElement('canvas')
+      // Draw at device resolution, show at the nominal point size.
+      const dpr = window.devicePixelRatio || 1
+      LinenIcon.draw(c, { size: Math.round(size * dpr), variant, nominal: size })
+      c.style.width = c.style.height = size + 'px'
+      const cap = document.createElement('figcaption')
+      cap.textContent = size + ' pt'
+      fig.append(c, cap)
+      return fig
+    }))
+  }
+
+  document.querySelectorAll('[data-variant]').forEach((b) => b.addEventListener('click', () => {
+    variant = b.dataset.variant
+    document.querySelectorAll('[data-variant]').forEach((o) => o.setAttribute('aria-pressed', String(o === b)))
+    render()
+  }))
+
+  document.getElementById('download').addEventListener('click', () => {
+    hero.toBlob((blob) => {
+      const a = document.createElement('a')
+      a.href = URL.createObjectURL(blob)
+      a.download = `linen-icon-${variant}-1024.png`
+      a.click()
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+    })
+  })
+
+  render()
+</script>
+</body>
+</html>
