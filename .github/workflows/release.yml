@@ -55,6 +55,8 @@ jobs:
           }
           id=$(find_draft)
           if [ -z "$id" ]; then
+            # Match --verify-tag: a deleted remote tag must not be recreated on main.
+            gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME" --silent
             # The id comes from the create call itself: the release list can lag behind
             # a new draft for a few seconds (v0.1.1's first run failed on that).
             id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
