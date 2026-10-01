@@ -22,6 +22,7 @@
   } from '../reader/typography'
   import { exportAllAnnotations } from './exportAll'
   import ExtensionsPane from './ExtensionsPane.svelte'
+  import ShortcutsPane from './ShortcutsPane.svelte'
 
   /** This page's own changes are not applied back to it. */
   const source = crypto.randomUUID()
@@ -255,6 +256,7 @@
           >{t.prefs.showShortcuts}</button
         >
       </div>
+      <ShortcutsPane {source} />
     {:else}
       <picture class="about-logo">
         {#if theme === 'auto' || theme.startsWith('ext:')}
