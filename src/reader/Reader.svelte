@@ -902,7 +902,7 @@
     if (!note?.note) return
     void ipc.copyText(noteText(note.note)).then(() => announce(t.peek.copied))
   }
-  // ---- Dictionary peek (1.1, PROVISIONAL): this Mac's dictionaries, nothing sent anywhere.
+  // ---- Dictionary peek (1.1, approved 2026-10-01): this Mac's dictionaries, nothing sent anywhere.
   let lookup = $state<{ word: string; rect: DOMRect; definition?: string | null } | null>(null)
   let lookupOpen = $derived(lanes.floating?.kind === 'lookup' && lookup !== null)
   /** The longest text looked up: a phrase, not a passage. */
@@ -959,7 +959,7 @@
   let fontPx = $state(DEFAULT_TEXT_SIZE)
   let spacing = $state<Spacing>('default')
   let themeChoice = $state<ThemeChoice>('auto')
-  // 1.1 (PROVISIONAL): font family and page width (all books), Publisher styles (C5).
+  // 1.1 (approved 2026-10-01): font family and page width (all books), Publisher styles (C5).
   let fontChoice = $state<FontChoice>('book')
   let pageWidth = $state<PageWidth>('normal')
   let publisherStyles = $state<PublisherStyles>('balanced')

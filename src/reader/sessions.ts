@@ -1,4 +1,4 @@
-// Reading sessions (1.1, PROVISIONAL; plan §1.3 “reading-statistics session
+// Reading sessions (1.1, approved 2026-10-01; plan §1.3 “reading-statistics session
 // events”). Linen keeps no statistics itself; an extension with
 // `reading.sessions` hears each session as it ends and can keep its own.
 //

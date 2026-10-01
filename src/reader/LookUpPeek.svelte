@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Dictionary peek (1.1, PROVISIONAL; plan §1.3 “dictionary peek providers”).
+  // Dictionary peek (1.1, approved 2026-10-01; plan §1.3 “dictionary peek providers”).
   // The definition comes from the dictionaries installed on this Mac, so nothing
   // leaves it. It sits below the selection, or above it near the page foot, like
   // the footnote peek (N9), and never navigates. Esc closes it.

@@ -127,7 +127,7 @@ pub fn permission_consent(p: &str) -> Option<Consent> {
         "book.metadata" | "book.selection" | "library.read" | "annotations.read" => {
             Consent::AtInstall
         }
-        // 1.1 (PROVISIONAL): when and how long the reader reads; no text, no title alone.
+        // 1.1 (approved 2026-10-01): when and how long the reader reads; no text, no title alone.
         "reading.sessions" => Consent::AtInstall,
         "book.text" | "annotations.write" => Consent::Highlighted,
         "files.import" | "files.export" => Consent::EachUse,

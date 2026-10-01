@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Settings › Shortcuts: remapping (C4; 1.1, PROVISIONAL). Every command, grouped
+  // Settings › Shortcuts: remapping (C4; 1.1, approved 2026-10-01). Every command, grouped
   // as on the cheat sheet, with its shortcut. Change records the next chord (Esc
   // cancels); Remove takes a shortcut away; Reset goes back to Linen's. Extension
   // commands can be given a shortcut, but never one that Linen's own commands use.

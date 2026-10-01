@@ -37,13 +37,13 @@ export interface ChapterResults {
 export interface ParsedQuery {
   needle: string
   exact: boolean
-  /** B6 (1.1, PROVISIONAL): only matches that start and end at a word boundary. */
+  /** B6 (1.1, approved 2026-10-01): only matches that start and end at a word boundary. */
   wholeWord?: boolean
   /** B6 (1.1): a regular expression over the text as written (case ignored). */
   pattern?: RegExp
 }
 
-/** B6 (1.1, PROVISIONAL): the search options under the field. */
+/** B6 (1.1, approved 2026-10-01): the search options under the field. */
 export interface SearchOptions {
   wholeWord?: boolean
   regex?: boolean

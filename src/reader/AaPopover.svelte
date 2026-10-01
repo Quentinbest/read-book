@@ -1,7 +1,7 @@
 <script lang="ts">
   // Reading settings, the Aa popover (Screen 09). Each row names its scope: text
   // size, theme and line spacing apply to all books; layout to this book (B8).
-  // 1.1 (PROVISIONAL): font and page width rows, all books.
+  // 1.1 (approved 2026-10-01): font and page width rows, all books.
   // Fixed-layout books keep only theme and zoom (E2); books that are mostly code
   // or tables get a one-line hint to try Scroll (L18). ⌘+ ⌘− ⌘0 work anywhere.
   import { onMount } from 'svelte'

@@ -1,4 +1,4 @@
-// Shortcut remapping (C4; 1.1, PROVISIONAL). The reader may give any command a
+// Shortcut remapping (C4; 1.1, approved 2026-10-01). The reader may give any command a
 // shortcut, extension commands included, or take one away. Rules (§2.8, P§12):
 //
 // - A shortcut needs ⌘, ⌃ or ⌥, except the function keys; Esc and Tab stay Linen's.

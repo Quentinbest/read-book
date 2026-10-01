@@ -1,5 +1,5 @@
-// Release 1.1 reading settings (plan §1.3 “1.1”; P§9; C5). PROVISIONAL until the
-// owner approves them (docs/pending-approvals.md).
+// Release 1.1 reading settings (plan §1.3 “1.1”; P§9; C5). Approved by the owner
+// on 2026-10-01 (items 33 and 34, docs/decisions.md).
 //
 // - Font family: the book's own, Literata, a sans, or a dyslexia-friendly face.
 // - Page width: the measure of L1 at its narrow end, its default, or its wide end.

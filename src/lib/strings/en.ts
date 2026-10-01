@@ -21,7 +21,7 @@ export const en = {
     searchPlaceholder: 'Search title or author',
     sortBy: (label: string) => `Sort by: ${label}`,
     sorts: { recent: 'Recent', title: 'Title', author: 'Author' },
-    // 1.1 list view (PROVISIONAL)
+    // 1.1 list view (approved 2026-10-01)
     view: 'View',
     viewGrid: 'Covers',
     viewList: 'List',
@@ -68,7 +68,7 @@ export const en = {
     atLaunchBook: 'Reopen the last book',
     textSize: 'Text size',
     lineSpacing: 'Line spacing',
-    // 1.1 (PROVISIONAL)
+    // 1.1 (approved 2026-10-01)
     font: 'Font',
     pageWidth: 'Page width',
     publisherStyles: 'Publisher styles',
@@ -199,7 +199,7 @@ export const en = {
     fileFilter: 'EPUB',
   },
   reader: {
-    // C5 (1.1, PROVISIONAL)
+    // C5 (1.1, approved 2026-10-01)
     simplified: 'This book’s styles are simplified',
     unsimplified: 'This book’s own styles are back',
     undo: 'Undo',
@@ -240,7 +240,7 @@ export const en = {
     searching: (n: number, of: number) => `Searching ${n} of ${of} chapters`,
     showAll: (n: number) => `Show all ${n}`,
     none: (q: string) => `No results for “${q}”`,
-    // B6 (1.1, PROVISIONAL)
+    // B6 (1.1, approved 2026-10-01)
     options: 'Search options',
     wholeWords: 'Whole words',
     regex: 'Regular expression',
@@ -290,7 +290,7 @@ export const en = {
     codeHint: 'Much of this book is code or tables. Scroll may read better.',
     fixedLayout:
       'This book has fixed pages, so its text size and spacing can’t change. ⌘+ and ⌘− zoom the page.',
-    // 1.1 (PROVISIONAL)
+    // 1.1 (approved 2026-10-01)
     font: 'Font',
     fontBook: 'Book',
     fontLiterata: 'Literata',
@@ -380,7 +380,7 @@ export const en = {
     copied: 'Note copied',
     missing: 'This note couldn’t be found in the book.',
   },
-  // C4 shortcut remapping (1.1, PROVISIONAL)
+  // C4 shortcut remapping (1.1, approved 2026-10-01)
   shortcuts: {
     intro:
       'Give any command a shortcut, including commands from extensions. Shortcuts need ⌘, ⌃ or ⌥ (function keys work alone); extensions can’t take Linen’s own.',
@@ -400,7 +400,7 @@ export const en = {
       `${keys} is Linen’s shortcut for ${title}; extensions can’t take it.`,
     moved: (keys: string, title: string) => `${keys} no longer runs ${title}.`,
   },
-  // 1.1 dictionary peek (PROVISIONAL)
+  // 1.1 dictionary peek (approved 2026-10-01)
   lookUp: {
     action: 'Look Up',
     label: (word: string) => `Definition of ${word}`,

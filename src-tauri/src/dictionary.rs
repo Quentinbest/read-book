@@ -1,4 +1,4 @@
-//! 1.1 dictionary peek (PROVISIONAL): definitions from the dictionaries installed on
+//! 1.1 dictionary peek (approved 2026-10-01): definitions from the dictionaries installed on
 //! this Mac (Dictionary Services), so a looked-up word never leaves it (D1). “Open in
 //! Dictionary” hands the word to Dictionary.app.
 

@@ -96,7 +96,7 @@
     {/if}
   </div>
 
-  <!-- B6 (1.1, PROVISIONAL): whole words and regular expressions. -->
+  <!-- B6 (1.1, approved 2026-10-01): whole words and regular expressions. -->
   <div class="options" role="group" aria-label={t.search.options}>
     <button
       type="button"

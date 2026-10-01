@@ -3,7 +3,7 @@
 - **Last updated:** 2026-10-01
 - **Asked for:** the owner, 2026-10-01: “Proceed with the recommended next steps, but leave out TTS, synchronization, and Developer ID signing for now.” That is: item 32, landing the logo, the plan's 1.1 list (§1.3) and the two deferred rules C4 (remapping) and B6 (search options).
 - **Not built (by that instruction):** TTS and sync (plan §1.3 “1.2”), Developer ID signing and notarisation (item 28 stands).
-- **Approvals:** every new design is PROVISIONAL, built to a written recommendation; items 33–40 in `docs/pending-approvals.md`. Item 31 is still waiting.
+- **Approvals:** items 33–40 approved by the owner on 2026-10-01, as recommended (`docs/decisions.md`). Item 31 is still waiting.
 - **Branch:** `worktree-release-1-1`, draft PR #4.
 
 ## What was built

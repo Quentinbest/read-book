@@ -5,6 +5,7 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
+- items 33–40, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 
 ## Review fixes (2026-09-26)
 
@@ -16,7 +17,7 @@ Approved so far; the record is in `docs/decisions.md`:
 
 ## Release 1.1 (2026-10-01)
 
-The owner asked for the recommended next steps except TTS, sync and Developer ID signing. Everything below is built to a written recommendation and marked PROVISIONAL in the code; status and evidence are in `docs/release-1.1-status.md`.
+The owner asked for the recommended next steps except TTS, sync and Developer ID signing. **Approved 2026-10-01 as recommended** (record in `docs/decisions.md`); kept here for their details. Status and evidence are in `docs/release-1.1-status.md`.
 
 33. **Font and page width (plan §1.3 “1.1”; P§9).** Two rows in the Aa popover, both “All books”, also in Settings › Reading.
     - **Font:** Book (the publisher's fonts, as today), Literata, Sans (the system sans), and OpenDyslexic as the dyslexia-friendly face. OpenDyslexic is bundled under the SIL OFL (four woff2 faces, about 440 KB) and loaded only when chosen. A chosen font replaces the book's fonts on text, never on code.

@@ -131,7 +131,7 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'Edit',
   },
   {
-    // 1.1 (PROVISIONAL): the dictionary peek; ⌃⌘D is macOS's own Look Up.
+    // 1.1 (approved 2026-10-01): the dictionary peek; ⌃⌘D is macOS's own Look Up.
     id: 'selection.lookUp',
     rule: 'A1',
     title: t.commands['selection.lookUp'],
@@ -209,7 +209,7 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'View',
   },
   {
-    // C5 (1.1, PROVISIONAL): this book without its publisher styles; runs again to undo.
+    // C5 (1.1, approved 2026-10-01): this book without its publisher styles; runs again to undo.
     id: 'reader.simplifyStyles',
     rule: 'C5',
     title: t.commands['reader.simplifyStyles'],

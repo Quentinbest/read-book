@@ -62,7 +62,7 @@ export interface Linen {
     /** Needs `annotations.read`, and `onAnnotations` in `activation`. Read-only events. */
     on(event: 'created' | 'changed' | 'deleted', handler: (a: Annotation | { id: string }) => void): Promise<true>
   }
-  /** 1.1 (provisional). */
+  /** 1.1. */
   reading: {
     /**
      * Needs `reading.sessions`, and `onReadingSessions` in `activation`. Each reading

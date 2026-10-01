@@ -51,7 +51,7 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 | `annotations.read` | The open book's highlights and notes, and their events | At install |
 | `annotations.write` | Reserved for a later version | At install, highlighted |
 | `library.read` | The title, authors and progress of every book | At install |
-| `reading.sessions` | Each reading session as it ends: when, how long, how far (1.1, provisional). The book's title only with `book.metadata` | At install |
+| `reading.sessions` | Each reading session as it ends: when, how long, how far (1.1). The book's title only with `book.metadata` | At install |
 | `network:<host>[:port]` | `net.fetch` to that host only; `*.example.org` covers its subdomains (strongly warned) | At install |
 | `files.export`, `files.import` | Only files the reader picks in the system dialog | Each use |
 | `background` | Reserved for 1.1 (C3) | At install, strongly warned |

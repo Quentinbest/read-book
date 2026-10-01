@@ -4,7 +4,7 @@
   // title and author; sort by Recent, Title or Author. Each book has an item menu
   // (Book info, Show in Finder, Remove; E7); Remove is immediate with Undo (G4,
   // provisional). Return opens the current book (E8). Empty: E9, Screen 12.
-  // 1.1 (PROVISIONAL): All books as covers or as a list, remembered (P§10).
+  // 1.1 (approved 2026-10-01): All books as covers or as a list, remembered (P§10).
   import { onMount } from 'svelte'
   import Button from '../components/Button.svelte'
   import Icon from '../components/Icon.svelte'
@@ -664,7 +664,7 @@
   .damaged {
     color: var(--accent);
   }
-  /* 1.1 (PROVISIONAL): the view switch, and All books as a list. */
+  /* 1.1 (approved 2026-10-01): the view switch, and All books as a list. */
   .views {
     display: inline-flex;
     gap: 2px;

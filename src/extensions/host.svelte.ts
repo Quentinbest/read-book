@@ -310,7 +310,7 @@ export class ExtensionHost {
   }
 
   /**
-   * 1.1 (PROVISIONAL): a reading session ended. Extensions with `reading.sessions` and
+   * 1.1 (approved 2026-10-01): a reading session ended. Extensions with `reading.sessions` and
    * `onReadingSessions` hear it; the book's title and identifier only with `book.metadata`.
    */
   emitReadingSession(

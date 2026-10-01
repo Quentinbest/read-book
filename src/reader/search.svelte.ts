@@ -28,7 +28,7 @@ export class SearchState {
   /** A search has finished (or not started) for the current query. */
   settled = $state(true)
   active = $state<{ index: number; n: number } | null>(null)
-  /** B6 (1.1, PROVISIONAL): whole words, regular expressions; for this book's search. */
+  /** B6 (1.1, approved 2026-10-01): whole words, regular expressions; for this book's search. */
   wholeWord = $state(false)
   regex = $state(false)
   /** The regular expression doesn't parse. */

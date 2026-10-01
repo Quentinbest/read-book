@@ -118,3 +118,18 @@ Testing 0.1.1, the owner found the progress bar missing when the toolbar is reve
 |---|---|
 | S9 (edge reveal) | Either edge, after the 150 ms dwell, reveals both bars, as before 2026-09-29. The top bar names the book only. The bars stay while the pointer is in an edge zone or on a bar and hide as soon as it leaves. The full controls (Tab, ⌘J, Aa) are unchanged: chapter in the title, 3 s delay. |
 | S11 (bottom zone) | With the Dock hiding at the bottom (or in full screen), the bottom zone stays but leaves out the 6 pt strip where the Dock slides in, instead of switching off; otherwise the bottom edge could not reveal anything on a Mac with an auto-hiding Dock. |
+
+## Approved 2026-10-01 (release 1.1)
+
+The owner approved items 33–40 as recommended (“Go ahead”, then “Approve and fix”). The details are in `docs/pending-approvals.md` and `docs/release-1.1-status.md`; the code cites this record.
+
+| # | Approved |
+|---|---|
+| 1.1 Font, Page width (33) | Aa and Settings › Reading, all books: Book, Literata, Sans, OpenDyslexic (bundled, OFL); Narrow 56 / Normal 66 / Wide 74 ch. |
+| C5 Publisher styles (34) | Full, Balanced (default), Off in Settings › Reading; Simplify Styles for This Book (Off for one book), with Undo. |
+| Dictionary peek (35) | Look Up in the selection bar, the context menu and ⌃⌘D, from this Mac's dictionaries; Open in Dictionary; Search the book. Extension peek providers wait for a Host API addition. |
+| Library list view (36) | Covers / List switch in the library header, remembered. |
+| Reading sessions (37) | Permission `reading.sessions`, activation `onReadingSessions`, `linen.reading.on('sessionEnded')`; the title only with `book.metadata`; 5-minute idle end, 10-second minimum. |
+| C4 remapping (38) | Settings › Shortcuts as built: modifiers required (function keys alone allowed), the system's chords reserved, extensions never take core shortcuts, a core command can take another's. This lifts the MVP's “remapping is deferred” rule (§2.8). |
+| B6 search options (39) | Whole words and regular expressions under the search field. This replaces B6's 2026-09-24 “no space reserved”. |
+| Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |

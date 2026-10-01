@@ -61,7 +61,7 @@
     ['default', t.aa.normal],
     ['loose', t.aa.loose],
   ])
-  // 1.1 (PROVISIONAL)
+  // 1.1 (approved 2026-10-01)
   const fonts = choice<FontChoice>(t.prefs.font, [
     ['book', t.aa.fontBook],
     ['literata', t.aa.fontLiterata],
