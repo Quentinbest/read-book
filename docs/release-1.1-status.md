@@ -3,7 +3,7 @@
 - **Last updated:** 2026-10-01
 - **Asked for:** the owner, 2026-10-01: “Proceed with the recommended next steps, but leave out TTS, synchronization, and Developer ID signing for now.” That is: item 32, landing the logo, the plan's 1.1 list (§1.3) and the two deferred rules C4 (remapping) and B6 (search options).
 - **Not built (by that instruction):** TTS and sync (plan §1.3 “1.2”), Developer ID signing and notarisation (item 28 stands).
-- **Approvals:** items 33–40 approved by the owner on 2026-10-01, as recommended (`docs/decisions.md`). Item 31 is still waiting.
+- **Approvals:** items 33–41 approved by the owner on 2026-10-01, as recommended, and item 31 the same day (`docs/decisions.md`). Nothing is waiting.
 - **Branch:** `worktree-release-1-1`, draft PR #4.
 
 ## What was built
@@ -39,7 +39,7 @@
 
 - **Short windows:** the Aa popover now stops 12 px above the window's foot and its rows scroll; the arrow and the foot stay put. At full height it is pixel-identical to its baseline. Check `11-aa-short-window` (1100 × 560).
 - **Esc and ⌘, are not remappable:** Settings › Shortcuts listed Close layer (Esc) with Change and Remove. Commands on a reserved chord are now left out, and the registry ignores a stored override for them (K14, G2; `remap.test.ts`).
-- **Settings captures:** `11-settings-reading` and `11-settings-shortcuts` are new captures with no baseline yet (item 41).
+- **Settings captures:** `11-settings-reading` and `11-settings-shortcuts` are baselines (item 41, approved 2026-10-01).
 - After these: `C4-remap`, `L4-aa-scope`, `11-font-and-width`, `11-aa-short-window` and `D1-no-uncaught-errors` pass; the visual comparison has only the known `17-goto` focus-ring difference.
 
 ## Known gaps

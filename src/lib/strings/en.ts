@@ -441,7 +441,7 @@ export const en = {
     dismiss: 'Dismiss',
     saveFailed: 'Couldn’t save notes to disk',
     retry: 'Retry',
-    // N5, E5: wording PROVISIONAL (docs/pending-approvals.md).
+    // N5, E5: wording approved 2026-10-01 (item 31, docs/decisions.md).
     quitUnsaved: 'Some notes aren’t saved, so Linen stayed open',
     quitAnyway: 'Quit Anyway',
   },
