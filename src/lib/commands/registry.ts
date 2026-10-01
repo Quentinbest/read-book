@@ -6,6 +6,7 @@
 
 import { t } from '../strings/en'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
+import { remappable, type Overrides } from './remap'
 
 export type CommandSection =
   'reading' | 'navigation' | 'search' | 'annotation' | 'view' | 'app' | 'extension'
@@ -130,6 +131,16 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'Edit',
   },
   {
+    // 1.1 (approved 2026-10-01): the dictionary peek; ⌃⌘D is macOS's own Look Up.
+    id: 'selection.lookUp',
+    rule: 'A1',
+    title: t.commands['selection.lookUp'],
+    section: 'annotation',
+    chord: { code: 'KeyD', meta: true, ctrl: true },
+    palette: true,
+    menu: 'Edit',
+  },
+  {
     id: 'selection.focusBar',
     rule: 'K7',
     title: t.commands['selection.focusBar'],
@@ -193,6 +204,15 @@ export const CORE_COMMANDS: CommandDef[] = [
     id: 'reader.settings',
     rule: 'L4',
     title: t.commands['reader.settings'],
+    section: 'view',
+    palette: true,
+    menu: 'View',
+  },
+  {
+    // C5 (1.1, approved 2026-10-01): this book without its publisher styles; runs again to undo.
+    id: 'reader.simplifyStyles',
+    rule: 'C5',
+    title: t.commands['reader.simplifyStyles'],
     section: 'view',
     palette: true,
     menu: 'View',
@@ -279,6 +299,8 @@ export class CommandRegistry {
   #defs = new Map<string, CommandDef>()
   #handlers = new Map<string, Pick<Command, 'run' | 'enabled'>>()
   #listeners = new Set<() => void>()
+  /** C4: shortcuts the reader set (or took away), by command id. */
+  #overrides: Overrides = {}
 
   constructor(defs: CommandDef[] = CORE_COMMANDS) {
     for (const d of defs) this.define(d)
@@ -291,8 +313,8 @@ export class CommandRegistry {
   }
 
   /**
-   * Extension commands: never with a shortcut in the MVP (C4), never replacing
-   * a core command.
+   * Extension commands: no shortcut of their own, never replacing a core command.
+   * The reader may give them one (C4, `setOverrides`).
    */
   defineExtension(
     extensionId: string,
@@ -332,12 +354,28 @@ export class CommandRegistry {
     }
   }
 
+  /** C4: the reader's shortcuts; the menu bar, ⌘K and the cheat sheet follow. */
+  setOverrides(overrides: Overrides) {
+    this.#overrides = overrides
+    this.#emit()
+  }
+
+  /** Every defined command with its shortcuts as the reader set them, handled or not. */
+  definitions(): CommandDef[] {
+    return [...this.#defs.values()].map((d) => this.#withOverride(d))
+  }
+
+  #withOverride(def: CommandDef): CommandDef {
+    if (!(def.id in this.#overrides) || !remappable(def)) return def
+    return { ...def, chord: this.#overrides[def.id] ?? undefined, altChords: undefined }
+  }
+
   /** Commands that have a handler: the only ones shown anywhere. */
   available(): Command[] {
     const out: Command[] = []
     for (const [id, def] of this.#defs) {
       const h = this.#handlers.get(id)
-      if (h) out.push({ ...def, ...h })
+      if (h) out.push({ ...this.#withOverride(def), ...h })
     }
     return out
   }
@@ -345,7 +383,7 @@ export class CommandRegistry {
   get(id: string): Command | null {
     const def = this.#defs.get(id)
     const h = this.#handlers.get(id)
-    return def && h ? { ...def, ...h } : null
+    return def && h ? { ...this.#withOverride(def), ...h } : null
   }
 
   run(id: string): boolean {

@@ -11,8 +11,18 @@
   import { applyTheme, type ThemeChoice } from '../app/theme'
   import { changeSetting as change, onSettingChanged } from '../app/settingsSync'
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from '../reader/textSizes'
+  import {
+    SETTING as TYPE_SETTING,
+    parseFont,
+    parsePageWidth,
+    parsePublisherStyles,
+    type FontChoice,
+    type PageWidth,
+    type PublisherStyles,
+  } from '../reader/typography'
   import { exportAllAnnotations } from './exportAll'
   import ExtensionsPane from './ExtensionsPane.svelte'
+  import ShortcutsPane from './ShortcutsPane.svelte'
 
   /** This page's own changes are not applied back to it. */
   const source = crypto.randomUUID()
@@ -26,6 +36,9 @@
   let atLaunch = $state<'library' | 'book'>('library')
   let fontPx = $state(DEFAULT_TEXT_SIZE)
   let spacing = $state('default')
+  let font = $state<FontChoice>('book')
+  let width = $state<PageWidth>('normal')
+  let publisher = $state<PublisherStyles>('balanced')
   let crossfade = $state(false)
   let announcements = $state(true)
   let singleKeys = $state(true)
@@ -47,6 +60,23 @@
     ['compact', t.aa.compact],
     ['default', t.aa.normal],
     ['loose', t.aa.loose],
+  ])
+  // 1.1 (approved 2026-10-01)
+  const fonts = choice<FontChoice>(t.prefs.font, [
+    ['book', t.aa.fontBook],
+    ['literata', t.aa.fontLiterata],
+    ['sans', t.aa.fontSans],
+    ['dyslexic', t.aa.fontDyslexicLong],
+  ])
+  const widths = choice<PageWidth>(t.prefs.pageWidth, [
+    ['narrow', t.aa.narrow],
+    ['normal', t.aa.normal],
+    ['wide', t.aa.wide],
+  ])
+  const publishers = choice<PublisherStyles>(t.prefs.publisherStyles, [
+    ['full', t.prefs.publisherFull],
+    ['balanced', t.prefs.publisherBalanced],
+    ['off', t.prefs.publisherOff],
   ])
   const launches = choice<'library' | 'book'>(t.prefs.atLaunch, [
     ['library', t.prefs.atLaunchLibrary],
@@ -97,6 +127,9 @@
       atLaunch = (await get('openAtLaunch')) === 'book' ? 'book' : 'library'
       fontPx = Number((await get('fontPx')) ?? DEFAULT_TEXT_SIZE) || DEFAULT_TEXT_SIZE
       spacing = (await get('lineSpacing')) ?? 'default'
+      font = parseFont(await get(TYPE_SETTING.font))
+      width = parsePageWidth(await get(TYPE_SETTING.width))
+      publisher = parsePublisherStyles(await get(TYPE_SETTING.publisher))
       crossfade = (await get('pageTurnCrossfade')) === 'on'
       announcements = (await get('pageTurnAnnouncements')) !== 'off'
       singleKeys = (await get('singleKeyShortcuts')) !== 'off'
@@ -110,6 +143,8 @@
       if (key === 'theme') theme = value as ThemeChoice
       if (key === 'fontPx') fontPx = Number(value)
       if (key === 'lineSpacing') spacing = value
+      if (key === TYPE_SETTING.font) font = parseFont(value)
+      if (key === TYPE_SETTING.width) width = parsePageWidth(value)
     }, source)
     return () => void off.then((f) => f())
   })
@@ -164,6 +199,19 @@
         spacing = v
         void changeSetting('lineSpacing', v)
       })}
+      {@render radios(fonts, font, (v) => {
+        font = v
+        void changeSetting(TYPE_SETTING.font, v)
+      })}
+      {@render radios(widths, width, (v) => {
+        width = v
+        void changeSetting(TYPE_SETTING.width, v)
+      })}
+      {@render radios(publishers, publisher, (v) => {
+        publisher = v
+        void changeSetting(TYPE_SETTING.publisher, v)
+      })}
+      <p class="help">{t.prefs.publisherHelp}</p>
       <Switch
         label={t.prefs.crossfade}
         description={t.prefs.crossfadeHelp}
@@ -208,8 +256,24 @@
           >{t.prefs.showShortcuts}</button
         >
       </div>
+      <ShortcutsPane {source} />
     {:else}
-      <p class="about-name">Linen</p>
+      <picture class="about-logo">
+        {#if theme === 'auto' || theme.startsWith('ext:')}
+          <source
+            media="(prefers-color-scheme: dark)"
+            srcset="/brand/linen-a-v002/horizontal-white.svg"
+          />
+        {/if}
+        <img
+          src={theme === 'night'
+            ? '/brand/linen-a-v002/horizontal-white.svg'
+            : '/brand/linen-a-v002/horizontal-primary.svg'}
+          width="204"
+          height="80"
+          alt="Linen"
+        />
+      </picture>
       {#if version}<p class="help">{t.prefs.version(version)}</p>{/if}
       <p>{t.prefs.aboutLine}</p>
       <p class="help">{t.prefs.fonts}</p>
@@ -374,8 +438,14 @@
   .status {
     color: var(--ink);
   }
-  .about-name {
-    font: 500 22px var(--font-reading, Literata, Georgia, serif);
+  .about-logo {
+    width: 204px;
+    max-width: 100%;
+  }
+  .about-logo img {
+    display: block;
+    width: 100%;
+    height: auto;
   }
   /* X6: narrow (zoomed) Settings: the sections run across the top. */
   @media (max-width: 560px) {

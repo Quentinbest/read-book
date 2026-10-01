@@ -4,6 +4,7 @@
 // then onward, wrapping), so results stream in and progress can be shown.
 
 import {
+  INVALID_PATTERN,
   indexChapter,
   parseQuery,
   searchChapter,
@@ -11,12 +12,13 @@ import {
   type IndexedChapter,
   type Match,
   type ParsedQuery,
+  type SearchOptions,
 } from './search'
 
 export type SearchEvent =
   | { type: 'chapter'; id: number; index: number; matches: Match[] }
   | { type: 'progress'; id: number; searched: number; total: number }
-  | { type: 'done'; id: number; searched: number; total: number }
+  | { type: 'done'; id: number; searched: number; total: number; invalid?: boolean }
 
 interface Active {
   id: number
@@ -45,11 +47,11 @@ export class SearchSession {
    * Start a search (replacing any running one). `order` lists every searchable
    * chapter in F3 order; the ones not yet indexed are scanned when they arrive.
    */
-  search(id: number, raw: string, order: number[]): SearchEvent[] {
-    const query = parseQuery(raw)
-    if (!query) {
+  search(id: number, raw: string, order: number[], options: SearchOptions = {}): SearchEvent[] {
+    const query = parseQuery(raw, options)
+    if (!query || query === INVALID_PATTERN) {
       this.#active = null
-      return [{ type: 'done', id, searched: 0, total: 0 }]
+      return [{ type: 'done', id, searched: 0, total: 0, ...(query ? { invalid: true } : {}) }]
     }
     this.#active = { id, query, order, next: 0, scanned: new Set() }
     return this.#advance()

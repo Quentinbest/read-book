@@ -3,6 +3,7 @@
 // active result.
 
 import type { Match } from '../lib/search/search'
+import type { SearchEvent } from '../lib/search/session'
 import type { BookSearch } from './bookSearch'
 
 /** F2: search 150 ms after typing stops. */
@@ -27,6 +28,11 @@ export class SearchState {
   /** A search has finished (or not started) for the current query. */
   settled = $state(true)
   active = $state<{ index: number; n: number } | null>(null)
+  /** B6 (1.1, approved 2026-10-01): whole words, regular expressions; for this book's search. */
+  wholeWord = $state(false)
+  regex = $state(false)
+  /** The regular expression doesn't parse. */
+  invalid = $state(false)
   #cancel: (() => void) | null = null
   #timer = 0
 
@@ -63,6 +69,13 @@ export class SearchState {
     this.#timer = window.setTimeout(() => this.run(), SEARCH_DEBOUNCE_MS)
   }
 
+  /** B6: change an option; the search runs again. */
+  setOptions(o: { wholeWord?: boolean; regex?: boolean }) {
+    if (o.wholeWord !== undefined) this.wholeWord = o.wholeWord
+    if (o.regex !== undefined) this.regex = o.regex
+    this.run()
+  }
+
   /** Run now (↵ before the debounce has fired, or a pre-filled query). */
   run() {
     clearTimeout(this.#timer)
@@ -70,6 +83,7 @@ export class SearchState {
     this.groups = []
     this.active = null
     this.searched = 0
+    this.invalid = false
     const book = this.book()
     if (!book || !this.query.trim()) {
       this.running = false
@@ -80,22 +94,30 @@ export class SearchState {
     this.total = book.total
     this.running = true
     this.settled = false
-    this.#cancel = book.search(this.query, this.currentSection(), (events) => {
-      // A batch lands in one update: new chapters' results, then progress or done.
-      const found = events.flatMap((e) =>
-        e.type === 'chapter' ? [{ index: e.index, matches: e.matches }] : [],
-      )
-      if (found.length) this.groups = [...this.groups, ...found]
-      const last = events.findLast((e) => e.type === 'progress' || e.type === 'done')
-      if (last && (last.type === 'progress' || last.type === 'done')) {
-        this.searched = last.searched
-        if (last.type === 'done') {
-          this.running = false
-          this.settled = true
-        }
+    this.#cancel = book.search(
+      this.query,
+      this.currentSection(),
+      (events) => this.#onEvents(events),
+      { wholeWord: this.wholeWord, regex: this.regex },
+    )
+  }
+
+  #onEvents(events: SearchEvent[]) {
+    // A batch lands in one update: new chapters' results, then progress or done.
+    const found = events.flatMap((e) =>
+      e.type === 'chapter' ? [{ index: e.index, matches: e.matches }] : [],
+    )
+    if (found.length) this.groups = [...this.groups, ...found]
+    const last = events.findLast((e) => e.type === 'progress' || e.type === 'done')
+    if (last && (last.type === 'progress' || last.type === 'done')) {
+      this.searched = last.searched
+      if (last.type === 'done') {
+        this.running = false
+        this.settled = true
+        this.invalid = !!last.invalid
       }
-      this.changed()
-    })
+    }
+    this.changed()
   }
 
   /** The next or previous result from the active one (F6); wraps. */

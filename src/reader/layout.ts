@@ -46,6 +46,8 @@ export interface LayoutInput {
   avgCharEm?: number
   /** Allow a two-page spread (Pages mode, L8). */
   allowSpread?: boolean
+  /** 1.1 page width: the measure in ch, within L1's clamp (default 66). */
+  measureCh?: number
 }
 
 export interface Layout {
@@ -81,7 +83,11 @@ export function computeLayout(input: LayoutInput): Layout {
 
   // L2: the column is min(measure, W − 2 × min margin); extra width becomes margin.
   // At large sizes margins shrink to the minimum before characters per line fall.
-  const measurePx = MEASURE_CH * chPx
+  const measureTarget = Math.min(
+    MEASURE_MAX_CH,
+    Math.max(MEASURE_MIN_CH, input.measureCh ?? MEASURE_CH),
+  )
+  const measurePx = measureTarget * chPx
   const columns: 1 | 2 =
     input.allowSpread &&
     areaWidth >= BREAKPOINTS.spread &&

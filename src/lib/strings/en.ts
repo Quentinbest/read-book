@@ -21,6 +21,11 @@ export const en = {
     searchPlaceholder: 'Search title or author',
     sortBy: (label: string) => `Sort by: ${label}`,
     sorts: { recent: 'Recent', title: 'Title', author: 'Author' },
+    // 1.1 list view (approved 2026-10-01)
+    view: 'View',
+    viewGrid: 'Covers',
+    viewList: 'List',
+    neverOpened: '—',
     continueReading: 'Continue reading',
     allBooks: 'All books',
     resume: 'Resume reading',
@@ -63,6 +68,15 @@ export const en = {
     atLaunchBook: 'Reopen the last book',
     textSize: 'Text size',
     lineSpacing: 'Line spacing',
+    // 1.1 (approved 2026-10-01)
+    font: 'Font',
+    pageWidth: 'Page width',
+    publisherStyles: 'Publisher styles',
+    publisherFull: 'Full',
+    publisherBalanced: 'Balanced',
+    publisherOff: 'Off',
+    publisherHelp:
+      'Balanced keeps a book’s design but gives you its line spacing and alignment. Full keeps all of it; Off shows plain text. One book can be simplified from its ⋯ menu.',
     crossfade: 'Page-turn crossfade',
     crossfadeHelp: 'Pages fade into each other over 120 ms instead of changing at once.',
     announcements: 'Announce page turns',
@@ -86,7 +100,7 @@ export const en = {
     showShortcuts: 'Show all shortcuts',
     version: (v: string) => `Version ${v}`,
     aboutLine: 'A quiet EPUB reader. Your books stay on this device.',
-    fonts: 'Literata is licensed under the SIL Open Font License.',
+    fonts: 'Literata and OpenDyslexic are licensed under the SIL Open Font License.',
     // D1 (approved 2026-09-26)
     privacy:
       'Linen sends nothing anywhere. If something goes wrong, the details are written to a crash log on this Mac, which you can attach to an email if you choose.',
@@ -168,6 +182,9 @@ export const en = {
   update: {
     ready: (version: string) => `Update ready · Linen ${version}`,
     restart: 'Restart',
+    // Item 32: this install can't replace itself (standard account, disk image).
+    available: (version: string) => `Linen ${version} is available`,
+    download: 'Download',
   },
   // Import outcomes: wording PROVISIONAL until the G4 designs exist.
   import: {
@@ -182,6 +199,10 @@ export const en = {
     fileFilter: 'EPUB',
   },
   reader: {
+    // C5 (1.1, approved 2026-10-01)
+    simplified: 'This book’s styles are simplified',
+    unsimplified: 'This book’s own styles are back',
+    undo: 'Undo',
     library: 'Library',
     more: 'More',
     caretOn: 'Caret browsing on. Arrow keys move the caret; Shift and arrows select.',
@@ -219,6 +240,11 @@ export const en = {
     searching: (n: number, of: number) => `Searching ${n} of ${of} chapters`,
     showAll: (n: number) => `Show all ${n}`,
     none: (q: string) => `No results for “${q}”`,
+    // B6 (1.1, approved 2026-10-01)
+    options: 'Search options',
+    wholeWords: 'Whole words',
+    regex: 'Regular expression',
+    invalid: 'This regular expression isn’t valid.',
     next: 'next',
     previous: 'previous',
     back: 'back to your page',
@@ -264,6 +290,16 @@ export const en = {
     codeHint: 'Much of this book is code or tables. Scroll may read better.',
     fixedLayout:
       'This book has fixed pages, so its text size and spacing can’t change. ⌘+ and ⌘− zoom the page.',
+    // 1.1 (approved 2026-10-01)
+    font: 'Font',
+    fontBook: 'Book',
+    fontLiterata: 'Literata',
+    fontSans: 'Sans',
+    fontDyslexic: 'Dyslexic',
+    fontDyslexicLong: 'OpenDyslexic',
+    width: 'Page width',
+    narrow: 'Narrow',
+    wide: 'Wide',
   },
   annotations: {
     bar: 'Selection actions',
@@ -344,6 +380,38 @@ export const en = {
     copied: 'Note copied',
     missing: 'This note couldn’t be found in the book.',
   },
+  // C4 shortcut remapping (1.1, approved 2026-10-01)
+  shortcuts: {
+    intro:
+      'Give any command a shortcut, including commands from extensions. Shortcuts need ⌘, ⌃ or ⌥ (function keys work alone); extensions can’t take Linen’s own.',
+    none: 'None',
+    change: 'Change',
+    cancel: 'Cancel',
+    remove: 'Remove',
+    reset: 'Reset',
+    resetAll: 'Reset All Shortcuts',
+    typeNow: 'Type a shortcut…',
+    changeFor: (title: string) => `Change the shortcut for ${title}`,
+    removeFor: (title: string) => `Remove the shortcut for ${title}`,
+    resetFor: (title: string) => `Reset the shortcut for ${title}`,
+    needsModifier: 'A shortcut needs ⌘, ⌃ or ⌥ (function keys work alone).',
+    reserved: (keys: string) => `${keys} belongs to macOS or Linen and can’t be changed.`,
+    taken: (keys: string, title: string) =>
+      `${keys} is Linen’s shortcut for ${title}; extensions can’t take it.`,
+    moved: (keys: string, title: string) => `${keys} no longer runs ${title}.`,
+  },
+  // 1.1 dictionary peek (approved 2026-10-01)
+  lookUp: {
+    action: 'Look Up',
+    label: (word: string) => `Definition of ${word}`,
+    title: 'Dictionary',
+    hint: 'Esc closes',
+    looking: 'Looking up…',
+    none: (word: string) => `No dictionary on this Mac has “${word}”.`,
+    openDictionary: 'Open in Dictionary',
+    searchBook: 'Search the book',
+    contextMenu: (word: string) => `Look Up “${word.length > 24 ? word.slice(0, 23) + '…' : word}”`,
+  },
   image: {
     label: 'Image',
     close: 'Close image',
@@ -373,7 +441,7 @@ export const en = {
     dismiss: 'Dismiss',
     saveFailed: 'Couldn’t save notes to disk',
     retry: 'Retry',
-    // N5, E5: wording PROVISIONAL (docs/pending-approvals.md).
+    // N5, E5: wording approved 2026-10-01 (item 31, docs/decisions.md).
     quitUnsaved: 'Some notes aren’t saved, so Linen stayed open',
     quitAnyway: 'Quit Anyway',
   },
@@ -396,6 +464,8 @@ export const en = {
     'layout.pages': 'Pages Mode',
     'layout.scroll': 'Scroll Mode',
     'reader.settings': 'Reading settings…',
+    'reader.simplifyStyles': 'Simplify Styles for This Book',
+    'selection.lookUp': 'Look Up Selection',
     'app.settings': 'Settings…',
     'palette.open': 'Command palette',
     'shortcuts.show': 'Keyboard shortcuts',

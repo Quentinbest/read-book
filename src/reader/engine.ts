@@ -30,6 +30,7 @@ import {
   type Chunks,
 } from './chunks'
 import { transformContent } from './content'
+import type { PublisherStyles } from './typography'
 import { isNoteRef, noteContainer, referencedFootnoteAsides } from './notes'
 import { extractText, offsetAt, rangeFor, type ExtractedText } from '../lib/search/extract'
 import { MIN_SIDE_MARGIN, type Layout } from './layout'
@@ -357,6 +358,7 @@ export class ReaderEngine {
   #caret: { color: string } | null = null
   #closed = false
   #extraStyles = ''
+  #publisher: PublisherStyles = 'balanced'
   /**
    * I16: Scroll for a vertical-writing book runs sideways. It is foliate-js's own
    * scrolled flow (which scrolls vertical text horizontally) in the page box, one
@@ -1192,7 +1194,13 @@ export class ReaderEngine {
 
   /** Focus the page (the book text), e.g. when a layer closes (S5). */
   focusPage() {
-    this.#current.renderer?.focusView?.()
+    // D1: called on a frame after a reveal; the paginator may have no view yet (or any more).
+    if (this.#closed) return
+    try {
+      this.#current.renderer?.focusView?.()
+    } catch {
+      // Nothing shown to focus.
+    }
   }
 
   /** Open a book from a file, or (L17) from a loader that reads entries on demand. */
@@ -1284,6 +1292,39 @@ export class ReaderEngine {
     this.setZoom(1)
     // Reflow moves the neighbours' last and first pages: park them again.
     if (this.#book) this.#prepareNeighbours(true)
+  }
+
+  /**
+   * C5: Publisher styles. Off turns the book's own stylesheets and style attributes
+   * off in every loaded document (and in each one that loads later); the caller
+   * lays the book out again.
+   */
+  setPublisherStyles(mode: PublisherStyles) {
+    if (mode === this.#publisher) return
+    this.#publisher = mode
+    for (const view of this.#views())
+      for (const c of view.renderer?.getContents?.() ?? []) if (c.doc) this.#applyPublisher(c.doc)
+  }
+
+  #applyPublisher(doc: Document) {
+    const off = this.#publisher === 'off'
+    for (const el of doc.querySelectorAll<HTMLStyleElement | HTMLLinkElement>(
+      'style[data-linen-book], link[data-linen-book]',
+    ))
+      el.disabled = off
+    // Inside the body only: foliate-js keeps its pagination styles on <html> and <body>.
+    const body = doc.body
+    if (!body) return
+    if (off)
+      for (const el of body.querySelectorAll('[style]')) {
+        el.setAttribute('data-linen-style', el.getAttribute('style') ?? '')
+        el.removeAttribute('style')
+      }
+    else
+      for (const el of body.querySelectorAll('[data-linen-style]')) {
+        el.setAttribute('style', el.getAttribute('data-linen-style') ?? '')
+        el.removeAttribute('data-linen-style')
+      }
   }
 
   setStyles(styles: string) {
@@ -2210,6 +2251,8 @@ export class ReaderEngine {
 
   #onLoad(view: View, doc: Document, index: number) {
     this.#docIndex.set(doc, index)
+    // C5: before anything measures the document.
+    if (this.#publisher === 'off' && !view.isFixedLayout) this.#applyPublisher(doc)
     // L16: a very long chapter lays out only the chunk it was asked for.
     const size = this.#book?.sections[index]?.size ?? 0
     const request = this.#requests.get(view)

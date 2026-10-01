@@ -2381,10 +2381,12 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const range = await selectPhrase(MANHATTOES)
       if (!rightClick(range)) problems.push('the WebKit menu was not replaced')
       await settled(100)
-      const labels = recorded()?.labels.join(', ')
+      const labels = recorded()?.labels.join(', ') ?? ''
+      // 1.1: Look Up “…” follows Search (pending approval 35).
       if (
-        labels !==
-        'Highlight Yellow, Highlight Green, Highlight Blue, Highlight Rose, Note, Copy, Search'
+        !/^Highlight Yellow, Highlight Green, Highlight Blue, Highlight Rose, Note, Copy, Search, Look Up “[^”]+”$/.test(
+          labels,
+        )
       )
         problems.push(`selection menu: ${labels}`)
       pageDoc().doc.getSelection()?.removeAllRanges()
@@ -2838,7 +2840,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const labels = Array.from(pop.querySelectorAll('.lbl')).map((l) => l.textContent?.trim())
       if (
         labels.join(' | ') !==
-        'Text size19 px · All books | ThemeAll books | Line spacingAll books | LayoutThis book'
+        'Text size19 px · All books | ThemeAll books | Line spacingAll books | FontAll books | Page widthAll books | LayoutThis book'
       )
         problems.push(`rows: ${labels.join(' | ')}`)
       pop.querySelector<HTMLButtonElement>('.step.large')!.click()
@@ -4179,6 +4181,357 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Release 1.1
+
+  checks.push({
+    id: 'D6-update-available',
+    description:
+      'Item 32: an update this install cannot apply shows “Linen x.y.z is available · Download”, opening its release page',
+    run: async () => {
+      await backToLibrary()
+      await emit('update-available', '9.9.9')
+      const m = await waitFor('the update line', () =>
+        /Linen 9\.9\.9 is available/.test(hooks.messages?.current?.text ?? '')
+          ? hooks.messages!.current
+          : null,
+      )
+      const problems: string[] = []
+      if (m.action?.label !== 'Download') problems.push(`action is “${m.action?.label}”`)
+      const before = hooks.externalOpened?.length ?? 0
+      m.action?.run()
+      if (hooks.externalOpened?.[before] !== 'release:9.9.9')
+        problems.push(`opened ${hooks.externalOpened?.[before] ?? 'nothing'}`)
+      hooks.messages!.dismiss(m.id)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-font-and-width',
+    description:
+      '1.1: Font and Page width (all books) apply at once: OpenDyslexic loads and replaces the book’s face; Narrow < Normal < Wide',
+    run: async () => {
+      const { changeSetting } = await import('../app/settingsSync')
+      const set = (k: string, v: string) => changeSetting(k, v, crypto.randomUUID())
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      try {
+        await set('fontFamily', 'dyslexic')
+        await settled(1500)
+        const p = await waitFor('a paragraph', () => pageDoc().doc.querySelector('p'))
+        const family = p.ownerDocument.defaultView!.getComputedStyle(p).fontFamily
+        if (!/OpenDyslexic/.test(family)) problems.push(`paragraph font is ${family}`)
+        const face = [...pageDoc().doc.fonts].find((f) => /OpenDyslexic/.test(f.family))
+        await face?.load().catch(() => {})
+        if (face?.status !== 'loaded') problems.push(`OpenDyslexic is ${face?.status ?? 'missing'}`)
+        await set('fontFamily', 'book')
+        await settled(800)
+        const width = async (w: string) => {
+          await set('pageWidth', w)
+          await settled(900)
+          const p = await waitFor('a paragraph', () => pageDoc().doc.querySelector('p'))
+          return Math.round(p.getBoundingClientRect().width)
+        }
+        const [narrow, normal, wide] = [
+          await width('narrow'),
+          await width('normal'),
+          await width('wide'),
+        ]
+        if (!(narrow < normal && normal < wide))
+          problems.push(`widths narrow ${narrow}, normal ${normal}, wide ${wide}`)
+      } finally {
+        await set('fontFamily', 'book')
+        await set('pageWidth', 'normal')
+        await settled(800)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'C5-simplify-styles',
+    description:
+      'C5: Simplify Styles for This Book turns the book’s stylesheets off in place, with Undo; running it again brings them back',
+    run: async () => {
+      const problems: string[] = []
+      const sheets = () =>
+        Array.from(
+          pageDoc().doc.querySelectorAll<HTMLStyleElement | HTMLLinkElement>('[data-linen-book]'),
+        ).filter(
+          (el) => el.localName === 'style' || /stylesheet/.test(el.getAttribute('rel') ?? ''),
+        )
+      const before = sheets()
+      if (!before.length) return 'the book has no stylesheet to turn off'
+      if (before.some((el) => el.disabled)) problems.push('a sheet was off already')
+      if (!hooks.run?.('reader.simplifyStyles')) return 'the command did not run'
+      await settled(900)
+      if (!sheets().every((el) => el.disabled)) problems.push('a book stylesheet stayed on')
+      const m = hooks.messages?.current
+      if (!/simplified/.test(m?.text ?? '')) problems.push(`message “${m?.text}”`)
+      if (m?.action?.label !== 'Undo') problems.push('no Undo')
+      // Undo: the book's own styles come back.
+      m?.action?.run()
+      await settled(900)
+      if (sheets().some((el) => el.disabled)) problems.push('Undo left a sheet off')
+      if (m) hooks.messages!.dismiss(m.id)
+      const latest = hooks.messages?.current
+      if (latest) hooks.messages!.dismiss(latest.id)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-look-up',
+    description:
+      '1.1: Look Up in the selection bar shows a definition from this Mac’s dictionaries in a peek; Open in Dictionary hands the word over',
+    run: async () => {
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      await selectPhrase('whale')
+      await pressBar(/Look Up/)
+      const peek = await waitFor('the dictionary peek', () =>
+        document.querySelector<HTMLElement>('[data-lookup]'),
+      )
+      await waitFor('a definition', () => !/Looking up/.test(peek.textContent ?? ''), 5000)
+      const body = peek.querySelector('.body')?.textContent ?? ''
+      // A Mac without the dictionary still shows the peek, with a line saying so.
+      if (!/whale/i.test(body) && !/No dictionary/.test(peek.textContent ?? ''))
+        problems.push(`peek shows “${(peek.textContent ?? '').slice(0, 80)}”`)
+      const before = hooks.externalOpened?.length ?? 0
+      Array.from(peek.querySelectorAll('button'))
+        .find((b) => /Open in Dictionary/.test(b.textContent ?? ''))
+        ?.click()
+      await settled(300)
+      if (hooks.externalOpened?.[before] !== 'dict:whale')
+        problems.push(`opened ${hooks.externalOpened?.[before] ?? 'nothing'}`)
+      if (document.querySelector('[data-lookup]')) problems.push('the peek stayed open')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-library-list',
+    description:
+      '1.1: All books shows as a list (cover, title and author, progress, when opened) and remembers it; a row opens its book',
+    run: async () => {
+      await backToLibrary()
+      const problems: string[] = []
+      const viewButton = (name: RegExp) =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.library .views button')).find(
+          (b) => name.test(b.getAttribute('aria-label') ?? ''),
+        )
+      try {
+        viewButton(/List/)!.click()
+        await settled(300)
+        const list = document.querySelector('.library ul.grid.list')
+        if (!list) problems.push('no list')
+        const row = list?.querySelector<HTMLElement>('.tile')
+        const h = row?.getBoundingClientRect().height ?? 0
+        if (h < 40 || h > 100) problems.push(`row is ${Math.round(h)} px tall`)
+        if (!row?.querySelector('.when')) problems.push('no opened column')
+        if ((await invoke<string | null>('setting_get', { key: 'libraryView' })) !== 'list')
+          problems.push('not remembered')
+        await openFromLibrary(/Moby Dick(?!;)/)
+        if (!loc()?.cfi) problems.push('the row did not open its book')
+        await backToLibrary()
+        if (!document.querySelector('.library ul.grid.list')) problems.push('back to covers')
+      } finally {
+        viewButton(/Covers/)?.click()
+        await settled(300)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-reading-sessions',
+    description:
+      '1.1: an extension with reading.sessions hears a session as it ends (when, how long, pages turned; the title with book.metadata); the install sheet says so',
+    run: async () => {
+      const problems: string[] = []
+      const sheet = await withSettings((root) => installViaSettings(root, 'sessions'))
+      if (!/Know when and how long you read/.test(sheet)) problems.push('consent not shown')
+      await waitFor('installed', () => ext().get('test.sessions'), 5000).catch(() =>
+        problems.push('not installed'),
+      )
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      for (let i = 0; i < 3; i++) {
+        key('ArrowRight')
+        await settled(500)
+      }
+      await backToLibrary()
+      let saved: string | null = null
+      for (let i = 0; i < 40 && !saved; i++) {
+        saved = await invoke<string | null>('extension_storage_get', {
+          id: 'test.sessions',
+          key: 'last',
+        })
+        await sleep(250)
+      }
+      if (!saved) return [...problems, 'no session heard'].join('; ')
+      const r = JSON.parse(saved)
+      if (r.pagesTurned < 3) problems.push(`${r.pagesTurned} pages turned`)
+      if (!(r.endFraction > r.startFraction)) problems.push('did not move forward')
+      if (!/Moby/i.test(r.book?.title ?? '')) problems.push(`book ${JSON.stringify(r.book)}`)
+      if (!(Date.parse(r.endedAt) >= Date.parse(r.startedAt))) problems.push('times')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'C4-remap',
+    description:
+      'C4: Settings › Shortcuts gives a command a new shortcut that works at once; an extension command can’t take a core shortcut; Reset All goes back',
+    run: async () => {
+      const problems: string[] = []
+      if (!ext().get('org.example.dictionary'))
+        await withSettings((root) => installViaSettings(root, 'dictionary'))
+      const defOf = (id: string) => hooks.registry!.definitions().find((d) => d.id === id)
+      const press = (code: string, mods: KeyboardEventInit) =>
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true, ...mods }),
+        )
+      const { default: Preferences } = await import('../prefs/Preferences.svelte')
+      const { unmount } = await import('svelte')
+      const root = document.createElement('div')
+      root.style.cssText =
+        'position:fixed;inset:0;z-index:100;background:var(--ground);overflow:auto'
+      document.body.append(root)
+      const prefs = mount(Preferences, { target: root })
+      try {
+        await settled(400)
+        root.querySelector<HTMLButtonElement>('#prefs-shortcuts')!.click()
+        const row = await waitFor('the Reading settings row', () =>
+          root.querySelector<HTMLElement>('[data-command="reader.settings"]'),
+        )
+        row.querySelector<HTMLButtonElement>('button')!.click()
+        await settled(100)
+        press('KeyE', { metaKey: true, ctrlKey: true })
+        await waitFor(
+          'the new shortcut in the app',
+          () => defOf('reader.settings')?.chord?.code === 'KeyE',
+          3000,
+        ).catch(() => problems.push('the app did not take the new shortcut'))
+        if (!/⌃⌘E/.test(row.textContent ?? '')) problems.push(`row shows “${row.textContent}”`)
+        const extRow = await waitFor('an extension command', () =>
+          root.querySelector<HTMLElement>('[data-command^="extension:org.example.dictionary:"]'),
+        )
+        extRow.querySelector<HTMLButtonElement>('button')!.click()
+        await settled(100)
+        press('KeyF', { metaKey: true })
+        await settled(200)
+        const status = root.querySelector('[data-shortcuts] .status')?.textContent ?? ''
+        if (!/extensions can’t take it/.test(status)) problems.push(`status “${status}”`)
+        if (defOf('search.open')?.chord?.code !== 'KeyF') problems.push('⌘F left Search')
+        press('Escape', {})
+        await settled(100)
+        Array.from(root.querySelectorAll<HTMLButtonElement>('[data-shortcuts] button'))
+          .find((b) => /Reset All/.test(b.textContent ?? ''))!
+          .click()
+        await waitFor(
+          'the default back',
+          () => defOf('reader.settings')?.chord === undefined,
+          3000,
+        ).catch(() => problems.push('Reset All did not reach the app'))
+      } finally {
+        void unmount(prefs)
+        root.remove()
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'B6-search-options',
+    description:
+      'B6: Whole words narrows a search to whole words; a regular expression finds its matches; an invalid one says so',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      const search = reader()!.search
+      const option = (name: RegExp) =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.navigator .search .opt')).find(
+          (b) => name.test(b.textContent ?? ''),
+        )!
+      const finished = () =>
+        waitFor('search finished', () => (search.settled && !search.running) || null, 60_000)
+      const matches = () => search.groups.flatMap((g) => g.matches.map((m) => m.snippet.match))
+      try {
+        const all = await searchFor('whale')
+        option(/Whole words/).click()
+        await finished()
+        const whole = matches()
+        if (!(whole.length > 0 && whole.length < all.results))
+          problems.push(`whole words: ${whole.length} of ${all.results}`)
+        if (whole.some((m) => !/^whale$/i.test(m)))
+          problems.push(`not whole: ${whole.find((m) => !/^whale$/i.test(m))}`)
+        option(/Whole words/).click()
+        option(/Regular expression/).click()
+        typeInto(searchField()!, 'whal(e|ing)s?\\b')
+        await sleep(300)
+        await finished()
+        const re = matches()
+        if (!re.length) problems.push('the pattern found nothing')
+        if (re.some((m) => !/^whal(e|ing)s?$/i.test(m)))
+          problems.push(`pattern matched ${re.find((m) => !/^whal(e|ing)s?$/i.test(m))}`)
+        typeInto(searchField()!, '(whale')
+        await sleep(300)
+        await finished()
+        if (!search.invalid) problems.push('an invalid pattern was not reported')
+        if (
+          !/isn’t valid/.test(
+            document.querySelector('.navigator .search .empty')?.textContent ?? '',
+          )
+        )
+          problems.push('no invalid-pattern line')
+      } finally {
+        if (search.regex) search.setOptions({ regex: false })
+        if (search.wholeWord) search.setOptions({ wholeWord: false })
+        await closeSearch()
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-aa-short-window',
+    description:
+      '1.1: in a window too short for every Aa row, the rows scroll and the popover stays inside the window',
+    run: async () => {
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      const w = getCurrentWindow()
+      const factor = await w.scaleFactor()
+      const size = await w.innerSize()
+      const problems: string[] = []
+      try {
+        await w.setSize(new LogicalSize(1100, 560))
+        await settled(1200)
+        const pop = await openAa()
+        const box = pop.getBoundingClientRect()
+        if (box.bottom > window.innerHeight)
+          problems.push(`popover ends at ${Math.round(box.bottom)} of ${window.innerHeight}`)
+        const foot = pop.querySelector('.foot')!.getBoundingClientRect()
+        if (foot.bottom > window.innerHeight) problems.push('the foot is cut off')
+        const rows = pop.querySelector<HTMLElement>('.rows')!
+        if (rows.scrollHeight <= rows.clientHeight) problems.push('the rows do not scroll')
+        rows.scrollTop = rows.scrollHeight
+        await settled(100)
+        const layout = rows.querySelector<HTMLElement>('#aa-layout')!.getBoundingClientRect()
+        if (layout.bottom > rows.getBoundingClientRect().bottom + 1)
+          problems.push('the last row cannot be scrolled into view')
+        key('Escape', { code: 'Escape' })
+        await settled(300)
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',
@@ -4650,6 +5003,15 @@ export async function spikeVisual(): Promise<SpikeResult> {
   ;(document.activeElement as HTMLElement | null)?.blur()
   await settled(600)
   await capture('11-settings-extensions')
+  // Release 1.1: Settings › Reading (Font, Page width, Publisher styles) and Shortcuts (C4).
+  prefsHost.querySelector<HTMLButtonElement>('#prefs-reading')!.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(500)
+  await capture('11-settings-reading')
+  prefsHost.querySelector<HTMLButtonElement>('#prefs-shortcuts')!.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(500)
+  await capture('11-settings-shortcuts')
   prefsHost.remove()
 
   // Screen 12: an extension failure, contained: the selection's “⋯” marks Define
