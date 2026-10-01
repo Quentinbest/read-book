@@ -37,7 +37,20 @@ export interface ChapterResults {
 export interface ParsedQuery {
   needle: string
   exact: boolean
+  /** B6 (1.1, PROVISIONAL): only matches that start and end at a word boundary. */
+  wholeWord?: boolean
+  /** B6 (1.1): a regular expression over the text as written (case ignored). */
+  pattern?: RegExp
 }
+
+/** B6 (1.1, PROVISIONAL): the search options under the field. */
+export interface SearchOptions {
+  wholeWord?: boolean
+  regex?: boolean
+}
+
+/** A query the reader can't run: a regular expression that doesn't parse. */
+export const INVALID_PATTERN = 'invalid-pattern'
 
 export const MIN_QUERY_LENGTH = 2
 export const MIN_QUERY_LENGTH_CJK = 1
@@ -59,13 +72,45 @@ const QUOTED = /^\s*["“”]([^"“”]+)["“”]\s*$/
  * phrase, case and diacritics included; anything else ignores case and
  * diacritics (F2). Returns null when the query is below the minimum length.
  */
-export function parseQuery(raw: string): ParsedQuery | null {
+export function parseQuery(raw: string): ParsedQuery | null
+export function parseQuery(
+  raw: string,
+  options: SearchOptions,
+): ParsedQuery | typeof INVALID_PATTERN | null
+export function parseQuery(
+  raw: string,
+  options: SearchOptions = {},
+): ParsedQuery | typeof INVALID_PATTERN | null {
+  const wholeWord = !!options.wholeWord
+  if (options.regex) {
+    const source = raw.trim()
+    if ([...source].length < (hasCJK(source) ? MIN_QUERY_LENGTH_CJK : MIN_QUERY_LENGTH)) return null
+    try {
+      // `u` for real characters, `i` as plain search ignores case; matched over the
+      // literal text, so the pattern's own letters and marks mean what they say.
+      return { needle: source, exact: true, wholeWord, pattern: new RegExp(source, 'giu') }
+    } catch {
+      return INVALID_PATTERN
+    }
+  }
   const quoted = QUOTED.exec(raw)
   const exact = quoted !== null
   const needle = normalize(quoted ? quoted[1] : raw, exact ? 'literal' : 'folded').text.trim()
   const min = hasCJK(needle) ? MIN_QUERY_LENGTH_CJK : MIN_QUERY_LENGTH
   if ([...needle].length < min) return null
-  return { needle, exact }
+  return { needle, exact, ...(wholeWord ? { wholeWord } : {}) }
+}
+
+const WORD_CHAR = /[\p{L}\p{N}\p{M}_]/u
+
+/** B6: the match is a whole word: no letter or digit runs on at either end (CJK has no spaces). */
+function atWordBoundaries(text: string, at: number, end: number): boolean {
+  if (hasCJK(text.slice(at, end))) return true
+  const before = at > 0 ? text.slice(Math.max(0, at - 2), at) : ''
+  const after = text.slice(end, end + 2)
+  const lastOf = (s: string) => [...s].at(-1) ?? ''
+  const firstOf = (s: string) => [...s][0] ?? ''
+  return !WORD_CHAR.test(lastOf(before)) && !WORD_CHAR.test(firstOf(after))
 }
 
 /** Chapters in search order: the current chapter first, then onward, wrapping (F3). */
@@ -78,18 +123,27 @@ export function searchOrder<T extends { index: number }>(chapters: T[], current:
 export function searchChapter(chapter: IndexedChapter, query: ParsedQuery): ChapterResults {
   const { text, map } = query.exact ? chapter.literal : chapter.folded
   const matches: Match[] = []
+  const found = (at: number, length: number) => {
+    if (query.wholeWord && !atWordBoundaries(text, at, at + length)) return
+    const start = map[at]
+    // End where the next original cluster starts, so trailing combining marks
+    // and whole ligatures are included. map[text.length] is the original length.
+    const last = map[at + length - 1]
+    let next = at + length
+    while (next < text.length && map[next] === last) next++
+    const end = map[next]
+    matches.push({ start, end, snippet: snippet(chapter.original, start, end) })
+  }
+  if (query.pattern) {
+    const re = new RegExp(query.pattern.source, query.pattern.flags)
+    for (const m of text.matchAll(re)) if (m[0].length) found(m.index, m[0].length)
+    return { index: chapter.index, matches }
+  }
   let from = 0
   for (;;) {
     const at = text.indexOf(query.needle, from)
     if (at < 0) break
-    const start = map[at]
-    // End where the next original cluster starts, so trailing combining marks
-    // and whole ligatures are included. map[text.length] is the original length.
-    const last = map[at + query.needle.length - 1]
-    let next = at + query.needle.length
-    while (next < text.length && map[next] === last) next++
-    const end = map[next]
-    matches.push({ start, end, snippet: snippet(chapter.original, start, end) })
+    found(at, query.needle.length)
     from = at + query.needle.length
   }
   return { index: chapter.index, matches }

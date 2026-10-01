@@ -1,12 +1,12 @@
 // The search worker (F8): indexes chapters off the main thread and streams
 // results back as each chapter is scanned (see session.ts).
 
-import type { ChapterText } from './search'
+import type { ChapterText, SearchOptions } from './search'
 import { SearchSession, type SearchEvent } from './session'
 
 export type SearchRequest =
   | { type: 'add'; chapters: ChapterText[] }
-  | { type: 'search'; id: number; query: string; order: number[] }
+  | { type: 'search'; id: number; query: string; order: number[]; options?: SearchOptions }
   | { type: 'cancel' }
 
 const session = new SearchSession()
@@ -18,6 +18,6 @@ const send = (events: SearchEvent[]) => {
 self.onmessage = (e: MessageEvent<SearchRequest>) => {
   const msg = e.data
   if (msg.type === 'add') send(session.add(msg.chapters))
-  else if (msg.type === 'search') send(session.search(msg.id, msg.query, msg.order))
+  else if (msg.type === 'search') send(session.search(msg.id, msg.query, msg.order, msg.options))
   else session.cancel()
 }

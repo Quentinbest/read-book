@@ -6,7 +6,7 @@
 import type { Book } from 'foliate-js/view.js'
 import { ipc } from '../app/ipc'
 import { extractText } from '../lib/search/extract'
-import { searchOrder } from '../lib/search/search'
+import { searchOrder, type SearchOptions } from '../lib/search/search'
 import type { SearchRequest } from '../lib/search/search.worker'
 import type { SearchEvent } from '../lib/search/session'
 
@@ -45,7 +45,12 @@ export class BookSearch {
    * Search, streaming batches of events to `onEvents` (chapter results in F3
    * order, progress, done). Returns a function that cancels the search.
    */
-  search(query: string, current: number, onEvents: (events: SearchEvent[]) => void): () => void {
+  search(
+    query: string,
+    current: number,
+    onEvents: (events: SearchEvent[]) => void,
+    options: SearchOptions = {},
+  ): () => void {
     const id = this.#nextId++
     this.#started = performance.now()
     this.timings = { saved: 0, first: 0, done: 0, painted: 0 }
@@ -68,7 +73,7 @@ export class BookSearch {
       this.#sections.map((index) => ({ index })),
       current,
     ).map((x) => x.index)
-    this.#post({ type: 'search', id, query, order })
+    this.#post({ type: 'search', id, query, order, options })
     return () => {
       if (this.#closed) return
       this.#post({ type: 'cancel' })

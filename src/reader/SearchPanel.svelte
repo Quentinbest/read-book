@@ -96,6 +96,25 @@
     {/if}
   </div>
 
+  <!-- B6 (1.1, PROVISIONAL): whole words and regular expressions. -->
+  <div class="options" role="group" aria-label={t.search.options}>
+    <button
+      type="button"
+      class="opt"
+      aria-pressed={search.wholeWord}
+      onclick={() => search.setOptions({ wholeWord: !search.wholeWord })}
+      >{t.search.wholeWords}</button
+    >
+    <button
+      type="button"
+      class="opt mono"
+      aria-pressed={search.regex}
+      title={t.search.regex}
+      onclick={() => search.setOptions({ regex: !search.regex })}
+      >.*<span class="visually-hidden">{t.search.regex}</span></button
+    >
+  </div>
+
   {#if search.query.trim()}
     <div class="status" aria-live="polite">
       <div class="count">
@@ -152,7 +171,9 @@
       </section>
     {:else}
       {#if search.query.trim() && search.settled}
-        <p class="empty">{t.search.none(search.query.trim())}</p>
+        <p class="empty">
+          {search.invalid ? t.search.invalid : t.search.none(search.query.trim())}
+        </p>
       {/if}
     {/each}
   </div>
@@ -208,6 +229,42 @@
     background: none;
     color: var(--ink-secondary);
     cursor: default;
+  }
+  .options {
+    flex: none;
+    display: flex;
+    gap: 6px;
+    padding: 8px 20px 0;
+  }
+  .opt {
+    height: 24px;
+    padding: 0 9px;
+    border: 1px solid var(--popover-border);
+    border-radius: 6px;
+    background: none;
+    color: var(--ink-secondary);
+    font: 500 12px var(--font-ui);
+    cursor: default;
+  }
+  .opt.mono {
+    font-family: ui-monospace, monospace;
+  }
+  .opt[aria-pressed='true'] {
+    border-color: var(--accent);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .opt:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
   }
   .status {
     flex: none;

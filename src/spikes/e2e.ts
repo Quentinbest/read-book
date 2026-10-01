@@ -4378,6 +4378,122 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  checks.push({
+    id: 'C4-remap',
+    description:
+      'C4: Settings › Shortcuts gives a command a new shortcut that works at once; an extension command can’t take a core shortcut; Reset All goes back',
+    run: async () => {
+      const problems: string[] = []
+      if (!ext().get('org.example.dictionary'))
+        await withSettings((root) => installViaSettings(root, 'dictionary'))
+      const defOf = (id: string) => hooks.registry!.definitions().find((d) => d.id === id)
+      const press = (code: string, mods: KeyboardEventInit) =>
+        document.body.dispatchEvent(
+          new KeyboardEvent('keydown', { code, bubbles: true, cancelable: true, ...mods }),
+        )
+      const { default: Preferences } = await import('../prefs/Preferences.svelte')
+      const { unmount } = await import('svelte')
+      const root = document.createElement('div')
+      root.style.cssText =
+        'position:fixed;inset:0;z-index:100;background:var(--ground);overflow:auto'
+      document.body.append(root)
+      const prefs = mount(Preferences, { target: root })
+      try {
+        await settled(400)
+        root.querySelector<HTMLButtonElement>('#prefs-shortcuts')!.click()
+        const row = await waitFor('the Reading settings row', () =>
+          root.querySelector<HTMLElement>('[data-command="reader.settings"]'),
+        )
+        row.querySelector<HTMLButtonElement>('button')!.click()
+        await settled(100)
+        press('KeyE', { metaKey: true, ctrlKey: true })
+        await waitFor(
+          'the new shortcut in the app',
+          () => defOf('reader.settings')?.chord?.code === 'KeyE',
+          3000,
+        ).catch(() => problems.push('the app did not take the new shortcut'))
+        if (!/⌃⌘E/.test(row.textContent ?? '')) problems.push(`row shows “${row.textContent}”`)
+        const extRow = await waitFor('an extension command', () =>
+          root.querySelector<HTMLElement>('[data-command^="extension:org.example.dictionary:"]'),
+        )
+        extRow.querySelector<HTMLButtonElement>('button')!.click()
+        await settled(100)
+        press('KeyF', { metaKey: true })
+        await settled(200)
+        const status = root.querySelector('[data-shortcuts] .status')?.textContent ?? ''
+        if (!/extensions can’t take it/.test(status)) problems.push(`status “${status}”`)
+        if (defOf('search.open')?.chord?.code !== 'KeyF') problems.push('⌘F left Search')
+        press('Escape', {})
+        await settled(100)
+        Array.from(root.querySelectorAll<HTMLButtonElement>('[data-shortcuts] button'))
+          .find((b) => /Reset All/.test(b.textContent ?? ''))!
+          .click()
+        await waitFor(
+          'the default back',
+          () => defOf('reader.settings')?.chord === undefined,
+          3000,
+        ).catch(() => problems.push('Reset All did not reach the app'))
+      } finally {
+        void unmount(prefs)
+        root.remove()
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'B6-search-options',
+    description:
+      'B6: Whole words narrows a search to whole words; a regular expression finds its matches; an invalid one says so',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      const search = reader()!.search
+      const option = (name: RegExp) =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.navigator .search .opt')).find(
+          (b) => name.test(b.textContent ?? ''),
+        )!
+      const finished = () =>
+        waitFor('search finished', () => (search.settled && !search.running) || null, 60_000)
+      const matches = () => search.groups.flatMap((g) => g.matches.map((m) => m.snippet.match))
+      try {
+        const all = await searchFor('whale')
+        option(/Whole words/).click()
+        await finished()
+        const whole = matches()
+        if (!(whole.length > 0 && whole.length < all.results))
+          problems.push(`whole words: ${whole.length} of ${all.results}`)
+        if (whole.some((m) => !/^whale$/i.test(m)))
+          problems.push(`not whole: ${whole.find((m) => !/^whale$/i.test(m))}`)
+        option(/Whole words/).click()
+        option(/Regular expression/).click()
+        typeInto(searchField()!, 'whal(e|ing)s?\\b')
+        await sleep(300)
+        await finished()
+        const re = matches()
+        if (!re.length) problems.push('the pattern found nothing')
+        if (re.some((m) => !/^whal(e|ing)s?$/i.test(m)))
+          problems.push(`pattern matched ${re.find((m) => !/^whal(e|ing)s?$/i.test(m))}`)
+        typeInto(searchField()!, '(whale')
+        await sleep(300)
+        await finished()
+        if (!search.invalid) problems.push('an invalid pattern was not reported')
+        if (
+          !/isn’t valid/.test(
+            document.querySelector('.navigator .search .empty')?.textContent ?? '',
+          )
+        )
+          problems.push('no invalid-pattern line')
+      } finally {
+        if (search.regex) search.setOptions({ regex: false })
+        if (search.wholeWord) search.setOptions({ wholeWord: false })
+        await closeSearch()
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',

@@ -240,6 +240,11 @@ export const en = {
     searching: (n: number, of: number) => `Searching ${n} of ${of} chapters`,
     showAll: (n: number) => `Show all ${n}`,
     none: (q: string) => `No results for “${q}”`,
+    // B6 (1.1, PROVISIONAL)
+    options: 'Search options',
+    wholeWords: 'Whole words',
+    regex: 'Regular expression',
+    invalid: 'This regular expression isn’t valid.',
     next: 'next',
     previous: 'previous',
     back: 'back to your page',
@@ -374,6 +379,26 @@ export const en = {
     copy: 'Copy',
     copied: 'Note copied',
     missing: 'This note couldn’t be found in the book.',
+  },
+  // C4 shortcut remapping (1.1, PROVISIONAL)
+  shortcuts: {
+    intro:
+      'Give any command a shortcut, including commands from extensions. Shortcuts need ⌘, ⌃ or ⌥ (function keys work alone); extensions can’t take Linen’s own.',
+    none: 'None',
+    change: 'Change',
+    cancel: 'Cancel',
+    remove: 'Remove',
+    reset: 'Reset',
+    resetAll: 'Reset All Shortcuts',
+    typeNow: 'Type a shortcut…',
+    changeFor: (title: string) => `Change the shortcut for ${title}`,
+    removeFor: (title: string) => `Remove the shortcut for ${title}`,
+    resetFor: (title: string) => `Reset the shortcut for ${title}`,
+    needsModifier: 'A shortcut needs ⌘, ⌃ or ⌥ (function keys work alone).',
+    reserved: (keys: string) => `${keys} belongs to macOS or Linen and can’t be changed.`,
+    taken: (keys: string, title: string) =>
+      `${keys} is Linen’s shortcut for ${title}; extensions can’t take it.`,
+    moved: (keys: string, title: string) => `${keys} no longer runs ${title}.`,
   },
   // 1.1 dictionary peek (PROVISIONAL)
   lookUp: {
