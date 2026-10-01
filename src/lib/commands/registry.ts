@@ -130,6 +130,16 @@ export const CORE_COMMANDS: CommandDef[] = [
     menu: 'Edit',
   },
   {
+    // 1.1 (PROVISIONAL): the dictionary peek; ⌃⌘D is macOS's own Look Up.
+    id: 'selection.lookUp',
+    rule: 'A1',
+    title: t.commands['selection.lookUp'],
+    section: 'annotation',
+    chord: { code: 'KeyD', meta: true, ctrl: true },
+    palette: true,
+    menu: 'Edit',
+  },
+  {
     id: 'selection.focusBar',
     rule: 'K7',
     title: t.commands['selection.focusBar'],
@@ -193,6 +203,15 @@ export const CORE_COMMANDS: CommandDef[] = [
     id: 'reader.settings',
     rule: 'L4',
     title: t.commands['reader.settings'],
+    section: 'view',
+    palette: true,
+    menu: 'View',
+  },
+  {
+    // C5 (1.1, PROVISIONAL): this book without its publisher styles; runs again to undo.
+    id: 'reader.simplifyStyles',
+    rule: 'C5',
+    title: t.commands['reader.simplifyStyles'],
     section: 'view',
     palette: true,
     menu: 'View',

@@ -11,6 +11,15 @@
   import { applyTheme, type ThemeChoice } from '../app/theme'
   import { changeSetting as change, onSettingChanged } from '../app/settingsSync'
   import { TEXT_SIZES, DEFAULT_TEXT_SIZE } from '../reader/textSizes'
+  import {
+    SETTING as TYPE_SETTING,
+    parseFont,
+    parsePageWidth,
+    parsePublisherStyles,
+    type FontChoice,
+    type PageWidth,
+    type PublisherStyles,
+  } from '../reader/typography'
   import { exportAllAnnotations } from './exportAll'
   import ExtensionsPane from './ExtensionsPane.svelte'
 
@@ -26,6 +35,9 @@
   let atLaunch = $state<'library' | 'book'>('library')
   let fontPx = $state(DEFAULT_TEXT_SIZE)
   let spacing = $state('default')
+  let font = $state<FontChoice>('book')
+  let width = $state<PageWidth>('normal')
+  let publisher = $state<PublisherStyles>('balanced')
   let crossfade = $state(false)
   let announcements = $state(true)
   let singleKeys = $state(true)
@@ -47,6 +59,23 @@
     ['compact', t.aa.compact],
     ['default', t.aa.normal],
     ['loose', t.aa.loose],
+  ])
+  // 1.1 (PROVISIONAL)
+  const fonts = choice<FontChoice>(t.prefs.font, [
+    ['book', t.aa.fontBook],
+    ['literata', t.aa.fontLiterata],
+    ['sans', t.aa.fontSans],
+    ['dyslexic', t.aa.fontDyslexicLong],
+  ])
+  const widths = choice<PageWidth>(t.prefs.pageWidth, [
+    ['narrow', t.aa.narrow],
+    ['normal', t.aa.normal],
+    ['wide', t.aa.wide],
+  ])
+  const publishers = choice<PublisherStyles>(t.prefs.publisherStyles, [
+    ['full', t.prefs.publisherFull],
+    ['balanced', t.prefs.publisherBalanced],
+    ['off', t.prefs.publisherOff],
   ])
   const launches = choice<'library' | 'book'>(t.prefs.atLaunch, [
     ['library', t.prefs.atLaunchLibrary],
@@ -97,6 +126,9 @@
       atLaunch = (await get('openAtLaunch')) === 'book' ? 'book' : 'library'
       fontPx = Number((await get('fontPx')) ?? DEFAULT_TEXT_SIZE) || DEFAULT_TEXT_SIZE
       spacing = (await get('lineSpacing')) ?? 'default'
+      font = parseFont(await get(TYPE_SETTING.font))
+      width = parsePageWidth(await get(TYPE_SETTING.width))
+      publisher = parsePublisherStyles(await get(TYPE_SETTING.publisher))
       crossfade = (await get('pageTurnCrossfade')) === 'on'
       announcements = (await get('pageTurnAnnouncements')) !== 'off'
       singleKeys = (await get('singleKeyShortcuts')) !== 'off'
@@ -110,6 +142,8 @@
       if (key === 'theme') theme = value as ThemeChoice
       if (key === 'fontPx') fontPx = Number(value)
       if (key === 'lineSpacing') spacing = value
+      if (key === TYPE_SETTING.font) font = parseFont(value)
+      if (key === TYPE_SETTING.width) width = parsePageWidth(value)
     }, source)
     return () => void off.then((f) => f())
   })
@@ -164,6 +198,19 @@
         spacing = v
         void changeSetting('lineSpacing', v)
       })}
+      {@render radios(fonts, font, (v) => {
+        font = v
+        void changeSetting(TYPE_SETTING.font, v)
+      })}
+      {@render radios(widths, width, (v) => {
+        width = v
+        void changeSetting(TYPE_SETTING.width, v)
+      })}
+      {@render radios(publishers, publisher, (v) => {
+        publisher = v
+        void changeSetting(TYPE_SETTING.publisher, v)
+      })}
+      <p class="help">{t.prefs.publisherHelp}</p>
       <Switch
         label={t.prefs.crossfade}
         description={t.prefs.crossfadeHelp}

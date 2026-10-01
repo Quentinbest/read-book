@@ -4204,6 +4204,144 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  checks.push({
+    id: '11-font-and-width',
+    description:
+      '1.1: Font and Page width (all books) apply at once: OpenDyslexic loads and replaces the book’s face; Narrow < Normal < Wide',
+    run: async () => {
+      const { changeSetting } = await import('../app/settingsSync')
+      const set = (k: string, v: string) => changeSetting(k, v, crypto.randomUUID())
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      try {
+        await set('fontFamily', 'dyslexic')
+        await settled(1500)
+        const p = await waitFor('a paragraph', () => pageDoc().doc.querySelector('p'))
+        const family = p.ownerDocument.defaultView!.getComputedStyle(p).fontFamily
+        if (!/OpenDyslexic/.test(family)) problems.push(`paragraph font is ${family}`)
+        const face = [...pageDoc().doc.fonts].find((f) => /OpenDyslexic/.test(f.family))
+        await face?.load().catch(() => {})
+        if (face?.status !== 'loaded') problems.push(`OpenDyslexic is ${face?.status ?? 'missing'}`)
+        await set('fontFamily', 'book')
+        await settled(800)
+        const width = async (w: string) => {
+          await set('pageWidth', w)
+          await settled(900)
+          const p = await waitFor('a paragraph', () => pageDoc().doc.querySelector('p'))
+          return Math.round(p.getBoundingClientRect().width)
+        }
+        const [narrow, normal, wide] = [
+          await width('narrow'),
+          await width('normal'),
+          await width('wide'),
+        ]
+        if (!(narrow < normal && normal < wide))
+          problems.push(`widths narrow ${narrow}, normal ${normal}, wide ${wide}`)
+      } finally {
+        await set('fontFamily', 'book')
+        await set('pageWidth', 'normal')
+        await settled(800)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'C5-simplify-styles',
+    description:
+      'C5: Simplify Styles for This Book turns the book’s stylesheets off in place, with Undo; running it again brings them back',
+    run: async () => {
+      const problems: string[] = []
+      const sheets = () =>
+        Array.from(
+          pageDoc().doc.querySelectorAll<HTMLStyleElement | HTMLLinkElement>('[data-linen-book]'),
+        ).filter(
+          (el) => el.localName === 'style' || /stylesheet/.test(el.getAttribute('rel') ?? ''),
+        )
+      const before = sheets()
+      if (!before.length) return 'the book has no stylesheet to turn off'
+      if (before.some((el) => el.disabled)) problems.push('a sheet was off already')
+      if (!hooks.run?.('reader.simplifyStyles')) return 'the command did not run'
+      await settled(900)
+      if (!sheets().every((el) => el.disabled)) problems.push('a book stylesheet stayed on')
+      const m = hooks.messages?.current
+      if (!/simplified/.test(m?.text ?? '')) problems.push(`message “${m?.text}”`)
+      if (m?.action?.label !== 'Undo') problems.push('no Undo')
+      // Undo: the book's own styles come back.
+      m?.action?.run()
+      await settled(900)
+      if (sheets().some((el) => el.disabled)) problems.push('Undo left a sheet off')
+      if (m) hooks.messages!.dismiss(m.id)
+      const latest = hooks.messages?.current
+      if (latest) hooks.messages!.dismiss(latest.id)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-look-up',
+    description:
+      '1.1: Look Up in the selection bar shows a definition from this Mac’s dictionaries in a peek; Open in Dictionary hands the word over',
+    run: async () => {
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      await selectPhrase('whale')
+      await pressBar(/Look Up/)
+      const peek = await waitFor('the dictionary peek', () =>
+        document.querySelector<HTMLElement>('[data-lookup]'),
+      )
+      await waitFor('a definition', () => !/Looking up/.test(peek.textContent ?? ''), 5000)
+      const body = peek.querySelector('.body')?.textContent ?? ''
+      // A Mac without the dictionary still shows the peek, with a line saying so.
+      if (!/whale/i.test(body) && !/No dictionary/.test(peek.textContent ?? ''))
+        problems.push(`peek shows “${(peek.textContent ?? '').slice(0, 80)}”`)
+      const before = hooks.externalOpened?.length ?? 0
+      Array.from(peek.querySelectorAll('button'))
+        .find((b) => /Open in Dictionary/.test(b.textContent ?? ''))
+        ?.click()
+      await settled(300)
+      if (hooks.externalOpened?.[before] !== 'dict:whale')
+        problems.push(`opened ${hooks.externalOpened?.[before] ?? 'nothing'}`)
+      if (document.querySelector('[data-lookup]')) problems.push('the peek stayed open')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: '11-library-list',
+    description:
+      '1.1: All books shows as a list (cover, title and author, progress, when opened) and remembers it; a row opens its book',
+    run: async () => {
+      await backToLibrary()
+      const problems: string[] = []
+      const viewButton = (name: RegExp) =>
+        Array.from(document.querySelectorAll<HTMLButtonElement>('.library .views button')).find(
+          (b) => name.test(b.getAttribute('aria-label') ?? ''),
+        )
+      try {
+        viewButton(/List/)!.click()
+        await settled(300)
+        const list = document.querySelector('.library ul.grid.list')
+        if (!list) problems.push('no list')
+        const row = list?.querySelector<HTMLElement>('.tile')
+        const h = row?.getBoundingClientRect().height ?? 0
+        if (h < 40 || h > 100) problems.push(`row is ${Math.round(h)} px tall`)
+        if (!row?.querySelector('.when')) problems.push('no opened column')
+        if ((await invoke<string | null>('setting_get', { key: 'libraryView' })) !== 'list')
+          problems.push('not remembered')
+        await openFromLibrary(/Moby Dick(?!;)/)
+        if (!loc()?.cfi) problems.push('the row did not open its book')
+        await backToLibrary()
+        if (!document.querySelector('.library ul.grid.list')) problems.push('back to covers')
+      } finally {
+        viewButton(/Covers/)?.click()
+        await settled(300)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',

@@ -73,6 +73,9 @@ export const ipc = {
   annotationRestore: (id: string) => invoke<void>('annotation_restore', { id }),
   openExternal: (url: string) => invoke<void>('open_external', { url }),
   openSoftwareUpdate: () => invoke<void>('open_software_update'),
+  /** 1.1: a definition from this Mac's dictionaries, or null. */
+  lookUp: (text: string) => invoke<string | null>('look_up', { text }),
+  openDictionary: (text: string) => invoke<void>('open_dictionary', { text }),
   copyText: (text: string) => invoke<void>('copy_text', { text }),
   bookSettingsGet: (bookId: string) =>
     invoke<[string, string | null] | null>('book_settings_get', { bookId }),

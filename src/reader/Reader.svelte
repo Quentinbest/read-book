@@ -25,6 +25,7 @@
   import Navigator from './Navigator.svelte'
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
+  import LookUpPeek from './LookUpPeek.svelte'
   import MoreMenu from './MoreMenu.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import { SearchState, type Hit } from './search.svelte'
@@ -59,7 +60,19 @@
     type ReadingMode,
     type Turn,
   } from './engine'
-  import { fallBackFailedFonts, literataFaces } from './fonts'
+  import { dyslexicFaces, fallBackFailedFonts, literataFaces } from './fonts'
+  import {
+    PAGE_WIDTH_CH,
+    SETTING as TYPE_SETTING,
+    effectivePublisherStyles,
+    parseFont,
+    parsePageWidth,
+    parsePublisherStyles,
+    simplifyKey,
+    type FontChoice,
+    type PageWidth,
+    type PublisherStyles,
+  } from './typography'
   import { libraryLoader } from './loader'
   import { computeLayout, showLocationLine, type Layout, type Spacing } from './layout'
   import { ReadingPace } from './pace'
@@ -724,6 +737,9 @@
       existing
         ? { label: t.annotations.delete, run: () => deleteAnnotation(existing.id) }
         : { label: t.annotations.search, run: () => searchFor(sel?.text ?? '') },
+      ...(sel && !existing
+        ? [{ label: t.lookUp.contextMenu(sel.text.trim()), run: () => lookUp(sel.text, sel.last) }]
+        : []),
     ]
     await popUpMenu(entries)
   }
@@ -884,6 +900,35 @@
     if (!note?.note) return
     void ipc.copyText(noteText(note.note)).then(() => announce(t.peek.copied))
   }
+  // ---- Dictionary peek (1.1, PROVISIONAL): this Mac's dictionaries, nothing sent anywhere.
+  let lookup = $state<{ word: string; rect: DOMRect; definition?: string | null } | null>(null)
+  let lookupOpen = $derived(lanes.floating?.kind === 'lookup' && lookup !== null)
+  /** The longest text looked up: a phrase, not a passage. */
+  const LOOKUP_MAX = 80
+  function lookUp(text: string, rect: DOMRect) {
+    const word = text.replace(/\s+/g, ' ').trim().slice(0, LOOKUP_MAX)
+    if (!word) return
+    const request = { word, rect }
+    lookup = request
+    dispatch({ type: 'openFloating', kind: 'lookup' })
+    void ipc
+      .lookUp(word)
+      .catch(() => null)
+      .then((definition) => {
+        if (lookup?.word === word && lookup.rect === rect) lookup = { ...request, definition }
+      })
+  }
+  function lookUpSelection() {
+    if (selection) lookUp(selection.text, selection.last)
+  }
+  function openInDictionary() {
+    const word = lookup?.word
+    dispatch({ type: 'closeFloating' })
+    if (!word) return
+    // Tests never open other apps (N10).
+    if (testHooks) testHooks.externalOpened = [...(testHooks.externalOpened ?? []), `dict:${word}`]
+    else void ipc.openDictionary(word).catch(() => {})
+  }
   function onImage(i: ImageEvent) {
     image = i
     imageZoom = 1
@@ -912,6 +957,12 @@
   let fontPx = $state(DEFAULT_TEXT_SIZE)
   let spacing = $state<Spacing>('default')
   let themeChoice = $state<ThemeChoice>('auto')
+  // 1.1 (PROVISIONAL): font family and page width (all books), Publisher styles (C5).
+  let fontChoice = $state<FontChoice>('book')
+  let pageWidth = $state<PageWidth>('normal')
+  let publisherStyles = $state<PublisherStyles>('balanced')
+  let simplified = $state(false)
+  let extraFaces = ''
   let aaOpen = $derived(lanes.floating?.kind === 'aa')
   let aaButton: HTMLButtonElement | undefined = $state()
   let aaAnchor = $state<DOMRect | null>(null)
@@ -942,6 +993,37 @@
     spacing = next
     void changeSetting('lineSpacing', next)
     relayout()
+  }
+  /** 1.1: all books. The dyslexia-friendly face is loaded the first time it is chosen. */
+  async function setFontChoice(next: FontChoice) {
+    if (next === fontChoice) return
+    fontChoice = next
+    void changeSetting(TYPE_SETTING.font, next)
+    extraFaces = next === 'dyslexic' ? await dyslexicFaces() : ''
+    if (fontChoice === next) relayout()
+  }
+  /** 1.1: all books. */
+  function setPageWidth(next: PageWidth) {
+    if (next === pageWidth) return
+    pageWidth = next
+    void changeSetting(TYPE_SETTING.width, next)
+    relayout()
+  }
+  /** C5: all books (set in Settings). */
+  function setPublisherStyles(next: PublisherStyles) {
+    if (next === publisherStyles) return
+    publisherStyles = next
+    relayout()
+  }
+  /** C5: Simplify styles, this book only; a message offers Undo. */
+  function toggleSimplified() {
+    simplified = !simplified
+    void ipc.settingSet(simplifyKey(book.id), simplified ? 'on' : 'off').catch(() => {})
+    relayout()
+    messages.push({
+      text: simplified ? t.reader.simplified : t.reader.unsimplified,
+      action: { label: t.reader.undo, run: toggleSimplified },
+    })
   }
   /** B8: this book only. */
   async function switchMode(mode: ReadingMode) {
@@ -1051,19 +1133,25 @@
       height: window.innerHeight,
       fontPx,
       spacing,
+      measureCh: PAGE_WIDTH_CH[pageWidth],
       navigatorWidth: dockedWidth,
       // L8, G8: the two-page spread is a Pages-mode layout.
       allowSpread: readingMode === 'pages',
     })
+    const publisher = effectivePublisherStyles(publisherStyles, simplified)
+    engine?.setPublisherStyles(publisher)
     engine?.applyLayout(
       layout,
       fontFaces +
+        extraFaces +
         readerStyles({
           fontPx,
           lineHeight: layout.lineHeight,
           theme,
           hyphenate: true,
           pageHeight: layout.pageHeight,
+          font: fontChoice,
+          publisher,
         }),
     )
     pages?.reset()
@@ -1374,6 +1462,11 @@
       const savedSpacing = await ipc.settingGet('lineSpacing')
       if (savedSpacing === 'compact' || savedSpacing === 'loose') spacing = savedSpacing
       themeChoice = ((await ipc.settingGet('theme')) as ThemeChoice | null) ?? 'auto'
+      fontChoice = parseFont(await ipc.settingGet(TYPE_SETTING.font))
+      pageWidth = parsePageWidth(await ipc.settingGet(TYPE_SETTING.width))
+      publisherStyles = parsePublisherStyles(await ipc.settingGet(TYPE_SETTING.publisher))
+      simplified = (await ipc.settingGet(simplifyKey(book.id))) === 'on'
+      if (fontChoice === 'dyslexic') extraFaces = await dyslexicFaces()
       announceTurns = (await ipc.settingGet('pageTurnAnnouncements')) !== 'off'
       crossfadeTurns = (await ipc.settingGet('pageTurnCrossfade')) === 'on'
       await refreshEdges()
@@ -1662,6 +1755,12 @@
         }),
       )
       cleanups.push(handle('reader.settings', { run: openAa }))
+      cleanups.push(
+        handle('selection.lookUp', { run: lookUpSelection, enabled: () => selection !== null }),
+      )
+      cleanups.push(
+        handle('reader.simplifyStyles', { run: toggleSimplified, enabled: () => !fixedBook }),
+      )
       // G2: changes made in the Settings window apply here at once.
       cleanups.push(
         await onSettingChanged(({ key, value }) => {
@@ -1673,6 +1772,9 @@
             setSpacing(value)
           else if (key === 'theme' && value !== themeChoice) void setTheme(value as ThemeChoice)
           else if (key === 'pageTurnAnnouncements') announceTurns = value !== 'off'
+          else if (key === TYPE_SETTING.font) void setFontChoice(parseFont(value))
+          else if (key === TYPE_SETTING.width) setPageWidth(parsePageWidth(value))
+          else if (key === TYPE_SETTING.publisher) setPublisherStyles(parsePublisherStyles(value))
           else if (key === 'pageTurnCrossfade') crossfadeTurns = value === 'on'
         }),
       )
@@ -1905,6 +2007,19 @@
     {#if peekOpen && note}
       <FootnotePeek bind:this={peek} {note} onopen={openNoteInPlace} oncopy={copyNote} />
     {/if}
+    {#if lookupOpen && lookup}
+      <LookUpPeek
+        word={lookup.word}
+        definition={lookup.definition}
+        rect={lookup.rect}
+        onopen={openInDictionary}
+        onsearch={() => {
+          const word = lookup?.word ?? ''
+          dispatch({ type: 'closeFloating' })
+          searchFor(word)
+        }}
+      />
+    {/if}
     {#if imageOpen && image}
       <ImageView
         bind:this={imageView}
@@ -1943,6 +2058,10 @@
         onfont={setFont}
         ontheme={(c) => void setTheme(c)}
         onspacing={setSpacing}
+        font={fontChoice}
+        width={pageWidth}
+        onfontchoice={(f) => void setFontChoice(f)}
+        onwidth={setPageWidth}
         onlayout={(m) => void switchMode(m)}
         onsettings={() => {
           dispatch({ type: 'closeFloating' })
@@ -1966,6 +2085,7 @@
           closeBar(false)
         }}
         onsearch={() => searchFor(selection?.text ?? '')}
+        onlookup={lookUpSelection}
         ondelete={() => bar?.id && deleteAnnotation(bar.id)}
         onescape={() => engine?.focusPage()}
         onattach={attachSelection}

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Reading settings, the Aa popover (Screen 09). Each row names its scope: text
   // size, theme and line spacing apply to all books; layout to this book (B8).
+  // 1.1 (PROVISIONAL): font and page width rows, all books.
   // Fixed-layout books keep only theme and zoom (E2); books that are mostly code
   // or tables get a one-line hint to try Scroll (L18). ⌘+ ⌘− ⌘0 work anywhere.
   import { onMount } from 'svelte'
@@ -8,6 +9,7 @@
   import type { ThemeChoice } from '../app/theme'
   import type { Spacing } from './layout'
   import { TEXT_SIZES } from './textSizes'
+  import type { FontChoice, PageWidth } from './typography'
   import { THEMES, type Theme } from '../lib/theme/tokens'
 
   /** Each swatch shows its theme's own page and ink (Screen 09); Auto shows Paper and Night. */
@@ -34,6 +36,10 @@
     onspacing,
     onlayout,
     onsettings,
+    font,
+    width,
+    onfontchoice,
+    onwidth,
     packs = [],
   }: {
     anchor: DOMRect
@@ -48,6 +54,10 @@
     onspacing: (s: Spacing) => void
     onlayout: (l: 'pages' | 'scroll') => void
     onsettings: () => void
+    font: FontChoice
+    width: PageWidth
+    onfontchoice: (f: FontChoice) => void
+    onwidth: (w: PageWidth) => void
     /** P9: theme packs from extensions, listed after the built-in themes. */
     packs?: { value: ThemeChoice; label: string; theme: Theme }[]
   } = $props()
@@ -77,6 +87,17 @@
     { value: 'compact', label: t.aa.compact },
     { value: 'default', label: t.aa.normal },
     { value: 'loose', label: t.aa.loose },
+  ]
+  const fonts: { value: FontChoice; label: string; title?: string }[] = [
+    { value: 'book', label: t.aa.fontBook },
+    { value: 'literata', label: t.aa.fontLiterata },
+    { value: 'sans', label: t.aa.fontSans },
+    { value: 'dyslexic', label: t.aa.fontDyslexic, title: t.aa.fontDyslexicLong },
+  ]
+  const widths: { value: PageWidth; label: string }[] = [
+    { value: 'narrow', label: t.aa.narrow },
+    { value: 'normal', label: t.aa.normal },
+    { value: 'wide', label: t.aa.wide },
   ]
   const layouts: { value: 'pages' | 'scroll'; label: string }[] = [
     { value: 'pages', label: t.aa.pages },
@@ -194,6 +215,48 @@
             aria-checked={spacing === s.value}
             tabindex={spacing === s.value ? 0 : -1}
             onclick={() => onspacing(s.value)}>{s.label}</button
+          >
+        {/each}
+      </div>
+    </div>
+    <div class="row">
+      <div class="lbl" id="aa-font">{t.aa.font}<span>{t.aa.allBooks}</span></div>
+      <div
+        class="seg four"
+        role="radiogroup"
+        aria-labelledby="aa-font"
+        tabindex="-1"
+        onkeydown={(e) => radioKeys(e, fonts, font, onfontchoice)}
+      >
+        {#each fonts as f (f.value)}
+          <button
+            type="button"
+            role="radio"
+            class="font-{f.value}"
+            title={f.title}
+            aria-checked={font === f.value}
+            tabindex={font === f.value ? 0 : -1}
+            onclick={() => onfontchoice(f.value)}>{f.label}</button
+          >
+        {/each}
+      </div>
+    </div>
+    <div class="row">
+      <div class="lbl" id="aa-width">{t.aa.width}<span>{t.aa.allBooks}</span></div>
+      <div
+        class="seg three"
+        role="radiogroup"
+        aria-labelledby="aa-width"
+        tabindex="-1"
+        onkeydown={(e) => radioKeys(e, widths, width, onwidth)}
+      >
+        {#each widths as w (w.value)}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={width === w.value}
+            tabindex={width === w.value ? 0 : -1}
+            onclick={() => onwidth(w.value)}>{w.label}</button
           >
         {/each}
       </div>
@@ -357,6 +420,15 @@
   }
   .seg.three {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .seg.four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .seg .font-literata {
+    font-family: var(--font-reading, Literata, Georgia, serif);
+  }
+  .seg .font-sans {
+    font-family: -apple-system, 'Helvetica Neue', sans-serif;
   }
   .seg.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));

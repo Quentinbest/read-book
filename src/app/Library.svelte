@@ -4,6 +4,7 @@
   // title and author; sort by Recent, Title or Author. Each book has an item menu
   // (Book info, Show in Finder, Remove; E7); Remove is immediate with Undo (G4,
   // provisional). Return opens the current book (E8). Empty: E9, Screen 12.
+  // 1.1 (PROVISIONAL): All books as covers or as a list, remembered (P§10).
   import { onMount } from 'svelte'
   import Button from '../components/Button.svelte'
   import Icon from '../components/Icon.svelte'
@@ -41,6 +42,11 @@
 
   let query = $state('')
   let sort = $state<SortKey>('recent')
+  let view = $state<'grid' | 'list'>('grid')
+  function setView(next: 'grid' | 'list') {
+    view = next
+    void ipc.settingSet('libraryView', next)
+  }
   let infoFor = $state<Book | null>(null)
   let damagedFor = $state<Book | null>(null)
 
@@ -125,6 +131,9 @@
     void ipc.settingGet('librarySort').then((s) => {
       if (s === 'title' || s === 'author' || s === 'recent') sort = s
     })
+    void ipc.settingGet('libraryView').then((v) => {
+      if (v === 'list') view = 'list'
+    })
     const clock = window.setInterval(() => (now = Date.now()), 60_000)
     // E8: Return opens the current book (“Resume reading” is the default button).
     const onkeydown = (e: KeyboardEvent) => {
@@ -188,6 +197,19 @@
         aria-haspopup="menu"
         onclick={sortMenu}>{t.library.sorts[sort]}<Icon name="chevron-down" size={14} /></button
       >
+      <div class="views" role="radiogroup" aria-label={t.library.view}>
+        {#each [['grid', t.library.viewGrid], ['list', t.library.viewList]] as const as [v, label] (v)}
+          <button
+            type="button"
+            role="radio"
+            class="view-btn"
+            aria-checked={view === v}
+            aria-label={label}
+            title={label}
+            onclick={() => setView(v)}><Icon name={v} size={16} /></button
+          >
+        {/each}
+      </div>
       <button type="button" class="btn" onclick={onopen}
         ><Icon name="plus" size={16} />{t.library.open}</button
       >
@@ -268,7 +290,7 @@
           <button type="button" class="btn" onclick={() => (query = '')}>{t.library.clear}</button>
         </p>
       {:else}
-        <ul class="grid">
+        <ul class="grid" class:list={view === 'list'}>
           {#each shown as b (b.id)}
             <li class="tile" data-book={b.id}>
               <button
@@ -280,7 +302,11 @@
                   itemMenu(b)
                 }}
               >
-                <BookCover book={b} height={198} />
+                {#if view === 'list'}
+                  <BookCover book={b} width={36} height={54} lettering={false} />
+                {:else}
+                  <BookCover book={b} height={198} />
+                {/if}
                 <span class="tt">{b.title}</span>
                 <span class="ta">{authorOf(b)}</span>
                 <span class="tp">
@@ -296,6 +322,11 @@
                     <span class="damaged">{t.library.damaged(b.damaged_items)}</span>
                   {/if}
                 </span>
+                {#if view === 'list'}
+                  <span class="when"
+                    >{b.opened_at ? openedAgo(b.opened_at, now) : t.library.neverOpened}</span
+                  >
+                {/if}
               </button>
               <button
                 type="button"
@@ -633,6 +664,85 @@
   .damaged {
     color: var(--accent);
   }
+  /* 1.1 (PROVISIONAL): the view switch, and All books as a list. */
+  .views {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--control-track);
+  }
+  .view-btn {
+    width: 30px;
+    height: 28px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--track-ink);
+  }
+  .view-btn[aria-checked='true'] {
+    background: var(--raised);
+    color: var(--ink);
+    box-shadow: 0 0 0 1px var(--segment-ring);
+  }
+  .view-btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .grid.list {
+    display: block;
+  }
+  .list .tile {
+    border-bottom: 1px solid var(--hairline);
+    contain-intrinsic-size: auto 71px;
+  }
+  .list .open {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr) 180px 120px;
+    grid-template-rows: auto auto;
+    column-gap: 16px;
+    row-gap: 2px;
+    align-items: center;
+    padding: 8px 48px 8px 8px;
+    box-sizing: border-box;
+  }
+  .list .open :global(.cover) {
+    grid-row: 1 / 3;
+  }
+  .list .tt {
+    grid-column: 2;
+    margin-top: 0;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    align-self: end;
+  }
+  .list .ta {
+    grid-column: 2;
+    align-self: start;
+  }
+  .list .tp {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    margin-top: 0;
+  }
+  .when {
+    grid-column: 4;
+    grid-row: 1 / 3;
+    font-size: 12px;
+    color: var(--ink-secondary);
+    text-align: right;
+  }
+  .list .open:hover {
+    background: var(--hover-wash);
+  }
+  .list .more {
+    top: 50%;
+    transform: translateY(-50%);
+    box-shadow: none;
+    background: transparent;
+  }
   /* E7: the item menu's button shows on hover and focus. */
   .more {
     position: absolute;
@@ -704,6 +814,12 @@
     .grid {
       grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
       gap: 24px 16px;
+    }
+    .list .open {
+      grid-template-columns: 36px minmax(0, 1fr) 96px;
+    }
+    .when {
+      display: none;
     }
   }
   .visually-hidden {

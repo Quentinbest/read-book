@@ -47,10 +47,19 @@ export function sanitizeDocumentStyles(html: string): string {
     )
 }
 
+/**
+ * C5: mark the book's own stylesheets, so Publisher styles “Off” can turn them
+ * off in place (the reader's and foliate's style elements carry no mark).
+ */
+export function markBookStyles(html: string): string {
+  return html.replace(/<(style|link)\b/gi, (m) => `${m} data-linen-book=""`)
+}
+
 /** foliate-js `transformTarget` hook: everything the WebView will parse passes through here. */
 export function transformContent(data: unknown, type: string): unknown {
   if (typeof data !== 'string') return data
   if (/css/.test(type)) return sanitizeCss(data)
-  if (/(x?html|svg)/.test(type)) return injectDocumentCsp(sanitizeDocumentStyles(data))
+  if (/(x?html|svg)/.test(type))
+    return injectDocumentCsp(markBookStyles(sanitizeDocumentStyles(data)))
   return data
 }

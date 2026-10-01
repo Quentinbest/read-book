@@ -21,6 +21,11 @@ export const en = {
     searchPlaceholder: 'Search title or author',
     sortBy: (label: string) => `Sort by: ${label}`,
     sorts: { recent: 'Recent', title: 'Title', author: 'Author' },
+    // 1.1 list view (PROVISIONAL)
+    view: 'View',
+    viewGrid: 'Covers',
+    viewList: 'List',
+    neverOpened: '—',
     continueReading: 'Continue reading',
     allBooks: 'All books',
     resume: 'Resume reading',
@@ -63,6 +68,15 @@ export const en = {
     atLaunchBook: 'Reopen the last book',
     textSize: 'Text size',
     lineSpacing: 'Line spacing',
+    // 1.1 (PROVISIONAL)
+    font: 'Font',
+    pageWidth: 'Page width',
+    publisherStyles: 'Publisher styles',
+    publisherFull: 'Full',
+    publisherBalanced: 'Balanced',
+    publisherOff: 'Off',
+    publisherHelp:
+      'Balanced keeps a book’s design but gives you its line spacing and alignment. Full keeps all of it; Off shows plain text. One book can be simplified from its ⋯ menu.',
     crossfade: 'Page-turn crossfade',
     crossfadeHelp: 'Pages fade into each other over 120 ms instead of changing at once.',
     announcements: 'Announce page turns',
@@ -86,7 +100,7 @@ export const en = {
     showShortcuts: 'Show all shortcuts',
     version: (v: string) => `Version ${v}`,
     aboutLine: 'A quiet EPUB reader. Your books stay on this device.',
-    fonts: 'Literata is licensed under the SIL Open Font License.',
+    fonts: 'Literata and OpenDyslexic are licensed under the SIL Open Font License.',
     // D1 (approved 2026-09-26)
     privacy:
       'Linen sends nothing anywhere. If something goes wrong, the details are written to a crash log on this Mac, which you can attach to an email if you choose.',
@@ -185,6 +199,10 @@ export const en = {
     fileFilter: 'EPUB',
   },
   reader: {
+    // C5 (1.1, PROVISIONAL)
+    simplified: 'This book’s styles are simplified',
+    unsimplified: 'This book’s own styles are back',
+    undo: 'Undo',
     library: 'Library',
     more: 'More',
     caretOn: 'Caret browsing on. Arrow keys move the caret; Shift and arrows select.',
@@ -267,6 +285,16 @@ export const en = {
     codeHint: 'Much of this book is code or tables. Scroll may read better.',
     fixedLayout:
       'This book has fixed pages, so its text size and spacing can’t change. ⌘+ and ⌘− zoom the page.',
+    // 1.1 (PROVISIONAL)
+    font: 'Font',
+    fontBook: 'Book',
+    fontLiterata: 'Literata',
+    fontSans: 'Sans',
+    fontDyslexic: 'Dyslexic',
+    fontDyslexicLong: 'OpenDyslexic',
+    width: 'Page width',
+    narrow: 'Narrow',
+    wide: 'Wide',
   },
   annotations: {
     bar: 'Selection actions',
@@ -347,6 +375,18 @@ export const en = {
     copied: 'Note copied',
     missing: 'This note couldn’t be found in the book.',
   },
+  // 1.1 dictionary peek (PROVISIONAL)
+  lookUp: {
+    action: 'Look Up',
+    label: (word: string) => `Definition of ${word}`,
+    title: 'Dictionary',
+    hint: 'Esc closes',
+    looking: 'Looking up…',
+    none: (word: string) => `No dictionary on this Mac has “${word}”.`,
+    openDictionary: 'Open in Dictionary',
+    searchBook: 'Search the book',
+    contextMenu: (word: string) => `Look Up “${word.length > 24 ? word.slice(0, 23) + '…' : word}”`,
+  },
   image: {
     label: 'Image',
     close: 'Close image',
@@ -399,6 +439,8 @@ export const en = {
     'layout.pages': 'Pages Mode',
     'layout.scroll': 'Scroll Mode',
     'reader.settings': 'Reading settings…',
+    'reader.simplifyStyles': 'Simplify Styles for This Book',
+    'selection.lookUp': 'Look Up Selection',
     'app.settings': 'Settings…',
     'palette.open': 'Command palette',
     'shortcuts.show': 'Keyboard shortcuts',

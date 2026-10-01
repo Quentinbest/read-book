@@ -6,6 +6,7 @@
 // guard that keeps publisher layout inside the page.
 
 import type { Theme } from '../lib/theme/tokens'
+import { FONT_STACKS, type FontChoice, type PublisherStyles } from './typography'
 
 export interface ReaderStyleOptions {
   fontPx: number
@@ -15,11 +16,23 @@ export interface ReaderStyleOptions {
   hyphenate: boolean
   /** Page height, so images fit a page (L11). */
   pageHeight: number
+  /** 1.1: the book's fonts, or one forced over them (code keeps its own). */
+  font?: FontChoice
+  /**
+   * 1.1 (C5): Full keeps the publisher's line heights and alignment; Balanced (the
+   * MVP) gives them to the reader; Off also turns the book's stylesheets off (engine).
+   */
+  publisher?: PublisherStyles
 }
+
+/** Code, and the monospace inside it, keeps its face whatever font is chosen. */
+const NOT_CODE = ':not(pre):not(code):not(kbd):not(samp):not(pre *):not(code *)'
 
 export function readerStyles(o: ReaderStyleOptions): string {
   const { theme } = o
   const night = theme.scheme === 'dark'
+  const full = o.publisher === 'full'
+  const forced = o.font && o.font !== 'book' ? FONT_STACKS[o.font] : null
   return `
     /* N9: the note reference keeps a focus ring while its peek is open. */
     .linen-peek-marker {
@@ -45,11 +58,12 @@ export function readerStyles(o: ReaderStyleOptions): string {
       background: transparent !important;
       ${o.hyphenate ? 'hyphens: auto; -webkit-hyphens: auto;' : 'hyphens: manual; -webkit-hyphens: manual;'}
     }
-    /* Comfort: the body line height and colours belong to the reader. */
-    p, li, dd, dt, blockquote, td, th, figcaption { line-height: inherit !important; }
+    ${forced ? `body, body *${NOT_CODE} { font-family: ${forced} !important; }` : ''}
+    /* Comfort: the body line height and colours belong to the reader (Full keeps the line heights). */
+    ${full ? '' : 'p, li, dd, dt, blockquote, td, th, figcaption { line-height: inherit !important; }'}
     body *:not(a) { color: inherit !important; background-color: transparent !important; }
     a { color: ${theme.accent} !important; }
-    ${o.hyphenate ? '' : 'p, li, dd, blockquote { text-align: start !important; }'}
+    ${o.hyphenate || full ? '' : 'p, li, dd, blockquote { text-align: start !important; }'}
     /* L11: images fit the column and the page, never split, dimmed at Night (never inverted). */
     img, svg, video, picture, object {
       max-width: 100% !important;
