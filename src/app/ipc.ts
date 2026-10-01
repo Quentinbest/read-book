@@ -91,6 +91,7 @@ export const ipc = {
   crashLogExists: () => invoke<boolean>('crash_log_exists'),
   crashLogShow: () => invoke<void>('crash_log_show'),
   appRestart: () => invoke<void>('app_restart'),
+  openReleasePage: (version: string) => invoke<void>('open_release_page', { version }),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),
   settingGet: (key: string) => invoke<string | null>('setting_get', { key }),
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),

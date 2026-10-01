@@ -110,6 +110,7 @@ pub fn run() {
                 crashlog::crash_log_exists,
                 crashlog::crash_log_show,
                 updater::app_restart,
+                updater::open_release_page,
                 $($extra),*
             ]
         };

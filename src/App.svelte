@@ -287,6 +287,26 @@
           }),
         ),
       )
+      // Item 32: an update this account can't install; announced once per version.
+      cleanups.push(
+        await listen<string>('update-available', ({ payload }) =>
+          messages.push({
+            text: t.update.available(payload),
+            action: {
+              label: t.update.download,
+              run: () => {
+                // Tests never open the system browser (N10).
+                if (testHooks)
+                  testHooks.externalOpened = [
+                    ...(testHooks.externalOpened ?? []),
+                    `release:${payload}`,
+                  ]
+                else void ipc.openReleasePage(payload).catch(() => {})
+              },
+            },
+          }),
+        ),
+      )
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),

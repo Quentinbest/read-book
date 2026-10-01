@@ -4179,6 +4179,31 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Release 1.1
+
+  checks.push({
+    id: 'D6-update-available',
+    description:
+      'Item 32: an update this install cannot apply shows “Linen x.y.z is available · Download”, opening its release page',
+    run: async () => {
+      await backToLibrary()
+      await emit('update-available', '9.9.9')
+      const m = await waitFor('the update line', () =>
+        /Linen 9\.9\.9 is available/.test(hooks.messages?.current?.text ?? '')
+          ? hooks.messages!.current
+          : null,
+      )
+      const problems: string[] = []
+      if (m.action?.label !== 'Download') problems.push(`action is “${m.action?.label}”`)
+      const before = hooks.externalOpened?.length ?? 0
+      m.action?.run()
+      if (hooks.externalOpened?.[before] !== 'release:9.9.9')
+        problems.push(`opened ${hooks.externalOpened?.[before] ?? 'nothing'}`)
+      hooks.messages!.dismiss(m.id)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',

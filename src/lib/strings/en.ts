@@ -168,6 +168,9 @@ export const en = {
   update: {
     ready: (version: string) => `Update ready · Linen ${version}`,
     restart: 'Restart',
+    // Item 32: this install can't replace itself (standard account, disk image).
+    available: (version: string) => `Linen ${version} is available`,
+    download: 'Download',
   },
   // Import outcomes: wording PROVISIONAL until the G4 designs exist.
   import: {
