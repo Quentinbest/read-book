@@ -1,0 +1,1954 @@
+[
+ {
+  "name": "Herman Melville",
+  "ok": [
+   "melville"
+  ],
+  "src": "file-as",
+  "base": "melville",
+  "jev": "Melville, Herman",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charles Madison Curry",
+  "ok": [
+   "curry"
+  ],
+  "src": "file-as",
+  "base": "curry",
+  "jev": "Curry, Charles Madison",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Erle Elsworth Clippinger",
+  "ok": [
+   "clippinger"
+  ],
+  "src": "file-as",
+  "base": "clippinger",
+  "jev": "Clippinger, Erle Elsworth",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Thomas Crane",
+  "ok": [
+   "crane"
+  ],
+  "src": "file-as",
+  "base": "crane",
+  "jev": "Crane, Thomas",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ellen Elizabeth Houghton",
+  "ok": [
+   "houghton"
+  ],
+  "src": "file-as",
+  "base": "houghton",
+  "jev": "Houghton, Ellen Elizabeth",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Boulet",
+  "ok": [
+   "boulet"
+  ],
+  "src": "file-as",
+  "base": "boulet",
+  "jev": "Boulet",
+  "conf": 1.0,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Bagieu Pénélope",
+  "ok": [
+   "bagieu"
+  ],
+  "src": "file-as",
+  "base": "penelope",
+  "jev": "Bagieu Pénélope",
+  "conf": 0.82,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "name": "Jean-Bernard Pouy",
+  "ok": [
+   "pouy"
+  ],
+  "src": "file-as",
+  "base": "pouy",
+  "jev": "Pouy, Jean-Bernard",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Joe G. Pinelli",
+  "ok": [
+   "pinelli"
+  ],
+  "src": "file-as",
+  "base": "pinelli",
+  "jev": "Pinelli, Joe G.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Jane Austen",
+  "ok": [
+   "austen"
+  ],
+  "src": "file-as",
+  "base": "austen",
+  "jev": "Austen, Jane",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Jonathan Swift",
+  "ok": [
+   "swift"
+  ],
+  "src": "file-as",
+  "base": "swift",
+  "jev": "Swift, Jonathan",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Lewis Carroll",
+  "ok": [
+   "carroll"
+  ],
+  "src": "file-as",
+  "base": "carroll",
+  "jev": "Carroll, Lewis",
+  "conf": 0.87,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charlotte Brontë",
+  "ok": [
+   "bronte"
+  ],
+  "src": "file-as",
+  "base": "bronte",
+  "jev": "Brontë, Charlotte",
+  "conf": 0.93,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Arthur Conan Doyle",
+  "ok": [
+   "doyle"
+  ],
+  "src": "file-as",
+  "base": "doyle",
+  "jev": "Doyle, Arthur Conan",
+  "conf": 0.61,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charlotte Perkins Gilman",
+  "ok": [
+   "gilman"
+  ],
+  "src": "file-as",
+  "base": "gilman",
+  "jev": "Gilman, Charlotte Perkins",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Fyodor Dostoyevsky",
+  "ok": [
+   "dostoyevsky"
+  ],
+  "src": "file-as",
+  "base": "dostoyevsky",
+  "jev": "Dostoyevsky, Fyodor",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "graf Leo Tolstoy",
+  "ok": [
+   "tolstoy"
+  ],
+  "src": "file-as",
+  "base": "tolstoy",
+  "jev": "Tolstoy, graf Leo",
+  "conf": 0.68,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Thomas Hobbes",
+  "ok": [
+   "hobbes"
+  ],
+  "src": "file-as",
+  "base": "hobbes",
+  "jev": "Hobbes, Thomas",
+  "conf": 0.87,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Bram Stoker",
+  "ok": [
+   "stoker"
+  ],
+  "src": "file-as",
+  "base": "stoker",
+  "jev": "Stoker, Bram",
+  "conf": 0.9,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "H. G. Wells",
+  "ok": [
+   "wells"
+  ],
+  "src": "file-as",
+  "base": "wells",
+  "jev": "Wells, H. G.",
+  "conf": 0.94,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "James Joyce",
+  "ok": [
+   "joyce"
+  ],
+  "src": "file-as",
+  "base": "joyce",
+  "jev": "Joyce, James",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charles Dickens",
+  "ok": [
+   "dickens"
+  ],
+  "src": "file-as",
+  "base": "dickens",
+  "jev": "Dickens, Charles",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Franz Kafka",
+  "ok": [
+   "kafka"
+  ],
+  "src": "file-as",
+  "base": "kafka",
+  "jev": "Kafka, Franz",
+  "conf": 0.85,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Mark Twain",
+  "ok": [
+   "twain"
+  ],
+  "src": "file-as",
+  "base": "twain",
+  "jev": "Twain, Mark",
+  "conf": 0.82,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary Wollstonecraft Shelley",
+  "ok": [
+   "shelley"
+  ],
+  "src": "file-as",
+  "base": "shelley",
+  "jev": "Shelley, Mary Wollstonecraft",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "A. A. Milne",
+  "ok": [
+   "milne"
+  ],
+  "src": "file-as",
+  "base": "milne",
+  "jev": "Milne, A. A.",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "A. W. Tozer",
+  "ok": [
+   "tozer"
+  ],
+  "src": "file-as",
+  "base": "tozer",
+  "jev": "Tozer, A. W.",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Alan Sullivan",
+  "ok": [
+   "sullivan"
+  ],
+  "src": "file-as",
+  "base": "sullivan",
+  "jev": "Sullivan, Alan",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Alfred, Lord Tennyson",
+  "ok": [
+   "tennyson"
+  ],
+  "src": "file-as",
+  "base": "tennyson",
+  "jev": "Tennyson, Alfred Lord",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ameen Rihani",
+  "ok": [
+   "rihani"
+  ],
+  "src": "file-as",
+  "base": "rihani",
+  "jev": "Rihani, Ameen",
+  "conf": 0.88,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ann Radcliffe",
+  "ok": [
+   "radcliffe"
+  ],
+  "src": "file-as",
+  "base": "radcliffe",
+  "jev": "Radcliffe, Ann",
+  "conf": 0.89,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Anne Brontë",
+  "ok": [
+   "bronte"
+  ],
+  "src": "file-as",
+  "base": "bronte",
+  "jev": "Brontë, Anne",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Anthony Trollope",
+  "ok": [
+   "trollope"
+  ],
+  "src": "file-as",
+  "base": "trollope",
+  "jev": "Trollope, Anthony",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Arthur B. Reeve",
+  "ok": [
+   "reeve"
+  ],
+  "src": "file-as",
+  "base": "reeve",
+  "jev": "Reeve, Arthur B.",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Arthur Ransome",
+  "ok": [
+   "ransome"
+  ],
+  "src": "file-as",
+  "base": "ransome",
+  "jev": "Ransome, Arthur",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Baroness Orczy",
+  "ok": [
+   "orczy"
+  ],
+  "src": "file-as",
+  "base": "orczy",
+  "jev": "Orczy, Baroness",
+  "conf": 0.26,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Benjamin Disraeli",
+  "ok": [
+   "disraeli"
+  ],
+  "src": "file-as",
+  "base": "disraeli",
+  "jev": "Disraeli, Benjamin",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Booker T. Washington",
+  "ok": [
+   "washington"
+  ],
+  "src": "file-as",
+  "base": "washington",
+  "jev": "Washington, Booker T.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "C. H. Spurgeon",
+  "ok": [
+   "spurgeon"
+  ],
+  "src": "file-as",
+  "base": "spurgeon",
+  "jev": "Spurgeon, C. H.",
+  "conf": 0.94,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "C. S. Lewis",
+  "ok": [
+   "lewis"
+  ],
+  "src": "file-as",
+  "base": "lewis",
+  "jev": "Lewis, C. S.",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Carlo Collodi",
+  "ok": [
+   "collodi"
+  ],
+  "src": "file-as",
+  "base": "collodi",
+  "jev": "Collodi, Carlo",
+  "conf": 0.75,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charles A. Lindbergh",
+  "ok": [
+   "lindbergh"
+  ],
+  "src": "file-as",
+  "base": "lindbergh",
+  "jev": "Lindbergh, Charles A.",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charles Darwin",
+  "ok": [
+   "darwin"
+  ],
+  "src": "file-as",
+  "base": "darwin",
+  "jev": "Darwin, Charles",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Charles W. Chesnutt",
+  "ok": [
+   "chesnutt"
+  ],
+  "src": "file-as",
+  "base": "chesnutt",
+  "jev": "Chesnutt, Charles W.",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Christopher Morley",
+  "ok": [
+   "morley"
+  ],
+  "src": "file-as",
+  "base": "morley",
+  "jev": "Morley, Christopher",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Claude McKay",
+  "ok": [
+   "mckay"
+  ],
+  "src": "file-as",
+  "base": "mckay",
+  "jev": "McKay, Claude",
+  "conf": 0.94,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Cordwainer Smith",
+  "ok": [
+   "smith"
+  ],
+  "src": "file-as",
+  "base": "smith",
+  "jev": "Smith, Cordwainer",
+  "conf": 0.66,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Daniel Defoe",
+  "ok": [
+   "defoe"
+  ],
+  "src": "file-as",
+  "base": "defoe",
+  "jev": "Defoe, Daniel",
+  "conf": 0.93,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Daphne du Maurier",
+  "ok": [
+   "du maurier"
+  ],
+  "src": "file-as",
+  "base": "maurier",
+  "jev": "du Maurier, Daphne",
+  "conf": 0.59,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "David Hume",
+  "ok": [
+   "hume"
+  ],
+  "src": "file-as",
+  "base": "hume",
+  "jev": "Hume, David",
+  "conf": 0.93,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Dorothy Day",
+  "ok": [
+   "day"
+  ],
+  "src": "file-as",
+  "base": "day",
+  "jev": "Day, Dorothy",
+  "conf": 0.94,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "E. E. Cummings",
+  "ok": [
+   "cummings"
+  ],
+  "src": "file-as",
+  "base": "cummings",
+  "jev": "Cummings, E. E.",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "E. M. Forster",
+  "ok": [
+   "forster"
+  ],
+  "src": "file-as",
+  "base": "forster",
+  "jev": "Forster, E. M.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "E. R. Eddison",
+  "ok": [
+   "eddison"
+  ],
+  "src": "file-as",
+  "base": "eddison",
+  "jev": "Eddison, E. R.",
+  "conf": 0.82,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Edgar Lee Masters",
+  "ok": [
+   "masters"
+  ],
+  "src": "file-as",
+  "base": "masters",
+  "jev": "Masters, Edgar Lee",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Edison Marshall",
+  "ok": [
+   "marshall"
+  ],
+  "src": "file-as",
+  "base": "marshall",
+  "jev": "Marshall, Edison",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Edward Bellamy",
+  "ok": [
+   "bellamy"
+  ],
+  "src": "file-as",
+  "base": "bellamy",
+  "jev": "Bellamy, Edward",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Edward Lear",
+  "ok": [
+   "lear"
+  ],
+  "src": "file-as",
+  "base": "lear",
+  "jev": "Lear, Edward",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Eleanor H. Porter",
+  "ok": [
+   "porter"
+  ],
+  "src": "file-as",
+  "base": "porter",
+  "jev": "Porter, Eleanor H.",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Elizabeth von Arnim",
+  "ok": [
+   "arnim"
+  ],
+  "src": "file-as",
+  "base": "arnim",
+  "jev": "von Arnim, Elizabeth",
+  "conf": 0.61,
+  "base_ok": true,
+  "jev_ok": false
+ },
+ {
+  "name": "Ella Cheever Thayer",
+  "ok": [
+   "thayer"
+  ],
+  "src": "file-as",
+  "base": "thayer",
+  "jev": "Thayer, Ella Cheever",
+  "conf": 0.75,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Emma Goldman",
+  "ok": [
+   "goldman"
+  ],
+  "src": "file-as",
+  "base": "goldman",
+  "jev": "Goldman, Emma",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ernest Poole",
+  "ok": [
+   "poole"
+  ],
+  "src": "file-as",
+  "base": "poole",
+  "jev": "Poole, Ernest",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ethel Voynich",
+  "ok": [
+   "voynich"
+  ],
+  "src": "file-as",
+  "base": "voynich",
+  "jev": "Voynich, Ethel",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Evelyn Waugh",
+  "ok": [
+   "waugh"
+  ],
+  "src": "file-as",
+  "base": "waugh",
+  "jev": "Waugh, Evelyn",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Fergus Hume",
+  "ok": [
+   "hume"
+  ],
+  "src": "file-as",
+  "base": "hume",
+  "jev": "Hume, Fergus",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Frances Ellen Watkins Harper",
+  "ok": [
+   "harper"
+  ],
+  "src": "file-as",
+  "base": "harper",
+  "jev": "Harper, Frances Ellen Watkins",
+  "conf": 0.89,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Francis La Flesche",
+  "ok": [
+   "la flesche"
+  ],
+  "src": "file-as",
+  "base": "flesche",
+  "jev": "La Flesche, Francis",
+  "conf": 0.82,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Frank Belknap Long",
+  "ok": [
+   "long"
+  ],
+  "src": "file-as",
+  "base": "long",
+  "jev": "Long, Frank Belknap",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Frederick Douglass",
+  "ok": [
+   "douglass"
+  ],
+  "src": "file-as",
+  "base": "douglass",
+  "jev": "Douglass, Frederick",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Fritz Leiber",
+  "ok": [
+   "leiber"
+  ],
+  "src": "file-as",
+  "base": "leiber",
+  "jev": "Leiber, Fritz",
+  "conf": 0.75,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "G. K. Chesterton",
+  "ok": [
+   "chesterton"
+  ],
+  "src": "file-as",
+  "base": "chesterton",
+  "jev": "Chesterton, G. K.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "George Barr McCutcheon",
+  "ok": [
+   "mccutcheon"
+  ],
+  "src": "file-as",
+  "base": "mccutcheon",
+  "jev": "McCutcheon, George Barr",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "George du Maurier",
+  "ok": [
+   "du maurier"
+  ],
+  "src": "file-as",
+  "base": "maurier",
+  "jev": "du Maurier, George",
+  "conf": 0.72,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "George MacDonald",
+  "ok": [
+   "macdonald"
+  ],
+  "src": "file-as",
+  "base": "macdonald",
+  "jev": "MacDonald, George",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Georgette Heyer",
+  "ok": [
+   "heyer"
+  ],
+  "src": "file-as",
+  "base": "heyer",
+  "jev": "Heyer, Georgette",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Godfrey R. Benson",
+  "ok": [
+   "benson"
+  ],
+  "src": "file-as",
+  "base": "benson",
+  "jev": "Benson, Godfrey R.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "H. C. Bailey",
+  "ok": [
+   "bailey"
+  ],
+  "src": "file-as",
+  "base": "bailey",
+  "jev": "Bailey, H. C.",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "H. de Vere Stacpoole",
+  "ok": [
+   "stacpoole"
+  ],
+  "src": "file-as",
+  "base": "stacpoole",
+  "jev": "Stacpoole, H. de Vere",
+  "conf": 0.76,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "H. M. Tomlinson",
+  "ok": [
+   "tomlinson"
+  ],
+  "src": "file-as",
+  "base": "tomlinson",
+  "jev": "Tomlinson, H. M.",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Harriet Beecher Stowe",
+  "ok": [
+   "stowe"
+  ],
+  "src": "file-as",
+  "base": "stowe",
+  "jev": "Stowe, Harriet Beecher",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Henry Adams",
+  "ok": [
+   "adams"
+  ],
+  "src": "file-as",
+  "base": "adams",
+  "jev": "Adams, Henry",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Henry George",
+  "ok": [
+   "george"
+  ],
+  "src": "file-as",
+  "base": "george",
+  "jev": "George, Henry",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Henry Lawson",
+  "ok": [
+   "lawson"
+  ],
+  "src": "file-as",
+  "base": "lawson",
+  "jev": "Lawson, Henry",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Henry van Dyke Jr.",
+  "ok": [
+   "dyke"
+  ],
+  "src": "file-as",
+  "base": "jr",
+  "jev": "van Dyke, Henry, Jr.",
+  "conf": 0.78,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "name": "Horace Walpole",
+  "ok": [
+   "walpole"
+  ],
+  "src": "file-as",
+  "base": "walpole",
+  "jev": "Walpole, Horace",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Horatio Alger Jr.",
+  "ok": [
+   "alger"
+  ],
+  "src": "file-as",
+  "base": "jr",
+  "jev": "Alger, Horatio, Jr.",
+  "conf": 0.97,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Isaac Asimov",
+  "ok": [
+   "asimov"
+  ],
+  "src": "file-as",
+  "base": "asimov",
+  "jev": "Asimov, Isaac",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "J. M. Barrie",
+  "ok": [
+   "barrie"
+  ],
+  "src": "file-as",
+  "base": "barrie",
+  "jev": "Barrie, J. M.",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "J. Sheridan Le Fanu",
+  "ok": [
+   "le fanu"
+  ],
+  "src": "file-as",
+  "base": "fanu",
+  "jev": "Le Fanu, J. Sheridan",
+  "conf": 0.82,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "J. Storer Clouston",
+  "ok": [
+   "clouston"
+  ],
+  "src": "file-as",
+  "base": "clouston",
+  "jev": "Clouston, J. Storer",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "James De Mille",
+  "ok": [
+   "de mille"
+  ],
+  "src": "file-as",
+  "base": "mille",
+  "jev": "De Mille, James",
+  "conf": 0.81,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Katharine A. Carl",
+  "ok": [
+   "carl"
+  ],
+  "src": "file-as",
+  "base": "carl",
+  "jev": "Carl, Katharine A.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "L. Frank Baum",
+  "ok": [
+   "baum"
+  ],
+  "src": "file-as",
+  "base": "baum",
+  "jev": "Baum, L. Frank",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Langston Hughes",
+  "ok": [
+   "hughes"
+  ],
+  "src": "file-as",
+  "base": "hughes",
+  "jev": "Hughes, Langston",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Linda Brent",
+  "ok": [
+   "brent"
+  ],
+  "src": "file-as",
+  "base": "brent",
+  "jev": "Brent, Linda",
+  "conf": 0.9,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Lord Dunsany",
+  "ok": [
+   "dunsany"
+  ],
+  "src": "file-as",
+  "base": "dunsany",
+  "jev": "Dunsany, Lord",
+  "conf": 0.65,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Louis Joseph Vance",
+  "ok": [
+   "vance"
+  ],
+  "src": "file-as",
+  "base": "vance",
+  "jev": "Vance, Louis Joseph",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Lytton Strachey",
+  "ok": [
+   "strachey"
+  ],
+  "src": "file-as",
+  "base": "strachey",
+  "jev": "Strachey, Lytton",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "M. P. Shiel",
+  "ok": [
+   "shiel"
+  ],
+  "src": "file-as",
+  "base": "shiel",
+  "jev": "Shiel, M. P.",
+  "conf": 0.9,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Manly Wade Wellman",
+  "ok": [
+   "wellman"
+  ],
+  "src": "file-as",
+  "base": "wellman",
+  "jev": "Wellman, Manly Wade",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Margaret Oliphant",
+  "ok": [
+   "oliphant"
+  ],
+  "src": "file-as",
+  "base": "oliphant",
+  "jev": "Oliphant, Margaret",
+  "conf": 0.85,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Maria Bochkareva",
+  "ok": [
+   "bochkareva"
+  ],
+  "src": "file-as",
+  "base": "bochkareva",
+  "jev": "Bochkareva, Maria",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Marie Belloc Lowndes",
+  "ok": [
+   "lowndes"
+  ],
+  "src": "file-as",
+  "base": "lowndes",
+  "jev": "Lowndes, Marie Belloc",
+  "conf": 0.43,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Marmaduke Pickthall",
+  "ok": [
+   "pickthall"
+  ],
+  "src": "file-as",
+  "base": "pickthall",
+  "jev": "Pickthall, Marmaduke",
+  "conf": 0.94,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary Butts",
+  "ok": [
+   "butts"
+  ],
+  "src": "file-as",
+  "base": "butts",
+  "jev": "Butts, Mary",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary De Morgan",
+  "ok": [
+   "de morgan"
+  ],
+  "src": "file-as",
+  "base": "morgan",
+  "jev": "De Morgan, Mary",
+  "conf": 0.66,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary Roberts Rinehart",
+  "ok": [
+   "rinehart"
+  ],
+  "src": "file-as",
+  "base": "rinehart",
+  "jev": "Rinehart, Mary Roberts",
+  "conf": 0.67,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary Weston Fordham",
+  "ok": [
+   "fordham"
+  ],
+  "src": "file-as",
+  "base": "fordham",
+  "jev": "Fordham, Mary Weston",
+  "conf": 0.96,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Matthew Henson",
+  "ok": [
+   "henson"
+  ],
+  "src": "file-as",
+  "base": "henson",
+  "jev": "Henson, Matthew",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Metta Victor",
+  "ok": [
+   "victor"
+  ],
+  "src": "file-as",
+  "base": "victor",
+  "jev": "Victor, Metta",
+  "conf": 0.85,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Miles Franklin",
+  "ok": [
+   "franklin"
+  ],
+  "src": "file-as",
+  "base": "franklin",
+  "jev": "Franklin, Miles",
+  "conf": 0.87,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Nathaniel Hawthorne",
+  "ok": [
+   "hawthorne"
+  ],
+  "src": "file-as",
+  "base": "hawthorne",
+  "jev": "Hawthorne, Nathaniel",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Noël Coward",
+  "ok": [
+   "coward"
+  ],
+  "src": "file-as",
+  "base": "coward",
+  "jev": "Coward, Noël",
+  "conf": 0.93,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "O. Henry",
+  "ok": [
+   "henry"
+  ],
+  "src": "file-as",
+  "base": "henry",
+  "jev": "Henry, O.",
+  "conf": 0.65,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Olaudah Equiano",
+  "ok": [
+   "equiano"
+  ],
+  "src": "file-as",
+  "base": "equiano",
+  "jev": "Equiano, Olaudah",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Oliver La Farge",
+  "ok": [
+   "la farge"
+  ],
+  "src": "file-as",
+  "base": "farge",
+  "jev": "La Farge, Oliver",
+  "conf": 0.89,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Oscar Wilde",
+  "ok": [
+   "wilde"
+  ],
+  "src": "file-as",
+  "base": "wilde",
+  "jev": "Wilde, Oscar",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "P. G. Wodehouse",
+  "ok": [
+   "wodehouse"
+  ],
+  "src": "file-as",
+  "base": "wodehouse",
+  "jev": "Wodehouse, P. G.",
+  "conf": 0.95,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Paul Laurence Dunbar",
+  "ok": [
+   "dunbar"
+  ],
+  "src": "file-as",
+  "base": "dunbar",
+  "jev": "Dunbar, Paul Laurence",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Percy Marks",
+  "ok": [
+   "marks"
+  ],
+  "src": "file-as",
+  "base": "marks",
+  "jev": "Marks, Percy",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Philip Gibbs",
+  "ok": [
+   "gibbs"
+  ],
+  "src": "file-as",
+  "base": "gibbs",
+  "jev": "Gibbs, Philip",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Philip MacDonald",
+  "ok": [
+   "macdonald"
+  ],
+  "src": "file-as",
+  "base": "macdonald",
+  "jev": "MacDonald, Philip",
+  "conf": 0.97,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Rabindranath Tagore",
+  "ok": [
+   "tagore"
+  ],
+  "src": "file-as",
+  "base": "tagore",
+  "jev": "Tagore, Rabindranath",
+  "conf": 0.81,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Richard Henry Dana Jr.",
+  "ok": [
+   "jr"
+  ],
+  "src": "file-as",
+  "base": "jr",
+  "jev": "Dana, Richard Henry, Jr.",
+  "conf": 0.98,
+  "base_ok": true,
+  "jev_ok": false
+ },
+ {
+  "name": "S. S. Van Dine",
+  "ok": [
+   "van dine"
+  ],
+  "src": "file-as",
+  "base": "dine",
+  "jev": "Van Dine, S. S.",
+  "conf": 0.77,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Saki",
+  "ok": [
+   "saki"
+  ],
+  "src": "file-as",
+  "base": "saki",
+  "jev": "Saki",
+  "conf": 1.0,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Thomas De Quincey",
+  "ok": [
+   "de quincey"
+  ],
+  "src": "file-as",
+  "base": "quincey",
+  "jev": "De Quincey, Thomas",
+  "conf": 0.74,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Voltairine de Cleyre",
+  "ok": [
+   "de cleyre"
+  ],
+  "src": "file-as",
+  "base": "cleyre",
+  "jev": "de Cleyre, Voltairine",
+  "conf": 0.44,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "W. E. B. Du Bois",
+  "ok": [
+   "du bois"
+  ],
+  "src": "file-as",
+  "base": "bois",
+  "jev": "Du Bois, W. E. B.",
+  "conf": 0.92,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Walter de la Mare",
+  "ok": [
+   "mare"
+  ],
+  "src": "file-as",
+  "base": "mare",
+  "jev": "de la Mare, Walter",
+  "conf": 0.66,
+  "base_ok": true,
+  "jev_ok": false
+ },
+ {
+  "name": "Walter M. Miller Jr.",
+  "ok": [
+   "miller"
+  ],
+  "src": "file-as",
+  "base": "jr",
+  "jev": "Miller, Walter M., Jr.",
+  "conf": 0.97,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Ursula K. Le Guin",
+  "ok": [
+   "le guin"
+  ],
+  "src": "hard",
+  "base": "guin",
+  "jev": "Le Guin, Ursula K.",
+  "conf": 0.94,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Gabriel García Márquez",
+  "ok": [
+   "garcia marquez"
+  ],
+  "src": "hard",
+  "base": "marquez",
+  "jev": "García Márquez, Gabriel",
+  "conf": 0.68,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Martin Luther King Jr.",
+  "ok": [
+   "king"
+  ],
+  "src": "hard",
+  "base": "jr",
+  "jev": "King, Martin Luther, Jr.",
+  "conf": 0.99,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Murasaki Shikibu",
+  "ok": [
+   "murasaki shikibu",
+   "murasaki"
+  ],
+  "src": "hard",
+  "base": "shikibu",
+  "jev": "Shikibu, Murasaki",
+  "conf": 0.06,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "name": "Sun Tzu",
+  "ok": [
+   "sun tzu",
+   "sun"
+  ],
+  "src": "hard",
+  "base": "tzu",
+  "jev": "Sun Tzu",
+  "conf": 0.91,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Melville, Herman",
+  "ok": [
+   "melville"
+  ],
+  "src": "hard",
+  "base": "herman",
+  "jev": "Melville, Herman",
+  "conf": 0.95,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Mao Zedong",
+  "ok": [
+   "mao",
+   "mao zedong"
+  ],
+  "src": "hard",
+  "base": "zedong",
+  "jev": "Mao Zedong",
+  "conf": 0.98,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Haruki Murakami",
+  "ok": [
+   "murakami"
+  ],
+  "src": "hard",
+  "base": "murakami",
+  "jev": "Murakami, Haruki",
+  "conf": 0.92,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Simone de Beauvoir",
+  "ok": [
+   "beauvoir",
+   "de beauvoir"
+  ],
+  "src": "hard",
+  "base": "beauvoir",
+  "jev": "de Beauvoir, Simone",
+  "conf": 0.28,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Daphne du Maurier",
+  "ok": [
+   "du maurier"
+  ],
+  "src": "hard",
+  "base": "maurier",
+  "jev": "du Maurier, Daphne",
+  "conf": 0.66,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Plato",
+  "ok": [
+   "plato"
+  ],
+  "src": "hard",
+  "base": "plato",
+  "jev": "Plato",
+  "conf": 1.0,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Lao Tzu",
+  "ok": [
+   "lao tzu",
+   "lao"
+  ],
+  "src": "hard",
+  "base": "tzu",
+  "jev": "Lao Tzu",
+  "conf": 0.93,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Arthur Conan Doyle",
+  "ok": [
+   "doyle"
+  ],
+  "src": "hard",
+  "base": "doyle",
+  "jev": "Doyle, Arthur Conan",
+  "conf": 0.6,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Oliver Wendell Holmes Jr.",
+  "ok": [
+   "holmes"
+  ],
+  "src": "hard",
+  "base": "jr",
+  "jev": "Holmes, Oliver Wendell, Jr.",
+  "conf": 0.98,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Johann Wolfgang von Goethe",
+  "ok": [
+   "goethe"
+  ],
+  "src": "hard",
+  "base": "goethe",
+  "jev": "Goethe, Johann Wolfgang von",
+  "conf": 0.89,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Lu Xun",
+  "ok": [
+   "lu",
+   "lu xun"
+  ],
+  "src": "hard",
+  "base": "xun",
+  "jev": "Lu Xun",
+  "conf": 0.93,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Chinua Achebe",
+  "ok": [
+   "achebe"
+  ],
+  "src": "hard",
+  "base": "achebe",
+  "jev": "Achebe, Chinua",
+  "conf": 0.83,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "bell hooks",
+  "ok": [
+   "hooks",
+   "bell hooks"
+  ],
+  "src": "hard",
+  "base": "hooks",
+  "jev": "hooks, bell",
+  "conf": 0.49,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Anonymous",
+  "ok": [
+   "anonymous"
+  ],
+  "src": "hard",
+  "base": "anonymous",
+  "jev": "Anonymous",
+  "conf": 1.0,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Various",
+  "ok": [
+   "various"
+  ],
+  "src": "hard",
+  "base": "various",
+  "jev": "Various",
+  "conf": 1.0,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "W. E. B. Du Bois",
+  "ok": [
+   "du bois"
+  ],
+  "src": "hard",
+  "base": "bois",
+  "jev": "Du Bois, W. E. B.",
+  "conf": 0.92,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Martin Van Buren",
+  "ok": [
+   "van buren"
+  ],
+  "src": "hard",
+  "base": "buren",
+  "jev": "Van Buren, Martin",
+  "conf": 0.92,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "J. R. R. Tolkien",
+  "ok": [
+   "tolkien"
+  ],
+  "src": "hard",
+  "base": "tolkien",
+  "jev": "Tolkien, J. R. R.",
+  "conf": 0.99,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Federico García Lorca",
+  "ok": [
+   "garcia lorca"
+  ],
+  "src": "hard",
+  "base": "lorca",
+  "jev": "García Lorca, Federico",
+  "conf": 0.38,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "José Ortega y Gasset",
+  "ok": [
+   "ortega y gasset"
+  ],
+  "src": "hard",
+  "base": "gasset",
+  "jev": "Ortega y Gasset, José",
+  "conf": 0.91,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Mary Wollstonecraft Shelley",
+  "ok": [
+   "shelley"
+  ],
+  "src": "hard",
+  "base": "shelley",
+  "jev": "Shelley, Mary Wollstonecraft",
+  "conf": 0.91,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "name": "Ngũgĩ wa Thiong'o",
+  "ok": [
+   "ngugi wa thiong o",
+   "ngugi"
+  ],
+  "src": "hard",
+  "base": "o",
+  "jev": "Thiong'o, Ngũgĩ wa",
+  "conf": 0.52,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "name": "Project Gutenberg",
+  "ok": [
+   "project gutenberg"
+  ],
+  "src": "hard",
+  "base": "gutenberg",
+  "jev": "Project Gutenberg",
+  "conf": 0.64,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Tolstoy, Leo",
+  "ok": [
+   "tolstoy"
+  ],
+  "src": "hard",
+  "base": "leo",
+  "jev": "Tolstoy, Leo",
+  "conf": 0.99,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "name": "Kenzaburō Ōe",
+  "ok": [
+   "oe"
+  ],
+  "src": "hard",
+  "base": "oe",
+  "jev": "Ōe, Kenzaburō",
+  "conf": 0.78,
+  "base_ok": true,
+  "jev_ok": true
+ }
+]

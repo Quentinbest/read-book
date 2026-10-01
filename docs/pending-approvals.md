@@ -13,3 +13,13 @@ Approved so far; the record is in `docs/decisions.md`:
 
 32. **An update this account cannot install (D6).** The updater replaces `Linen.app`. When the app or its folder is not writable (a standard account, an app an administrator put in /Applications, or an app run from the disk image), the updater would ask for an administrator's password in the middle of reading. It is no longer tried: the update is only logged, and nothing is shown.
     *Recommendation:* show the quiet line “Linen x.y.z is available · Download” once per version, opening the release page. Not built yet; until then, such installs do not update themselves.
+
+## TypeSafe experiments (2026-10-01)
+
+33. **Optional TypeSafe judgments, opt-in.** Four experiments in `docs/experiments/typesafe/` tried TypeSafe's `jev-1.13` model in place of heuristic code. The results: ⌘K understood natural phrasing ("bigger text", "dark mode", "my notes") 45/50, against 17/50 for fuzzy matching. Author sort got 28/30 hard names right (Le Guin, King Jr., Du Bois), against 12/30. A new book without a landmark opened at its first chapter in 104/123 books, against 0/123. Every call leaves the device, which goes against Screen 12 ("stay on this device") unless the reader opts in.
+    *Recommendation:*
+    - **(a) Now, no model:** read the publisher's `file-as` sort name (`opf:file-as`, and `<meta refines … property="file-as">`) at import, and sort authors by it.
+    - **(b)** Add a setting, off by default, with the API key in the Keychain and all calls in the Rust core (extensions can't send the `Authorization` header). Then:
+      - author sort for books without `file-as`, computed once at import and stored;
+      - ⌘K: when fuzzy matching finds no plain substring, ask Jev for the command, after a pause in typing.
+    - **(c) Not yet:** the opening position needs another experiment, with headings inside documents as candidates (Gutenberg books). The title fallback gains too little to justify it.

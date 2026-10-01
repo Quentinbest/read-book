@@ -1,0 +1,452 @@
+[
+ {
+  "q": "next",
+  "want": "chapter.next",
+  "base": "chapter.next",
+  "base_score": 1199.2,
+  "plain": "chapter.next",
+  "desc": "chapter.next",
+  "conf": 0.51
+ },
+ {
+  "q": "prev ch",
+  "want": "chapter.previous",
+  "base": "chapter.previous",
+  "base_score": 115,
+  "plain": "chapter.previous",
+  "desc": "chapter.previous",
+  "conf": 0.99
+ },
+ {
+  "q": "search",
+  "want": "search.open",
+  "base": "search.open",
+  "base_score": 1199.2,
+  "plain": "search.open",
+  "desc": "search.open",
+  "conf": 0.98
+ },
+ {
+  "q": "larger",
+  "want": "text.larger",
+  "base": "text.larger",
+  "base_score": 1199.5,
+  "plain": "text.larger",
+  "desc": "text.larger",
+  "conf": 1.0
+ },
+ {
+  "q": "gtc",
+  "want": "navigator.contents",
+  "base": "navigator.contents",
+  "base_score": 86,
+  "plain": "navigator.contents",
+  "desc": null,
+  "conf": 0.29
+ },
+ {
+  "q": "scroll",
+  "want": "layout.scroll",
+  "base": "layout.scroll",
+  "base_score": 1199.5,
+  "plain": "layout.scroll",
+  "desc": "layout.scroll",
+  "conf": 0.99
+ },
+ {
+  "q": "full",
+  "want": "window.fullScreen",
+  "base": "window.fullScreen",
+  "base_score": 1199.3,
+  "plain": "window.fullScreen",
+  "desc": "window.fullScreen",
+  "conf": 0.85
+ },
+ {
+  "q": "lib",
+  "want": "library.show",
+  "base": "library.show",
+  "base_score": 1199.6,
+  "plain": "library.show",
+  "desc": "library.show",
+  "conf": 0.98
+ },
+ {
+  "q": "settings",
+  "want": "app.settings",
+  "base": "app.settings",
+  "base_score": 1199.9,
+  "plain": "app.settings",
+  "desc": "app.settings",
+  "conf": 0.59
+ },
+ {
+  "q": "keyboard",
+  "want": "shortcuts.show",
+  "base": "shortcuts.show",
+  "base_score": 1199.0,
+  "plain": "shortcuts.show",
+  "desc": "shortcuts.show",
+  "conf": 0.63
+ },
+ {
+  "q": "high",
+  "want": "navigator.notes",
+  "base": "navigator.notes",
+  "base_score": 1198.4,
+  "plain": "text.larger",
+  "desc": "text.larger",
+  "conf": 0.46
+ },
+ {
+  "q": "caret",
+  "want": "reader.caretBrowsing",
+  "base": "reader.caretBrowsing",
+  "base_score": 1199.1,
+  "plain": "reader.caretBrowsing",
+  "desc": "reader.caretBrowsing",
+  "conf": 0.98
+ },
+ {
+  "q": "bigger text",
+  "want": "text.larger",
+  "base": null,
+  "base_score": null,
+  "plain": "text.larger",
+  "desc": "text.larger",
+  "conf": 1.0
+ },
+ {
+  "q": "make the font bigger",
+  "want": "text.larger",
+  "base": null,
+  "base_score": null,
+  "plain": "text.larger",
+  "desc": "text.larger",
+  "conf": 1.0
+ },
+ {
+  "q": "zoom in",
+  "want": "text.larger",
+  "base": null,
+  "base_score": null,
+  "plain": "text.larger",
+  "desc": "text.larger",
+  "conf": 0.93
+ },
+ {
+  "q": "text too big",
+  "want": "text.smaller",
+  "base": null,
+  "base_score": null,
+  "plain": "text.smaller",
+  "desc": "text.smaller",
+  "conf": 0.98
+ },
+ {
+  "q": "shrink font",
+  "want": "text.smaller",
+  "base": null,
+  "base_score": null,
+  "plain": "text.smaller",
+  "desc": "text.smaller",
+  "conf": 1.0
+ },
+ {
+  "q": "normal font size",
+  "want": "text.reset",
+  "base": null,
+  "base_score": null,
+  "plain": "text.reset",
+  "desc": "text.reset",
+  "conf": 1.0
+ },
+ {
+  "q": "dark mode",
+  "want": "reader.settings",
+  "base": null,
+  "base_score": null,
+  "plain": "reader.settings",
+  "desc": "reader.settings",
+  "conf": 0.99
+ },
+ {
+  "q": "sepia",
+  "want": "reader.settings",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": "reader.settings",
+  "conf": 0.99
+ },
+ {
+  "q": "change font",
+  "want": "reader.settings",
+  "base": null,
+  "base_score": null,
+  "plain": "reader.settings",
+  "desc": "reader.settings",
+  "conf": 0.99
+ },
+ {
+  "q": "line spacing",
+  "want": "reader.settings",
+  "base": null,
+  "base_score": null,
+  "plain": "reader.settings",
+  "desc": "reader.settings",
+  "conf": 1.0
+ },
+ {
+  "q": "margins",
+  "want": "reader.settings",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": "reader.settings",
+  "conf": 0.99
+ },
+ {
+  "q": "table of contents",
+  "want": "navigator.contents",
+  "base": null,
+  "base_score": null,
+  "plain": "navigator.contents",
+  "desc": "navigator.contents",
+  "conf": 1.0
+ },
+ {
+  "q": "toc",
+  "want": "navigator.contents",
+  "base": "navigator.contents",
+  "base_score": 71,
+  "plain": "navigator.contents",
+  "desc": "navigator.contents",
+  "conf": 1.0
+ },
+ {
+  "q": "chapters",
+  "want": "navigator.contents",
+  "base": null,
+  "base_score": null,
+  "plain": "navigator.contents",
+  "desc": "navigator.contents",
+  "conf": 0.95
+ },
+ {
+  "q": "find",
+  "want": "search.open",
+  "base": null,
+  "base_score": null,
+  "plain": "search.open",
+  "desc": "search.open",
+  "conf": 1.0
+ },
+ {
+  "q": "look for a word",
+  "want": "search.open",
+  "base": null,
+  "base_score": null,
+  "plain": "search.open",
+  "desc": "search.open",
+  "conf": 0.99
+ },
+ {
+  "q": "where does it mention whales",
+  "want": "search.open",
+  "base": null,
+  "base_score": null,
+  "plain": "search.open",
+  "desc": "search.open",
+  "conf": 1.0
+ },
+ {
+  "q": "my notes",
+  "want": "navigator.notes",
+  "base": null,
+  "base_score": null,
+  "plain": "navigator.notes",
+  "desc": "navigator.notes",
+  "conf": 0.99
+ },
+ {
+  "q": "annotations",
+  "want": "navigator.notes",
+  "base": null,
+  "base_score": null,
+  "plain": "navigator.notes",
+  "desc": "navigator.notes",
+  "conf": 0.93
+ },
+ {
+  "q": "bookmarks",
+  "want": "navigator.notes",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 0.67
+ },
+ {
+  "q": "jump to page 120",
+  "want": "goto.open",
+  "base": null,
+  "base_score": null,
+  "plain": "goto.open",
+  "desc": "goto.open",
+  "conf": 1.0
+ },
+ {
+  "q": "go to 50%",
+  "want": "goto.open",
+  "base": null,
+  "base_score": null,
+  "plain": "goto.open",
+  "desc": "goto.open",
+  "conf": 1.0
+ },
+ {
+  "q": "skip ahead",
+  "want": "chapter.next",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": "goto.open",
+  "conf": 0.36
+ },
+ {
+  "q": "go back",
+  "want": "history.back",
+  "base": null,
+  "base_score": null,
+  "plain": "history.back",
+  "desc": "history.back",
+  "conf": 0.98
+ },
+ {
+  "q": "undo jump",
+  "want": "history.back",
+  "base": null,
+  "base_score": null,
+  "plain": "history.back",
+  "desc": "history.back",
+  "conf": 0.99
+ },
+ {
+  "q": "bookshelf",
+  "want": "library.show",
+  "base": null,
+  "base_score": null,
+  "plain": "library.show",
+  "desc": "library.show",
+  "conf": 1.0
+ },
+ {
+  "q": "my books",
+  "want": "library.show",
+  "base": null,
+  "base_score": null,
+  "plain": "library.show",
+  "desc": "library.show",
+  "conf": 0.99
+ },
+ {
+  "q": "import epub",
+  "want": "book.open",
+  "base": null,
+  "base_score": null,
+  "plain": "book.open",
+  "desc": "book.open",
+  "conf": 1.0
+ },
+ {
+  "q": "add a book",
+  "want": "book.open",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": "book.open",
+  "conf": 0.84
+ },
+ {
+  "q": "hotkeys",
+  "want": "shortcuts.show",
+  "base": null,
+  "base_score": null,
+  "plain": "shortcuts.show",
+  "desc": "shortcuts.show",
+  "conf": 1.0
+ },
+ {
+  "q": "continuous scrolling",
+  "want": "layout.scroll",
+  "base": null,
+  "base_score": null,
+  "plain": "layout.scroll",
+  "desc": "layout.scroll",
+  "conf": 1.0
+ },
+ {
+  "q": "page turning",
+  "want": "layout.pages",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": "layout.pages",
+  "conf": 0.98
+ },
+ {
+  "q": "preferences",
+  "want": "app.settings",
+  "base": null,
+  "base_score": null,
+  "plain": "app.settings",
+  "desc": "app.settings",
+  "conf": 0.77
+ },
+ {
+  "q": "hide everything",
+  "want": "window.fullScreen",
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 0.78
+ },
+ {
+  "q": "delete this book",
+  "want": null,
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 0.97
+ },
+ {
+  "q": "print",
+  "want": null,
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 0.96
+ },
+ {
+  "q": "read aloud",
+  "want": null,
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 1.0
+ },
+ {
+  "q": "translate",
+  "want": null,
+  "base": null,
+  "base_score": null,
+  "plain": null,
+  "desc": null,
+  "conf": 0.99
+ }
+]
