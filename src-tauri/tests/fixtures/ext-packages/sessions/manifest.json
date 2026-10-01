@@ -6,12 +6,7 @@
     "linen": "^1.0"
   },
   "main": "main.js",
-  "activation": [
-    "onReadingSessions"
-  ],
+  "activation": ["onReadingSessions"],
   "contributes": {},
-  "permissions": [
-    "reading.sessions",
-    "book.metadata"
-  ]
+  "permissions": ["reading.sessions", "book.metadata"]
 }
