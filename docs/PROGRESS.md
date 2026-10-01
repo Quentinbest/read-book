@@ -15,6 +15,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | 6 Settings and library | Done | Met; baselines approved 2026-09-25 | `docs/phase6-status.md` |
 | 7 Extensions | Done | Verified 2026-09-25 (98/98 on Desktop 2); baselines and the P6 memory budget approved 2026-09-26 | `docs/phase7-status.md` |
 | 8 Hardening and release | Done | 2026-09-26: 107/107 on Desktop 2; unit tests and budgets pass; CI passes on GitHub; every approval item settled (9, 10, 21–30) | `docs/phase8-status.md` |
+| Release 1.1 (owner, 2026-10-01; without TTS, sync and Developer ID signing) | Built; waiting for approvals 33–40 | Each feature's in-app check passes; local and GitHub CI green | `docs/release-1.1-status.md` |
 
 ## How the work is checked
 

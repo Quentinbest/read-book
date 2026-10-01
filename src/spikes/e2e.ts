@@ -2381,10 +2381,12 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const range = await selectPhrase(MANHATTOES)
       if (!rightClick(range)) problems.push('the WebKit menu was not replaced')
       await settled(100)
-      const labels = recorded()?.labels.join(', ')
+      const labels = recorded()?.labels.join(', ') ?? ''
+      // 1.1: Look Up “…” follows Search (pending approval 35).
       if (
-        labels !==
-        'Highlight Yellow, Highlight Green, Highlight Blue, Highlight Rose, Note, Copy, Search'
+        !/^Highlight Yellow, Highlight Green, Highlight Blue, Highlight Rose, Note, Copy, Search, Look Up “[^”]+”$/.test(
+          labels,
+        )
       )
         problems.push(`selection menu: ${labels}`)
       pageDoc().doc.getSelection()?.removeAllRanges()
@@ -2838,7 +2840,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
       const labels = Array.from(pop.querySelectorAll('.lbl')).map((l) => l.textContent?.trim())
       if (
         labels.join(' | ') !==
-        'Text size19 px · All books | ThemeAll books | Line spacingAll books | LayoutThis book'
+        'Text size19 px · All books | ThemeAll books | Line spacingAll books | FontAll books | Page widthAll books | LayoutThis book'
       )
         problems.push(`rows: ${labels.join(' | ')}`)
       pop.querySelector<HTMLButtonElement>('.step.large')!.click()

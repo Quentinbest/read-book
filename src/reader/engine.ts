@@ -1194,7 +1194,13 @@ export class ReaderEngine {
 
   /** Focus the page (the book text), e.g. when a layer closes (S5). */
   focusPage() {
-    this.#current.renderer?.focusView?.()
+    // D1: called on a frame after a reveal; the paginator may have no view yet (or any more).
+    if (this.#closed) return
+    try {
+      this.#current.renderer?.focusView?.()
+    } catch {
+      // Nothing shown to focus.
+    }
   }
 
   /** Open a book from a file, or (L17) from a loader that reads entries on demand. */
