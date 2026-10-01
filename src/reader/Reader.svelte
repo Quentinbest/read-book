@@ -26,6 +26,7 @@
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
   import LookUpPeek from './LookUpPeek.svelte'
+  import { ReadingSessions } from './sessions'
   import MoreMenu from './MoreMenu.svelte'
   import SearchPanel from './SearchPanel.svelte'
   import { SearchState, type Hit } from './search.svelte'
@@ -170,6 +171,7 @@
       for (const id of jumpMessages) messages.withdraw(id)
       for (const id of annotationMessages) messages.withdraw(id)
       saveNow()
+      sessions.end()
     })
   })
 
@@ -1181,9 +1183,18 @@
     saveTimer = window.setTimeout(saveNow, SAVE_DEBOUNCE_MS)
   }
 
+  // 1.1: reading sessions, heard by extensions with reading.sessions (Linen keeps none).
+  const sessions = new ReadingSessions((s) =>
+    extensions.emitReadingSession(s, {
+      title: book.title,
+      identifier: book.package_identifier ?? null,
+    }),
+  )
+
   function onRelocate(l: ReaderLocation) {
     const prev = location
     location = l
+    if (active) sessions.moved(l.fraction, l.reason === 'page')
     if (engine) zoom = engine.zoom
     // A chunked chapter's page count covers one chunk (L16): it is not the section's.
     if (l.pages && !l.approximate) pages?.count(l.sectionIndex, l.pages)
@@ -1820,6 +1831,7 @@
     const offQuit = onBeforeQuit(() => {
       noteCard?.flush() // N5, A6: a note typed just before quitting is saved
       saveNow()
+      sessions.end()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
     })
     const onKeydown = (e: KeyboardEvent) => onPageKey(e, false)
@@ -1836,6 +1848,7 @@
       offQuit()
       cleanups.forEach((c) => c())
       saveNow()
+      sessions.end()
       void ipc.settingSet('readingPace', JSON.stringify(pace.toJSON()))
       stopCounting()
       searchState.stop()

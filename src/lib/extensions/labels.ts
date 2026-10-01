@@ -25,6 +25,8 @@ export function permissionLabel(p: string): PermissionLabel {
       return { label: 'Change highlights and notes', warn: true }
     case 'library.read':
       return { label: 'See every book in your library', warn: false }
+    case 'reading.sessions':
+      return { label: 'Know when and how long you read', warn: false }
     case 'files.import':
       return { label: 'Open files you choose', warn: false }
     case 'files.export':

@@ -67,6 +67,14 @@
         return call('annotations.on', { event })
       },
     }),
+    // 1.1: reading sessions, as each one ends.
+    reading: Object.freeze({
+      on(event, handler) {
+        if (!listeners.has(event)) listeners.set(event, [])
+        listeners.get(event).push(handler)
+        return call('reading.on', { event })
+      },
+    }),
     library: Object.freeze({ list: () => call('library.list') }),
     net: Object.freeze({
       fetch: (url, init) =>

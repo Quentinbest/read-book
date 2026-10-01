@@ -36,7 +36,7 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 | `version` | A semantic version. |
 | `engines.linen` | The Host API versions it works with, as a semver range. Linen supports the current major and the previous one (P5); an extension outside them is turned off, with the reason. |
 | `main` | The Worker script. Theme packs have none. |
-| `activation` | When it starts: `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`. It starts lazily and is unloaded after a minute unused. |
+| `activation` | When it starts: `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`, `onReadingSessions` (1.1). It starts lazily and is unloaded after a minute unused. |
 | `contributes` | `commands`, `selectionActions` (with an optional `when`), `navigatorTabs`, `themes`, `exporters`. Up to 32 in all. |
 | `permissions` | See below. Anything not declared is refused. |
 
@@ -51,6 +51,7 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 | `annotations.read` | The open book's highlights and notes, and their events | At install |
 | `annotations.write` | Reserved for a later version | At install, highlighted |
 | `library.read` | The title, authors and progress of every book | At install |
+| `reading.sessions` | Each reading session as it ends: when, how long, how far (1.1, provisional). The book's title only with `book.metadata` | At install |
 | `network:<host>[:port]` | `net.fetch` to that host only; `*.example.org` covers its subdomains (strongly warned) | At install |
 | `files.export`, `files.import` | Only files the reader picks in the system dialog | Each use |
 | `background` | Reserved for 1.1 (C3) | At install, strongly warned |

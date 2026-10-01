@@ -4342,6 +4342,42 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  checks.push({
+    id: '11-reading-sessions',
+    description:
+      '1.1: an extension with reading.sessions hears a session as it ends (when, how long, pages turned; the title with book.metadata); the install sheet says so',
+    run: async () => {
+      const problems: string[] = []
+      const sheet = await withSettings((root) => installViaSettings(root, 'sessions'))
+      if (!/Know when and how long you read/.test(sheet)) problems.push('consent not shown')
+      await waitFor('installed', () => ext().get('test.sessions'), 5000).catch(() =>
+        problems.push('not installed'),
+      )
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      for (let i = 0; i < 3; i++) {
+        key('ArrowRight')
+        await settled(500)
+      }
+      await backToLibrary()
+      let saved: string | null = null
+      for (let i = 0; i < 40 && !saved; i++) {
+        saved = await invoke<string | null>('extension_storage_get', {
+          id: 'test.sessions',
+          key: 'last',
+        })
+        await sleep(250)
+      }
+      if (!saved) return [...problems, 'no session heard'].join('; ')
+      const r = JSON.parse(saved)
+      if (r.pagesTurned < 3) problems.push(`${r.pagesTurned} pages turned`)
+      if (!(r.endFraction > r.startFraction)) problems.push('did not move forward')
+      if (!/Moby/i.test(r.book?.title ?? '')) problems.push(`book ${JSON.stringify(r.book)}`)
+      if (!(Date.parse(r.endedAt) >= Date.parse(r.startedAt))) problems.push('times')
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',

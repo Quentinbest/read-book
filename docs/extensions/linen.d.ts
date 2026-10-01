@@ -28,6 +28,18 @@ export interface Annotation {
   'linen:chapter'?: string
 }
 
+/** 1.1: a reading session, from the first move of the place to the last. */
+export interface ReadingSession {
+  startedAt: string
+  endedAt: string
+  /** Without pauses longer than five minutes. */
+  activeSeconds: number
+  startFraction: number
+  endFraction: number
+  pagesTurned: number
+  book?: { title: string; identifier: string | null }
+}
+
 export interface Linen {
   apiVersion: '1.0.0'
   commands: {
@@ -49,6 +61,14 @@ export interface Linen {
     list(): Promise<{ label: string; total: number; first: { items: Annotation[] } }>
     /** Needs `annotations.read`, and `onAnnotations` in `activation`. Read-only events. */
     on(event: 'created' | 'changed' | 'deleted', handler: (a: Annotation | { id: string }) => void): Promise<true>
+  }
+  /** 1.1 (provisional). */
+  reading: {
+    /**
+     * Needs `reading.sessions`, and `onReadingSessions` in `activation`. Each reading
+     * session as it ends; `book` only with `book.metadata`. Linen keeps no statistics.
+     */
+    on(event: 'sessionEnded', handler: (s: ReadingSession) => void): Promise<true>
   }
   library: {
     /** Needs `library.read`. */
