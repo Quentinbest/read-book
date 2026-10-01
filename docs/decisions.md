@@ -109,3 +109,12 @@ The owner asked for immersive reading to match the macOS Books app. These overri
 | S9 (top edge) | The top edge reveals the top bar alone, naming the book only (no chapter). It stays while the pointer is on the bar or in its 64 px zone and hides as soon as the pointer leaves; the 3 s delay (S10) applies only to the full controls (Tab, ⌘J, Aa), which still show both bars and the chapter. |
 | S9, S11 (bottom edge) | No bottom trigger: the pointer at the bottom edge reveals nothing, so the Dock exclusion of S11 no longer applies. The bottom bar comes only with the full controls. |
 | L9, B2, G12 (location line) | Immersive reading shows no location line. The chapter and “N min left” are in the bottom bar's labels, and so are a fixed-layout book's real pages. The “Opening …” line of a slow open (G8) stays. |
+
+## Decided 2026-10-01 (edge reveal brings the progress bar back)
+
+Testing 0.1.1, the owner found the progress bar missing when the toolbar is revealed, and chose to restore the bottom edge. This replaces the S9 and S9/S11 rows of 2026-09-29; the location-line row stands.
+
+| Rule | Decided |
+|---|---|
+| S9 (edge reveal) | Either edge, after the 150 ms dwell, reveals both bars, as before 2026-09-29. The top bar names the book only. The bars stay while the pointer is in an edge zone or on a bar and hide as soon as it leaves. The full controls (Tab, ⌘J, Aa) are unchanged: chapter in the title, 3 s delay. |
+| S11 (bottom zone) | With the Dock hiding at the bottom (or in full screen), the bottom zone stays but leaves out the 6 pt strip where the Dock slides in, instead of switching off; otherwise the bottom edge could not reveal anything on a Mac with an auto-hiding Dock. |

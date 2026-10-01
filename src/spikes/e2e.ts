@@ -93,7 +93,7 @@ async function backToLibrary() {
   await settled(300)
 }
 
-/** Reveal both bars (Screen 03). The top edge alone shows the top bar only (S9-top-peek). */
+/** Reveal the full controls (Screen 03): an edge reveal names the book only (S9-edge-reveal). */
 async function showControls() {
   reader()!.showControls()
   await sleep(600) // 160 ms fade in
@@ -589,9 +589,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
-    id: 'S9-top-peek',
+    id: 'S9-edge-reveal',
     description:
-      'Immersive reading shows nothing at the bottom, even with the pointer there; the top edge reveals the top bar alone, naming the book only; it stays while the pointer is on it and goes as soon as the pointer leaves (S9)',
+      'Immersive reading shows no location line. Either edge reveals both bars, the top one naming the book only; they stay while the pointer is in an edge zone or on a bar and go as soon as it leaves (S9)',
     run: async () => {
       await hideControls()
       if (document.querySelector('.location-line'))
@@ -601,23 +601,30 @@ export async function spikeE2E(): Promise<SpikeResult> {
         area.dispatchEvent(
           new PointerEvent('pointermove', { clientX: 640, clientY: y, bubbles: true }),
         )
-      move(window.innerHeight - 10)
-      await sleep(600)
-      if (document.querySelector('.chrome')) return 'the bottom edge revealed a bar'
+      const bars = () => [
+        !!document.querySelector('.chrome.top'),
+        !!document.querySelector('.chrome.bottom'),
+      ]
+      const bottom = window.innerHeight - 30 // inside the zone, above any Dock strip
       move(20)
       await sleep(600) // 150 ms dwell + 160 ms fade in
-      const top = document.querySelector('.chrome.top')
-      if (!top) return 'the top edge did not reveal the top bar'
-      if (document.querySelector('.chrome.bottom')) return 'the bottom bar came with the top bar'
+      if (bars().join() !== 'true,true') return `the top edge showed bars ${bars()}`
+      const top = document.querySelector('.chrome.top')!
       const title = top.querySelector('.title')?.textContent?.trim()
       const book = top.querySelector('.title .book')?.textContent?.trim()
       if (title !== book) return `the top bar said “${title}”, not just “${book}”`
-      for (const y of [30, 50, 60, 10]) move(y)
+      for (const y of [30, 50, 60, 10, bottom]) move(y)
       await sleep(400)
-      if (!document.querySelector('.chrome.top')) return 'the bar left while the pointer was on it'
+      if (bars().join() !== 'true,true') return `bars ${bars()} while the pointer was on them`
       move(300)
       await sleep(400) // the 220 ms fade out, well short of the 3 s full-controls delay
-      return document.querySelector('.chrome.top') ? 'the bar stayed after the pointer left' : 'ok'
+      if (document.querySelector('.chrome')) return 'the bars stayed after the pointer left'
+      move(bottom)
+      await sleep(600)
+      if (bars().join() !== 'true,true') return `the bottom edge showed bars ${bars()}`
+      move(300)
+      await sleep(400)
+      return document.querySelector('.chrome') ? 'the bars stayed after leaving the bottom' : 'ok'
     },
   })
 

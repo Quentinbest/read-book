@@ -128,8 +128,8 @@
       "evidence": "ok"
     },
     {
-      "id": "S9-top-peek",
-      "description": "Immersive reading shows nothing at the bottom, even with the pointer there; the top edge reveals the top bar alone, naming the book only; it stays while the pointer is on it and goes as soon as the pointer leaves (S9)",
+      "id": "S9-edge-reveal",
+      "description": "Immersive reading shows no location line. Either edge reveals both bars, the top one naming the book only; they stay while the pointer is in an edge zone or on a bar and go as soon as it leaves (S9)",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -656,7 +656,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1790642387,
+    "time": 1790826573,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
