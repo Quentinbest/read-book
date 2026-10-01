@@ -15,6 +15,7 @@
     OVERRIDES_SETTING,
     assign,
     chordFromEvent,
+    remappable,
     effectiveChords,
     parseOverrides,
     reset,
@@ -44,8 +45,8 @@
   const groups = $derived(
     ORDER.map((s) => ({
       title: SECTION_TITLES[s],
-      // Key-only commands (Esc) are not remapped; extensions' commands all are.
-      items: defs.filter((d) => d.section === s && (d.palette || d.chord)),
+      // Esc and ⌘, stay Linen's (K14, G2); extensions' commands are all listed.
+      items: defs.filter((d) => d.section === s && (d.palette || d.chord) && remappable(d)),
     })).filter((g) => g.items.length),
   )
   const label = (d: CommandDef) => {

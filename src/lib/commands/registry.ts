@@ -6,7 +6,7 @@
 
 import { t } from '../strings/en'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
-import type { Overrides } from './remap'
+import { remappable, type Overrides } from './remap'
 
 export type CommandSection =
   'reading' | 'navigation' | 'search' | 'annotation' | 'view' | 'app' | 'extension'
@@ -366,7 +366,7 @@ export class CommandRegistry {
   }
 
   #withOverride(def: CommandDef): CommandDef {
-    if (!(def.id in this.#overrides)) return def
+    if (!(def.id in this.#overrides) || !remappable(def)) return def
     return { ...def, chord: this.#overrides[def.id] ?? undefined, altChords: undefined }
   }
 

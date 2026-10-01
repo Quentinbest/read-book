@@ -65,6 +65,9 @@ export function chordProblem(c: Chord): ChordProblem | null {
   return null
 }
 
+/** Commands on a reserved chord (Esc closes layers, ⌘, opens Settings) keep it. */
+export const remappable = (def: CommandDef) => !def.chord || chordProblem(def.chord) !== 'reserved'
+
 /** The chords that run a command: the reader's, or else its defaults. */
 export function effectiveChords(def: CommandDef, overrides: Overrides): Chord[] {
   if (def.id in overrides) {
@@ -90,7 +93,7 @@ export function assign(
   const problem = chordProblem(chord)
   if (problem) return { ok: false, problem }
   const target = defs.find((d) => d.id === id)
-  if (!target) return { ok: false, problem: 'reserved' }
+  if (!target || !remappable(target)) return { ok: false, problem: 'reserved' }
   const holder = defs.find(
     (d) => d.id !== id && effectiveChords(d, overrides).some((c) => sameChord(c, chord)),
   )

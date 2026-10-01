@@ -35,9 +35,15 @@
   - **Not 1.1:** `17-goto` differs only in the field's focus ring and the traffic lights (active window).
   - The new captures are in `docs/visual/app/`; diffs in `docs/visual/diff/` (not committed).
 
+## After approval (2026-10-01)
+
+- **Short windows:** the Aa popover now stops 12 px above the window's foot and its rows scroll; the arrow and the foot stay put. At full height it is pixel-identical to its baseline. Check `11-aa-short-window` (1100 × 560).
+- **Esc and ⌘, are not remappable:** Settings › Shortcuts listed Close layer (Esc) with Change and Remove. Commands on a reserved chord are now left out, and the registry ignores a stored override for them (K14, G2; `remap.test.ts`).
+- **Settings captures:** `11-settings-reading` and `11-settings-shortcuts` are new captures with no baseline yet (item 41).
+- After these: `C4-remap`, `L4-aa-scope`, `11-font-and-width`, `11-aa-short-window` and `D1-no-uncaught-errors` pass; the visual comparison has only the known `17-goto` focus-ring difference.
+
 ## Known gaps
 
-- **The Aa popover is about 570 px tall** with the two new rows; in a window shorter than about 620 px its foot is cut off. It does not scroll.
 - **Recording a ⌘ chord in the separate Settings window** relies on WebKit taking the key before the menu bar. The harness records in the main window, so this is not verified in the real Settings window (item 38).
 - **A pathological regular expression** can keep the search worker busy; JavaScript can't interrupt one. Only search waits (item 39).
 - **Extension peek providers** (dictionary or translation from an extension) and **metadata providers** from the plan's 1.1 list are not built; they need a Host API addition.

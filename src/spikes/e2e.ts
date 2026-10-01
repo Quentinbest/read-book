@@ -4496,6 +4496,42 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  checks.push({
+    id: '11-aa-short-window',
+    description:
+      '1.1: in a window too short for every Aa row, the rows scroll and the popover stays inside the window',
+    run: async () => {
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      const w = getCurrentWindow()
+      const factor = await w.scaleFactor()
+      const size = await w.innerSize()
+      const problems: string[] = []
+      try {
+        await w.setSize(new LogicalSize(1100, 560))
+        await settled(1200)
+        const pop = await openAa()
+        const box = pop.getBoundingClientRect()
+        if (box.bottom > window.innerHeight)
+          problems.push(`popover ends at ${Math.round(box.bottom)} of ${window.innerHeight}`)
+        const foot = pop.querySelector('.foot')!.getBoundingClientRect()
+        if (foot.bottom > window.innerHeight) problems.push('the foot is cut off')
+        const rows = pop.querySelector<HTMLElement>('.rows')!
+        if (rows.scrollHeight <= rows.clientHeight) problems.push('the rows do not scroll')
+        rows.scrollTop = rows.scrollHeight
+        await settled(100)
+        const layout = rows.querySelector<HTMLElement>('#aa-layout')!.getBoundingClientRect()
+        if (layout.bottom > rows.getBoundingClientRect().bottom + 1)
+          problems.push('the last row cannot be scrolled into view')
+        key('Escape', { code: 'Escape' })
+        await settled(300)
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',
@@ -4967,6 +5003,15 @@ export async function spikeVisual(): Promise<SpikeResult> {
   ;(document.activeElement as HTMLElement | null)?.blur()
   await settled(600)
   await capture('11-settings-extensions')
+  // Release 1.1: Settings › Reading (Font, Page width, Publisher styles) and Shortcuts (C4).
+  prefsHost.querySelector<HTMLButtonElement>('#prefs-reading')!.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(500)
+  await capture('11-settings-reading')
+  prefsHost.querySelector<HTMLButtonElement>('#prefs-shortcuts')!.click()
+  ;(document.activeElement as HTMLElement | null)?.blur()
+  await settled(500)
+  await capture('11-settings-shortcuts')
   prefsHost.remove()
 
   // Screen 12: an extension failure, contained: the selection's “⋯” marks Define

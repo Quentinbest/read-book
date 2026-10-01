@@ -94,6 +94,18 @@ describe('C4 assigning', () => {
     expect(r.ok && r.overrides[ext.id]).toBeNull()
   })
 
+  it('Esc and ⌘, stay Linen’s', () => {
+    const esc = defs.find((d) => d.chord?.code === 'Escape')!
+    expect(assign(defs, {}, esc.id, { code: 'KeyE', meta: true, ctrl: true })).toMatchObject({
+      ok: false,
+      problem: 'reserved',
+    })
+    const r = new CommandRegistry(defs)
+    r.setOverrides({ [esc.id]: null, 'app.settings': null })
+    expect(r.definitions().find((d) => d.id === esc.id)?.chord?.code).toBe('Escape')
+    expect(r.definitions().find((d) => d.id === 'app.settings')?.chord?.code).toBe('Comma')
+  })
+
   it('taking away, resetting, and the stored form', () => {
     const o = unassign({}, 'search.open')
     expect(effectiveChords(byId('search.open'), o)).toEqual([])
