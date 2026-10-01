@@ -239,16 +239,18 @@ describe('S8 only modals suspend reader input', () => {
 })
 
 describe('S9 edge reveal', () => {
-  it('an edge reveals its bar alone, and hiding clears it', () => {
-    const top = run(initialState(WIDE), { type: 'showChrome', edge: 'top' })
-    expect(top.s.chrome).toBe('controls')
-    expect(top.s.chromePeek).toBe('top')
-    const hidden = run(top.s, { type: 'hideChrome' })
-    expect(hidden.s.chrome).toBe('immersive')
-    expect(hidden.s.chromePeek).toBeNull()
+  it('either edge reveals the bars as an edge reveal, and hiding clears it', () => {
+    for (const edge of ['top', 'bottom'] as const) {
+      const shown = run(initialState(WIDE), { type: 'showChrome', edge })
+      expect(shown.s.chrome).toBe('controls')
+      expect(shown.s.chromePeek).toBe(edge)
+      const hidden = run(shown.s, { type: 'hideChrome' })
+      expect(hidden.s.chrome).toBe('immersive')
+      expect(hidden.s.chromePeek).toBeNull()
+    }
   })
 
-  it('an edge never takes a bar away from the full controls; Tab or ⌘J brings both', () => {
+  it('an edge never turns the full controls into an edge reveal; Tab or ⌘J upgrades one', () => {
     const full = run(
       initialState(WIDE),
       { type: 'showChrome' },

@@ -40,11 +40,11 @@ export interface ReaderState {
   /** A control in the chrome has focus (S10: the chrome never hides then). */
   chromeFocused: boolean
   /**
-   * S9: the pointer at the top edge revealed the top bar alone. It stays while the pointer
-   * is on the bar or in its zone and goes the moment the pointer leaves. Null: both bars, or none.
-   * There is no bottom trigger (owner decision, 2026-09-29).
+   * S9: the pointer at this edge revealed the bars. They stay while the pointer is on a bar
+   * or in an edge zone and go the moment it leaves; the top bar names the book only.
+   * Null: the full controls (Tab, ⌘J, Aa), or none.
    */
-  chromePeek: 'top' | null
+  chromePeek: 'top' | 'bottom' | null
 }
 
 export type ReaderEvent =
@@ -55,8 +55,8 @@ export type ReaderEvent =
   | { type: 'escape' }
   | { type: 'pageTurn' }
   | { type: 'selectionStart' }
-  /** With an edge, the pointer's dwell there: the top bar only (S9). Without, both bars. */
-  | { type: 'showChrome'; edge?: 'top' }
+  /** With an edge, the pointer's dwell there (S9). Without, the full controls. */
+  | { type: 'showChrome'; edge?: 'top' | 'bottom' }
   | { type: 'hideChrome' }
   | { type: 'chromeFocus'; focused: boolean }
   | { type: 'resize'; width: number }
@@ -201,7 +201,7 @@ export function reduce(state: ReaderState, event: ReaderEvent): Transition {
     case 'showChrome': {
       // The chrome and the Navigator alternate (S3); the Navigator header stands in for it.
       if (navigatorTab(s) !== null) break
-      // S9: an edge reveals its bar alone; it never takes a bar away from the full controls.
+      // S9: an edge never turns the full controls into an edge reveal.
       if (!event.edge) s = { ...s, chrome: 'controls', chromePeek: null }
       else if (s.chrome === 'immersive' || s.chromePeek)
         s = { ...s, chrome: 'controls', chromePeek: event.edge }

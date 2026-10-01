@@ -193,9 +193,6 @@
   const OPENING_LINE_AFTER_MS = 500
   let theme: Theme = $state(THEMES.paper)
   let chromeVisible = $derived(lanes.chrome === 'controls')
-  /** S9: the top edge reveals the top bar alone; Tab, ⌘J and Aa bring both bars. */
-  let topBarShown = $derived(chromeVisible)
-  let bottomBarShown = $derived(chromeVisible && !lanes.chromePeek)
   /** Every theme token, for panels and controls that the inline colours below do not cover. */
   let themeStyle = $derived(
     Object.entries(themeVariables(theme))
@@ -217,7 +214,7 @@
   // Screens 02/03/04: the window buttons live in the top bar or the Navigator header.
   $effect(() => {
     // S14: the library, over a warm book, always has its window buttons.
-    void ipc.setWindowControls(!active || topBarShown || navigatorOpen).catch(() => {})
+    void ipc.setWindowControls(!active || chromeVisible || navigatorOpen).catch(() => {})
   })
   // V8: the Navigator slides in 220 ms while the column moves by transform; the
   // page reflows at the new width only after the slide, so the text never jumps.
@@ -961,7 +958,7 @@
     theme = await resolveTheme()
     relayout()
   }
-  let edges = { topStart: 0 }
+  let edges = { topStart: 0, dockBottom: false }
   let announceTurns = true
   /** V8, G2: the page-turn crossfade preference (off by default: turns are instant). */
   let crossfadeTurns = false
@@ -1274,15 +1271,19 @@
   let dwellTimer = 0
   let hideTimer = 0
   let topBar: HTMLElement | undefined = $state()
+  let bottomBar: HTMLElement | undefined = $state()
+  /** S11: the strip at the window's foot where an auto-hiding Dock slides in. */
+  const DOCK_STRIP = 6
   /**
-   * S11: in full screen the top zone starts below the menu bar. There is no bottom zone:
-   * immersive reading shows nothing at the bottom (owner decision, 2026-09-29).
+   * S11: in full screen the top zone starts below the menu bar. With the Dock hiding at the
+   * bottom, the bottom zone leaves out the Dock's strip (owner decision, 2026-10-01).
    */
   async function refreshEdges() {
     try {
       const e = await ipc.screenEdges()
       edges = {
         topStart: e.fullscreen ? e.menu_bar_height : 0,
+        dockBottom: e.dock_edge === 'bottom' && (e.dock_autohide || e.fullscreen),
       }
     } catch {
       // keep the defaults
@@ -1292,23 +1293,29 @@
   /** `y` is in the reader's coordinates. */
   function onPointerAt(y: number) {
     const nearTop = y >= edges.topStart && y <= edges.topStart + REVEAL_ZONE
+    const bottomEnd = window.innerHeight - (edges.dockBottom ? DOCK_STRIP : 0)
+    const nearBottom = y >= window.innerHeight - REVEAL_ZONE && y <= bottomEnd
+    const edge = nearTop ? 'top' : nearBottom ? 'bottom' : null
     clearTimeout(hideTimer)
     if (lanes.chromePeek) {
-      // S9: the bar the pointer revealed stays while the pointer is on it or in its zone,
-      // and goes the moment it leaves (no delay, so reading resumes at once).
-      const bar = topBar?.getBoundingClientRect()
-      if (nearTop || (bar && y >= bar.top && y <= bar.bottom)) {
+      // S9: the bars the pointer revealed stay while the pointer is on one of them or in an
+      // edge zone, and go the moment it leaves (no delay, so reading resumes at once).
+      const on = (bar?: HTMLElement) => {
+        const r = bar?.getBoundingClientRect()
+        return !!r && y >= r.top && y <= r.bottom
+      }
+      if (edge || on(topBar) || on(bottomBar)) {
         clearTimeout(dwellTimer)
         dwellTimer = 0
         return
       }
       dispatch({ type: 'hideChrome' })
     }
-    if (nearTop) {
+    if (edge) {
       if (!chromeVisible && !dwellTimer)
         dwellTimer = window.setTimeout(() => {
           dwellTimer = 0
-          dispatch({ type: 'showChrome', edge: 'top' })
+          dispatch({ type: 'showChrome', edge })
         }, REVEAL_DWELL_MS)
     } else {
       clearTimeout(dwellTimer)
@@ -1949,7 +1956,7 @@
         bind:this={selectionBar}
         first={bar.first}
         last={bar.last}
-        top={topBarShown ? 52 : 0}
+        top={chromeVisible ? 52 : 0}
         mode={bar.mode}
         color={existing?.color ?? annotations.lastColor}
         onhighlight={(c) => (bar?.id ? recolor(bar.id, c) : highlightSelection(c))}
@@ -2005,7 +2012,7 @@
         >
       </div>
     {/if}
-    {#if topBarShown}
+    {#if chromeVisible}
       <header
         class="chrome top"
         class:docked={dockedWidth > 0}
@@ -2020,7 +2027,7 @@
           <Icon name="contents" size={18} />
         </button>
         <div class="title" aria-live="off">
-          <!-- S9: a bar the pointer revealed names the book only. -->
+          <!-- S9: bars the pointer revealed name the book only. -->
           <span class="book">{book.title}</span
           >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
             {location.chapterLabel}{/if}
@@ -2060,9 +2067,7 @@
           </button>
         </div>
       </header>
-    {/if}
-    {#if bottomBarShown}
-      <footer class="chrome bottom" out:chromeOut={{ from: 4 }}>
+      <footer class="chrome bottom" bind:this={bottomBar} out:chromeOut={{ from: 4 }}>
         <div class="progress" class:rtl={rtlBook} style:width="{layout.textWidth}px">
           <div
             class="track"
