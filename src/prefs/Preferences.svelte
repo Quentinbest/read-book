@@ -209,7 +209,22 @@
         >
       </div>
     {:else}
-      <p class="about-name">Linen</p>
+      <picture class="about-logo">
+        {#if theme === 'auto' || theme.startsWith('ext:')}
+          <source
+            media="(prefers-color-scheme: dark)"
+            srcset="/brand/linen-a-v002/horizontal-white.svg"
+          />
+        {/if}
+        <img
+          src={theme === 'night'
+            ? '/brand/linen-a-v002/horizontal-white.svg'
+            : '/brand/linen-a-v002/horizontal-primary.svg'}
+          width="204"
+          height="80"
+          alt="Linen"
+        />
+      </picture>
       {#if version}<p class="help">{t.prefs.version(version)}</p>{/if}
       <p>{t.prefs.aboutLine}</p>
       <p class="help">{t.prefs.fonts}</p>
@@ -374,8 +389,14 @@
   .status {
     color: var(--ink);
   }
-  .about-name {
-    font: 500 22px var(--font-reading, Literata, Georgia, serif);
+  .about-logo {
+    width: 204px;
+    max-width: 100%;
+  }
+  .about-logo img {
+    display: block;
+    width: 100%;
+    height: auto;
   }
   /* X6: narrow (zoomed) Settings: the sections run across the top. */
   @media (max-width: 560px) {
