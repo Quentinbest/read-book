@@ -33,6 +33,16 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 - **Checked before publishing:** both update archives verify against the key in the app, and `latest.json` matches their signatures.
 - **After publishing:** the update address answers without logging in (HTTP 200, version 0.1.0).
 
+**v0.1.1, published 2026-09-30** (https://github.com/Quentinbest/read-book/releases/tag/v0.1.1): the review fixes and the immersive-mode changes.
+- **First run of the reworked release workflow:** it failed right after making the draft, because the release list lagged behind it; a re-run built both archives. Fixed for later releases (#2).
+- **Checked before publishing:** the Apple silicon archive is 0.1.1 and verifies against the key in the app.
+- **The first real self-update:** the installed 0.1.0 in `/Applications` updated itself to 0.1.1.
+
+**v0.1.2, published 2026-10-01** (https://github.com/Quentinbest/read-book/releases/tag/v0.1.2): an edge reveal brings the progress bar back, and the bottom edge works again (#3; `docs/decisions.md`, 2026-10-01).
+- **Release workflow:** passed on its first run with the draft fix.
+- **Checked before publishing:** both archives are 0.1.2 for their architecture, verify against the key in the app, and match `latest.json`.
+- **After publishing:** the update address answers 0.1.2 (HTTP 200).
+
 ## Work items
 
 | Item | Status |
