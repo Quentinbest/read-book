@@ -78,5 +78,5 @@ From `docs/next-steps-plan.md` §4. Release downloads so far (`docs/release-stat
 46. **(O4) Extensions on iPad** (App Store guideline 2.5.2). *Recommendation:* keep them on TestFlight; decide before any App Store submission.
 47. **(O5) A test iPad.** *Recommendation:* any iPad Tauri's iOS support runs on.
 48. **(O6) Sync approach.** *Recommendation:* an adapter API plus a built-in sync folder (iCloud Drive).
-49. **(O7) Gate W**, after Phase 10. Spike A across engines (`docs/spikes/cross-engine.md`): Linux at parity in practice, Windows +2.7% pages. *Recommendation:* no-go unless someone asks; so far nobody has. Also approve the reworded criterion: each chapter within ±1 page, and the total within 2%.
+49. **(O7) Gate W**, after Phase 10. Phase 10 (`docs/spikes/cross-engine.md`): anchors identical and isolation holding on all three engines; pages: Linux at parity in practice, Windows +2.7%. *Recommendation:* no-go unless someone asks; so far nobody has. Also approve the reworded criterion: each chapter within ±1 page, and the total within 2%.
 50. **(O8) iPad before sync.** *Recommendation:* yes.

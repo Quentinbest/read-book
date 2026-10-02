@@ -1,8 +1,12 @@
 # Spike A across engines (next-steps plan, Phase 10)
 
-**Verdict:** Linux (WebKitGTK) is at parity in practice. Windows (WebView2) is close, but lays out about 3% more pages, consistently. As written, the 2% criterion fails on both, because it can't be met on short chapters (see below).
+**Verdict:** no engine blocks a port.
+- **Anchors** (CFIs, highlights) are identical across all three engines.
+- **Content isolation** holds on WebView2 and WebKitGTK.
+- **Pagination:** Linux (WebKitGTK) is at parity in practice; Windows (WebView2) lays out about 3% more pages, consistently. As written, the 2% page criterion fails on both, because it can't be met on short chapters (see below).
 
-- **Date:** 2026-10-02
+- **Date:** 2026-10-02 (Spike A); 2026-10-03 (D, DX, E; run 37062812749)
+- **Raw results:** `docs/spikes/raw/*-linux.json`, `*-windows.json`, `dx-anchors-macos.json` (run 1 of each)
 - **Workflow:** `.github/workflows/cross-engine.yml` (PR #7). Each engine runs twice, and both runs gave the same result.
 - **Comparison:** `scripts/compare-spike-a.mjs`, against the macOS run from the same workflow (not the stored 2026-09-24 file).
 - **Method:** Spike A as in `a-rendering.md`: 20 Moby-Dick chapters at 16, 19 and 24 px, 1280 × 800, one column.
@@ -24,10 +28,42 @@ Windows by size: +1.7% at 16 px, +2.3% at 19 px, +3.7% at 24 px.
 - **Windows is systematic, not noise:** the differences only go one way and grow with font size. That points to how Chromium rounds line heights, or breaks lines, relative to WebKit, which L3 (pages snapped to whole lines) would amplify. One more page per chapter is barely noticeable while reading. It would matter for page numbers shared between devices, which is why plan item D compares anchors (CFIs), not page numbers.
 - **Plan fallback (plan §5, Spike A row):** neither engine fails in a way that triggers Readium or Electron.
 
+## Anchors across engines (Spike D and DX)
+
+| Engine | DX: the same seeded range picked | DX: the same CFI for the same text | D: CFI round-trips through reflow | D: highlights through reflow |
+|---|---|---|---|---|
+| macOS | 200 / 200 (baseline) | 200 / 200 | 200 / 200 | 100, 0 mismatches |
+| Linux | 200 / 200 | 200 / 200 | 200 / 200 | 100, 0 mismatches |
+| Windows | 200 / 200 | 200 / 200 | 200 / 200 | 100, 0 mismatches |
+
+- **DX** (new, `spikeDx`) picks 200 seeded ranges in Moby-Dick on each engine and records each one's CFI and text. `scripts/compare-spike-dx.mjs` compares them across engines.
+  - **Result:** every engine parses the book to the same DOM and makes the same CFI for the same text.
+  - So a highlight or position saved on one engine lands on the same words on another, which is what sync (Phase 13) relies on.
+- **Not yet covered:** NFC and NFD forms of the same word, and soft hyphens (Moby-Dick has few of either). Add a fixture book for them before sync.
+- **Timing criteria are machine-bound and failed on the runners, macOS included.** They are recorded, not judged:
+  - Page turns crossing a chapter: p95 41 ms on Windows, 95 ms on Linux, 174 ms on the macOS runner.
+  - The 100 MB book opened in 1.75 s on Linux. The budgets belong to reference machines (§6.4).
+
+## Content isolation (Spike E)
+
+| Probe (CSP, and CSP with the book's meta tag) | Linux | Windows |
+|---|---|---|
+| Book scripts run, reach the DOM, post messages or call IPC | blocked | blocked |
+| Network requests to a local canary server | none | none |
+| Local files, `tauri://localhost` framed | none | none |
+| Chrome stays above the book | yes | yes |
+| Hostile archives (traversal, absolute paths, symlinks, XML bombs) | handled | handled |
+
+- **Custom schemes on WebView2.** The CSP-based isolation (D-E1) holds there too, even though WebView2 serves the app's custom URI schemes as `http://<scheme>.localhost` origins. That was the main open question for Windows.
+- **`E-sandbox-no-scripts`** (sandboxed iframes still deliver events):
+  - It fails on Linux, as on macOS: WebKitGTK shares WebKit bug 218086, which is why D-E1 chose the CSP over iframe sandboxing.
+  - It passes on Windows (Chromium).
+  - Either way, isolation rests on the CSP, which passes on all three.
+
 ## Not covered yet
 
-- **Spikes D (anchors across engines) and E (content isolation on WebView2):** not run. Their harnesses use macOS-only helpers and need the same portability work Spike A needed.
-- **Content Moby-Dick doesn't exercise** (next-steps plan, Phase 10 edge cases): vertical writing, RTL, CJK, hyphenation, fixed layout, spreads and 200% zoom.
+- Content Moby-Dick doesn't exercise (next-steps plan, Phase 10 edge cases): vertical writing, RTL, CJK, hyphenation, fixed layout, spreads, 200% zoom.
+- Spikes B (trackpad) and C (NVDA, Orca) need hardware and a person.
 
 ## Found on the way
 

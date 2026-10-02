@@ -1,0 +1,1225 @@
+{
+  "spike": "dx-anchors-linux",
+  "criteria": [
+    {
+      "id": "DX-self",
+      "description": "Each seeded CFI resolves back to its own text on this engine",
+      "verdict": "pass",
+      "evidence": "200/200 (of 200 seeded)"
+    }
+  ],
+  "raw": {
+    "engine": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15",
+    "anchors": [
+      {
+        "n": 0,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15]/34,/1:10,/1:30)",
+        "text": "ys I; “and let’s hav",
+        "resolved": "ys I; “and let’s hav"
+      },
+      {
+        "n": 1,
+        "cfi": "epubcfi(/6/22!/4/2[chapter-5]/8,/1:217,/1:237)",
+        "text": "a carpenters, and se",
+        "resolved": "a carpenters, and se"
+      },
+      {
+        "n": 2,
+        "cfi": "epubcfi(/6/112!/4/2[chapter-50]/16,/3:1190,/3:1210)",
+        "text": "that boat with his s",
+        "resolved": "that boat with his s"
+      },
+      {
+        "n": 3,
+        "cfi": "epubcfi(/6/196!/4/2[chapter-92]/14,/1:597,/1:617)",
+        "text": "whale cemeteries, in",
+        "resolved": "whale cemeteries, in"
+      },
+      {
+        "n": 4,
+        "cfi": "epubcfi(/6/212!/4/2[chapter-100]/44,/1:360,/1:380)",
+        "text": "ke he held in one ha",
+        "resolved": "ke he held in one ha"
+      },
+      {
+        "n": 5,
+        "cfi": "epubcfi(/6/94!/4/2[chapter-41]/16,/1:397,/1:417)",
+        "text": "most similar impress",
+        "resolved": "most similar impress"
+      },
+      {
+        "n": 6,
+        "cfi": "epubcfi(/6/162!/4/2[chapter-75]/4,/1:16,/1:36)",
+        "text": "k, let us now have a",
+        "resolved": "k, let us now have a"
+      },
+      {
+        "n": 7,
+        "cfi": "epubcfi(/6/26!/4/2[chapter-7]/6,/1:435,/1:455)",
+        "text": " Each silent worship",
+        "resolved": " Each silent worship"
+      },
+      {
+        "n": 8,
+        "cfi": "epubcfi(/6/116!/4/2[chapter-52]/10,/5:90,/5:110)",
+        "text": " this time three yea",
+        "resolved": " this time three yea"
+      },
+      {
+        "n": 9,
+        "cfi": "epubcfi(/6/130!/4/2[chapter-59]/4,/1:23,/1:43)",
+        "text": "he meadows of brit, ",
+        "resolved": "he meadows of brit, "
+      },
+      {
+        "n": 10,
+        "cfi": "epubcfi(/6/226!/4/2[chapter-107]/12,/3:99,/3:119)",
+        "text": " but containing, not",
+        "resolved": " but containing, not"
+      },
+      {
+        "n": 11,
+        "cfi": "epubcfi(/6/124!/4/2[chapter-56]/8,/1:342,/1:362)",
+        "text": "seen by his living h",
+        "resolved": "seen by his living h"
+      },
+      {
+        "n": 12,
+        "cfi": "epubcfi(/6/80!/4/2[chapter-34]/12,/1:948,/1:968)",
+        "text": "For, like the Corona",
+        "resolved": "For, like the Corona"
+      },
+      {
+        "n": 13,
+        "cfi": "epubcfi(/6/194!/4/2[chapter-91]/94,/3:30,/3:50)",
+        "text": "’s whale. Whereupon ",
+        "resolved": "’s whale. Whereupon "
+      },
+      {
+        "n": 14,
+        "cfi": "epubcfi(/6/166!/4/2[chapter-77]/12,/1:192,/1:212)",
+        "text": "hird of the whole le",
+        "resolved": "hird of the whole le"
+      },
+      {
+        "n": 15,
+        "cfi": "epubcfi(/6/38!/4/2[chapter-13]/22,/1:20,/1:40)",
+        "text": " Queequeg, as he mil",
+        "resolved": " Queequeg, as he mil"
+      },
+      {
+        "n": 16,
+        "cfi": "epubcfi(/6/128!/4/2[chapter-58]/22,/1:419,/1:439)",
+        "text": "h other, carrying on",
+        "resolved": "h other, carrying on"
+      },
+      {
+        "n": 17,
+        "cfi": "epubcfi(/6/192!/4/2[chapter-90]/18,/1:127,/1:147)",
+        "text": " all for our pains b",
+        "resolved": " all for our pains b"
+      },
+      {
+        "n": 18,
+        "cfi": "epubcfi(/6/224!/4/2[chapter-106]/10,/1:5,/1:25)",
+        "text": "tingly here a secret",
+        "resolved": "tingly here a secret"
+      },
+      {
+        "n": 19,
+        "cfi": "epubcfi(/6/162!/4/2[chapter-75]/4,/1:40,/1:60)",
+        "text": "d long look at the R",
+        "resolved": "d long look at the R"
+      },
+      {
+        "n": 20,
+        "cfi": "epubcfi(/6/196!/4/2[chapter-92]/16,/1:21,/1:41)",
+        "text": ", that this wicked c",
+        "resolved": ", that this wicked c"
+      },
+      {
+        "n": 21,
+        "cfi": "epubcfi(/6/178!/4/2[chapter-83]/12,/3:36,/3:56)",
+        "text": "n honor of Jonah, in",
+        "resolved": "n honor of Jonah, in"
+      },
+      {
+        "n": 22,
+        "cfi": "epubcfi(/6/60!/4/2[chapter-24]/46,/1:270,/1:290)",
+        "text": " a man might rather ",
+        "resolved": " a man might rather "
+      },
+      {
+        "n": 23,
+        "cfi": "epubcfi(/6/184!/4/2[chapter-86]/14,/1:109,/1:129)",
+        "text": "ger, whatever be the",
+        "resolved": "ger, whatever be the"
+      },
+      {
+        "n": 24,
+        "cfi": "epubcfi(/6/172!/4/2[chapter-80]/6,/1:810,/1:830)",
+        "text": " So like a choice ca",
+        "resolved": " So like a choice ca"
+      },
+      {
+        "n": 25,
+        "cfi": "epubcfi(/6/124!/4/2[chapter-56]/2/4,/1:25,/1:45)",
+        "text": "tures of Whales, and",
+        "resolved": "tures of Whales, and"
+      },
+      {
+        "n": 26,
+        "cfi": "epubcfi(/6/28!/4/2[chapter-8]/8,/1:75,/1:95)",
+        "text": "inging ones, were of",
+        "resolved": "inging ones, were of"
+      },
+      {
+        "n": 27,
+        "cfi": "epubcfi(/6/170!/4/2[chapter-79]/6,/1:437,/1:457)",
+        "text": "er of some sort, is ",
+        "resolved": "er of some sort, is "
+      },
+      {
+        "n": 28,
+        "cfi": "epubcfi(/6/260!/4/2[chapter-124]/16,/1:97,/1:117)",
+        "text": "bly escaped everyone",
+        "resolved": "bly escaped everyone"
+      },
+      {
+        "n": 29,
+        "cfi": "epubcfi(/6/140!/4/2[chapter-64]/76,/1:37,/1:57)",
+        "text": "oo. But I want to kn",
+        "resolved": "oo. But I want to kn"
+      },
+      {
+        "n": 30,
+        "cfi": "epubcfi(/6/172!/4/2[chapter-80]/12,/1:576,/1:596)",
+        "text": "me, in the skeleton ",
+        "resolved": "me, in the skeleton "
+      },
+      {
+        "n": 31,
+        "cfi": "epubcfi(/6/272!/4/2[chapter-130]/8,/1:742,/1:762)",
+        "text": "rs: but never sat or",
+        "resolved": "rs: but never sat or"
+      },
+      {
+        "n": 32,
+        "cfi": "epubcfi(/6/280!/4/2[chapter-134]/66,/1:14,/1:34)",
+        "text": "help thee towards th",
+        "resolved": "help thee towards th"
+      },
+      {
+        "n": 33,
+        "cfi": "epubcfi(/6/228!/4/2[chapter-108]/20,/1:24,/1:44)",
+        "text": "ones﻿—beware, beware",
+        "resolved": "ones﻿—beware, beware"
+      },
+      {
+        "n": 34,
+        "cfi": "epubcfi(/6/14!/4/2[chapter-1]/12,/1:112,/1:132)",
+        "text": "ne it carries you do",
+        "resolved": "ne it carries you do"
+      },
+      {
+        "n": 35,
+        "cfi": "epubcfi(/6/78!/4/2[chapter-33]/12,/5:27,/5:47)",
+        "text": "ptain Ahab was by no",
+        "resolved": "ptain Ahab was by no"
+      },
+      {
+        "n": 36,
+        "cfi": "epubcfi(/6/64!/4/2[chapter-26]/10,/1:56,/1:76)",
+        "text": " a certain superstit",
+        "resolved": " a certain superstit"
+      },
+      {
+        "n": 37,
+        "cfi": "epubcfi(/6/276!/4/2[chapter-132]/32,/1:131,/1:151)",
+        "text": "of his father’s sail",
+        "resolved": "of his father’s sail"
+      },
+      {
+        "n": 38,
+        "cfi": "epubcfi(/6/118!/4/2[chapter-53]/10,/1:930,/1:950)",
+        "text": "glish whale-hunters,",
+        "resolved": "glish whale-hunters,"
+      },
+      {
+        "n": 39,
+        "cfi": "epubcfi(/6/186!/4/2[chapter-87]/8,/1:167,/1:187)",
+        "text": "aits, fiercely deman",
+        "resolved": "aits, fiercely deman"
+      },
+      {
+        "n": 40,
+        "cfi": "epubcfi(/6/46!/4/2[chapter-17]/48,/1:525,/1:545)",
+        "text": "k; this made me real",
+        "resolved": "k; this made me real"
+      },
+      {
+        "n": 41,
+        "cfi": "epubcfi(/6/76!/4/2[chapter-32]/80,/1:11,/1:31)",
+        "text": "o have not chanced s",
+        "resolved": "o have not chanced s"
+      },
+      {
+        "n": 42,
+        "cfi": "epubcfi(/6/156!/4/2[chapter-72]/28,/1:80,/1:100)",
+        "text": " your apothecary’s m",
+        "resolved": " your apothecary’s m"
+      },
+      {
+        "n": 43,
+        "cfi": "epubcfi(/6/18!/4/2[chapter-3]/78,/1:54,/1:74)",
+        "text": ", “you’d better stop",
+        "resolved": ", “you’d better stop"
+      },
+      {
+        "n": 44,
+        "cfi": "epubcfi(/6/80!/4/2[chapter-34]/6,/1:208,/1:228)",
+        "text": "and, after a grave p",
+        "resolved": "and, after a grave p"
+      },
+      {
+        "n": 45,
+        "cfi": "epubcfi(/6/120!/4/2[chapter-54]/126,/1:5,/1:25)",
+        "text": "t I must,’﻿—and the ",
+        "resolved": "t I must,’﻿—and the "
+      },
+      {
+        "n": 46,
+        "cfi": "epubcfi(/6/144!/4/2[chapter-66]/4,/1:273,/1:293)",
+        "text": "s not very soon comp",
+        "resolved": "s not very soon comp"
+      },
+      {
+        "n": 47,
+        "cfi": "epubcfi(/6/242!/4/2[chapter-115]/18,/3:31,/3:51)",
+        "text": "nd a bottle in the a",
+        "resolved": "nd a bottle in the a"
+      },
+      {
+        "n": 48,
+        "cfi": "epubcfi(/6/148!/4/2[chapter-68]/18,/3:6,/3:26)",
+        "text": "’s! of creatures, ho",
+        "resolved": "’s! of creatures, ho"
+      },
+      {
+        "n": 49,
+        "cfi": "epubcfi(/6/208!/4/2[chapter-98]/10,/1:417,/1:437)",
+        "text": "re ship seems great ",
+        "resolved": "re ship seems great "
+      },
+      {
+        "n": 50,
+        "cfi": "epubcfi(/6/186!/4/2[chapter-87]/12,/1:844,/1:864)",
+        "text": "uvian or Indian stre",
+        "resolved": "uvian or Indian stre"
+      },
+      {
+        "n": 51,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15]/14,/5:66,/5:86)",
+        "text": "ng known our desires",
+        "resolved": "ng known our desires"
+      },
+      {
+        "n": 52,
+        "cfi": "epubcfi(/6/24!/4/2[chapter-6]/12,/1:787,/1:807)",
+        "text": " planted upon this o",
+        "resolved": " planted upon this o"
+      },
+      {
+        "n": 53,
+        "cfi": "epubcfi(/6/38!/4/2[chapter-13]/14,/3:41,/3:61)",
+        "text": "a young colt his sno",
+        "resolved": "a young colt his sno"
+      },
+      {
+        "n": 54,
+        "cfi": "epubcfi(/6/48!/4/2[chapter-18]/34,/1:41,/1:61)",
+        "text": "the line, “spos-ee h",
+        "resolved": "the line, “spos-ee h"
+      },
+      {
+        "n": 55,
+        "cfi": "epubcfi(/6/36!/4/2[chapter-12]/18,/1:183,/1:203)",
+        "text": " that, and very soon",
+        "resolved": " that, and very soon"
+      },
+      {
+        "n": 56,
+        "cfi": "epubcfi(/6/42!/4/2[chapter-15]/32,/1:33,/1:53)",
+        "text": "amp, and directions ",
+        "resolved": "amp, and directions "
+      },
+      {
+        "n": 57,
+        "cfi": "epubcfi(/6/260!/4/2[chapter-124]/22,/1:58,/1:78)",
+        "text": "he pale mate, gloomi",
+        "resolved": "he pale mate, gloomi"
+      },
+      {
+        "n": 58,
+        "cfi": "epubcfi(/6/198!/4/2[chapter-93]/20,/5:15,/5:35)",
+        "text": "er. Moreover, as if ",
+        "resolved": "er. Moreover, as if "
+      },
+      {
+        "n": 59,
+        "cfi": "epubcfi(/6/70!/4/2[chapter-29]/12,/1:42,/1:62)",
+        "text": "mation of the so sud",
+        "resolved": "mation of the so sud"
+      },
+      {
+        "n": 60,
+        "cfi": "epubcfi(/6/262!/4/2[chapter-125]/42,/1:79,/1:99)",
+        "text": " now if ye haven’t f",
+        "resolved": " now if ye haven’t f"
+      },
+      {
+        "n": 61,
+        "cfi": "epubcfi(/6/192!/4/2[chapter-90]/6,/5:168,/5:188)",
+        "text": "royal emoluments inc",
+        "resolved": "royal emoluments inc"
+      },
+      {
+        "n": 62,
+        "cfi": "epubcfi(/6/46!/4/2[chapter-17]/44,/1:680,/1:700)",
+        "text": "is hams in a cold ro",
+        "resolved": "is hams in a cold ro"
+      },
+      {
+        "n": 63,
+        "cfi": "epubcfi(/6/60!/4/2[chapter-24]/40/2,/1:28,/1:48)",
+        "text": "ny grand imposing wa",
+        "resolved": "ny grand imposing wa"
+      },
+      {
+        "n": 64,
+        "cfi": "epubcfi(/6/124!/4/2[chapter-56]/14,/1:170,/1:190)",
+        "text": " whaleman. The Frenc",
+        "resolved": " whaleman. The Frenc"
+      },
+      {
+        "n": 65,
+        "cfi": "epubcfi(/6/170!/4/2[chapter-79]/6,/1:1220,/1:1240)",
+        "text": "htiest royal beadle ",
+        "resolved": "htiest royal beadle "
+      },
+      {
+        "n": 66,
+        "cfi": "epubcfi(/6/158!/4/2[chapter-73]/10,/3:144,/3:164)",
+        "text": "thirstily drinking a",
+        "resolved": "thirstily drinking a"
+      },
+      {
+        "n": 67,
+        "cfi": "epubcfi(/6/40!/4/2[chapter-14]/6,/1:522,/1:542)",
+        "text": "a spile to stop a le",
+        "resolved": "a spile to stop a le"
+      },
+      {
+        "n": 68,
+        "cfi": "epubcfi(/6/270!/4/2[chapter-129]/10,/1:110,/1:130)",
+        "text": "!﻿—but methinks like",
+        "resolved": "!﻿—but methinks like"
+      },
+      {
+        "n": 69,
+        "cfi": "epubcfi(/6/158!/4/2[chapter-73]/12,/1:60,/1:80)",
+        "text": "vomit, he turned upo",
+        "resolved": "vomit, he turned upo"
+      },
+      {
+        "n": 70,
+        "cfi": "epubcfi(/6/220!/4/2[chapter-104]/8,/1:481,/1:501)",
+        "text": "cle of the sciences,",
+        "resolved": "cle of the sciences,"
+      },
+      {
+        "n": 71,
+        "cfi": "epubcfi(/6/28!/4/2[chapter-8]/8,/1:428,/1:448)",
+        "text": "d stooping over the ",
+        "resolved": "d stooping over the "
+      },
+      {
+        "n": 72,
+        "cfi": "epubcfi(/6/112!/4/2[chapter-50]/14,/1:237,/1:257)",
+        "text": "ery individual momen",
+        "resolved": "ery individual momen"
+      },
+      {
+        "n": 73,
+        "cfi": "epubcfi(/6/260!/4/2[chapter-124]/32,/3:55,/3:75)",
+        "text": "smallest of the sail",
+        "resolved": "smallest of the sail"
+      },
+      {
+        "n": 74,
+        "cfi": "epubcfi(/6/184!/4/2[chapter-86]/24,/1:4,/1:24)",
+        "text": "th: Stealing unaware",
+        "resolved": "th: Stealing unaware"
+      },
+      {
+        "n": 75,
+        "cfi": "epubcfi(/6/26!/4/2[chapter-7]/10/2/14,/1:4,/1:24)",
+        "text": "rt Long, Willis Elle",
+        "resolved": "rt Long, Willis Elle"
+      },
+      {
+        "n": 76,
+        "cfi": "epubcfi(/6/268!/4/2[chapter-128]/4,/3:0,/3:20)",
+        "text": ", was descried, bear",
+        "resolved": ", was descried, bear"
+      },
+      {
+        "n": 77,
+        "cfi": "epubcfi(/6/34!/4/2[chapter-11]/8,/1:167,/1:187)",
+        "text": "hether asleep or awa",
+        "resolved": "hether asleep or awa"
+      },
+      {
+        "n": 78,
+        "cfi": "epubcfi(/6/32!/4/2[chapter-10]/8,/1:1083,/1:1103)",
+        "text": " were likewise very ",
+        "resolved": " were likewise very "
+      },
+      {
+        "n": 79,
+        "cfi": "epubcfi(/6/92!/4/2[chapter-40]/8/2/6,/1:9,/1:29)",
+        "text": "and adieu to you, la",
+        "resolved": "and adieu to you, la"
+      },
+      {
+        "n": 80,
+        "cfi": "epubcfi(/6/146!/4/2[chapter-67]/4,/5:63,/5:83)",
+        "text": " You would have thou",
+        "resolved": " You would have thou"
+      },
+      {
+        "n": 81,
+        "cfi": "epubcfi(/6/128!/4/2[chapter-58]/8,/1:29,/1:49)",
+        "text": "y side slowly and se",
+        "resolved": "y side slowly and se"
+      },
+      {
+        "n": 82,
+        "cfi": "epubcfi(/6/22!/4/2[chapter-5]/4,/1:84,/1:104)",
+        "text": "ord very pleasantly.",
+        "resolved": "ord very pleasantly."
+      },
+      {
+        "n": 83,
+        "cfi": "epubcfi(/6/104!/4/2[chapter-46]/12,/3:93,/3:113)",
+        "text": "is well known passio",
+        "resolved": "is well known passio"
+      },
+      {
+        "n": 84,
+        "cfi": "epubcfi(/6/34!/4/2[chapter-11]/6,/1:761,/1:781)",
+        "text": " a long time, then y",
+        "resolved": " a long time, then y"
+      },
+      {
+        "n": 85,
+        "cfi": "epubcfi(/6/22!/4/2[chapter-5]/8,/1:296,/1:316)",
+        "text": "eepers; a brown and ",
+        "resolved": "eepers; a brown and "
+      },
+      {
+        "n": 86,
+        "cfi": "epubcfi(/6/18!/4/2[chapter-3]/130,/1:37,/1:57)",
+        "text": "in!” shouted I. “Lan",
+        "resolved": "in!” shouted I. “Lan"
+      },
+      {
+        "n": 87,
+        "cfi": "epubcfi(/6/264!/4/2[chapter-126]/20,/1:14,/1:34)",
+        "text": "f a coffin!” cried S",
+        "resolved": "f a coffin!” cried S"
+      },
+      {
+        "n": 88,
+        "cfi": "epubcfi(/6/114!/4/2[chapter-51]/4,/1:12,/1:32)",
+        "text": "passed, and under ea",
+        "resolved": "passed, and under ea"
+      },
+      {
+        "n": 89,
+        "cfi": "epubcfi(/6/242!/4/2[chapter-115]/4,/1:105,/1:125)",
+        "text": "ter Ahab’s harpoon h",
+        "resolved": "ter Ahab’s harpoon h"
+      },
+      {
+        "n": 90,
+        "cfi": "epubcfi(/6/38!/4/2[chapter-13]/22,/1:13,/1:33)",
+        "text": "?” said Queequeg, as",
+        "resolved": "?” said Queequeg, as"
+      },
+      {
+        "n": 91,
+        "cfi": "epubcfi(/6/224!/4/2[chapter-106]/4,/1:25,/1:45)",
+        "text": "in which Captain Aha",
+        "resolved": "in which Captain Aha"
+      },
+      {
+        "n": 92,
+        "cfi": "epubcfi(/6/96!/4/2[chapter-42]/22,/1:121,/1:141)",
+        "text": " this hue. It cannot",
+        "resolved": " this hue. It cannot"
+      },
+      {
+        "n": 93,
+        "cfi": "epubcfi(/6/170!/4/2[chapter-79]/14,/1:15,/1:35)",
+        "text": "iphered the wrinkled",
+        "resolved": "iphered the wrinkled"
+      },
+      {
+        "n": 94,
+        "cfi": "epubcfi(/6/212!/4/2[chapter-100]/8,/1:292,/1:312)",
+        "text": "anned, burly, good-n",
+        "resolved": "anned, burly, good-n"
+      },
+      {
+        "n": 95,
+        "cfi": "epubcfi(/6/220!/4/2[chapter-104]/20,/1:37,/1:57)",
+        "text": "ange attestation of ",
+        "resolved": "ange attestation of "
+      },
+      {
+        "n": 96,
+        "cfi": "epubcfi(/6/14!/4/2[chapter-1]/26/2/2,/1:7,/1:27)",
+        "text": "Contested Election f",
+        "resolved": "Contested Election f"
+      },
+      {
+        "n": 97,
+        "cfi": "epubcfi(/6/130!/4/2[chapter-59]/8,/1:1,/1:21)",
+        "text": "n the distance, a gr",
+        "resolved": "n the distance, a gr"
+      },
+      {
+        "n": 98,
+        "cfi": "epubcfi(/6/238!/4/2[chapter-113]/22,/3:227,/3:247)",
+        "text": "Canst thou smoothe t",
+        "resolved": "Canst thou smoothe t"
+      },
+      {
+        "n": 99,
+        "cfi": "epubcfi(/6/278!/4/2[chapter-133]/92,/1:43,/1:63)",
+        "text": "s golden robe was ru",
+        "resolved": "s golden robe was ru"
+      },
+      {
+        "n": 100,
+        "cfi": "epubcfi(/6/50!/4/2[chapter-19]/58,/1:22,/1:42)",
+        "text": "aid I, “if you have ",
+        "resolved": "aid I, “if you have "
+      },
+      {
+        "n": 101,
+        "cfi": "epubcfi(/6/250!/4/2[chapter-119]/28,/1:13,/1:33)",
+        "text": "t in one of the inte",
+        "resolved": "t in one of the inte"
+      },
+      {
+        "n": 102,
+        "cfi": "epubcfi(/6/166!/4/2[chapter-77]/14,/1:500,/1:520)",
+        "text": ", make quite a wilde",
+        "resolved": ", make quite a wilde"
+      },
+      {
+        "n": 103,
+        "cfi": "epubcfi(/6/250!/4/2[chapter-119]/12/6/14,/1:4,/1:24)",
+        "text": " a funny, sporty, ga",
+        "resolved": " a funny, sporty, ga"
+      },
+      {
+        "n": 104,
+        "cfi": "epubcfi(/6/218!/4/2[chapter-103]/22,/1:116,/1:136)",
+        "text": "dy enterprise. But n",
+        "resolved": "dy enterprise. But n"
+      },
+      {
+        "n": 105,
+        "cfi": "epubcfi(/6/264!/4/2[chapter-126]/14,/1:6,/1:26)",
+        "text": "fe-buoy﻿—a long slen",
+        "resolved": "fe-buoy﻿—a long slen"
+      },
+      {
+        "n": 106,
+        "cfi": "epubcfi(/6/216!/4/2[chapter-102]/26,/1:523,/1:543)",
+        "text": "e only perfect speci",
+        "resolved": "e only perfect speci"
+      },
+      {
+        "n": 107,
+        "cfi": "epubcfi(/6/180!/4/2[chapter-84]/4,/3:256,/3:276)",
+        "text": "ng in obedience to s",
+        "resolved": "ng in obedience to s"
+      },
+      {
+        "n": 108,
+        "cfi": "epubcfi(/6/254!/4/2[chapter-121]/10,/1:15,/1:35)",
+        "text": "hat, Stubb. You some",
+        "resolved": "hat, Stubb. You some"
+      },
+      {
+        "n": 109,
+        "cfi": "epubcfi(/6/16!/4/2[chapter-2]/6,/1:602,/1:622)",
+        "text": "e of this Carthage;﻿",
+        "resolved": "e of this Carthage;﻿"
+      },
+      {
+        "n": 110,
+        "cfi": "epubcfi(/6/236!/4/2[chapter-112]/6,/1:21,/1:41)",
+        "text": "is old man, a certai",
+        "resolved": "is old man, a certai"
+      },
+      {
+        "n": 111,
+        "cfi": "epubcfi(/6/184!/4/2[chapter-86]/24,/1:62,/1:82)",
+        "text": "ty of the middle of ",
+        "resolved": "ty of the middle of "
+      },
+      {
+        "n": 112,
+        "cfi": "epubcfi(/6/226!/4/2[chapter-107]/6,/1:27,/1:47)",
+        "text": "enters, and more esp",
+        "resolved": "enters, and more esp"
+      },
+      {
+        "n": 113,
+        "cfi": "epubcfi(/6/174!/4/2[chapter-81]/54,/3:146,/3:166)",
+        "text": ", ere the last chanc",
+        "resolved": ", ere the last chanc"
+      },
+      {
+        "n": 114,
+        "cfi": "epubcfi(/6/236!/4/2[chapter-112]/10,/1:259,/1:279)",
+        "text": "ing wife, and three ",
+        "resolved": "ing wife, and three "
+      },
+      {
+        "n": 115,
+        "cfi": "epubcfi(/6/270!/4/2[chapter-129]/8,/1:27,/1:47)",
+        "text": "whole body, sir; do ",
+        "resolved": "whole body, sir; do "
+      },
+      {
+        "n": 116,
+        "cfi": "epubcfi(/6/214!/4/2[chapter-101]/18,/1:91,/1:111)",
+        "text": " which, by the musty",
+        "resolved": " which, by the musty"
+      },
+      {
+        "n": 117,
+        "cfi": "epubcfi(/6/186!/4/2[chapter-87]/24,/3:461,/3:481)",
+        "text": "lephant in the coron",
+        "resolved": "lephant in the coron"
+      },
+      {
+        "n": 118,
+        "cfi": "epubcfi(/6/218!/4/2[chapter-103]/20,/1:245,/1:265)",
+        "text": " when within the edd",
+        "resolved": " when within the edd"
+      },
+      {
+        "n": 119,
+        "cfi": "epubcfi(/6/140!/4/2[chapter-64]/96,/1:5,/1:25)",
+        "text": "t! heave to! I mean ",
+        "resolved": "t! heave to! I mean "
+      },
+      {
+        "n": 120,
+        "cfi": "epubcfi(/6/196!/4/2[chapter-92]/8,/1:26,/1:46)",
+        "text": "at there were found ",
+        "resolved": "at there were found "
+      },
+      {
+        "n": 121,
+        "cfi": "epubcfi(/6/116!/4/2[chapter-52]/16,/1:20,/1:40)",
+        "text": "re is much in that s",
+        "resolved": "re is much in that s"
+      },
+      {
+        "n": 122,
+        "cfi": "epubcfi(/6/84!/4/2[chapter-36]/74,/1:212,/1:232)",
+        "text": " will thy vengeance ",
+        "resolved": " will thy vengeance "
+      },
+      {
+        "n": 123,
+        "cfi": "epubcfi(/6/154!/4/2[chapter-71]/10,/9:35,/9:55)",
+        "text": " and that Mayhew, he",
+        "resolved": " and that Mayhew, he"
+      },
+      {
+        "n": 124,
+        "cfi": "epubcfi(/6/70!/4/2[chapter-29]/4,/1:29,/1:49)",
+        "text": "d icebergs all aster",
+        "resolved": "d icebergs all aster"
+      },
+      {
+        "n": 125,
+        "cfi": "epubcfi(/6/112!/4/2[chapter-50]/6,/1:201,/1:221)",
+        "text": " the other left, you",
+        "resolved": " the other left, you"
+      },
+      {
+        "n": 126,
+        "cfi": "epubcfi(/6/134!/4/2[chapter-61]/46,/1:146,/1:166)",
+        "text": "ghtfully eyeing the ",
+        "resolved": "ghtfully eyeing the "
+      },
+      {
+        "n": 127,
+        "cfi": "epubcfi(/6/258!/4/2[chapter-123]/6,/1:74,/1:94)",
+        "text": "the blast, it is by ",
+        "resolved": "the blast, it is by "
+      },
+      {
+        "n": 128,
+        "cfi": "epubcfi(/6/250!/4/2[chapter-119]/6,/3:302,/3:322)",
+        "text": "he tempest had left ",
+        "resolved": "he tempest had left "
+      },
+      {
+        "n": 129,
+        "cfi": "epubcfi(/6/132!/4/2[chapter-60]/16,/1:171,/1:191)",
+        "text": "ngth of the boat, re",
+        "resolved": "ngth of the boat, re"
+      },
+      {
+        "n": 130,
+        "cfi": "epubcfi(/6/190!/4/2[chapter-89]/30,/1:108,/1:128)",
+        "text": " more widely so. Tha",
+        "resolved": " more widely so. Tha"
+      },
+      {
+        "n": 131,
+        "cfi": "epubcfi(/6/70!/4/2[chapter-29]/22,/1:331,/1:351)",
+        "text": "but it would be the ",
+        "resolved": "but it would be the "
+      },
+      {
+        "n": 132,
+        "cfi": "epubcfi(/6/54!/4/2[chapter-21]/78,/1:23,/1:43)",
+        "text": "e. Soon the crew cam",
+        "resolved": "e. Soon the crew cam"
+      },
+      {
+        "n": 133,
+        "cfi": "epubcfi(/6/188!/4/2[chapter-88]/24,/1:177,/1:197)",
+        "text": "him. But strike a me",
+        "resolved": "him. But strike a me"
+      },
+      {
+        "n": 134,
+        "cfi": "epubcfi(/6/194!/4/2[chapter-91]/88,/1:82,/1:102)",
+        "text": " I’ve diddled. In fa",
+        "resolved": " I’ve diddled. In fa"
+      },
+      {
+        "n": 135,
+        "cfi": "epubcfi(/6/84!/4/2[chapter-36]/90,/1:127,/1:147)",
+        "text": "re him near the caps",
+        "resolved": "re him near the caps"
+      },
+      {
+        "n": 136,
+        "cfi": "epubcfi(/6/224!/4/2[chapter-106]/10,/3:1035,/3:1055)",
+        "text": "considerable interva",
+        "resolved": "considerable interva"
+      },
+      {
+        "n": 137,
+        "cfi": "epubcfi(/6/82!/4/2[chapter-35]/14,/9:24,/9:44)",
+        "text": "Captain Sleet’s good",
+        "resolved": "Captain Sleet’s good"
+      },
+      {
+        "n": 138,
+        "cfi": "epubcfi(/6/56!/4/2[chapter-22]/42,/5:37,/5:57)",
+        "text": "ght. If ye touch at ",
+        "resolved": "ght. If ye touch at "
+      },
+      {
+        "n": 139,
+        "cfi": "epubcfi(/6/60!/4/2[chapter-24]/22,/1:908,/1:928)",
+        "text": "or already she is on",
+        "resolved": "or already she is on"
+      },
+      {
+        "n": 140,
+        "cfi": "epubcfi(/6/112!/4/2[chapter-50]/16,/1:155,/1:175)",
+        "text": " the sake of being n",
+        "resolved": " the sake of being n"
+      },
+      {
+        "n": 141,
+        "cfi": "epubcfi(/6/236!/4/2[chapter-112]/6,/1:202,/1:222)",
+        "text": "rsisted questionings",
+        "resolved": "rsisted questionings"
+      },
+      {
+        "n": 142,
+        "cfi": "epubcfi(/6/194!/4/2[chapter-91]/32,/3:16,/3:36)",
+        "text": "Whale﻿—Moby Dick, ha",
+        "resolved": "Whale﻿—Moby Dick, ha"
+      },
+      {
+        "n": 143,
+        "cfi": "epubcfi(/6/218!/4/2[chapter-103]/22,/1:128,/1:148)",
+        "text": "e. But now it’s done",
+        "resolved": "e. But now it’s done"
+      },
+      {
+        "n": 144,
+        "cfi": "epubcfi(/6/40!/4/2[chapter-14]/4,/1:15,/1:35)",
+        "text": "ppened on the passag",
+        "resolved": "ppened on the passag"
+      },
+      {
+        "n": 145,
+        "cfi": "epubcfi(/6/36!/4/2[chapter-12]/12,/1:21,/1:41)",
+        "text": "tor at heart, he yet",
+        "resolved": "tor at heart, he yet"
+      },
+      {
+        "n": 146,
+        "cfi": "epubcfi(/6/50!/4/2[chapter-19]/10,/3:22,/3:42)",
+        "text": "trying to gain a lit",
+        "resolved": "trying to gain a lit"
+      },
+      {
+        "n": 147,
+        "cfi": "epubcfi(/6/158!/4/2[chapter-73]/6,/5:104,/5:124)",
+        "text": "etts without lowerin",
+        "resolved": "etts without lowerin"
+      },
+      {
+        "n": 148,
+        "cfi": "epubcfi(/6/210!/4/2[chapter-99]/44,/1:38,/1:58)",
+        "text": "!﻿—poor lad!﻿—I coul",
+        "resolved": "!﻿—poor lad!﻿—I coul"
+      },
+      {
+        "n": 149,
+        "cfi": "epubcfi(/6/224!/4/2[chapter-106]/12,/1:25,/1:45)",
+        "text": "; let the unseen, am",
+        "resolved": "; let the unseen, am"
+      },
+      {
+        "n": 150,
+        "cfi": "epubcfi(/6/196!/4/2[chapter-92]/4,/3:48,/3:68)",
+        "text": " grains into claret,",
+        "resolved": " grains into claret,"
+      },
+      {
+        "n": 151,
+        "cfi": "epubcfi(/6/122!/4/2[chapter-55]/4,/1:77,/1:97)",
+        "text": "ke the true form of ",
+        "resolved": "ke the true form of "
+      },
+      {
+        "n": 152,
+        "cfi": "epubcfi(/6/130!/4/2[chapter-59]/4,/1:17,/1:37)",
+        "text": "ough the meadows of ",
+        "resolved": "ough the meadows of "
+      },
+      {
+        "n": 153,
+        "cfi": "epubcfi(/6/28!/4/2[chapter-8]/6,/1:515,/1:535)",
+        "text": " ladder, which, bein",
+        "resolved": " ladder, which, bein"
+      },
+      {
+        "n": 154,
+        "cfi": "epubcfi(/6/158!/4/2[chapter-73]/80,/1:30,/1:50)",
+        "text": "lask; “yes, you’ll s",
+        "resolved": "lask; “yes, you’ll s"
+      },
+      {
+        "n": 155,
+        "cfi": "epubcfi(/6/22!/4/2[chapter-5]/10,/1:177,/1:197)",
+        "text": " cannot have been th",
+        "resolved": " cannot have been th"
+      },
+      {
+        "n": 156,
+        "cfi": "epubcfi(/6/266!/4/2[chapter-127]/14,/1:5,/1:25)",
+        "text": "not thou the leg-mak",
+        "resolved": "not thou the leg-mak"
+      },
+      {
+        "n": 157,
+        "cfi": "epubcfi(/6/210!/4/2[chapter-99]/14,/1:7,/1:27)",
+        "text": "this equatorial coin",
+        "resolved": "this equatorial coin"
+      },
+      {
+        "n": 158,
+        "cfi": "epubcfi(/6/120!/4/2[chapter-54]/156,/1:329,/1:349)",
+        "text": "pocket of the Lakema",
+        "resolved": "pocket of the Lakema"
+      },
+      {
+        "n": 159,
+        "cfi": "epubcfi(/6/160!/4/2[chapter-74]/28,/1:87,/1:107)",
+        "text": "d and hoisted on dec",
+        "resolved": "d and hoisted on dec"
+      },
+      {
+        "n": 160,
+        "cfi": "epubcfi(/6/56!/4/2[chapter-22]/40,/1:239,/1:259)",
+        "text": "—say your last. Luck",
+        "resolved": "—say your last. Luck"
+      },
+      {
+        "n": 161,
+        "cfi": "epubcfi(/6/38!/4/2[chapter-13]/14,/1:39,/1:59)",
+        "text": "g breeze waxed fresh",
+        "resolved": "g breeze waxed fresh"
+      },
+      {
+        "n": 162,
+        "cfi": "epubcfi(/6/140!/4/2[chapter-64]/60,/1:47,/1:67)",
+        "text": " the capstan; “stand",
+        "resolved": " the capstan; “stand"
+      },
+      {
+        "n": 163,
+        "cfi": "epubcfi(/6/172!/4/2[chapter-80]/4,/1:93,/1:113)",
+        "text": "metrical circle whic",
+        "resolved": "metrical circle whic"
+      },
+      {
+        "n": 164,
+        "cfi": "epubcfi(/6/104!/4/2[chapter-46]/14,/1:4,/1:24)",
+        "text": "ll this as it may, h",
+        "resolved": "ll this as it may, h"
+      },
+      {
+        "n": 165,
+        "cfi": "epubcfi(/6/200!/4/2[chapter-94]/4,/1:32,/1:52)",
+        "text": " purchased, was duly",
+        "resolved": " purchased, was duly"
+      },
+      {
+        "n": 166,
+        "cfi": "epubcfi(/6/182!/4/2[chapter-85]/20,/1:890,/1:910)",
+        "text": "k filled up with rai",
+        "resolved": "k filled up with rai"
+      },
+      {
+        "n": 167,
+        "cfi": "epubcfi(/6/156!/4/2[chapter-72]/36,/1:115,/1:135)",
+        "text": " were you about sayi",
+        "resolved": " were you about sayi"
+      },
+      {
+        "n": 168,
+        "cfi": "epubcfi(/6/270!/4/2[chapter-129]/18,/1:92,/1:112)",
+        "text": "ten hear my ivory fo",
+        "resolved": "ten hear my ivory fo"
+      },
+      {
+        "n": 169,
+        "cfi": "epubcfi(/6/228!/4/2[chapter-108]/34,/1:374,/1:394)",
+        "text": "der eyes to see outw",
+        "resolved": "der eyes to see outw"
+      },
+      {
+        "n": 170,
+        "cfi": "epubcfi(/6/126!/4/2[chapter-57]/10,/1:302,/1:322)",
+        "text": "broken seashell or a",
+        "resolved": "broken seashell or a"
+      },
+      {
+        "n": 171,
+        "cfi": "epubcfi(/6/248!/4/2[chapter-118]/6,/1:532,/1:552)",
+        "text": "logical-looking inst",
+        "resolved": "logical-looking inst"
+      },
+      {
+        "n": 172,
+        "cfi": "epubcfi(/6/66!/4/2[chapter-27]/6,/1:585,/1:605)",
+        "text": "ach of his hand; and",
+        "resolved": "ach of his hand; and"
+      },
+      {
+        "n": 173,
+        "cfi": "epubcfi(/6/34!/4/2[chapter-11]/4,/1:343,/1:363)",
+        "text": "elt like getting up ",
+        "resolved": "elt like getting up "
+      },
+      {
+        "n": 174,
+        "cfi": "epubcfi(/6/260!/4/2[chapter-124]/6,/1:116,/1:136)",
+        "text": "r bowsprit, he turne",
+        "resolved": "r bowsprit, he turne"
+      },
+      {
+        "n": 175,
+        "cfi": "epubcfi(/6/134!/4/2[chapter-61]/46,/1:77,/1:97)",
+        "text": "cattered the dead as",
+        "resolved": "cattered the dead as"
+      },
+      {
+        "n": 176,
+        "cfi": "epubcfi(/6/212!/4/2[chapter-100]/16,/3:37,/3:57)",
+        "text": "ipped in any other v",
+        "resolved": "ipped in any other v"
+      },
+      {
+        "n": 177,
+        "cfi": "epubcfi(/6/104!/4/2[chapter-46]/10,/1:141,/1:161)",
+        "text": "ewhat prematurely re",
+        "resolved": "ewhat prematurely re"
+      },
+      {
+        "n": 178,
+        "cfi": "epubcfi(/6/286!/4/2[endnotes]/4/14[note-7]/4/2,/1:21,/1:41)",
+        "text": " revenge of the whal",
+        "resolved": " revenge of the whal"
+      },
+      {
+        "n": 179,
+        "cfi": "epubcfi(/6/168!/4/2[chapter-78]/28,/1:12,/1:32)",
+        "text": "this queer adventure",
+        "resolved": "this queer adventure"
+      },
+      {
+        "n": 180,
+        "cfi": "epubcfi(/6/286!/4/2[endnotes]/4/14[note-7]/4,/1:369,/1:389)",
+        "text": "y entitled to a mome",
+        "resolved": "y entitled to a mome"
+      },
+      {
+        "n": 181,
+        "cfi": "epubcfi(/6/96!/4/2[chapter-42]/40,/1:858,/1:878)",
+        "text": "and splintered cross",
+        "resolved": "and splintered cross"
+      },
+      {
+        "n": 182,
+        "cfi": "epubcfi(/6/230!/4/2[chapter-109]/8,/1:61,/1:81)",
+        "text": "ing round to it. “On",
+        "resolved": "ing round to it. “On"
+      },
+      {
+        "n": 183,
+        "cfi": "epubcfi(/6/260!/4/2[chapter-124]/44,/1:45,/1:65)",
+        "text": "hen saw Ahab in all ",
+        "resolved": "hen saw Ahab in all "
+      },
+      {
+        "n": 184,
+        "cfi": "epubcfi(/6/152!/4/2[chapter-70]/14,/1:140,/1:160)",
+        "text": "ze over the side, th",
+        "resolved": "ze over the side, th"
+      },
+      {
+        "n": 185,
+        "cfi": "epubcfi(/6/194!/4/2[chapter-91]/86,/1:4,/1:24)",
+        "text": "wants you to take a ",
+        "resolved": "wants you to take a "
+      },
+      {
+        "n": 186,
+        "cfi": "epubcfi(/6/162!/4/2[chapter-75]/16,/1:204,/1:224)",
+        "text": " think you were insi",
+        "resolved": " think you were insi"
+      },
+      {
+        "n": 187,
+        "cfi": "epubcfi(/6/122!/4/2[chapter-55]/30,/1:666,/1:686)",
+        "text": "uriosity touching th",
+        "resolved": "uriosity touching th"
+      },
+      {
+        "n": 188,
+        "cfi": "epubcfi(/6/154!/4/2[chapter-71]/50,/1:51,/1:71)",
+        "text": "Aye, aye, it’s but a",
+        "resolved": "Aye, aye, it’s but a"
+      },
+      {
+        "n": 189,
+        "cfi": "epubcfi(/6/154!/4/2[chapter-71]/10,/3:44,/3:64)",
+        "text": "ranger’s setting her",
+        "resolved": "ranger’s setting her"
+      },
+      {
+        "n": 190,
+        "cfi": "epubcfi(/6/16!/4/2[chapter-2]/10,/1:157,/1:177)",
+        "text": "ht red windows of th",
+        "resolved": "ht red windows of th"
+      },
+      {
+        "n": 191,
+        "cfi": "epubcfi(/6/74!/4/2[chapter-31]/12,/1:3,/1:23)",
+        "text": "sthead, there! Look ",
+        "resolved": "sthead, there! Look "
+      },
+      {
+        "n": 192,
+        "cfi": "epubcfi(/6/226!/4/2[chapter-107]/8,/1:232,/1:252)",
+        "text": "were alongside, this",
+        "resolved": "were alongside, this"
+      },
+      {
+        "n": 193,
+        "cfi": "epubcfi(/6/22!/4/2[chapter-5]/10,/3:102,/3:122)",
+        "text": "h various tints, see",
+        "resolved": "h various tints, see"
+      },
+      {
+        "n": 194,
+        "cfi": "epubcfi(/6/178!/4/2[chapter-83]/12,/3:9,/3:29)",
+        "text": "of a Turkish Mosque ",
+        "resolved": "of a Turkish Mosque "
+      },
+      {
+        "n": 195,
+        "cfi": "epubcfi(/6/248!/4/2[chapter-118]/18,/1:27,/1:47)",
+        "text": "a-coal ashes﻿—mind y",
+        "resolved": "a-coal ashes﻿—mind y"
+      },
+      {
+        "n": 196,
+        "cfi": "epubcfi(/6/26!/4/2[chapter-7]/22,/1:70,/1:90)",
+        "text": "ucket voyage, I rega",
+        "resolved": "ucket voyage, I rega"
+      },
+      {
+        "n": 197,
+        "cfi": "epubcfi(/6/146!/4/2[chapter-67]/4,/5:74,/5:94)",
+        "text": "have thought we were",
+        "resolved": "have thought we were"
+      },
+      {
+        "n": 198,
+        "cfi": "epubcfi(/6/118!/4/2[chapter-53]/14,/1:52,/1:72)",
+        "text": "table, sociable, fre",
+        "resolved": "table, sociable, fre"
+      },
+      {
+        "n": 199,
+        "cfi": "epubcfi(/6/126!/4/2[chapter-57]/24,/1:139,/1:159)",
+        "text": "o see whether the fa",
+        "resolved": "o see whether the fa"
+      }
+    ]
+  },
+  "info": {
+    "cpu": "",
+    "memory_bytes": "",
+    "only": null,
+    "os": null,
+    "time": 1790974251,
+    "webkit": null
+  },
+  "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/60.5 Safari/605.1.15"
+}
