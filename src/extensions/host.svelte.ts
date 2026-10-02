@@ -18,6 +18,7 @@ import { packProblems, themeFromPack } from '../lib/extensions/themes'
 import type { InstalledExtension } from '../lib/extensions/types'
 import { when, type WhenContext } from '../lib/extensions/when'
 import type { Theme } from '../lib/theme/tokens'
+import { sessionForExtensions } from '../reader/sessions'
 
 export const UI_TIMEOUT_MS = 2000
 export const WORK_TIMEOUT_MS = 10_000
@@ -308,6 +309,37 @@ export class ExtensionHost {
     }
   }
 
+  /**
+   * 1.1 (approved 2026-10-01): a reading session ended. Extensions with `reading.sessions` and
+   * `onReadingSessions` hear it; the book's title and identifier only with `book.metadata`.
+   */
+  emitReadingSession(
+    session: import('../reader/sessions').ReadingSession,
+    book: { title: string; identifier: string | null },
+  ) {
+    for (const x of this.active) {
+      if (
+        !x.granted.includes('reading.sessions') ||
+        !x.manifest.activation.includes('onReadingSessions')
+      )
+        continue
+      const payload = {
+        ...sessionForExtensions(session),
+        ...(x.granted.includes('book.metadata') ? { book } : {}),
+      }
+      // A worker started for this event subscribes as its main script runs: wait for that.
+      const id = x.manifest.id
+      void this.activate(id)
+        .then(async (run) => {
+          for (let i = 0; i < 40 && !this.#subscribed.has(id); i++)
+            await new Promise((r) => setTimeout(r, 50))
+          if (this.#subscribed.has(id))
+            run.frame.contentWindow?.postMessage({ event: 'sessionEnded', payload }, '*')
+        })
+        .catch(() => {})
+    }
+  }
+
   /** Post a message to a running extension's frame (theme to a tab page, etc.). */
   isRunning(extId: string) {
     return this.#running.has(extId)
@@ -458,6 +490,12 @@ export class ExtensionHost {
         return book().annotations()
       case 'annotations.on':
         need('annotations.read')
+        this.#subscribed.add(extId)
+        return true
+      case 'reading.on':
+        need('reading.sessions')
+        if (params.event !== 'sessionEnded')
+          throw new ExtensionError(`no reading event “${String(params.event)}”`)
         this.#subscribed.add(extId)
         return true
       case 'library.list':

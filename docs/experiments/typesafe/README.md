@@ -2,7 +2,7 @@
 
 Can a TypeSafe System One judgment (model `jev-1.13.0`) stand in for four pieces of
 heuristic code? Each experiment compares today's code with one Jev request on public
-books and hand-labelled cases. Nothing here is wired into Linen; see pending approval 33.
+books and hand-labelled cases. Nothing here is wired into Linen; see pending approval 42.
 
 ## Results
 

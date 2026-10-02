@@ -25,6 +25,26 @@ export function literataFaces(): Promise<string> {
   return faces
 }
 
+let dyslexic: Promise<string> | null = null
+
+/** 1.1: @font-face rules for OpenDyslexic (OFL), loaded only when that font is chosen. */
+export function dyslexicFaces(): Promise<string> {
+  const face = (file: string, weight: number, style: string) =>
+    blobUrl(`/fonts/OpenDyslexic-${file}.woff2`).then(
+      (url) =>
+        `@font-face { font-family: OpenDyslexic; src: url("${url}") format("woff2"); font-weight: ${weight}; font-style: ${style}; font-display: block; }`,
+    )
+  dyslexic ??= Promise.all([
+    face('Regular', 400, 'normal'),
+    face('Italic', 400, 'italic'),
+    face('Bold', 700, 'normal'),
+    face('Bold-Italic', 700, 'italic'),
+  ])
+    .then((rules) => rules.join('\n'))
+    .catch(() => '') // the system sans remains the fallback
+  return dyslexic
+}
+
 /** L15: a book font that fails to load, or is still loading after this long, falls back to Literata. */
 export const FONT_TIMEOUT_MS = 1500
 
@@ -45,8 +65,9 @@ export async function fallBackFailedFonts(
     if (face.status === 'error' || face.status === 'loading')
       failed.add(face.family.replace(/^["']|["']$/g, ''))
   })
-  // Literata's own faces never count as failed book fonts.
+  // The reader's own faces never count as failed book fonts.
   failed.delete('Literata')
+  failed.delete('OpenDyslexic')
   if (!failed.size) return []
   const url = await (romanUrl ?? blobUrl('/fonts/Literata.ttf'))
   const style = doc.createElement('style')

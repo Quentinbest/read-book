@@ -1,0 +1,12 @@
+{
+  "id": "test.sessions",
+  "version": "1.0.0",
+  "name": "Sessions",
+  "engines": {
+    "linen": "^1.0"
+  },
+  "main": "main.js",
+  "activation": ["onReadingSessions"],
+  "contributes": {},
+  "permissions": ["reading.sessions", "book.metadata"]
+}

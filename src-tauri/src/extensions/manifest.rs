@@ -31,7 +31,8 @@ pub struct Manifest {
     /// The Worker script. Theme packs have none.
     #[serde(default)]
     pub main: Option<String>,
-    /// `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`.
+    /// `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`,
+    /// `onReadingSessions` (1.1).
     #[serde(default)]
     pub activation: Vec<String>,
     #[serde(default)]
@@ -126,6 +127,8 @@ pub fn permission_consent(p: &str) -> Option<Consent> {
         "book.metadata" | "book.selection" | "library.read" | "annotations.read" => {
             Consent::AtInstall
         }
+        // 1.1 (approved 2026-10-01): when and how long the reader reads; no text, no title alone.
+        "reading.sessions" => Consent::AtInstall,
         "book.text" | "annotations.write" => Consent::Highlighted,
         "files.import" | "files.export" => Consent::EachUse,
         "background" => Consent::StronglyWarned,
@@ -398,7 +401,7 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
             Some(("onCommand", id)) => commands.contains(id),
             Some(("onNavigatorTab", id)) => c.navigator_tabs.iter().any(|t| t.id == id),
             Some(("onExport", id)) => c.exporters.iter().any(|t| t.id == id),
-            None => a == "onAnnotations",
+            None => a == "onAnnotations" || a == "onReadingSessions",
             _ => false,
         };
         if !ok {
@@ -481,6 +484,10 @@ mod tests {
     #[test]
     fn permissions_and_their_consent() {
         assert_eq!(permission_consent("book.text"), Some(Consent::Highlighted));
+        assert_eq!(
+            permission_consent("reading.sessions"),
+            Some(Consent::AtInstall)
+        );
         assert_eq!(
             permission_consent("network:*.example.org"),
             Some(Consent::StronglyWarned)

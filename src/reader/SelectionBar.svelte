@@ -22,6 +22,7 @@
     onnote,
     oncopy,
     onsearch,
+    onlookup,
     ondelete,
     onescape,
     onattach,
@@ -43,6 +44,8 @@
     onnote: () => void
     oncopy: () => void
     onsearch: () => void
+    /** 1.1: the dictionary peek. */
+    onlookup?: () => void
     ondelete: () => void
     onescape: () => void
     onattach?: () => void
@@ -160,6 +163,11 @@
       <button type="button" class="action" tabindex="-1" onclick={onsearch}>
         <Icon name="search" size={16} />{t.annotations.search}
       </button>
+      {#if onlookup}
+        <button type="button" class="action" tabindex="-1" onclick={onlookup}>
+          <Icon name="dictionary" size={16} />{t.lookUp.action}
+        </button>
+      {/if}
       {#if extensionActions.length}
         <span class="divider" aria-hidden="true"></span>
         <button

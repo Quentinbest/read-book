@@ -20,6 +20,7 @@
   import { testHooks } from './app/testHooks'
   import { isTextField, type KeyContext } from './lib/commands/keys'
   import { CommandRegistry } from './lib/commands/registry'
+  import { OVERRIDES_SETTING, parseOverrides } from './lib/commands/remap'
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings/en'
   import { ExtensionHost } from './extensions/host.svelte'
@@ -271,6 +272,7 @@
       )
       cleanups.push(
         await onSettingChanged(({ key, value }) => {
+          if (key === OVERRIDES_SETTING) registry.setOverrides(parseOverrides(value))
           if (key === 'theme') applyChoice(value as ThemeChoice)
           if (key === 'singleKeyShortcuts') singleKeysEnabled = value !== 'off'
         }),
@@ -287,11 +289,33 @@
           }),
         ),
       )
+      // Item 32: an update this account can't install; announced once per version.
+      cleanups.push(
+        await listen<string>('update-available', ({ payload }) =>
+          messages.push({
+            text: t.update.available(payload),
+            action: {
+              label: t.update.download,
+              run: () => {
+                // Tests never open the system browser (N10).
+                if (testHooks)
+                  testHooks.externalOpened = [
+                    ...(testHooks.externalOpened ?? []),
+                    `release:${payload}`,
+                  ]
+                else void ipc.openReleasePage(payload).catch(() => {})
+              },
+            },
+          }),
+        ),
+      )
       cleanups.push(
         registry.handle('library.show', {
           run: () => (reading ? closeReader() : void refresh()),
         }),
       )
+      // C4: the reader's shortcuts, before the menu bar is built from them.
+      registry.setOverrides(parseOverrides(await ipc.settingGet(OVERRIDES_SETTING)))
       await installMenuBar(registry)
       // Later commands (the reader's) join the menu bar as they are registered.
       let menuTimer = 0

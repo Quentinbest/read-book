@@ -4,7 +4,7 @@
 //   chrome:   immersive | controls
 //   docked:   none | Navigator (a tab)          — layout, from 1100 px
 //   floating: none | one layer over the text    — Aa, Go to, selection bar,
-//             note card, footnote peek, image view, ⌘K, dialogs, and the
+//             note card, footnote peek, dictionary peek, image view, ⌘K, dialogs, and the
 //             Navigator itself below 1100 px
 //
 // `reduce` is pure: it returns the next state and the effects the UI must run
@@ -21,6 +21,7 @@ export type FloatingKind =
   | 'selection'
   | 'note'
   | 'peek'
+  | 'lookup'
   | 'image'
   | 'palette'
   | 'dialog'

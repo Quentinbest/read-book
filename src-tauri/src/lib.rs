@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod crashlog;
+pub mod dictionary;
 pub mod epub;
 pub mod ext_commands;
 pub mod extensions;
@@ -110,6 +111,9 @@ pub fn run() {
                 crashlog::crash_log_exists,
                 crashlog::crash_log_show,
                 updater::app_restart,
+                updater::open_release_page,
+                dictionary::look_up,
+                dictionary::open_dictionary,
                 $($extra),*
             ]
         };

@@ -1,6 +1,7 @@
 <script lang="ts">
   // Reading settings, the Aa popover (Screen 09). Each row names its scope: text
   // size, theme and line spacing apply to all books; layout to this book (B8).
+  // 1.1 (approved 2026-10-01): font and page width rows, all books.
   // Fixed-layout books keep only theme and zoom (E2); books that are mostly code
   // or tables get a one-line hint to try Scroll (L18). ⌘+ ⌘− ⌘0 work anywhere.
   import { onMount } from 'svelte'
@@ -8,6 +9,7 @@
   import type { ThemeChoice } from '../app/theme'
   import type { Spacing } from './layout'
   import { TEXT_SIZES } from './textSizes'
+  import type { FontChoice, PageWidth } from './typography'
   import { THEMES, type Theme } from '../lib/theme/tokens'
 
   /** Each swatch shows its theme's own page and ink (Screen 09); Auto shows Paper and Night. */
@@ -34,6 +36,10 @@
     onspacing,
     onlayout,
     onsettings,
+    font,
+    width,
+    onfontchoice,
+    onwidth,
     packs = [],
   }: {
     anchor: DOMRect
@@ -48,6 +54,10 @@
     onspacing: (s: Spacing) => void
     onlayout: (l: 'pages' | 'scroll') => void
     onsettings: () => void
+    font: FontChoice
+    width: PageWidth
+    onfontchoice: (f: FontChoice) => void
+    onwidth: (w: PageWidth) => void
     /** P9: theme packs from extensions, listed after the built-in themes. */
     packs?: { value: ThemeChoice; label: string; theme: Theme }[]
   } = $props()
@@ -56,6 +66,8 @@
   let panel: HTMLElement | undefined = $state()
   const right = $derived(Math.max(12, window.innerWidth - anchor.right - 16))
   const left = $derived(window.innerWidth - right - WIDTH)
+  /** Down to 12 px above the window's foot. */
+  const maxHeight = $derived(Math.max(200, window.innerHeight - anchor.bottom - 8 - 12))
   const arrow = $derived(
     Math.max(16, Math.min(WIDTH - 26, anchor.left + anchor.width / 2 - left - 5)),
   )
@@ -77,6 +89,17 @@
     { value: 'compact', label: t.aa.compact },
     { value: 'default', label: t.aa.normal },
     { value: 'loose', label: t.aa.loose },
+  ]
+  const fonts: { value: FontChoice; label: string; title?: string }[] = [
+    { value: 'book', label: t.aa.fontBook },
+    { value: 'literata', label: t.aa.fontLiterata },
+    { value: 'sans', label: t.aa.fontSans },
+    { value: 'dyslexic', label: t.aa.fontDyslexic, title: t.aa.fontDyslexicLong },
+  ]
+  const widths: { value: PageWidth; label: string }[] = [
+    { value: 'narrow', label: t.aa.narrow },
+    { value: 'normal', label: t.aa.normal },
+    { value: 'wide', label: t.aa.wide },
   ]
   const layouts: { value: 'pages' | 'scroll'; label: string }[] = [
     { value: 'pages', label: t.aa.pages },
@@ -119,113 +142,159 @@
   style:right="{right}px"
   style:top="{anchor.bottom + 8}px"
   style:--arrow="{arrow}px"
+  style:max-height="{maxHeight}px"
 >
-  {#if !fixedLayout}
+  <!-- In a short window the rows scroll; the arrow and the foot stay put. -->
+  <div class="rows">
+    {#if !fixedLayout}
+      <div class="row">
+        <div class="lbl">
+          <label for="aa-size">{t.aa.textSize}</label><span>{t.aa.sizeScope(fontPx)}</span>
+        </div>
+        <div class="size">
+          <button
+            type="button"
+            class="step small"
+            aria-label={t.commands['text.smaller']}
+            disabled={step === 0 && fontPx <= TEXT_SIZES[0]}
+            onclick={() => onfont(TEXT_SIZES[Math.max(0, step - 1)])}>A</button
+          >
+          <input
+            id="aa-size"
+            type="range"
+            min="0"
+            max={TEXT_SIZES.length - 1}
+            step="1"
+            value={step}
+            aria-valuetext={t.aa.px(fontPx)}
+            oninput={(e) => onfont(TEXT_SIZES[Number(e.currentTarget.value)])}
+            onkeydown={(e) => e.stopPropagation()}
+          />
+          <button
+            type="button"
+            class="step large"
+            aria-label={t.commands['text.larger']}
+            disabled={step === TEXT_SIZES.length - 1}
+            onclick={() => onfont(TEXT_SIZES[Math.min(TEXT_SIZES.length - 1, step + 1)])}>A</button
+          >
+        </div>
+      </div>
+    {/if}
     <div class="row">
-      <div class="lbl">
-        <label for="aa-size">{t.aa.textSize}</label><span>{t.aa.sizeScope(fontPx)}</span>
-      </div>
-      <div class="size">
-        <button
-          type="button"
-          class="step small"
-          aria-label={t.commands['text.smaller']}
-          disabled={step === 0 && fontPx <= TEXT_SIZES[0]}
-          onclick={() => onfont(TEXT_SIZES[Math.max(0, step - 1)])}>A</button
-        >
-        <input
-          id="aa-size"
-          type="range"
-          min="0"
-          max={TEXT_SIZES.length - 1}
-          step="1"
-          value={step}
-          aria-valuetext={t.aa.px(fontPx)}
-          oninput={(e) => onfont(TEXT_SIZES[Number(e.currentTarget.value)])}
-          onkeydown={(e) => e.stopPropagation()}
-        />
-        <button
-          type="button"
-          class="step large"
-          aria-label={t.commands['text.larger']}
-          disabled={step === TEXT_SIZES.length - 1}
-          onclick={() => onfont(TEXT_SIZES[Math.min(TEXT_SIZES.length - 1, step + 1)])}>A</button
-        >
+      <div class="lbl" id="aa-theme">{t.aa.theme}<span>{t.aa.allBooks}</span></div>
+      <div
+        class="swatches"
+        role="radiogroup"
+        aria-labelledby="aa-theme"
+        tabindex="-1"
+        onkeydown={(e) => radioKeys(e, themes, theme, ontheme)}
+      >
+        {#each themes as th (th.value)}
+          <button
+            type="button"
+            role="radio"
+            class="sw {th.value}"
+            aria-checked={theme === th.value}
+            tabindex={theme === th.value ? 0 : -1}
+            onclick={() => ontheme(th.value)}
+          >
+            <i aria-hidden="true" style={swatch(th.value)}>Aa</i>{th.label}
+          </button>
+        {/each}
       </div>
     </div>
-  {/if}
-  <div class="row">
-    <div class="lbl" id="aa-theme">{t.aa.theme}<span>{t.aa.allBooks}</span></div>
-    <div
-      class="swatches"
-      role="radiogroup"
-      aria-labelledby="aa-theme"
-      tabindex="-1"
-      onkeydown={(e) => radioKeys(e, themes, theme, ontheme)}
-    >
-      {#each themes as th (th.value)}
-        <button
-          type="button"
-          role="radio"
-          class="sw {th.value}"
-          aria-checked={theme === th.value}
-          tabindex={theme === th.value ? 0 : -1}
-          onclick={() => ontheme(th.value)}
+    {#if !fixedLayout}
+      <div class="row">
+        <div class="lbl" id="aa-spacing">{t.aa.lineSpacing}<span>{t.aa.allBooks}</span></div>
+        <div
+          class="seg three"
+          role="radiogroup"
+          aria-labelledby="aa-spacing"
+          tabindex="-1"
+          onkeydown={(e) => radioKeys(e, spacings, spacing, onspacing)}
         >
-          <i aria-hidden="true" style={swatch(th.value)}>Aa</i>{th.label}
-        </button>
-      {/each}
-    </div>
+          {#each spacings as s (s.value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={spacing === s.value}
+              tabindex={spacing === s.value ? 0 : -1}
+              onclick={() => onspacing(s.value)}>{s.label}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl" id="aa-font">{t.aa.font}<span>{t.aa.allBooks}</span></div>
+        <div
+          class="seg four"
+          role="radiogroup"
+          aria-labelledby="aa-font"
+          tabindex="-1"
+          onkeydown={(e) => radioKeys(e, fonts, font, onfontchoice)}
+        >
+          {#each fonts as f (f.value)}
+            <button
+              type="button"
+              role="radio"
+              class="font-{f.value}"
+              title={f.title}
+              aria-checked={font === f.value}
+              tabindex={font === f.value ? 0 : -1}
+              onclick={() => onfontchoice(f.value)}>{f.label}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl" id="aa-width">{t.aa.width}<span>{t.aa.allBooks}</span></div>
+        <div
+          class="seg three"
+          role="radiogroup"
+          aria-labelledby="aa-width"
+          tabindex="-1"
+          onkeydown={(e) => radioKeys(e, widths, width, onwidth)}
+        >
+          {#each widths as w (w.value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={width === w.value}
+              tabindex={width === w.value ? 0 : -1}
+              onclick={() => onwidth(w.value)}>{w.label}</button
+            >
+          {/each}
+        </div>
+      </div>
+      <div class="row">
+        <div class="lbl" id="aa-layout">{t.aa.layout}<span>{t.aa.thisBook}</span></div>
+        <div
+          class="seg two"
+          role="radiogroup"
+          aria-labelledby="aa-layout"
+          tabindex="-1"
+          onkeydown={(e) => radioKeys(e, layouts, layout, onlayout)}
+        >
+          {#each layouts as l (l.value)}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={layout === l.value}
+              tabindex={layout === l.value ? 0 : -1}
+              onclick={() => onlayout(l.value)}>{l.label}</button
+            >
+          {/each}
+        </div>
+        {#if codeHeavy && layout === 'pages'}
+          <!-- L18 (G12, provisional) -->
+          <p class="hint">{t.aa.codeHint}</p>
+        {/if}
+      </div>
+    {:else}
+      <!-- E2 (G12, provisional) -->
+      <p class="hint">{t.aa.fixedLayout}</p>
+    {/if}
   </div>
-  {#if !fixedLayout}
-    <div class="row">
-      <div class="lbl" id="aa-spacing">{t.aa.lineSpacing}<span>{t.aa.allBooks}</span></div>
-      <div
-        class="seg three"
-        role="radiogroup"
-        aria-labelledby="aa-spacing"
-        tabindex="-1"
-        onkeydown={(e) => radioKeys(e, spacings, spacing, onspacing)}
-      >
-        {#each spacings as s (s.value)}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={spacing === s.value}
-            tabindex={spacing === s.value ? 0 : -1}
-            onclick={() => onspacing(s.value)}>{s.label}</button
-          >
-        {/each}
-      </div>
-    </div>
-    <div class="row">
-      <div class="lbl" id="aa-layout">{t.aa.layout}<span>{t.aa.thisBook}</span></div>
-      <div
-        class="seg two"
-        role="radiogroup"
-        aria-labelledby="aa-layout"
-        tabindex="-1"
-        onkeydown={(e) => radioKeys(e, layouts, layout, onlayout)}
-      >
-        {#each layouts as l (l.value)}
-          <button
-            type="button"
-            role="radio"
-            aria-checked={layout === l.value}
-            tabindex={layout === l.value ? 0 : -1}
-            onclick={() => onlayout(l.value)}>{l.label}</button
-          >
-        {/each}
-      </div>
-      {#if codeHeavy && layout === 'pages'}
-        <!-- L18 (G12, provisional) -->
-        <p class="hint">{t.aa.codeHint}</p>
-      {/if}
-    </div>
-  {:else}
-    <!-- E2 (G12, provisional) -->
-    <p class="hint">{t.aa.fixedLayout}</p>
-  {/if}
   <div class="foot">
     <button type="button" class="link" onclick={onsettings}>{t.aa.moreSettings}</button>
     <span>{t.aa.anywhere}</span>
@@ -250,6 +319,16 @@
     color: var(--ink);
     font-family: var(--font-ui);
     animation: pop-in var(--motion-popover) ease-out;
+  }
+  .rows {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    min-height: 0;
+    overflow-y: auto;
+    /* Room for the focus rings inside the scrolling box. */
+    margin: -4px;
+    padding: 4px;
   }
   .aa::before {
     content: '';
@@ -357,6 +436,15 @@
   }
   .seg.three {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .seg.four {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .seg .font-literata {
+    font-family: var(--font-reading, Literata, Georgia, serif);
+  }
+  .seg .font-sans {
+    font-family: -apple-system, 'Helvetica Neue', sans-serif;
   }
   .seg.two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
