@@ -8,7 +8,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 42, on 2026-10-02, left to Claude by the owner: (a) is built; (b) and (c) are not.
 
-Nothing is waiting for the owner now. The items below are kept for their details.
+Waiting: items 43–50 (next-steps plan, 2026-10-02). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -67,3 +67,16 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
     - **(c) Not yet:** the opening position needs another experiment, with headings inside documents as candidates (Gutenberg books). The title fallback gains too little to justify it.
 
     **Decided 2026-10-02** (left to Claude; record in `docs/decisions.md`): (a) is built (schema 4, `books.author_sort`). (b) is not built: Linen has no server, so there is no safe way to ship an API key. (c) as recommended.
+
+## Next-steps plan (2026-10-02)
+
+From `docs/next-steps-plan.md` §4. Release downloads so far (`docs/release-stats.md`): one Apple silicon DMG per release, no Intel DMG.
+
+43. **(O1) Apple Developer Program.** Blocks Phase 9 signing and the whole iPad phase. *Recommendation:* join as an individual (99 USD a year).
+44. **(O2) Host API 1.1:** `lookup.registerProvider` and `metadata.registerProvider`, rendered by Linen from structured results (Phase 11). *Recommendation:* approve.
+45. **(O3) iPad channel.** *Recommendation:* TestFlight first.
+46. **(O4) Extensions on iPad** (App Store guideline 2.5.2). *Recommendation:* keep them on TestFlight; decide before any App Store submission.
+47. **(O5) A test iPad.** *Recommendation:* any iPad Tauri's iOS support runs on.
+48. **(O6) Sync approach.** *Recommendation:* an adapter API plus a built-in sync folder (iCloud Drive).
+49. **(O7) Gate W**, after Phase 10. *Recommendation:* no-go unless someone asks; so far nobody has.
+50. **(O8) iPad before sync.** *Recommendation:* yes.
