@@ -68,6 +68,15 @@ export function readerCss(fontPx: number) {
   `
 }
 
+/** The engine family this run measures, from the user agent. */
+export function platform(): 'windows' | 'linux' | 'macos' {
+  const ua = navigator.userAgent
+  return /Windows/.test(ua) ? 'windows' : /Linux/.test(ua) ? 'linux' : 'macos'
+}
+
+/** A report name per engine; macOS keeps the name its stored results already use. */
+export const perEngine = (name: string) => (platform() === 'macos' ? name : `${name}-${platform()}`)
+
 /** L1: 66 ch, about 640 px at 19 px. */
 export const measurePx = (fontPx: number) => Math.round((fontPx * 640) / 19)
 

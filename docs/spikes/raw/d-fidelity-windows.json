@@ -1,0 +1,111 @@
+{
+  "spike": "d-fidelity-windows",
+  "criteria": [
+    {
+      "id": "D-open-moby",
+      "description": "Moby-Dick opens to the first page in < 500 ms",
+      "verdict": "pass",
+      "evidence": "file read via IPC + parse + first page painted: p50 90.3 ms, p95 91 ms (read alone p50 18.4 ms), 10 runs"
+    },
+    {
+      "id": "D-open-100mb",
+      "description": "A 100 MB corpus book opens in < 1.5 s",
+      "verdict": "pass",
+      "evidence": "p50 1143.7 ms, p95 1283.1 ms including reading the whole file over IPC (read alone p50 880.8 ms), 5 runs"
+    },
+    {
+      "id": "D-cfi",
+      "description": "200 random CFIs round-trip to the same text after font 16 → 24 → 16 px and resize 1280 → 800 → 1280 px",
+      "verdict": "pass",
+      "evidence": "same text 200/200; target on the visible page after every step 200/200"
+    },
+    {
+      "id": "D-highlights",
+      "description": "100 highlights stay on their exact text after the same reflows",
+      "verdict": "pass",
+      "evidence": "100 highlights, 0 rect/text mismatches over 5 checks"
+    },
+    {
+      "id": "D-page-turn",
+      "description": "Page turn < 16 ms at p95",
+      "verdict": "fail",
+      "evidence": "turn work (input → new page laid out): all p95 34.6 ms; within a chapter p95 1.2 ms (n=171); crossing a chapter p95 40.7 ms (n=29)"
+    }
+  ],
+  "raw": {
+    "open": {
+      "moby": {
+        "n": 10,
+        "min": 88.5,
+        "p50": 90.3,
+        "p95": 91,
+        "max": 91
+      },
+      "mobyReadOnly": {
+        "n": 10,
+        "min": 17.3,
+        "p50": 18.4,
+        "p95": 19.4,
+        "max": 19.4
+      },
+      "large": {
+        "n": 5,
+        "min": 1132.1,
+        "p50": 1143.7,
+        "p95": 1283.1,
+        "max": 1283.1
+      },
+      "largeReadOnly": {
+        "n": 5,
+        "min": 870.1,
+        "p50": 880.8,
+        "p95": 897.8,
+        "max": 897.8
+      }
+    },
+    "turns": {
+      "workWithinChapter": {
+        "n": 171,
+        "min": 0.5,
+        "p50": 0.8,
+        "p95": 1.2,
+        "max": 1.6
+      },
+      "workAcrossChapter": {
+        "n": 29,
+        "min": 31.3,
+        "p50": 33.3,
+        "p95": 40.7,
+        "max": 71.1
+      },
+      "work": {
+        "n": 200,
+        "min": 0.5,
+        "p50": 0.9,
+        "p95": 34.6,
+        "max": 71.1
+      }
+    },
+    "cfi": {
+      "samples": 200,
+      "textOk": 200,
+      "visibleOk": 200,
+      "failures": []
+    },
+    "highlights": {
+      "highlights": 100,
+      "chapter": 21,
+      "mismatches": [],
+      "mismatchCount": 0
+    }
+  },
+  "info": {
+    "cpu": null,
+    "memory_bytes": null,
+    "only": null,
+    "os": null,
+    "time": 1790974676,
+    "webkit": null
+  },
+  "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36 Edg/153.0.0.0"
+}

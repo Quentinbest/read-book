@@ -7,6 +7,8 @@ export interface Sortable {
   id: string
   title: string
   authors: string[]
+  /** The publisher's sort form of the first author (“Melville, Herman”), when the book gives one. */
+  author_sort?: string | null
   added_at: number
   opened_at: number | null
 }
@@ -26,12 +28,31 @@ export function titleKey(title: string): string {
   return fold(title).replace(/^(the|a|an) /, '')
 }
 
-/** Authors sort by the first author's surname, then given names (“Melville, Herman”). */
-export function authorKey(authors: string[]): string {
-  const first = fold(authors[0] ?? '')
-  if (!first) return '￿' // books with no author go last
-  const parts = first.split(' ')
-  return [parts.at(-1), ...parts.slice(0, -1)].join(' ')
+const SUFFIX = new Set(['jr', 'sr', 'ii', 'iii', 'iv'])
+const TITLE = /^(lord|lady|sir|dame|baron|baroness|count|countess) \S/
+
+/**
+ * Authors sort by the first author's surname, then given names (“Melville, Herman”):
+ * the publisher's sort form when the book gives one, else the last word of the name.
+ * A name already written surname first keeps its order; Jr., Sr. and numerals are not
+ * surnames (“King, Martin Luther, Jr.”). “Alfred, Lord Tennyson” is not inverted.
+ */
+export function authorKey(authors: string[], sort?: string | null): string {
+  if (sort?.trim()) return fold(sort)
+  let name = authors[0] ?? ''
+  if (!fold(name)) return '￿' // books with no author go last
+  let suffix = ''
+  const comma = name.indexOf(',')
+  if (comma >= 0) {
+    const tail = fold(name.slice(comma + 1))
+    if (SUFFIX.has(tail)) {
+      name = name.slice(0, comma)
+      suffix = tail
+    } else if (!TITLE.test(tail)) return fold(name)
+  }
+  const parts = fold(name).split(' ')
+  if (!suffix && parts.length > 2 && SUFFIX.has(parts.at(-1)!)) suffix = parts.pop()!
+  return [parts.at(-1), ...parts.slice(0, -1), suffix].filter(Boolean).join(' ')
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
@@ -51,7 +72,7 @@ export function sortBooks<T extends Sortable>(books: T[], key: SortKey): T[] {
     if (key === 'recent') return recent(b) - recent(a) || byId(a, b)
     if (key === 'title') return collator.compare(titleKey(a.title), titleKey(b.title)) || byId(a, b)
     return (
-      collator.compare(authorKey(a.authors), authorKey(b.authors)) ||
+      collator.compare(authorKey(a.authors, a.author_sort), authorKey(b.authors, b.author_sort)) ||
       collator.compare(titleKey(a.title), titleKey(b.title)) ||
       byId(a, b)
     )

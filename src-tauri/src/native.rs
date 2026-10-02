@@ -10,13 +10,20 @@ pub fn open_external(url: String) -> Result<(), String> {
     if !matches!(parsed.scheme(), "http" | "https" | "mailto") {
         return Err(format!("refused to open a {} link", parsed.scheme()));
     }
-    let ns = objc2_foundation::NSString::from_str(parsed.as_str());
-    let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
-    let opened = objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url);
-    if opened {
-        Ok(())
-    } else {
-        Err("the system could not open the link".into())
+    #[cfg(target_os = "macos")]
+    {
+        let ns = objc2_foundation::NSString::from_str(parsed.as_str());
+        let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
+        let opened = objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url);
+        if opened {
+            Ok(())
+        } else {
+            Err("the system could not open the link".into())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("not available on this platform".into())
     }
 }
 
@@ -24,14 +31,21 @@ pub fn open_external(url: String) -> Result<(), String> {
 /// system WebKit) is updated. A fixed URL: the page cannot open other settings panes.
 #[tauri::command]
 pub fn open_software_update() -> Result<(), String> {
-    let ns = objc2_foundation::NSString::from_str(
-        "x-apple.systempreferences:com.apple.preferences.softwareupdate",
-    );
-    let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
-    if objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url) {
-        Ok(())
-    } else {
-        Err("the system could not open Software Update".into())
+    #[cfg(target_os = "macos")]
+    {
+        let ns = objc2_foundation::NSString::from_str(
+            "x-apple.systempreferences:com.apple.preferences.softwareupdate",
+        );
+        let ns_url = objc2_foundation::NSURL::URLWithString(&ns).ok_or("not a URL")?;
+        if objc2_app_kit::NSWorkspace::sharedWorkspace().openURL(&ns_url) {
+            Ok(())
+        } else {
+            Err("the system could not open Software Update".into())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Err("not available on this platform".into())
     }
 }
 
@@ -39,16 +53,24 @@ pub fn open_software_update() -> Result<(), String> {
 /// Native, so it does not depend on WebKit's user-gesture rules for the clipboard API.
 #[tauri::command]
 pub fn copy_text(text: String) -> Result<(), String> {
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-    let board = NSPasteboard::generalPasteboard();
-    board.clearContents();
-    let s = objc2_foundation::NSString::from_str(&text);
-    // SAFETY: NSPasteboardTypeString is a static framework constant.
-    let ok = board.setString_forType(&s, unsafe { NSPasteboardTypeString });
-    if ok {
-        Ok(())
-    } else {
-        Err("the pasteboard refused the text".into())
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+        let board = NSPasteboard::generalPasteboard();
+        board.clearContents();
+        let s = objc2_foundation::NSString::from_str(&text);
+        // SAFETY: NSPasteboardTypeString is a static framework constant.
+        let ok = board.setString_forType(&s, unsafe { NSPasteboardTypeString });
+        if ok {
+            Ok(())
+        } else {
+            Err("the pasteboard refused the text".into())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = text;
+        Err("not available on this platform".into())
     }
 }
 
@@ -154,6 +176,7 @@ mod carbon {
 /// as the Text Input Sources API requires.
 #[tauri::command]
 pub fn keyboard_layout_labels() -> std::collections::HashMap<String, String> {
+    #[cfg_attr(not(target_os = "macos"), allow(unused_mut))]
     let mut labels = std::collections::HashMap::new();
     #[cfg(target_os = "macos")]
     unsafe {

@@ -6,8 +6,9 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
+- item 42, on 2026-10-02, left to Claude by the owner: (a) is built; (b) and (c) are not.
 
-Nothing is waiting for the owner now. The items below are kept for their details.
+Waiting: items 45–50 (next-steps plan, 2026-10-02). Items 43 and 44 are set aside by the owner (2026-10-02: no Apple membership for now). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -54,3 +55,28 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 41. **Settings captures for 1.1.** `docs/visual/app/11-settings-reading.png` (Font, Page width, Publisher styles) and `11-settings-shortcuts.png` (the remapping list) are new captures, taken on Desktop 2; neither screen had a capture before.
     *Recommendation:* approve them as baselines.
+
+## TypeSafe experiments (2026-10-01)
+
+42. **Optional TypeSafe judgments, opt-in.** Four experiments in `docs/experiments/typesafe/` tried TypeSafe's `jev-1.13` model in place of heuristic code. The results: ⌘K understood natural phrasing ("bigger text", "dark mode", "my notes") 45/50, against 17/50 for fuzzy matching. Author sort got 28/30 hard names right (Le Guin, King Jr., Du Bois), against 12/30. A new book without a landmark opened at its first chapter in 104/123 books, against 0/123. Every call leaves the device, which goes against Screen 12 ("stay on this device") unless the reader opts in.
+    *Recommendation:*
+    - **(a) Now, no model:** read the publisher's `file-as` sort name (`opf:file-as`, and `<meta refines … property="file-as">`) at import, and sort authors by it.
+    - **(b)** Add a setting, off by default, with the API key in the Keychain and all calls in the Rust core (extensions can't send the `Authorization` header). Then:
+      - author sort for books without `file-as`, computed once at import and stored;
+      - ⌘K: when fuzzy matching finds no plain substring, ask Jev for the command, after a pause in typing.
+    - **(c) Not yet:** the opening position needs another experiment, with headings inside documents as candidates (Gutenberg books). The title fallback gains too little to justify it.
+
+    **Decided 2026-10-02** (left to Claude; record in `docs/decisions.md`): (a) is built (schema 4, `books.author_sort`). (b) is not built: Linen has no server, so there is no safe way to ship an API key. (c) as recommended.
+
+## Next-steps plan (2026-10-02)
+
+From `docs/next-steps-plan.md` §4. Release downloads so far (`docs/release-stats.md`): one Apple silicon DMG per release, no Intel DMG.
+
+43. **(O1) Apple Developer Program.** Blocks Phase 9 signing and the whole iPad phase. *Recommendation:* join as an individual (99 USD a year).
+44. **(O2) Host API 1.1:** `lookup.registerProvider` and `metadata.registerProvider`, rendered by Linen from structured results (Phase 11). *Recommendation:* approve.
+45. **(O3) iPad channel.** *Recommendation:* TestFlight first.
+46. **(O4) Extensions on iPad** (App Store guideline 2.5.2). *Recommendation:* keep them on TestFlight; decide before any App Store submission.
+47. **(O5) A test iPad.** *Recommendation:* any iPad Tauri's iOS support runs on.
+48. **(O6) Sync approach.** *Recommendation:* an adapter API plus a built-in sync folder (iCloud Drive).
+49. **(O7) Gate W**, after Phase 10. Phase 10 (`docs/spikes/cross-engine.md`): anchors identical and isolation holding on all three engines; pages: Linux at parity in practice, Windows +2.7%. *Recommendation:* no-go unless someone asks; so far nobody has. Also approve the reworded criterion: each chapter within ±1 page, and the total within 2%.
+50. **(O8) iPad before sync.** *Recommendation:* yes.

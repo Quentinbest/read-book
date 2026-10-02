@@ -83,6 +83,29 @@ impl Library {
     }
 }
 
+/// E6: read the author's sort form from books imported before migration 4. Runs once
+/// per book, off the main thread; the store is locked only to read the list and to write.
+/// A book that can't be read is recorded as giving none, so it is not retried every launch;
+/// a missing file (a library folder on a disk that is not mounted, D2) is tried again later.
+pub fn backfill_author_sort(store: &std::sync::Mutex<Store>, lib: &Library) {
+    let pending = match store.lock().unwrap().books_without_author_sort() {
+        Ok(p) => p,
+        Err(e) => return log::error!("author sort backfill: {e}"),
+    };
+    for (book_id, stored) in pending {
+        let Some(path) = lib.book_file(&stored).filter(|p| p.is_file()) else {
+            continue;
+        };
+        let sort = epub::open(&path)
+            .ok()
+            .and_then(|(_, package)| package.metadata.author_sort)
+            .unwrap_or_default();
+        if let Err(e) = store.lock().unwrap().set_author_sort(&book_id, &sort) {
+            log::error!("author sort backfill: {e}");
+        }
+    }
+}
+
 /// `dir` joined with the file name of `stored`, if that is a file really inside `dir`
 /// (a symbolic link out of it does not count).
 fn inside(dir: &Path, stored: &str) -> Option<PathBuf> {
@@ -262,6 +285,8 @@ pub fn import_book(
         let tint = cover_path.is_none().then(|| cover_tint(&title));
         let authors = serde_json::to_string(&md.authors).unwrap_or_else(|_| "[]".into());
         let a11y = serde_json::to_string(&md.a11y).unwrap_or_else(|_| "[]".into());
+        // E6: '' records that the book gives no sort form, so it is never read for one again.
+        let author_sort = md.author_sort.clone().unwrap_or_default();
         let now = now_ms();
 
         let tx = store.conn_mut().transaction()?;
@@ -269,11 +294,13 @@ pub fn import_book(
             tx.execute(
             "UPDATE books SET content_hash = ?2, file_path = ?3, title = ?4, title_source = ?5, authors = ?6,
                  language = ?7, page_direction = ?8, layout = ?9, has_page_list = ?10, a11y_metadata = ?11,
-                 cover_path = ?12, generated_cover_tint = ?13, replaced_at = ?14, removed_at = NULL
+                 cover_path = ?12, generated_cover_tint = ?13, replaced_at = ?14, removed_at = NULL,
+                 author_sort = ?15
              WHERE id = ?1",
             params![
                 book_id, hash, dest.to_string_lossy(), title, title_source, authors, md.language,
-                md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now
+                md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now,
+                author_sort
             ],
         )?;
             // Annotations were anchored to the old file; re-anchoring runs when the book opens (B3, Phase 5).
@@ -286,11 +313,12 @@ pub fn import_book(
             tx.execute(
             "INSERT INTO books (id, content_hash, package_identifier, file_path, title, title_source, authors,
                  language, page_direction, layout, has_page_list, a11y_metadata, cover_path, generated_cover_tint,
-                 added_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 added_at, author_sort)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
             params![
                 book_id, hash, md.package_identifier, dest.to_string_lossy(), title, title_source, authors,
-                md.language, md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now
+                md.language, md.page_direction, md.layout, md.has_page_list as i64, a11y, cover_path, tint, now,
+                author_sort
             ],
         )?;
         }
@@ -391,6 +419,39 @@ mod tests {
         let store = Store::open(&dir.path().join("linen.db")).unwrap();
         let lib = Library::new(dir.path()).unwrap();
         (dir, store, lib)
+    }
+
+    /// E6: import stores the publisher's sort form; the backfill fills it in for books
+    /// imported before schema 4, and leaves books whose file is missing for later.
+    #[test]
+    fn author_sort_is_stored_and_backfilled() {
+        let Some(path) = corpus("gutenberg-2701-moby-dick-epub2.epub") else {
+            return;
+        };
+        let (_dir, mut store, lib) = setup();
+        import_book(&mut store, &lib, &path).unwrap();
+        let sort = |s: &Store| s.books().unwrap()[0].author_sort.clone();
+        assert_eq!(sort(&store).as_deref(), Some("Melville, Herman"));
+
+        store
+            .conn()
+            .execute("UPDATE books SET author_sort = NULL", [])
+            .unwrap();
+        let store = std::sync::Mutex::new(store);
+        backfill_author_sort(&store, &lib);
+        let store = store.into_inner().unwrap();
+        assert_eq!(sort(&store).as_deref(), Some("Melville, Herman"));
+
+        store
+            .conn()
+            .execute(
+                "UPDATE books SET author_sort = NULL, file_path = 'gone.epub'",
+                [],
+            )
+            .unwrap();
+        let store = std::sync::Mutex::new(store);
+        backfill_author_sort(&store, &lib);
+        assert_eq!(sort(&store.into_inner().unwrap()), None);
     }
 
     /// Every corpus file gives the expected outcome (plan Phase 1 Done-when).

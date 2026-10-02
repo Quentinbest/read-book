@@ -135,3 +135,12 @@ The owner approved items 33–40 as recommended (“Go ahead”, then “Approve
 | Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |
 | Quitting with unsaved notes (31) | As built (review fixes, 2026-09-26): Quit and Restart wait for the reader's writes; after a failed save Linen stays open with “Some notes aren’t saved, so Linen stayed open · Quit Anyway”. Approved with its wording. |
 | Settings captures (41) | `11-settings-reading` and `11-settings-shortcuts` become baselines (see `docs/visual/APPROVAL.md`). |
+
+## Decided 2026-10-02 (item 42, TypeSafe experiments)
+
+The owner left item 42 to Claude ("Make your best calls"). The evidence is in `docs/experiments/typesafe/`.
+
+| Rule | Decided |
+|---|---|
+| E6 (author sort) | Authors sort by the publisher's sort form of the first author (`opf:file-as`, or a `file-as` meta refining the creator), read at import and stored in `books.author_sort` (schema 4). Libraries from before schema 4 read it in the background at launch. Without one, the last word of the name is the surname, but a name already written surname first keeps its order and Jr., Sr. and numerals are not surnames. No model is involved. |
+| TypeSafe | Not built. Linen has no server, and the repository and app are public, so there is no safe way to ship an API key; asking readers for their own key does not suit a quiet reader, and every call would leave the device (Screen 12). The ⌘K fallback (45/50 against 17/50) is the case to revisit if Linen ever has a server. The opening-position experiment needs heading-level candidates for Gutenberg books first. |

@@ -11,6 +11,8 @@ export interface Book {
   title: string
   title_source: 'package' | 'heading' | 'filename'
   authors: string[]
+  /** E6: the publisher's sort form of the first author (“Melville, Herman”); '' or null if none. */
+  author_sort: string | null
   language: string | null
   page_direction: string
   layout: 'reflowable' | 'fixed'

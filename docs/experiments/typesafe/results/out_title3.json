@@ -1,0 +1,1782 @@
+[
+ {
+  "file": "gutenberg-2701-moby-dick-epub2.epub",
+  "title": "Moby Dick; Or, The Whale",
+  "base": "gutenberg-2701-moby-dick-epub2.epub",
+  "jev": "MOBY-DICK; or, THE WHALE.",
+  "conf": 0.88,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-GhV-oeb-page.epub",
+  "title": "Guide Hachette des Vins 2011",
+  "base": "idpf-GhV-oeb-page.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-WCAG.epub",
+  "title": "World Cultures and Geography",
+  "base": "World Cultures and Geography",
+  "jev": "World Cultures and Geography",
+  "conf": 0.94,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-accessible_epub_3.epub",
+  "title": "Accessible EPUB 3",
+  "base": "idpf-accessible_epub_3.epub",
+  "jev": "Accessible EPUB 3",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-cc-shared-culture.epub",
+  "title": "Creative Commons - A Shared Culture",
+  "base": "creative commons",
+  "jev": "a shared culture",
+  "conf": 0.87,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-childrens-literature.epub",
+  "title": "Children's Literature",
+  "base": "idpf-childrens-literature.epub",
+  "jev": "SECTION IV FAIRY STORIES—MODERN FANTASTIC TALES",
+  "conf": 0.51,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-childrens-media-query.epub",
+  "title": "Abroad",
+  "base": "The Swans.",
+  "jev": "The Swans.",
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-cole-voyage-of-life-tol.epub",
+  "title": "Thomas Cole - The Voyage of Life",
+  "base": "The Voyage of Life",
+  "jev": "The Voyage of Life",
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-cole-voyage-of-life.epub",
+  "title": "Thomas Cole - The Voyage of Life",
+  "base": "The Voyage of Life",
+  "jev": "The Voyage of Life",
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-epub30-spec.epub",
+  "title": "EPUB 3.0 Specification",
+  "base": "EPUB 3.0 Specification",
+  "jev": "EPUB 3.0 Specification",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-figure-gallery-bindings.epub",
+  "title": "EPUB Figure Gallery",
+  "base": "Phases of the Moon",
+  "jev": "Phases of the Moon",
+  "conf": 0.81,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-georgia-cfi.epub",
+  "title": "Georgia",
+  "base": "idpf-georgia-cfi.epub",
+  "jev": "GEORGIA",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-georgia-pls-ssml.epub",
+  "title": "Georgia",
+  "base": "idpf-georgia-pls-ssml.epub",
+  "jev": "GEORGIA",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-haruko-ahl.epub",
+  "title": "ハルコさんの彼氏",
+  "base": "idpf-haruko-ahl.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-haruko-html-jpeg.epub",
+  "title": "ハルコさんの彼氏",
+  "base": "idpf-haruko-html-jpeg.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-haruko-jpeg.epub",
+  "title": "ハルコさんの彼氏",
+  "base": "idpf-haruko-jpeg.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-hefty-water.epub",
+  "title": "Hefty Water",
+  "base": "Hefty Water",
+  "jev": "Hefty Water",
+  "conf": 0.82,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-horizontally-scrollable-emakimono.epub",
+  "title": "信貴山縁起",
+  "base": "idpf-horizontally-scrollable-emakimono.epub",
+  "jev": "Wikipedia記事からの抜粋",
+  "conf": 0.14,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-indexing-for-eds-and-auths-3f.epub",
+  "title": "Indexing for Editors and Authors: A Practical Guide to Understanding Indexes",
+  "base": "idpf-indexing-for-eds-and-auths-3f.epub",
+  "jev": "A Practical Guide toUnderstanding Indexes",
+  "conf": 0.95,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-indexing-for-eds-and-auths-3md.epub",
+  "title": "Indexing for Editors and Authors: A Practical Guide to Understanding Indexes",
+  "base": "idpf-indexing-for-eds-and-auths-3md.epub",
+  "jev": "A Practical Guide toUnderstanding Indexes",
+  "conf": 0.94,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-internallinks.epub",
+  "title": "IDに漢字などを使用したサンプル",
+  "base": "idpf-internallinks.epub",
+  "jev": "1 EPUBリーダの数式サポート―iBooks3.0のMathML表示がかなり進化",
+  "conf": 0.88,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-israelsailing.epub",
+  "title": "מפליגים בישראל",
+  "base": "idpf-israelsailing.epub",
+  "jev": "הפלגת קצרה עם רונית",
+  "conf": 0.94,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-jlreq-in-english.epub",
+  "title": "Requirements for Japanese Text Layout",
+  "base": "Requirements for Japanese Text Layout",
+  "jev": "Requirements for Japanese Text Layout",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-jlreq-in-japanese.epub",
+  "title": "日本語組版処理の要件（日本語版）",
+  "base": "日本語組版処理の要件（日本語版）",
+  "jev": "日本語組版処理の要件（日本語版）",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-kusamakura-japanese-vertical-writing.epub",
+  "title": "草枕",
+  "base": "草枕",
+  "jev": "草枕",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-kusamakura-preview-embedded.epub",
+  "title": "草枕",
+  "base": "草枕",
+  "jev": "草枕",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-kusamakura-preview.epub",
+  "title": "草枕",
+  "base": "草枕",
+  "jev": "草枕",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-linear-algebra.epub",
+  "title": "A First Course in Linear Algebra",
+  "base": "A First Course in Linear Algebra",
+  "jev": "A First Course in Linear Algebra",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-mahabharata.epub",
+  "title": "महाभारत",
+  "base": "महाभारत",
+  "jev": "महाभारत",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-moby-dick-mo.epub",
+  "title": "Moby-Dick",
+  "base": "idpf-moby-dick-mo.epub",
+  "jev": "ETYMOLOGY.",
+  "conf": 0.27,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-moby-dick.epub",
+  "title": "Moby-Dick",
+  "base": "idpf-moby-dick.epub",
+  "jev": "ETYMOLOGY.",
+  "conf": 0.4,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-mymedia_lite.epub",
+  "title": "ガリ版の話",
+  "base": "idpf-mymedia_lite.epub",
+  "jev": "賢治の夢の世界",
+  "conf": 0.56,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-page-blanche-bitmaps-in-spine.epub",
+  "title": "Page Blanche (bitmaps directly in spine)",
+  "base": "idpf-page-blanche-bitmaps-in-spine.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-page-blanche.epub",
+  "title": "Page Blanche",
+  "base": "idpf-page-blanche.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-quiz-bindings.epub",
+  "title": "Basic Quiz",
+  "base": "The Solar System",
+  "jev": "The Solar System and Beyond",
+  "conf": 0.79,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-regime-anticancer-arabic.epub",
+  "title": "Le Vrai Régime anti-cancer",
+  "base": "idpf-regime-anticancer-arabic.epub",
+  "jev": "ما هو السرطان؟",
+  "conf": 0.78,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-sous-le-vent.epub",
+  "title": "Sous le vent",
+  "base": "idpf-sous-le-vent.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-sous-le-vent_svg-in-spine.epub",
+  "title": "Sous le vent (SVG directly in spine)",
+  "base": "idpf-sous-le-vent_svg-in-spine.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-svg-in-spine.epub",
+  "title": "SVG in Spine",
+  "base": "idpf-svg-in-spine.epub",
+  "jev": null,
+  "conf": 1.0,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-trees.epub",
+  "title": "Trees",
+  "base": "Trees",
+  "jev": "Trees",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-vertically-scrollable-manga.epub",
+  "title": "鳥の眼",
+  "base": "idpf-vertically-scrollable-manga.epub",
+  "jev": "『鳥の眼』について",
+  "conf": 0.95,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "idpf-wasteland-otf-obf.epub",
+  "title": "The Waste Land",
+  "base": "The Waste Land",
+  "jev": "The Waste Land",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-wasteland-otf.epub",
+  "title": "The Waste Land",
+  "base": "The Waste Land",
+  "jev": "The Waste Land",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-wasteland-woff-obf.epub",
+  "title": "The Waste Land",
+  "base": "The Waste Land",
+  "jev": "The Waste Land",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-wasteland-woff.epub",
+  "title": "The Waste Land",
+  "base": "The Waste Land",
+  "jev": "The Waste Land",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "idpf-wasteland.epub",
+  "title": "The Waste Land",
+  "base": "The Waste Land",
+  "jev": "The Waste Land",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "standardebooks-moby-dick.epub",
+  "title": "Moby Dick",
+  "base": "Moby Dick",
+  "jev": "Moby Dick",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "g.epub",
+  "title": "Pride and Prejudice",
+  "base": "g.epub",
+  "jev": "PRIDE. and PREJUDICE",
+  "conf": 0.88,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_1080.epub",
+  "title": "A Modest Proposal / For preventing the children of poor people in Ireland, from being a burden on their parents or country, and for making them beneficial to the publick",
+  "base": "pg1080.epub",
+  "jev": "A Modest Proposal",
+  "conf": 0.8,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "pg_11.epub",
+  "title": "Alice's Adventures in Wonderland",
+  "base": "pg11.epub",
+  "jev": "Alice’s Adventures in Wonderland",
+  "conf": 0.93,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_1260.epub",
+  "title": "Jane Eyre: An Autobiography",
+  "base": "pg1260.epub",
+  "jev": "JANE EYRE AN AUTOBIOGRAPHY",
+  "conf": 0.89,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_1342.epub",
+  "title": "Pride and Prejudice",
+  "base": "pg1342.epub",
+  "jev": "PRIDE. and PREJUDICE",
+  "conf": 0.83,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_158.epub",
+  "title": "Emma",
+  "base": "pg158.epub",
+  "jev": "Emma",
+  "conf": 0.83,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_16328.epub",
+  "title": "Beowulf: An Anglo-Saxon Epic Poem",
+  "base": "pg16328.epub",
+  "jev": "BEOWULF.",
+  "conf": 0.65,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_1661.epub",
+  "title": "The Adventures of Sherlock Holmes",
+  "base": "pg1661.epub",
+  "jev": "The Adventures of Sherlock Holmes",
+  "conf": 0.71,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_1952.epub",
+  "title": "The Yellow Wallpaper",
+  "base": "pg1952.epub",
+  "jev": "The Yellow Wallpaper",
+  "conf": 0.7,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_2554.epub",
+  "title": "Crime and Punishment",
+  "base": "pg2554.epub",
+  "jev": "CRIME AND PUNISHMENT",
+  "conf": 0.93,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_2600.epub",
+  "title": "War and Peace",
+  "base": "pg2600.epub",
+  "jev": "WAR AND PEACE",
+  "conf": 0.9,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_3207.epub",
+  "title": "Leviathan",
+  "base": "pg3207.epub",
+  "jev": "LEVIATHAN",
+  "conf": 0.83,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_345.epub",
+  "title": "Dracula",
+  "base": "pg345.epub",
+  "jev": "D R A C U L A",
+  "conf": 0.81,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "pg_35.epub",
+  "title": "The Time Machine",
+  "base": "pg35.epub",
+  "jev": "The Time Machine",
+  "conf": 0.67,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_4300.epub",
+  "title": "Ulysses",
+  "base": "pg4300.epub",
+  "jev": "Ulysses",
+  "conf": 0.93,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_46.epub",
+  "title": "A Christmas Carol in Prose; Being a Ghost Story of Christmas",
+  "base": "pg46.epub",
+  "jev": "A CHRISTMAS CAROL",
+  "conf": 0.71,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "pg_5200.epub",
+  "title": "Metamorphosis",
+  "base": "pg5200.epub",
+  "jev": "Metamorphosis",
+  "conf": 0.8,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_74.epub",
+  "title": "The Adventures of Tom Sawyer, Complete",
+  "base": "pg74.epub",
+  "jev": "THE ADVENTURES OF TOM SAWYER",
+  "conf": 0.86,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "pg_76.epub",
+  "title": "Adventures of Huckleberry Finn",
+  "base": "pg76.epub",
+  "jev": "ADVENTURES OF HUCKLEBERRY FINN",
+  "conf": 0.89,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "pg_84.epub",
+  "title": "Frankenstein; or, the modern prometheus",
+  "base": "pg84.epub",
+  "jev": "The Project Gutenberg eBook of Frankenstein; or, the modern prometheus",
+  "conf": 0.62,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "pg_98.epub",
+  "title": "A Tale of Two Cities",
+  "base": "pg98.epub",
+  "jev": "A TALE OF TWO CITIES",
+  "conf": 0.86,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "se__a-a-milne_the-house-at-pooh-corner.epub",
+  "title": "The House at Pooh Corner",
+  "base": "The House at Pooh Corner",
+  "jev": "The House at Pooh Corner",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__a-w-tozer_the-pursuit-of-god.epub",
+  "title": "The Pursuit of God",
+  "base": "The Pursuit of God",
+  "jev": "The Pursuit of God",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__alan-sullivan_the-jade-god.epub",
+  "title": "The Jade God",
+  "base": "The Jade God",
+  "jev": "The Jade God",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__alfred-lord-tennyson_idylls-of-the-king.epub",
+  "title": "Idylls of the King",
+  "base": "Idylls of the King",
+  "jev": "Idylls of the King",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__ameen-rihani_poetry.epub",
+  "title": "Poetry",
+  "base": "Poetry",
+  "jev": "Poetry",
+  "conf": 0.7,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__ann-radcliffe_a-sicilian-romance.epub",
+  "title": "A Sicilian Romance",
+  "base": "A Sicilian Romance",
+  "jev": "A Sicilian Romance",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__anne-bronte_agnes-grey.epub",
+  "title": "Agnes Grey",
+  "base": "Agnes Grey",
+  "jev": "Agnes Grey",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__anthony-trollope_barchester-towers.epub",
+  "title": "Barchester Towers",
+  "base": "Barchester Towers",
+  "jev": "Barchester Towers",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__arthur-b-reeve_craig-kennedy-stories.epub",
+  "title": "Craig Kennedy Stories",
+  "base": "Craig Kennedy Stories",
+  "jev": "Craig Kennedy Stories",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__arthur-ransome_racundras-first-cruise.epub",
+  "title": "Racundra’s First Cruise",
+  "base": "Racundra’s First Cruise",
+  "jev": "Racundra’s First Cruise",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__baroness-orczy_el-dorado.epub",
+  "title": "El Dorado",
+  "base": "El Dorado",
+  "jev": "El Dorado",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__benjamin-disraeli_sybil.epub",
+  "title": "Sybil",
+  "base": "Sybil",
+  "jev": "Sybil",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__booker-t-washington_up-from-slavery.epub",
+  "title": "Up from Slavery",
+  "base": "Up from Slavery",
+  "jev": "Up from Slavery",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__c-h-spurgeon_the-art-of-illustration.epub",
+  "title": "The Art of Illustration",
+  "base": "The Art of Illustration",
+  "jev": "The Art of Illustration",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__c-s-lewis_poetry.epub",
+  "title": "Poetry",
+  "base": "Poetry",
+  "jev": "Spirits in Bondage",
+  "conf": 0.36,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": false
+ },
+ {
+  "file": "se__carlo-collodi_the-adventures-of-pinocchio.epub",
+  "title": "The Adventures of Pinocchio",
+  "base": "The Adventures of Pinocchio",
+  "jev": "The Adventures of Pinocchio",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__charles-a-lindbergh_we.epub",
+  "title": "“We”",
+  "base": "“We”",
+  "jev": "“We”",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__charles-darwin_the-origin-of-species.epub",
+  "title": "The Origin of Species",
+  "base": "The Origin of Species",
+  "jev": "The Origin of Species",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__charles-w-chesnutt_the-conjure-woman.epub",
+  "title": "The Conjure Woman",
+  "base": "The Conjure Woman",
+  "jev": "The Conjure Woman",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__christopher-morley_parnassus-on-wheels.epub",
+  "title": "Parnassus on Wheels",
+  "base": "Parnassus on Wheels",
+  "jev": "Parnassus on Wheels",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__claude-mckay_banjo.epub",
+  "title": "Banjo",
+  "base": "claude-mckay_banjo.epub",
+  "jev": "Banjo",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "se__cordwainer-smith_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "Short Fiction",
+  "jev": "Short Fiction",
+  "conf": 0.79,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__daniel-defoe_a-journal-of-the-plague-year.epub",
+  "title": "A Journal of the Plague Year",
+  "base": "A Journal of the Plague Year",
+  "jev": "A Journal of the Plague Year",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__daphne-du-maurier_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "Short Fiction",
+  "jev": "Short Fiction",
+  "conf": 0.94,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__david-hume_a-treatise-of-human-nature.epub",
+  "title": "A Treatise of Human Nature",
+  "base": "david-hume_a-treatise-of-human-nature.epub",
+  "jev": "Advertisement",
+  "conf": 0.58,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__dorothy-day_the-eleventh-virgin.epub",
+  "title": "The Eleventh Virgin",
+  "base": "The Eleventh Virgin",
+  "jev": "The Eleventh Virgin",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__e-e-cummings_the-enormous-room.epub",
+  "title": "The Enormous Room",
+  "base": "The Enormous Room",
+  "jev": "The Enormous Room",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__e-m-forster_a-passage-to-india.epub",
+  "title": "A Passage to India",
+  "base": "A Passage to India",
+  "jev": "A Passage to India",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__e-r-eddison_styrbiorn-the-strong.epub",
+  "title": "Styrbiorn the Strong",
+  "base": "e-r-eddison_styrbiorn-the-strong.epub",
+  "jev": "Imprint",
+  "conf": 0.21,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__edgar-lee-masters_spoon-river-anthology.epub",
+  "title": "Spoon River Anthology",
+  "base": "Spoon River Anthology",
+  "jev": "Spoon River Anthology",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__edison-marshall_shepherds-of-the-wild.epub",
+  "title": "Shepherds of the Wild",
+  "base": "Shepherds of the Wild",
+  "jev": "Shepherds of the Wild",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__edward-bellamy_looking-backward.epub",
+  "title": "Looking Backward",
+  "base": "Looking Backward",
+  "jev": "Looking Backward",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__edward-lear_nonsense-books.epub",
+  "title": "Nonsense Books",
+  "base": "Nonsense Books",
+  "jev": "Nonsense Books",
+  "conf": 0.92,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__eleanor-h-porter_pollyanna.epub",
+  "title": "Pollyanna",
+  "base": "eleanor-h-porter_pollyanna.epub",
+  "jev": "Pollyanna",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "se__elizabeth-von-arnim_elizabeth-and-her-german-garden.epub",
+  "title": "Elizabeth and Her German Garden",
+  "base": "Elizabeth and Her German Garden",
+  "jev": "Elizabeth and Her German Garden",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__ella-cheever-thayer_wired-love.epub",
+  "title": "Wired Love",
+  "base": "Wired Love",
+  "jev": "Wired Love",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__emma-goldman_my-disillusionment-in-russia.epub",
+  "title": "My Disillusionment in Russia",
+  "base": "My Disillusionment in Russia",
+  "jev": "My Disillusionment in Russia",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__ernest-poole_his-family.epub",
+  "title": "His Family",
+  "base": "His Family",
+  "jev": "His Family",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__ethel-voynich_the-gadfly.epub",
+  "title": "The Gadfly",
+  "base": "The Gadfly",
+  "jev": "The Gadfly",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__evelyn-waugh_decline-and-fall.epub",
+  "title": "Decline and Fall",
+  "base": "Decline and Fall",
+  "jev": "Decline and Fall",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__fergus-hume_the-mystery-of-a-hansom-cab.epub",
+  "title": "The Mystery of a Hansom Cab",
+  "base": "The Mystery of a Hansom Cab",
+  "jev": "The Mystery of a Hansom Cab",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__frances-ellen-watkins-harper_iola-leroy.epub",
+  "title": "Iola Leroy",
+  "base": "Iola Leroy",
+  "jev": "Iola Leroy",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__francis-la-flesche_the-middle-five.epub",
+  "title": "The Middle Five",
+  "base": "The Middle Five",
+  "jev": "The Middle Five",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__frank-belknap-long_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "Short Fiction",
+  "jev": "Short Fiction",
+  "conf": 0.75,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__frederick-douglass_narrative-of-the-life-of-frederick-douglass.epub",
+  "title": "Narrative of the Life of Frederick Douglass",
+  "base": "Narrative of the Life of Frederick Douglass",
+  "jev": "Narrative of the Life of Frederick Douglass",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__fritz-leiber_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "fritz-leiber_short-fiction.epub",
+  "jev": "Later Than You Think",
+  "conf": 0.79,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__g-k-chesterton_heretics.epub",
+  "title": "Heretics",
+  "base": "Heretics",
+  "jev": "Heretics",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__george-barr-mccutcheon_brewsters-millions.epub",
+  "title": "Brewster’s Millions",
+  "base": "Brewster’s Millions",
+  "jev": "Brewster’s Millions",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__george-du-maurier_trilby.epub",
+  "title": "Trilby",
+  "base": "Trilby",
+  "jev": "Trilby",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__george-macdonald_at-the-back-of-the-north-wind.epub",
+  "title": "At the Back of the North Wind",
+  "base": "At the Back of the North Wind",
+  "jev": "At the Back of the North Wind",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__georgette-heyer_beauvallet.epub",
+  "title": "Beauvallet",
+  "base": "Beauvallet",
+  "jev": "Beauvallet",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__godfrey-r-benson_tracks-in-the-snow.epub",
+  "title": "Tracks in the Snow",
+  "base": "Tracks in the Snow",
+  "jev": "Tracks in the Snow",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__h-c-bailey_call-mr-fortune.epub",
+  "title": "Call Mr. Fortune",
+  "base": "Call Mr. Fortune",
+  "jev": "Call Mr. Fortune",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__h-de-vere-stacpoole_the-blue-lagoon.epub",
+  "title": "The Blue Lagoon",
+  "base": "The Blue Lagoon",
+  "jev": "The Blue Lagoon",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__h-m-tomlinson_gallions-reach.epub",
+  "title": "Gallions Reach",
+  "base": "Gallions Reach",
+  "jev": "Gallions Reach",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__harriet-beecher-stowe_uncle-toms-cabin.epub",
+  "title": "Uncle Tom’s Cabin",
+  "base": "Uncle Tom’s Cabin",
+  "jev": "Uncle Tom’s Cabin",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__henry-adams_democracy.epub",
+  "title": "Democracy",
+  "base": "Democracy",
+  "jev": "Democracy",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__henry-george_progress-and-poverty.epub",
+  "title": "Progress and Poverty",
+  "base": "Progress and Poverty",
+  "jev": "Progress and Poverty",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__henry-lawson_while-the-billy-boils.epub",
+  "title": "While the Billy Boils",
+  "base": "While the Billy Boils",
+  "jev": "While the Billy Boils",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__henry-van-dyke-jr_poetry.epub",
+  "title": "Poetry",
+  "base": "Poetry",
+  "jev": "Poetry",
+  "conf": 0.81,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__herman-melville_moby-dick.epub",
+  "title": "Moby Dick",
+  "base": "Moby Dick",
+  "jev": "Moby Dick",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__horace-walpole_the-castle-of-otranto.epub",
+  "title": "The Castle of Otranto",
+  "base": "The Castle of Otranto",
+  "jev": "The Castle of Otranto",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__horatio-alger-jr_ragged-dick.epub",
+  "title": "Ragged Dick",
+  "base": "Ragged Dick",
+  "jev": "Ragged Dick",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__isaac-asimov_short-science-fiction.epub",
+  "title": "Short Science Fiction",
+  "base": "Short Science Fiction",
+  "jev": "Short Science Fiction",
+  "conf": 0.94,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__j-m-barrie_peter-and-wendy.epub",
+  "title": "Peter and Wendy",
+  "base": "Peter and Wendy",
+  "jev": "Peter and Wendy",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__j-sheridan-le-fanu_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "j-sheridan-le-fanu_short-fiction.epub",
+  "jev": "The Ghost and the Bonesetter",
+  "conf": 0.41,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__j-storer-clouston_simon.epub",
+  "title": "Simon",
+  "base": "Simon",
+  "jev": "Simon",
+  "conf": 0.87,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__james-de-mille_a-strange-manuscript-found-in-a-copper-cylinder.epub",
+  "title": "A Strange Manuscript Found in a Copper Cylinder",
+  "base": "A Strange Manuscript Found in a Copper Cylinder",
+  "jev": "A Strange Manuscript Found in a Copper Cylinder",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__katharine-a-carl_with-the-empress-dowager-of-china.epub",
+  "title": "With the Empress Dowager of China",
+  "base": "With the Empress Dowager of China",
+  "jev": "With the Empress Dowager of China",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__l-frank-baum_dorothy-and-the-wizard-in-oz.epub",
+  "title": "Dorothy and the Wizard in Oz",
+  "base": "Dorothy and the Wizard in Oz",
+  "jev": "Dorothy and the Wizard in Oz",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__langston-hughes_not-without-laughter.epub",
+  "title": "Not Without Laughter",
+  "base": "Not Without Laughter",
+  "jev": "Not Without Laughter",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__lewis-carroll_a-tangled-tale.epub",
+  "title": "A Tangled Tale",
+  "base": "A Tangled Tale",
+  "jev": "A Tangled Tale",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__linda-brent_incidents-in-the-life-of-a-slave-girl.epub",
+  "title": "Incidents in the Life of a Slave Girl",
+  "base": "Incidents in the Life of a Slave Girl",
+  "jev": "Incidents in the Life of a Slave Girl",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__lord-dunsany_fifty-one-tales.epub",
+  "title": "Fifty-One Tales",
+  "base": "Fifty-One Tales",
+  "jev": "Fifty-One Tales",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__louis-joseph-vance_the-lone-wolf.epub",
+  "title": "The Lone Wolf",
+  "base": "The Lone Wolf",
+  "jev": "The Lone Wolf",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__lytton-strachey_eminent-victorians.epub",
+  "title": "Eminent Victorians",
+  "base": "Eminent Victorians",
+  "jev": "Eminent Victorians",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__m-p-shiel_the-purple-cloud.epub",
+  "title": "The Purple Cloud",
+  "base": "The Purple Cloud",
+  "jev": "The Purple Cloud",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__manly-wade-wellman_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "Short Fiction",
+  "jev": "Short Fiction",
+  "conf": 0.87,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__margaret-oliphant_a-country-gentleman-and-his-family.epub",
+  "title": "A Country Gentleman and His Family",
+  "base": "A Country Gentleman and His Family",
+  "jev": "A Country Gentleman and His Family",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__maria-bochkareva_yashka.epub",
+  "title": "Yashka",
+  "base": "maria-bochkareva_yashka.epub",
+  "jev": "Introduction",
+  "conf": 0.35,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__marie-belloc-lowndes_the-chink-in-the-armour.epub",
+  "title": "The Chink in the Armour",
+  "base": "The Chink in the Armour",
+  "jev": "The Chink in the Armour",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__marmaduke-pickthall_said-the-fisherman.epub",
+  "title": "Saïd the Fisherman",
+  "base": "Saïd the Fisherman",
+  "jev": "Saïd the Fisherman",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__mary-butts_armed-with-madness.epub",
+  "title": "Armed with Madness",
+  "base": "Armed with Madness",
+  "jev": "Armed with Madness",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__mary-de-morgan_on-a-pincushion.epub",
+  "title": "On a Pincushion",
+  "base": "On a Pincushion",
+  "jev": "On a Pincushion",
+  "conf": 0.96,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__mary-roberts-rinehart_the-circular-staircase.epub",
+  "title": "The Circular Staircase",
+  "base": "The Circular Staircase",
+  "jev": "The Circular Staircase",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__mary-weston-fordham_magnolia-leaves.epub",
+  "title": "Magnolia Leaves",
+  "base": "Magnolia Leaves",
+  "jev": "Magnolia Leaves",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__matthew-henson_a-negro-explorer-at-the-north-pole.epub",
+  "title": "A Negro Explorer at the North Pole",
+  "base": "A Negro Explorer at the North Pole",
+  "jev": "A Negro Explorer at the North Pole",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__metta-victor_the-dead-letter.epub",
+  "title": "The Dead Letter",
+  "base": "The Dead Letter",
+  "jev": "The Dead Letter",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__miles-franklin_my-brilliant-career.epub",
+  "title": "My Brilliant Career",
+  "base": "My Brilliant Career",
+  "jev": "My Brilliant Career",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__nathaniel-hawthorne_the-blithedale-romance.epub",
+  "title": "The Blithedale Romance",
+  "base": "The Blithedale Romance",
+  "jev": "The Blithedale Romance",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__noel-coward_hay-fever.epub",
+  "title": "Hay Fever",
+  "base": "Hay Fever",
+  "jev": "Hay Fever",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__o-henry_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "o-henry_short-fiction.epub",
+  "jev": "Lord Oakhurst’s Curse",
+  "conf": 0.68,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__olaudah-equiano_the-interesting-narrative-of-the-life-of-olaudah-equiano.epub",
+  "title": "The Interesting Narrative of the Life of Olaudah Equiano",
+  "base": "The Interesting Narrative of the Life of Olaudah Equiano",
+  "jev": "The Interesting Narrative of the Life of Olaudah Equiano",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__oliver-la-farge_laughing-boy.epub",
+  "title": "Laughing Boy",
+  "base": "Laughing Boy",
+  "jev": "Laughing Boy",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__oscar-wilde_a-woman-of-no-importance.epub",
+  "title": "A Woman of No Importance",
+  "base": "A Woman of No Importance",
+  "jev": "A Woman of No Importance",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__p-g-wodehouse_a-damsel-in-distress.epub",
+  "title": "A Damsel in Distress",
+  "base": "A Damsel in Distress",
+  "jev": "A Damsel in Distress",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__paul-laurence-dunbar_the-sport-of-the-gods.epub",
+  "title": "The Sport of the Gods",
+  "base": "The Sport of the Gods",
+  "jev": "The Sport of the Gods",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__percy-marks_the-plastic-age.epub",
+  "title": "The Plastic Age",
+  "base": "The Plastic Age",
+  "jev": "The Plastic Age",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__philip-gibbs_now-it-can-be-told.epub",
+  "title": "Now It Can Be Told",
+  "base": "Now It Can Be Told",
+  "jev": "Now It Can Be Told",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__philip-macdonald_the-rasp.epub",
+  "title": "The Rasp",
+  "base": "The Rasp",
+  "jev": "The Rasp",
+  "conf": 0.99,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__rabindranath-tagore_gitanjali.epub",
+  "title": "Gitanjali",
+  "base": "Gitanjali",
+  "jev": "Gitanjali",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__richard-henry-dana-jr_to-cuba-and-back.epub",
+  "title": "To Cuba and Back",
+  "base": "To Cuba and Back",
+  "jev": "To Cuba and Back",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__s-s-van-dine_the-benson-murder-case.epub",
+  "title": "The Benson Murder Case",
+  "base": "The Benson Murder Case",
+  "jev": "The Benson Murder Case",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__saki_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "saki_short-fiction.epub",
+  "jev": "The Image of the Lost Soul",
+  "conf": 0.61,
+  "covered": false,
+  "base_ok": false,
+  "jev_ok": false
+ },
+ {
+  "file": "se__thomas-de-quincey_confessions-of-an-english-opium-eater.epub",
+  "title": "Confessions of an English Opium-Eater",
+  "base": "Confessions of an English Opium-Eater",
+  "jev": "Confessions of an English Opium-Eater",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__voltairine-de-cleyre_poetry.epub",
+  "title": "Poetry",
+  "base": "Poetry",
+  "jev": "Poetry",
+  "conf": 0.98,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__w-e-b-du-bois_dark-princess.epub",
+  "title": "Dark Princess",
+  "base": "w-e-b-du-bois_dark-princess.epub",
+  "jev": "Dark Princess",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": false,
+  "jev_ok": true
+ },
+ {
+  "file": "se__walter-de-la-mare_memoirs-of-a-midget.epub",
+  "title": "Memoirs of a Midget",
+  "base": "Memoirs of a Midget",
+  "jev": "Memoirs of a Midget",
+  "conf": 1.0,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "se__walter-m-miller-jr_short-fiction.epub",
+  "title": "Short Fiction",
+  "base": "Short Fiction",
+  "jev": "Short Fiction",
+  "conf": 0.86,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ },
+ {
+  "file": "t.epub",
+  "title": "Moby Dick",
+  "base": "Moby Dick",
+  "jev": "Moby Dick",
+  "conf": 0.97,
+  "covered": true,
+  "base_ok": true,
+  "jev_ok": true
+ }
+]

@@ -49,6 +49,9 @@ pub enum Rejection {
 pub struct Metadata {
     pub title: Option<String>,
     pub authors: Vec<String>,
+    /// E6: the publisher's sort form of the first author ("Melville, Herman"), from
+    /// `opf:file-as` (EPUB 2) or a `file-as` meta refining the creator (EPUB 3).
+    pub author_sort: Option<String>,
     pub language: Option<String>,
     /// The OPF unique-identifier value (B3 duplicate detection).
     pub package_identifier: Option<String>,
@@ -394,6 +397,9 @@ pub fn read_package<R: Read + Seek>(
     };
     let mut unique_id_ref = None;
     let mut identifiers: Vec<(Option<String>, String)> = Vec::new();
+    // E6: each creator's id and file-as attribute, and the file-as metas by the id they refine.
+    let mut creators: Vec<(Option<String>, Option<String>)> = Vec::new();
+    let mut file_as: HashMap<String, String> = HashMap::new();
     let mut manifest: HashMap<String, ManifestItem> = HashMap::new();
     let mut spine_ids: Vec<String> = Vec::new();
     let mut toc_ncx_id: Option<String> = None;
@@ -495,7 +501,14 @@ pub fn read_package<R: Read + Seek>(
                         "title" if md.title.is_none() && !value.is_empty() => {
                             md.title = Some(value)
                         }
-                        "creator" if !value.is_empty() => md.authors.push(value),
+                        "creator" if !value.is_empty() => {
+                            md.authors.push(value);
+                            let attr = a
+                                .iter()
+                                .find(|(k, _)| local_name(k) == "file-as")
+                                .map(|(_, v)| v.trim().to_string());
+                            creators.push((a.get("id").cloned(), attr));
+                        }
                         "language" if md.language.is_none() && !value.is_empty() => {
                             md.language = Some(value)
                         }
@@ -509,7 +522,11 @@ pub fn read_package<R: Read + Seek>(
                         }
                         "meta" => {
                             let prop = a.get("property").cloned().unwrap_or_default();
-                            if prop == "rendition:layout" && value == "pre-paginated" {
+                            if prop == "file-as" {
+                                if let Some(id) = a.get("refines") {
+                                    file_as.insert(id.trim_start_matches('#').to_string(), value);
+                                }
+                            } else if prop == "rendition:layout" && value == "pre-paginated" {
                                 md.layout = "fixed".into();
                             } else if prop.starts_with("schema:access") {
                                 md.a11y
@@ -527,6 +544,14 @@ pub fn read_package<R: Read + Seek>(
     if !saw_package {
         return Err(Rejection::BadPackage);
     }
+
+    md.author_sort = creators
+        .first()
+        .and_then(|(id, attr)| {
+            attr.clone()
+                .or_else(|| id.as_ref().and_then(|id| file_as.get(id).cloned()))
+        })
+        .filter(|v| !v.is_empty());
 
     md.package_identifier = identifiers
         .iter()
@@ -811,6 +836,42 @@ mod tests {
                     error_kind: "not-in-manifest".into()
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn reads_the_first_authors_sort_form_e6() {
+        let sort = |meta: &str| {
+            let package = opf(
+                meta,
+                r#"<item id="c1" href="c1.xhtml" media-type="application/xhtml+xml"/>"#,
+                r#"><itemref idref="c1"/>"#,
+            );
+            let mut a = build(&[
+                ("META-INF/container.xml", CONTAINER),
+                ("OEBPS/content.opf", &package),
+                ("OEBPS/c1.xhtml", b"<html><body/></html>"),
+            ]);
+            read_package(&mut a).unwrap().metadata.author_sort
+        };
+        // EPUB 2: the attribute on the creator.
+        assert_eq!(
+            sort(r#"<dc:creator opf:file-as="Melville, Herman" opf:role="aut">Herman Melville</dc:creator><dc:creator opf:file-as="Kent, Rockwell">Rockwell Kent</dc:creator>"#)
+                .as_deref(),
+            Some("Melville, Herman")
+        );
+        // EPUB 3: a meta refining the creator by id.
+        assert_eq!(
+            sort(r##"<dc:creator id="a1">Ursula K. Le Guin</dc:creator><meta refines="#a1" property="role">aut</meta><meta refines="#a1" property="file-as">Le Guin, Ursula K.</meta>"##)
+                .as_deref(),
+            Some("Le Guin, Ursula K.")
+        );
+        // Only the first creator counts; none given means none.
+        assert_eq!(
+            sort(
+                r##"<dc:creator id="a1">Herman Melville</dc:creator><dc:creator id="a2">Rockwell Kent</dc:creator><meta refines="#a2" property="file-as">Kent, Rockwell</meta>"##
+            ),
+            None
         );
     }
 
