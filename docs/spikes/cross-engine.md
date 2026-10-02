@@ -1,4 +1,4 @@
-# Spike A across engines (next-steps plan, Phase 10)
+# Spikes A, D and E across engines (next-steps plan, Phase 10)
 
 **Verdict:** no engine blocks a port.
 - **Anchors** (CFIs, highlights) are identical across all three engines.
