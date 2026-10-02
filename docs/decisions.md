@@ -135,3 +135,13 @@ The owner approved items 33–40 as recommended (“Go ahead”, then “Approve
 | Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |
 | Quitting with unsaved notes (31) | As built (review fixes, 2026-09-26): Quit and Restart wait for the reader's writes; after a failed save Linen stays open with “Some notes aren’t saved, so Linen stayed open · Quit Anyway”. Approved with its wording. |
 | Settings captures (41) | `11-settings-reading` and `11-settings-shortcuts` become baselines (see `docs/visual/APPROVAL.md`). |
+
+## Decided 2026-10-01/02 (the Linen logo)
+
+The owner accepted logo `linen-a-v002` (direction A, “The unhurried page”: two asymmetric rust pages with an open seam, Literata lettering in Ink) with “Go ahead” on 2026-10-01; it shipped in 0.2.0. Its working files (concepts, checks, the release package) are kept outside git in `logo-project/`, which is ignored. On 2026-10-02, under “Make your best calls”, the app icon was refitted to the macOS grid.
+
+| Item | Decided |
+|---|---|
+| Logo files in the app | `public/brand/linen-a-v002/` (About, light and dark), `public/favicon.svg` and `.ico`. Artwork unchanged from the accepted release. |
+| App icon | `src-tauri/icons/linen-a-v002-grid/`, generated from its `icon.svg`: the accepted flat icon with its tile moved to Apple's 824 px tile in a 1024 px canvas (it was 864, plus its hairline) and the Big Sur template shadow (black 30 %, 10 px down, 10 px blur). The page symbol keeps its paths and its size relative to the tile. `icons/linen-a-v002/` stays as accepted. |
+| Not done | A layered `.icon` for macOS 26 (needs Icon Composer on macOS 26.4+); trademark or registration work. |

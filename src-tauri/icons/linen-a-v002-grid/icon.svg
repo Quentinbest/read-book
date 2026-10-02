@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <title>Linen — macOS app icon (linen-a-v002 on the 824/1024 grid)</title>
+  <!-- linen-a-v002's flat icon, refitted to Apple's macOS icon grid: an 824 px tile inset 100 px,
+       with the Big Sur template shadow. The page symbol keeps its paths and its size relative to the tile. -->
+  <defs>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="10" stdDeviation="5" flood-color="#000" flood-opacity="0.3"/>
+    </filter>
+  </defs>
+  <g id="paper-tile" filter="url(#shadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" fill="#F7F3EC" stroke="#DDD4C7" stroke-width="4"/>
+  </g>
+  <g id="page-symbol" fill="#8C4A2F" transform="translate(151.50 188.69) scale(5.6269)">
+    <path id="resting-page" d="M17 31 C35 28 49 34 59 45 L59 101 C47 89 32 84 16 87 L16 34 Q16 32 17 31Z"/>
+    <path id="turning-page" d="M70 46 C77 28 92 15 108 12 C115 48 103 80 70 103Z"/>
+  </g>
+</svg>
