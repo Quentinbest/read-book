@@ -60,6 +60,11 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 41. **Settings captures for 1.1.** `docs/visual/app/11-settings-reading.png` (Font, Page width, Publisher styles) and `11-settings-shortcuts.png` (the remapping list) are new captures, taken on Desktop 2; neither screen had a capture before.
     *Recommendation:* approve them as baselines.
 
+## The app icon (2026-10-02)
+
+42. **App icon on the macOS grid, and two artwork details.** The icon now sits on Apple's 824/1024 grid with the standard shadow (see `docs/decisions.md`, 2026-10-01/02), so it no longer looks about 5 % larger and flatter than its Dock neighbours. Two points in the accepted artwork are left as they are, because changing them means a new logo version: at icon size the pointed right page can read as a leaf (the mark as a sprout) as much as a page; and the left page's top-left corner is rounded while its bottom-left corner is square.
+    *Recommendation:* approve the grid refit; keep the artwork, unless the leaf reading bothers you in the Dock, in which case a `linen-a-v003` could square the right page's tip and match the left page's corners.
+
 ## Reader review (2026-10-06)
 
 53. **A minimum window size (owner's item 3).** The minimum belongs to the main window, which holds the library and the reader. Below 1100 px the reading area is the whole window, because the Navigator floats there (L8). Today the window has no minimum. The Settings window already has one: 720 × 480. Measured (`docs/reader-review-2026-10-06.md`, captures in `docs/visual/survey/`):
