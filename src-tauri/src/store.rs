@@ -110,6 +110,11 @@ pub const MIGRATIONS: &[&str] = &[
     ALTER TABLE books ADD COLUMN removed_at INTEGER;
     ALTER TABLE positions ADD COLUMN chapter_label TEXT;
     "#,
+    // 4: Author sort (E6): the publisher's sort form of the first author. NULL until
+    // the book file has been read for it; '' when the book gives none.
+    r#"
+    ALTER TABLE books ADD COLUMN author_sort TEXT;
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -153,6 +158,8 @@ pub struct BookRow {
     pub title: String,
     pub title_source: String,
     pub authors: Vec<String>,
+    /// E6: the first author's sort form ("Melville, Herman"); empty when the book gives none.
+    pub author_sort: Option<String>,
     pub language: Option<String>,
     pub page_direction: String,
     pub layout: String,
@@ -253,7 +260,7 @@ impl Store {
                     b.authors, b.language, b.page_direction, b.layout, b.has_page_list, b.cover_path,
                     b.generated_cover_tint, b.added_at, b.opened_at, b.finished_at, b.replaced_at,
                     (SELECT COUNT(*) FROM book_damage d WHERE d.book_id = b.id), p.fraction,
-                    p.chapter_label
+                    p.chapter_label, b.author_sort
              FROM books b LEFT JOIN positions p ON p.book_id = b.id
              WHERE b.removed_at IS NULL
              ORDER BY COALESCE(b.opened_at, b.added_at) DESC",
@@ -281,9 +288,29 @@ impl Store {
                 damaged_items: r.get(17)?,
                 fraction: r.get(18)?,
                 chapter_label: r.get(19)?,
+                author_sort: r.get(20)?,
             })
         })?;
         Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// E6: books whose file has not been read for the author's sort form yet
+    /// (libraries from before migration 4), as (id, stored file path).
+    pub fn books_without_author_sort(&self) -> Result<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id, file_path FROM books WHERE author_sort IS NULL")?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// E6: record the sort form; '' means the book gives none, so it is not read again.
+    pub fn set_author_sort(&self, book_id: &str, sort: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE books SET author_sort = ?2 WHERE id = ?1",
+            params![book_id, sort],
+        )?;
+        Ok(())
     }
 
     pub fn save_position(

@@ -118,3 +118,12 @@ Testing 0.1.1, the owner found the progress bar missing when the toolbar is reve
 |---|---|
 | S9 (edge reveal) | Either edge, after the 150 ms dwell, reveals both bars, as before 2026-09-29. The top bar names the book only. The bars stay while the pointer is in an edge zone or on a bar and hide as soon as it leaves. The full controls (Tab, ⌘J, Aa) are unchanged: chapter in the title, 3 s delay. |
 | S11 (bottom zone) | With the Dock hiding at the bottom (or in full screen), the bottom zone stays but leaves out the 6 pt strip where the Dock slides in, instead of switching off; otherwise the bottom edge could not reveal anything on a Mac with an auto-hiding Dock. |
+
+## Decided 2026-10-02 (item 33, TypeSafe experiments)
+
+The owner left item 33 to Claude ("Make your best calls"). The evidence is in `docs/experiments/typesafe/`.
+
+| Rule | Decided |
+|---|---|
+| E6 (author sort) | Authors sort by the publisher's sort form of the first author (`opf:file-as`, or a `file-as` meta refining the creator), read at import and stored in `books.author_sort` (schema 4). Libraries from before schema 4 read it in the background at launch. Without one, the last word of the name is the surname, but a name already written surname first keeps its order and Jr., Sr. and numerals are not surnames. No model is involved. |
+| TypeSafe | Not built. Linen has no server, and the repository and app are public, so there is no safe way to ship an API key; asking readers for their own key does not suit a quiet reader, and every call would leave the device (Screen 12). The ⌘K fallback (45/50 against 17/50) is the case to revisit if Linen ever has a server. The opening-position experiment needs heading-level candidates for Gutenberg books first. |

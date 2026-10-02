@@ -5,6 +5,7 @@ Items set aside while work continued (owner's instruction, 2026-09-25). Each has
 Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
+- item 33, on 2026-10-02, left to Claude by the owner: (a) is built; (b) and (c) are not.
 
 ## Review fixes (2026-09-26)
 

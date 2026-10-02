@@ -65,6 +65,33 @@ describe('E6 library order', () => {
     expect(authorKey(['Herman Melville'])).toBe('melville herman')
     expect(titleKey('The Odyssey')).toBe('odyssey')
   })
+  it("Author: the publisher's sort form first, then names already inverted, suffixes and titles", () => {
+    // The book's own sort form wins (OPF file-as); '' means it gave none.
+    expect(authorKey(['Ursula K. Le Guin'], 'Le Guin, Ursula K.')).toBe('le guin ursula k')
+    expect(authorKey(['Ursula K. Le Guin'], '')).toBe('guin ursula k le')
+    // Already surname first.
+    expect(authorKey(['Melville, Herman'])).toBe('melville herman')
+    expect(authorKey(['Dana, Richard Henry, Jr.'])).toBe('dana richard henry jr')
+    expect(authorKey(['Byron, Lord'])).toBe('byron lord')
+    // Jr., Sr. and numerals are not surnames, with or without a comma.
+    expect(authorKey(['Martin Luther King Jr.'])).toBe('king martin luther jr')
+    expect(authorKey(['Martin Luther King, Jr.'])).toBe('king martin luther jr')
+    expect(authorKey(['Henry Ford II'])).toBe('ford henry ii')
+    // A comma before a title is not an inversion.
+    expect(authorKey(['Alfred, Lord Tennyson'])).toBe('tennyson alfred lord')
+    const sorted = sortBooks(
+      [
+        {
+          ...book('a', 'A Wizard of Earthsea', ['Ursula K. Le Guin'], 1),
+          author_sort: 'Le Guin, Ursula K.',
+        },
+        book('b', 'The Hobbit', ['J. R. R. Tolkien'], 2),
+        book('c', 'Moby-Dick', ['Melville, Herman'], 3),
+      ],
+      'author',
+    )
+    expect(sorted.map((b) => b.id)).toEqual(['a', 'c', 'b'])
+  })
   it('Search: every word starts a word of the title or an author, accents folded', () => {
     expect(matches(shelf[5], 'miserables')).toBe(true)
     expect(matches(shelf[1], 'mel moby')).toBe(true)

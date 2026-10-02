@@ -162,6 +162,12 @@ pub fn run() {
                 log::error!("built-in extensions: {e}");
             }
             app.manage(state);
+            // E6: libraries from before schema 4 learn their authors' sort forms in the background.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let state = handle.state::<commands::AppState>();
+                import::backfill_author_sort(&state.store, &state.library);
+            });
             app.manage(ext_commands::SafeMode(std::sync::atomic::AtomicBool::new(
                 safe,
             )));
