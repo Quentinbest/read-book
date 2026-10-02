@@ -9,17 +9,12 @@ import {
   measurePx,
   openView,
   painted,
+  platform,
   readerCss,
   type Criterion,
   type SpikeResult,
 } from './common'
 import { literataFaces } from '../reader/fonts'
-
-/** The engine family this run measures, from the user agent. */
-function platform(): 'windows' | 'linux' | 'macos' {
-  const ua = navigator.userAgent
-  return /Windows/.test(ua) ? 'windows' : /Linux/.test(ua) ? 'linux' : 'macos'
-}
 
 const SIZES = [16, 19, 24]
 

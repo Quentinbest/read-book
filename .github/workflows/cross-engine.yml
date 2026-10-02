@@ -1,6 +1,6 @@
 name: Cross-engine
 
-# Spike A on WKWebView, WebView2 and WebKitGTK (docs/next-steps-plan.md, Phase 10).
+# Spikes A, D (with cross-engine anchors) and E on WKWebView, WebView2 and WebKitGTK (docs/next-steps-plan.md, Phase 10).
 # Answers whether a Windows or Linux port is feasible; nothing here ships.
 # Each engine runs twice; a verdict counts only when both runs agree.
 
@@ -10,13 +10,16 @@ on:
     paths:
       - .github/workflows/cross-engine.yml
       - src/spikes/a-rendering.ts
+      - src/spikes/d-fidelity.ts
+      - src/spikes/e-isolation.ts
+      - scripts/compare-spike-dx.mjs
       - scripts/compare-spike-a.mjs
   schedule:
     - cron: '0 6 * * 1'
 
 jobs:
   spike:
-    name: Spike A (${{ matrix.os }}, run ${{ matrix.run }})
+    name: Spikes (${{ matrix.os }}, run ${{ matrix.run }})
     strategy:
       fail-fast: false
       matrix:
@@ -52,29 +55,34 @@ jobs:
       - name: The Spike A book is present
         shell: bash
         run: test -s corpus/cache/standardebooks-moby-dick.epub
+      - name: Generate the broken, hostile and large books (Spikes D and E)
+        run: python scripts/corpus/generate.py
       - name: Build the spikes binary
         shell: bash
         run: LINEN_SPIKES=1 pnpm tauri build --no-bundle --features spikes --config src-tauri/tauri.spikes.conf.json
-      - name: Run Spike A
+      - name: Run Spikes A, DX, E and D
         shell: bash
         env:
-          LINEN_SPIKE: a
-          LINEN_SPIKE_TIMEOUT: '1500'
+          LINEN_SPIKE: a,dx,e,d
+          LINEN_SPIKE_TIMEOUT: '3000'
         run: |
           export LINEN_DATA_DIR="$(mktemp -d)"
           bin=src-tauri/target/release/linen
-          rm -f docs/spikes/raw/a-rendering-*.json
+          rm -f docs/spikes/raw/*.json
           case "$RUNNER_OS" in
-            Linux) xvfb-run -a -s '-screen 0 1600x1000x24 -dpi 96' "$bin" ;;
-            Windows) "$bin.exe" ;;
-            *) "$bin" ;;
+            Linux) xvfb-run -a -s '-screen 0 1600x1000x24 -dpi 96' "$bin" || status=$? ;;
+            Windows) "$bin.exe" || status=$? ;;
+            *) "$bin" || status=$? ;;
           esac
-          ls docs/spikes/raw/a-rendering-*.json
+          # A spike that misses a criterion still reports; only a missing report fails here.
+          echo "harness exit ${status:-0}"
+          ls docs/spikes/raw/*.json
+          test -s docs/spikes/raw/a-rendering-*.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: spike-a-${{ matrix.os }}-${{ matrix.run }}
-          path: docs/spikes/raw/a-rendering-*.json
+          path: docs/spikes/raw/*.json
 
   compare:
     name: Compare page counts
@@ -96,5 +104,19 @@ jobs:
       - name: Run 2
         run: mkdir r2 && cp runs/*-2/*.json r2/ && node scripts/compare-spike-a.mjs r2 | tee -a "$GITHUB_STEP_SUMMARY"
         continue-on-error: true
+      - name: Anchors across engines (run 1)
+        run: node scripts/compare-spike-dx.mjs r1 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Spikes D and E per engine (run 1)
+        run: |
+          node -e '
+            const fs = require("fs"), path = require("path")
+            const rows = ["| Report | Criterion | Verdict | Evidence |", "|---|---|---|---|"]
+            for (const f of fs.readdirSync("r1").filter((f) => /^(d-fidelity|e-isolation)/.test(f)).sort()) {
+              const r = JSON.parse(fs.readFileSync(path.join("r1", f), "utf8"))
+              for (const c of r.criteria) rows.push(`| ${r.spike} | ${c.id} | ${c.verdict} | ${String(c.evidence).replace(/\|/g, "/").slice(0, 160)} |`)
+            }
+            console.log(rows.join("\n"))
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Runs agree
         run: diff <(node scripts/compare-spike-a.mjs r1 | head -20) <(node scripts/compare-spike-a.mjs r2 | head -20) && echo 'Both runs agree' | tee -a "$GITHUB_STEP_SUMMARY"

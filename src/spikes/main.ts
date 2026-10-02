@@ -5,7 +5,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { spikeA } from './a-rendering'
 import { log, report, type SpikeResult } from './common'
-import { spikeD, spikeDTurns } from './d-fidelity'
+import { spikeD, spikeDTurns, spikeDx } from './d-fidelity'
 import { spikeE } from './e-isolation'
 import { spikeE2E, spikeMemory, spikeMemoryTrace, spikeSeed500, spikeVisual, spikeX3 } from './e2e'
 import { spikeF } from './f-search'
@@ -15,6 +15,7 @@ import { spikeB, spikeBTrackpad, spikeC } from './interactive'
 const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   a: spikeA,
   d: spikeD,
+  dx: spikeDx,
   dt: spikeDTurns,
   e: spikeE,
   f: spikeF,
