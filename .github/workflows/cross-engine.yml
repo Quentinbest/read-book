@@ -1,0 +1,93 @@
+name: Cross-engine
+
+# Spike A on WKWebView, WebView2 and WebKitGTK (docs/next-steps-plan.md, Phase 10).
+# Answers whether a Windows or Linux port is feasible; nothing here ships.
+# Each engine runs twice; a verdict counts only when both runs agree.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/cross-engine.yml
+      - src/spikes/a-rendering.ts
+      - scripts/compare-spike-a.mjs
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  spike:
+    name: Spike A (${{ matrix.os }}, run ${{ matrix.run }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+        run: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Linux WebView and build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev build-essential xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      - name: Fetch the corpus
+        run: python scripts/corpus/fetch.py
+      - name: Build the spikes binary
+        shell: bash
+        run: LINEN_SPIKES=1 pnpm tauri build --no-bundle --features spikes --config src-tauri/tauri.spikes.conf.json
+      - name: Run Spike A
+        shell: bash
+        env:
+          LINEN_SPIKE: a
+          LINEN_SPIKE_TIMEOUT: '1500'
+        run: |
+          export LINEN_DATA_DIR="$(mktemp -d)"
+          bin=src-tauri/target/release/linen
+          rm -f docs/spikes/raw/a-rendering-*.json
+          case "$RUNNER_OS" in
+            Linux) xvfb-run -a -s '-screen 0 1600x1000x24 -dpi 96' "$bin" ;;
+            Windows) "$bin.exe" ;;
+            *) "$bin" ;;
+          esac
+          ls docs/spikes/raw/a-rendering-*.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-a-${{ matrix.os }}-${{ matrix.run }}
+          path: docs/spikes/raw/a-rendering-*.json
+
+  compare:
+    name: Compare page counts
+    needs: spike
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          path: runs
+      - name: Run 1
+        run: mkdir r1 && cp runs/*-1/*.json r1/ && node scripts/compare-spike-a.mjs r1 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Run 2
+        run: mkdir r2 && cp runs/*-2/*.json r2/ && node scripts/compare-spike-a.mjs r2 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Runs agree
+        run: diff <(node scripts/compare-spike-a.mjs r1 | head -20) <(node scripts/compare-spike-a.mjs r2 | head -20) && echo 'Both runs agree' | tee -a "$GITHUB_STEP_SUMMARY"

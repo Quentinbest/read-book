@@ -1,6 +1,7 @@
-// Spike A (macOS part): foliate-js pagination in WKWebView with the L1–L3 canvas.
-// Cross-engine parity is deferred (macOS-only scope); the page counts recorded
-// here are the WKWebView baseline for that comparison.
+// Spike A: foliate-js pagination with the L1–L3 canvas. Runs on each engine
+// (WKWebView, WebView2, WebKitGTK) and reports as a-rendering-<platform>;
+// scripts/compare-spike-a.mjs compares the page counts (next-steps plan, Phase 10).
+// Literata is loaded from the bundle, so every engine lays out the same font.
 
 import type { View } from 'foliate-js/view.js'
 import {
@@ -12,6 +13,13 @@ import {
   type Criterion,
   type SpikeResult,
 } from './common'
+import { literataFaces } from '../reader/fonts'
+
+/** The engine family this run measures, from the user agent. */
+function platform(): 'windows' | 'linux' | 'macos' {
+  const ua = navigator.userAgent
+  return /Windows/.test(ua) ? 'windows' : /Linux/.test(ua) ? 'linux' : 'macos'
+}
 
 const SIZES = [16, 19, 24]
 
@@ -66,6 +74,8 @@ function inspect(view: View): { splitLines: number; measureCh: number } {
 
 export async function spikeA(): Promise<SpikeResult> {
   const checks: PageCheck[] = []
+  const faces = await literataFaces()
+  let literata = true
   for (const fontPx of SIZES) {
     const { view } = await openView('standardebooks-moby-dick.epub', { fontPx })
     const chapters = view.book.sections
@@ -78,7 +88,10 @@ export async function spikeA(): Promise<SpikeResult> {
     )
     for (const chapter of picked) {
       await view.goTo(chapter)
-      view.renderer.setStyles(readerCss(fontPx))
+      view.renderer.setStyles(faces + readerCss(fontPx))
+      const { doc } = view.renderer.getContents()[0]
+      await doc.fonts.ready
+      literata &&= doc.fonts.check(`${fontPx}px Literata`)
       await painted()
       await painted()
       const { splitLines, measureCh } = inspect(view)
@@ -104,18 +117,24 @@ export async function spikeA(): Promise<SpikeResult> {
       evidence: `${inRange}/${measures.length} layouts within 56–74 characters per line; range ${Math.min(...measures)}–${Math.max(...measures)}`,
     },
     {
+      id: 'A-literata',
+      description: 'The bundled Literata is the font laid out (a fair cross-engine comparison)',
+      verdict: literata ? 'pass' : 'fail',
+      evidence: literata
+        ? 'Literata loaded at every size'
+        : 'Literata did not load; a fallback font was measured',
+    },
+    {
       id: 'A-parity',
       description:
         'Page count per chapter differs by ≤ 2% between WKWebView, WebView2 and WebKitGTK',
       verdict: 'deferred',
-      evidence: 'macOS-only scope; WKWebView page counts recorded in raw.checks as the baseline',
-    },
-    {
-      id: 'A-screenshots',
-      description: 'Screenshots differ only in font rasterisation across engines',
-      verdict: 'deferred',
-      evidence: 'macOS-only scope',
+      evidence: 'computed across runs by scripts/compare-spike-a.mjs',
     },
   ]
-  return { spike: 'a-rendering-macos', criteria, raw: { checks } }
+  return {
+    spike: `a-rendering-${platform()}`,
+    criteria,
+    raw: { engine: navigator.userAgent, checks },
+  }
 }

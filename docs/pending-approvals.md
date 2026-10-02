@@ -8,7 +8,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 42, on 2026-10-02, left to Claude by the owner: (a) is built; (b) and (c) are not.
 
-Waiting: items 43–50 (next-steps plan, 2026-10-02). The items below are kept for their details.
+Waiting: items 45–50 (next-steps plan, 2026-10-02). Items 43 and 44 are set aside by the owner (2026-10-02: no Apple membership for now). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
