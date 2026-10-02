@@ -243,7 +243,14 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::
         return Ok(());
     };
     start_canary_server(app.handle().clone());
-    let url = window.url()?.join(&format!("spikes.html?run={run}"))?;
+    // Before the first page loads, WebView2 reports an address that can't be a
+    // base (about:blank); the app's own origin there is http://tauri.localhost/.
+    let base = window
+        .url()
+        .ok()
+        .filter(|u| !u.cannot_be_a_base())
+        .map_or_else(|| tauri::Url::parse("http://tauri.localhost/"), Ok)?;
+    let url = base.join(&format!("spikes.html?run={run}"))?;
     window.navigate(url)?;
 
     // Automation safety net: never leave a hung harness running.
