@@ -36,9 +36,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS only for now (owner decision, 2026-09-24). Add windows-latest and
-        # ubuntu-22.04 (WebKitGTK 4.1, plan D7) when those platforms resume.
-        os: [macos-latest]
+        # Windows and Linux build and unit-test only (docs/next-steps-plan.md, Phase 10):
+        # no port, but macOS-only code must not break portability. ubuntu-22.04 is
+        # WebKitGTK 4.1, plan D7.
+        os: [macos-latest, windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
