@@ -35,4 +35,5 @@ docs/visual/diff/
 *.p12
 
 # Local agent guidance
-CLAUDE.md
+# Only the root file: .claude/CLAUDE.md is tracked and imports AGENTS.md (item 42).
+/CLAUDE.md

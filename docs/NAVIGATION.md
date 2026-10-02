@@ -1,6 +1,6 @@
 # Finding your way around
 
-Where things are, and which document to trust. For people and coding agents alike; the commands are in `README.md`.
+Where things are, and which document to trust. For people and coding agents alike; the commands are in `README.md`, and the rules for coding agents in `AGENTS.md`.
 
 ## Which document is current
 

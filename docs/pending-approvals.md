@@ -6,8 +6,9 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
+- item 42, on 2026-10-02 (agent guidance in `AGENTS.md`).
 
-Waiting: item 42. Items 1–41 are kept for their details.
+Nothing is waiting for the owner now. The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
