@@ -1,6 +1,6 @@
 # Decision record
 
-Owner decisions taken after plan revision D. IDs refer to `docs/implementation-plan.md` §10. The plan text is not edited; this file is the record.
+Owner decisions taken after plan revision D. IDs refer to `docs/implementation-plan.md` §10. The plan text is not edited; this file is the record. `docs/rule-index.md` lists, for every plan rule, the sections below that change it (`pnpm rules:index` after editing this file).
 
 | # | Decision | Date |
 |---|---|---|

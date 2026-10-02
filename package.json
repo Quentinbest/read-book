@@ -15,6 +15,8 @@
     "format:check": "prettier --check .",
     "design:export": "python3 scripts/export-design-text.py",
     "design:check": "python3 scripts/export-design-text.py --check",
+    "rules:index": "python3 scripts/rule-index.py",
+    "rules:check": "python3 scripts/rule-index.py --check",
     "test": "vitest run",
     "test:integration": "playwright test"
   },

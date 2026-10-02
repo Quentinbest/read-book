@@ -7,7 +7,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 
-Nothing is waiting for the owner now. The items below are kept for their details.
+Waiting: item 42. Items 1–41 are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -54,3 +54,8 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 41. **Settings captures for 1.1.** `docs/visual/app/11-settings-reading.png` (Font, Page width, Publisher styles) and `11-settings-shortcuts.png` (the remapping list) are new captures, taken on Desktop 2; neither screen had a capture before.
     *Recommendation:* approve them as baselines.
+
+## Agent guidance (2026-10-02)
+
+42. **`CLAUDE.md` is not in the repository.** It was added to `.gitignore` on 2026-09-26 at the owner’s request, so it exists only in the main checkout. Worktrees (which background agents must use), cloud sessions and Codex runs start without it: a fresh worktree has no `CLAUDE.md` file. The local copy has also fallen behind (it does not list `dictionary.rs`). The navigation part is now tracked in `docs/NAVIGATION.md`, which needs no decision.
+    *Recommendation:* track a short `AGENTS.md` (commands, quality gates, harness rules, a pointer to `docs/NAVIGATION.md`), keeping anything private in the ignored `CLAUDE.md`. The alternative is to leave it as is and copy `CLAUDE.md` into each worktree by hand.
