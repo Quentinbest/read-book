@@ -6,13 +6,14 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
+- item 42, on 2026-10-02 (the app icon).
 - item 56, on 2026-10-07, and item 57, on 2026-10-08 (UI localisation).
 - items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence; item 59's values on 2026-10-10.
 - items 77–81, on 2026-10-10 (Reading Lens follow-ups and Stage 2b).
 - item 82, on 2026-10-10, and items 83–87, on 2026-10-11 (Reading Lens Stages 2d and 3).
 - items 88–96, on 2026-10-13 (compact selection bar).
 
-Nothing is waiting for the owner now. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Nothing is waiting for the owner now. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -61,6 +62,8 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
     *Recommendation:* approve them as baselines.
 
 ## The app icon (2026-10-02)
+
+**Approved 2026-10-02 as recommended** (record in `docs/decisions.md`); kept here for its details.
 
 42. **App icon on the macOS grid, and two artwork details.** The icon now sits on Apple's 824/1024 grid with the standard shadow (see `docs/decisions.md`, 2026-10-01/02), so it no longer looks about 5 % larger and flatter than its Dock neighbours. Two points in the accepted artwork are left as they are, because changing them means a new logo version: at icon size the pointed right page can read as a leaf (the mark as a sprout) as much as a page; and the left page's top-left corner is rounded while its bottom-left corner is square.
     *Recommendation:* approve the grid refit; keep the artwork, unless the leaf reading bothers you in the Dock, in which case a `linen-a-v003` could square the right page's tip and match the left page's corners.
