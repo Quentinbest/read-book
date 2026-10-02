@@ -36,3 +36,6 @@ docs/visual/diff/
 
 # Local agent guidance
 CLAUDE.md
+
+# Logo working files (concepts, checks, release package); see docs/decisions.md
+logo-project/

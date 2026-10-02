@@ -6,6 +6,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
+- item 42, on 2026-10-02 (the app icon).
 
 Nothing is waiting for the owner now. The items below are kept for their details.
 
@@ -54,3 +55,10 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 41. **Settings captures for 1.1.** `docs/visual/app/11-settings-reading.png` (Font, Page width, Publisher styles) and `11-settings-shortcuts.png` (the remapping list) are new captures, taken on Desktop 2; neither screen had a capture before.
     *Recommendation:* approve them as baselines.
+
+## The app icon (2026-10-02)
+
+**Approved 2026-10-02 as recommended** (record in `docs/decisions.md`); kept here for its details.
+
+42. **App icon on the macOS grid, and two artwork details.** The icon now sits on Apple's 824/1024 grid with the standard shadow (see `docs/decisions.md`, 2026-10-01/02), so it no longer looks about 5 % larger and flatter than its Dock neighbours. Two points in the accepted artwork are left as they are, because changing them means a new logo version: at icon size the pointed right page can read as a leaf (the mark as a sprout) as much as a page; and the left page's top-left corner is rounded while its bottom-left corner is square.
+    *Recommendation:* approve the grid refit; keep the artwork, unless the leaf reading bothers you in the Dock, in which case a `linen-a-v003` could square the right page's tip and match the left page's corners.

@@ -48,11 +48,11 @@
     "active": true,
     "targets": "all",
     "icon": [
-      "icons/linen-a-v002/32x32.png",
-      "icons/linen-a-v002/128x128.png",
-      "icons/linen-a-v002/128x128@2x.png",
-      "icons/linen-a-v002/icon.icns",
-      "icons/linen-a-v002/icon.ico"
+      "icons/linen-a-v002-grid/32x32.png",
+      "icons/linen-a-v002-grid/128x128.png",
+      "icons/linen-a-v002-grid/128x128@2x.png",
+      "icons/linen-a-v002-grid/icon.icns",
+      "icons/linen-a-v002-grid/icon.ico"
     ],
     "fileAssociations": [
       {
