@@ -4,7 +4,7 @@
 - **Asked for:** the owner, 2026-10-01: “Proceed with the recommended next steps, but leave out TTS, synchronization, and Developer ID signing for now.” That is: item 32, landing the logo, the plan's 1.1 list (§1.3) and the two deferred rules C4 (remapping) and B6 (search options).
 - **Not built (by that instruction):** TTS and sync (plan §1.3 “1.2”), Developer ID signing and notarisation (item 28 stands).
 - **Approvals:** items 33–41 approved by the owner on 2026-10-01, as recommended, and item 31 the same day (`docs/decisions.md`). Nothing is waiting.
-- **Branch:** `worktree-release-1-1`, draft PR #4.
+- **Shipped:** merged in #4, released as **Linen 0.2.0** on 2026-10-02 (#5; https://github.com/Quentinbest/read-book/releases/tag/v0.2.0). The release checks are in `docs/phase8-status.md`.
 
 ## What was built
 
