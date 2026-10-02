@@ -145,3 +145,4 @@ The owner accepted logo `linen-a-v002` (direction A, “The unhurried page”: t
 | Logo files in the app | `public/brand/linen-a-v002/` (About, light and dark), `public/favicon.svg` and `.ico`. Artwork unchanged from the accepted release. |
 | App icon | `src-tauri/icons/linen-a-v002-grid/`, generated from its `icon.svg`: the accepted flat icon with its tile moved to Apple's 824 px tile in a 1024 px canvas (it was 864, plus its hairline) and the Big Sur template shadow (black 30 %, 10 px down, 10 px blur). The page symbol keeps its paths and its size relative to the tile. `icons/linen-a-v002/` stays as accepted. |
 | Not done | A layered `.icon` for macOS 26 (needs Icon Composer on macOS 26.4+); trademark or registration work. |
+| Approved 2026-10-02 (item 42) | The owner approved item 42 (“Approve”): the grid refit stands, and the artwork stays as accepted, including the leaf-like right page and the left page's differing corners. |
