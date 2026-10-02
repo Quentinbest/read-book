@@ -1,6 +1,6 @@
 # Decision record
 
-Owner decisions taken after plan revision D. IDs refer to `docs/implementation-plan.md` §10. The plan text is not edited; this file is the record.
+Owner decisions taken after plan revision D. IDs refer to `docs/implementation-plan.md` §10. The plan text is not edited; this file is the record. `docs/rule-index.md` lists, for every plan rule, the sections below that change it (`pnpm rules:index` after editing this file).
 
 | # | Decision | Date |
 |---|---|---|
@@ -135,3 +135,9 @@ The owner approved items 33–40 as recommended (“Go ahead”, then “Approve
 | Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |
 | Quitting with unsaved notes (31) | As built (review fixes, 2026-09-26): Quit and Restart wait for the reader's writes; after a failed save Linen stays open with “Some notes aren’t saved, so Linen stayed open · Quit Anyway”. Approved with its wording. |
 | Settings captures (41) | `11-settings-reading` and `11-settings-shortcuts` become baselines (see `docs/visual/APPROVAL.md`). |
+
+## Approved 2026-10-02 (agent guidance, item 42)
+
+| # | Approved |
+|---|---|
+| Agent guidance (42) | As recommended: the agent guidance is tracked in `AGENTS.md` (Codex reads it directly; Claude Code through `.claude/CLAUDE.md`, which imports it), so worktrees and cloud sessions have it. `.gitignore` now ignores only the root `/CLAUDE.md`, which stays for private, local notes. |

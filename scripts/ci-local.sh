@@ -9,6 +9,7 @@ step pnpm lint
 step pnpm check
 step pnpm test
 step pnpm design:check
+step pnpm rules:check
 step cargo fmt --manifest-path $M --check
 step cargo clippy --manifest-path $M --all-targets -- -D warnings
 step cargo test --manifest-path $M

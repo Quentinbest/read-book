@@ -2,6 +2,8 @@
 
 A quiet EPUB reader for macOS: Tauri 2, Svelte 5 and foliate-js. The plan is `docs/implementation-plan.md`; where each phase stands is in `docs/PROGRESS.md`.
 
+Finding your way around the code and docs, and which document is current: `docs/NAVIGATION.md`. A rule ID such as S9 is looked up with `python3 scripts/rule-index.py S9`, which also prints the decisions that changed it.
+
 ## System requirements
 
 macOS 13 or later, **with Safari 16.4 or later installed**. Linen reads books with the system's WebKit, which comes with Safari. On an older WebKit, Linen says so and offers Software Update instead of opening a book (decision D7).

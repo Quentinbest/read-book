@@ -30,6 +30,8 @@ jobs:
       - run: pnpm test
       # Fails when docs/design/text/ no longer matches the design bundles (plan §5, Phase 0).
       - run: pnpm design:check
+      # Fails when docs/rule-index.md no longer matches the plan and docs/decisions.md.
+      - run: pnpm rules:check
 
   build:
     name: Build (${{ matrix.os }})
