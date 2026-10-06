@@ -1,0 +1,61 @@
+spikes: canary server failed to bind 127.0.0.1:8765: Address already in use (os error 48)
+== spike r
+import standardebooks-moby-dick.epub: imported
+import idpf-regime-anticancer-arabic.epub: imported
+import hostile-content.epub: imported
+import idpf-page-blanche.epub: imported
+import long-chapter.epub: imported
+import broken-bad-css-and-font.epub: imported
+import gutenberg-2701-moby-dick-epub2.epub: imported
+import broken-no-toc.epub: imported
+import broken-missing-items.epub: imported
+import idpf-childrens-literature.epub: imported
+import notes-and-images.epub: imported
+import idpf-sous-le-vent.epub: imported
+import idpf-kusamakura-japanese-vertical-writing.epub: imported
+import code-heavy.epub: imported
+contents pages docked 1: 10ms nothing · 44ms 40|XXXV
+contents pages docked 2: 1ms 40|XXXV · 37ms 5|Moby Dick
+contents pages docked 3: 2ms nothing · 31ms 6|I
+contents pages docked 4: 3ms 6|I
+contents pages docked 5: 2ms 6|I · 36ms 90|LXXXV
+contents pages docked 6: 2ms 90|LXXXV · 31ms 12|VII
+contents pages floating 1: 4ms 70|LXV · 38ms 40|XXXV
+contents pages floating 2: 28ms nothing · 41ms 5|Moby Dick
+contents pages floating 3: 5ms nothing · 35ms 6|I
+contents pages floating 4: 5ms 6|I
+contents pages floating 5: 3ms 6|I · 31ms 90|LXXXV
+contents pages floating 6: 4ms 90|LXXXV · 38ms 12|VII
+contents scroll docked 1: 20ms 70|e as a Dish · 50ms 40|thead · 129ms 40|XXXV
+contents scroll docked 2: 7ms 40|XXXV · 22ms 5|Moby Dick
+contents scroll docked 3: 5ms 5|Moby Dick
+contents scroll docked 4: 5ms 5|Moby Dick
+contents scroll docked 5: 3ms 5|Moby Dick
+contents scroll docked 6: 3ms 5|Moby Dick
+contents scroll floating 1: 4ms 66|sly seeking to feel  · 57ms 40|XXXV
+contents scroll floating 2: 31ms nothing · 46ms 5|Moby Dick
+contents scroll floating 3: 3ms 5|Moby Dick · 44ms 6|I
+contents scroll floating 4: 5ms 6|I
+contents scroll floating 5: 4ms 6|I · 28ms 90|LXXXV
+contents scroll floating 6: 4ms 90|LXXXV · 7ms nothing · 27ms 12|VII
+FAIL N6-contents-jumps: pages docked jump 1 to “XXXV: The Masthead”: passed through -1: 10ms nothing · 44ms 40|XXXV | pages docked jump 3 to “I: Loomings”: passed through -1: 2ms nothing · 31ms 6|I | pages floating jump 2 to “Moby Dick”: passed through -1: 28ms nothing · 41ms 5|Moby Dick | pages floating jump 3 to “I: Loomings”: passed through -1: 5ms nothing · 35ms 6|I | scroll docked jump 1 to “XXXV: The Masthead”: moved 1× after arriving: 20ms 70|e as a Dish · 50ms 40|thead · 129ms 40|XXXV | scroll docked jump 2 to “Moby Dick” ended at “I: Loomings” | scroll docked jump 5 to “LXXXV: The Fountain” ended at “I: Loomings” | scroll docked jump 6 to “VII: The Chapel” ended at “I: Loomings” | scroll docked: after two quick choices the reader is at “I: Loomings”, not “LXV: The Whale as a Dish” | scroll floating jump 1 to “XXXV: The Masthead” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 2 to “Moby Dick” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 3 to “I: Loomings” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 4 to “I: Loomings” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 5 to “LXXXV: The Fountain” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 6 to “VII: The Chapel” ended at “LXI: Stubb Kills a Whale” | scroll floating: after two quick choices the reader is at “LXI: Stubb Kills a Whale”, not “LXV: The Whale as a Dish”
+search pages 1 (#1, section 66): 9ms 66|LXI
+search pages 2 (#127, section 18): 2ms 66|LXI · 42ms 18|ertain grand merchan
+search pages 3 (#4, section 71): 5ms 18|ertain grand merchan · 43ms 71|h the corpses and gh
+search pages 4 (#252, section 54): 2ms 71|h the corpses and gh · 33ms 54|ing water up to a wh
+search pages 5 (#5, section 71): 3ms 54|ing water up to a wh · 32ms 71|h the corpses and gh
+search pages 6 (#5, section 71): 4ms 71|h the corpses and gh
+search scroll 1 (#1, section 71): 5ms 71|at might be called t · 57ms 71|ting stages over the
+search scroll 2 (#127, section 18): 5ms 71|ting stages over the · 43ms 18|ever seen. It was in · 192ms 18|g gained, the 
+search scroll 3 (#4, section 77): 14ms 18|g gained, the  · 48ms 77|very disinterested a · 141ms 77|hat the harpooneer s
+search scroll 4 (#252, section 66): 7ms 77|hat the harpooneer s · 39ms 66|oyal shrouds, to and · 104ms 66|ning his place in th
+search scroll 5 (#5, section 77): 5ms 66|ning his place in th · 33ms 77|st happiness, I admi · 127ms 77|and no one had a bet
+search scroll 6 (#5, section 77): 2ms 77|and no one had a bet
+FAIL F6-result-jumps: scroll result 1: moved 1× after arriving: 5ms 71|at might be called t · 57ms 71|ting stages over the | scroll result 127: moved 1× after arriving: 5ms 71|ting stages over the · 43ms 18|ever seen. It was in · 192ms 18|g gained, the  | scroll result 4: moved 1× after arriving: 14ms 18|g gained, the  · 48ms 77|very disinterested a · 141ms 77|hat the harpooneer s | scroll result 252: moved 1× after arriving: 7ms 77|hat the harpooneer s · 39ms 66|oyal shrouds, to and · 104ms 66|ning his place in th | scroll result 5: moved 1× after arriving: 5ms 66|ning his place in th · 33ms 77|st happiness, I admi · 127ms 77|and no one had a bet
+FAIL S2-navigator-wheel: pages docked wheel down: the book moved 77:2 @0 → 77:3 @0 | pages docked wheel down: Contents did not scroll | pages docked trackpad down: the book moved 77:3 @0 → 77:4 @0 | pages docked trackpad down: Contents did not scroll | pages docked wheel up at the top: the book moved 77:4 @0 → 77:3 @0 | pages floating wheel down: the book moved 77:3 @0 → 77:4 @0 | pages floating wheel down: Contents did not scroll | pages floating trackpad down: Contents did not scroll | pages floating wheel up at the top: the book moved 77:4 @0 → 77:3 @0 | scroll docked wheel down: the book moved 77:? @6970 → 77:? @7930 | scroll docked wheel down: Contents did not scroll | scroll docked trackpad down: the book moved 77:? @7930 → 77:? @8350 | scroll docked trackpad down: Contents did not scroll | scroll docked to the bottom: the book moved 77:? @8350 → 77:? @8770 | scroll docked to the top: the book moved 77:? @8770 → 77:? @8350 | scroll docked wheel up at the top: the book moved 77:? @8350 → 77:? @7390 | scroll floating wheel down: the book moved 77:? @6844 → 77:? @7804 | scroll floating wheel down: Contents did not scroll | scroll floating trackpad down: the book moved 77:? @7804 → 77:? @8224 | scroll floating trackpad down: Contents did not scroll | scroll floating to the bottom: the book moved 77:? @8224 → 77:? @8644 | scroll floating to the top: the book moved 77:? @8644 → 77:? @8224 | scroll floating wheel up at the top: the book moved 77:? @8224 → 77:? @7264
+FAIL S9-edge-reveal-modes: error: posted mouse moves never reached the page
+FAIL     N6-contents-jumps: pages docked jump 1 to “XXXV: The Masthead”: passed through -1: 10ms nothing · 44ms 40|XXXV | pages docked jump 3 to “I: Loomings”: passed through -1: 2ms nothing · 31ms 6|I | pages floating jump 2 to “Moby Dick”: passed through -1: 28ms nothing · 41ms 5|Moby Dick | pages floating jump 3 to “I: Loomings”: passed through -1: 5ms nothing · 35ms 6|I | scroll docked jump 1 to “XXXV: The Masthead”: moved 1× after arriving: 20ms 70|e as a Dish · 50ms 40|thead · 129ms 40|XXXV | scroll docked jump 2 to “Moby Dick” ended at “I: Loomings” | scroll docked jump 5 to “LXXXV: The Fountain” ended at “I: Loomings” | scroll docked jump 6 to “VII: The Chapel” ended at “I: Loomings” | scroll docked: after two quick choices the reader is at “I: Loomings”, not “LXV: The Whale as a Dish” | scroll floating jump 1 to “XXXV: The Masthead” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 2 to “Moby Dick” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 3 to “I: Loomings” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 4 to “I: Loomings” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 5 to “LXXXV: The Fountain” ended at “LXI: Stubb Kills a Whale” | scroll floating jump 6 to “VII: The Chapel” ended at “LXI: Stubb Kills a Whale” | scroll floating: after two quick choices the reader is at “LXI: Stubb Kills a Whale”, not “LXV: The Whale as a Dish”
+FAIL     F6-result-jumps: scroll result 1: moved 1× after arriving: 5ms 71|at might be called t · 57ms 71|ting stages over the | scroll result 127: moved 1× after arriving: 5ms 71|ting stages over the · 43ms 18|ever seen. It was in · 192ms 18|g gained, the  | scroll result 4: moved 1× after arriving: 14ms 18|g gained, the  · 48ms 77|very disinterested a · 141ms 77|hat the harpooneer s | scroll result 252: moved 1× after arriving: 7ms 77|hat the harpooneer s · 39ms 66|oyal shrouds, to and · 104ms 66|ning his place in th | scroll result 5: moved 1× after arriving: 5ms 66|ning his place in th · 33ms 77|st happiness, I admi · 127ms 77|and no one had a bet
+FAIL     S2-navigator-wheel: pages docked wheel down: the book moved 77:2 @0 → 77:3 @0 | pages docked wheel down: Contents did not scroll | pages docked trackpad down: the book moved 77:3 @0 → 77:4 @0 | pages docked trackpad down: Contents did not scroll | pages docked wheel up at the top: the book moved 77:4 @0 → 77:3 @0 | pages floating wheel down: the book moved 77:3 @0 → 77:4 @0 | pages floating wheel down: Contents did not scroll | pages floating trackpad down: Contents did not scroll | pages floating wheel up at the top: the book moved 77:4 @0 → 77:3 @0 | scroll docked wheel down: the book moved 77:? @6970 → 77:? @7930 | scroll docked wheel down: Contents did not scroll | scroll docked trackpad down: the book moved 77:? @7930 → 77:? @8350 | scroll docked trackpad down: Contents did not scroll | scroll docked to the bottom: the book moved 77:? @8350 → 77:? @8770 | scroll docked to the top: the book moved 77:? @8770 → 77:? @8350 | scroll docked wheel up at the top: the book moved 77:? @8350 → 77:? @7390 | scroll floating wheel down: the book moved 77:? @6844 → 77:? @7804 | scroll floating wheel down: Contents did not scroll | scroll floating trackpad down: the book moved 77:? @7804 → 77:? @8224 | scroll floating trackpad down: Contents did not scroll | scroll floating to the bottom: the book moved 77:? @8224 → 77:? @8644 | scroll floating to the top: the book moved 77:? @8644 → 77:? @8224 | scroll floating wheel up at the top: the book moved 77:? @8224 → 77:? @7264
+FAIL     S9-edge-reveal-modes: error: posted mouse moves never reached the page
+wrote docs/spikes/raw/e2e-reader.json

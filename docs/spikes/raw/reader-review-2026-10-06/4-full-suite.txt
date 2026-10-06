@@ -1,0 +1,326 @@
+spikes: canary server failed to bind 127.0.0.1:8765: Address already in use (os error 48)
+== spike r
+import standardebooks-moby-dick.epub: imported
+import idpf-regime-anticancer-arabic.epub: imported
+import hostile-content.epub: imported
+import idpf-page-blanche.epub: imported
+import long-chapter.epub: imported
+import broken-bad-css-and-font.epub: imported
+import gutenberg-2701-moby-dick-epub2.epub: imported
+import broken-no-toc.epub: imported
+import broken-missing-items.epub: imported
+import idpf-childrens-literature.epub: imported
+import notes-and-images.epub: imported
+import idpf-sous-le-vent.epub: imported
+import idpf-kusamakura-japanese-vertical-writing.epub: imported
+import code-heavy.epub: imported
+PASS N3-bodymatter: ok
+PASS I8-keys-next: ok
+PASS I8-keys-prev: ok
+PASS I8-keys-app-focus: ok
+PASS I8-space: ok
+PASS I8-page-keys: ok
+PASS I11-margins: ok
+PASS I11-activating-click: ok
+PASS I11-column-click: ok
+PASS I1-wheel-roll: ok
+PASS I2-I5-trackpad: ok
+PASS I7-rapid-chip: ok
+PASS N1-back: ok
+PASS progress-saved: ok
+PASS N5-quit-save: ok
+PASS N5-restore: ok
+PASS L10-resize: ok
+PASS I15-rtl-keys: ok
+PASS I15-rtl-margin: ok
+PASS I15-rtl-progress: ok
+PASS V8-chrome-out: ok
+PASS S9-edge-reveal: ok
+PASS G8-opening-line: ok
+L8 spread: pages at 176+640, 864+640
+PASS L8-spread: ok
+PASS E2-fixed-layout: ok
+PASS I17-fixed-zoom: ok
+L16 open: 255 ms; first location page 1/44, approximate true; views {"trail":["36560 chunked section 0: showing 1/20","36668 park next -> 0:1","36676 park next -> 0:1"],"views":[{"index":0,"chunk":0},{"index":0,"chunk":0},null,null],"chunks":["1/20","-","-","-"],"next":null,"prev":null,"mode":"pages","marks":{"drawn":0,"ms":0,"active":null,"soft":null},"slots":[]}
+PASS L16-long-chapter: ok
+L16 traversal: 1/20 → 4/20, 3 crossings; 60417 park prev -> 0:1 | 60466 swap next to 0:3 | 60466 park next -> 0:4
+PASS L16-chunk-traversal: ok
+PASS L16-deep-jump-restore: ok
+PASS X3-announcements: ok
+B1: counted in 12176 ms after the check started; then “Page 34”, “Page 35”
+PASS B1-pages-settle: ok
+PASS B8-scroll-mode: ok
+real wheel: Scroll mode moved 720 px by wheel, 240 px by trackpad
+PASS real-wheel: ok
+PASS L15-font-fallback: ok
+PASS N6-contents-nav: ok
+PASS S2-esc-navigator: ok
+PASS S13-dock-remembered: ok
+PASS S2-navigator-floats: ok
+PASS N6-contents-ncx: ok
+PASS N6-contents-headings: ok
+PASS N6-contents-damaged: ok
+PASS N8-goto-percent: ok
+PASS N8-goto-chapter: ok
+PASS S2-esc-order: ok
+PASS N7-scrubber: ok
+PASS N8-goto-page: ok
+PASS N9-footnote-peek: ok
+PASS N9-peek-actions: ok
+PASS N9-endnote-peek: ok
+PASS N11-image-view: ok
+PASS N10-external-links: ok
+PASS K9-palette: ok
+PASS K9-cheat-sheet: ok
+PASS K-commands-reachable: ok
+PASS K1-chapter-keys: ok
+F golden: whale → 1688 in 120
+F golden: Queequeg → 252 in 42
+F golden: harpoon → 256 in 66
+F golden: "Call me Ishmael" → 1 in 1
+F golden: call me ishmael → 1 in 1
+F golden: xyzzy → 0 in 0
+F golden: etait → 15 in 3
+F golden: 智に働けば → 1 in 1
+F golden: 山 → 103 in 13
+PASS F-golden-results: ok
+PASS F5-results-land: ok
+PASS F7-esc-return: ok
+PASS F6-keys: ok
+F8: search from the saved index painted in 169 ms ({"saved":9,"first":9,"done":159,"painted":169})
+PASS F3-F8-streaming-persisted: ok
+PASS F2-minimum-length: ok
+PASS A1-selection-bar: ok
+PASS A4-highlight: ok
+PASS B4-overlaps: ok
+PASS A5-click-highlight: ok
+PASS A7-delete-undo: ok
+PASS A11-caret-browsing: ok
+PASS A10-context-menu: ok
+PASS A3-keys: ok
+PASS A6-margin-note: ok
+PASS A6-empty-note: ok
+PASS A6-note-sheet: ok
+PASS A6-note-quit: ok
+PASS A8-notes-tab: ok
+PASS A9-reflow: ok
+PASS A9-reimport: ok
+PASS A9-w3c-roundtrip: ok
+PASS L4-aa-scope: ok
+PASS K8-text-size: ok
+PASS P22-font-change-place: ok
+PASS L18-E2-aa-hints: ok
+PASS E6-library: ok
+PASS E8-return-resumes: ok
+PASS E7-remove-undo: ok
+PASS E10-book-info: ok
+PASS E3-damaged-card: ok
+PASS G2-settings: ok
+PASS P5-install-consent: ok
+PASS P5-incompatible-at-load: ok
+P10: dictionary result {"word":"drizzly","loading":true}
+PASS P10-selection-actions: ok
+P2 hostile: {"declaredHost":"reached: {\"status\":404,\"content_type\":\"text/html;charset=utf-8\",\"body\":\"<!DOCTYPE HTML>\\n","undeclaredHost":"refused: not allowed to connect to http://localhost:8765/p7-undeclared","undeclaredPort":"refused: not allowed to connect to http://127.0.0.1:8766/p7-port","redirectTrick":"refused: not allowed to connect to http://127.0.0.1:8765@evil.example/p7","directFetch":"refused: Load failed","bookText":"refused: needs the book.text permission","bookSelection":"refused: needs the book.selection permission","annotations":"refused: needs the annotations.read permission","library":"refused: needs the library.read permission","tauri":"refused: absent","unknownCall":"refused: unknown call library.remove","otherStorage":"reached: \"nothing (its own storage only)\"","storageQuota":"refused: the extension's storage is full (10 MB)"}; canary {"ipc":[],"http":[]}
+FAIL P2-hostile-extension: canary: 
+PASS P6-watchdog: ok
+PASS P9-theme-pack: ok
+PASS P8-pinned-and-export: ok
+P7: normal launch; safe mode itself is checked by a LINEN_SAFE_MODE=1 run
+PASS P7-safe-mode: ok
+PASS X-axe-states: ok
+PASS X6-zoom: ok
+PASS X5-text-spacing: ok
+I16 scroll: mode scroll, flow scrolled, 0.0926 → 0.1071
+PASS I16-vertical: ok
+PASS D7-webkit-message: ok
+PASS D1-crash-log: ok
+budget-open: median 118 ms, p95 147 ms
+PASS budget-open: ok
+PASS budget-reflow: ok
+S14: back to the warm book in 63 ms
+PASS S14-warm-book: ok
+PASS reader-cleanup: ok
+I6 budget: within a chapter p95 5 ms (n=153); across chapters p95 1 ms (n=27); 120 forward + 60 back
+PASS I6-turn-budget: ok
+PASS E-hostile-in-product: ok
+PASS D6-update-available: ok
+PASS 11-font-and-width: ok
+PASS C5-simplify-styles: ok
+PASS 11-look-up: ok
+PASS 11-library-list: ok
+PASS 11-reading-sessions: ok
+PASS C4-remap: ok
+PASS B6-search-options: ok
+PASS 11-aa-short-window: ok
+posted wheel: 2 DOM wheel events on the list, list moved 960 px; spike_mouse: top margin → page 1, frame 0; text → page 0, frame 1
+PASS input-paths: ok
+contents pages docked 1 → 40: 4ms 27| · 59ms 40|XXXV
+contents pages docked 2 → 5: 1ms 40|XXXV · 29ms 5|Moby Dick
+contents pages docked 3 → 6 (blank 1×): 3ms nothing · 60ms 6|I
+contents pages docked 4 → 6: 2ms 6|I
+contents pages docked 5 → 90 (blank 1×): 2ms 6|I · 5ms nothing · 57ms 90|LXXXV
+contents pages docked 6 → 12: 2ms 90|LXXXV · 45ms 12|VII
+contents pages floating 1 → 40: 4ms 70|LXV · 65ms 40|XXXV
+contents pages floating 2 → 5: 4ms 40|XXXV · 31ms 5|Moby Dick
+contents pages floating 3 → 6 (blank 1×): 5ms nothing · 66ms 6|I
+contents pages floating 4 → 6: 5ms 6|I
+contents pages floating 5 → 90 (blank 1×): 4ms 6|I · 9ms nothing · 58ms 90|LXXXV
+contents pages floating 6 → 12: 4ms 90|LXXXV · 48ms 12|VII
+contents scroll docked 1 → 40 (blank 1×): 2ms nothing · 95ms 40|XXXV
+contents scroll docked 2 → 5 (blank 1×): 6ms nothing · 60ms 5|Moby Dick
+contents scroll docked 3 → 6: 7ms 5|Moby Dick · 33ms 6|I
+contents scroll docked 4 → 6: 3ms 6|I
+contents scroll docked 5 → 90 (blank 1×): 4ms nothing · 106ms 90|LXXXV
+contents scroll docked 6 → 12 (blank 1×): 3ms nothing · 68ms 12|VII
+contents scroll floating 1 → 40 (blank 1×): 8ms nothing · 76ms 40|XXXV
+contents scroll floating 2 → 5 (blank 1×): 8ms nothing · 39ms 5|Moby Dick
+contents scroll floating 3 → 6: 10ms 5|Moby Dick · 27ms 6|I
+contents scroll floating 4 → 6: 17ms 6|I
+contents scroll floating 5 → 90 (blank 1×): 8ms nothing · 86ms 90|LXXXV
+contents scroll floating 6 → 12 (blank 1×): 12ms nothing · 110ms 12|VII
+PASS N6-contents-jumps: ok
+search pages 1 (#1, section 71): 6ms nothing · 65ms 71|ver, where these fis
+search pages 2 (#127, section 18): 5ms nothing · 80ms 18|ets, their ice-cover
+search pages 3 (#4, section 77): 5ms 18|ets, their ice-cover · 9ms nothing · 45ms 77|LXXII
+search pages 4 (#252, section 66): 3ms 77|LXXII · 37ms 66|er the fish. All ali
+search pages 5 (#5, section 77): 53ms 77|st entirely submerge
+search pages 6 (#5, section 77): 4ms 77|st entirely submerge
+search scroll 1 (#1, section 77): 7ms 77|arpooneer flounders  · 43ms 77|hat the harpooneer s
+search scroll 2 (#127, section 18): 8ms nothing · 50ms 18|as he mildly turned 
+search scroll 3 (#4, section 77): 6ms nothing · 44ms 77| sink to rise no mor
+search scroll 4 (#252, section 71): 7ms nothing · 57ms 71|t be one dam Ingin.”
+search scroll 5 (#5, section 77): 5ms nothing · 71ms 77|, an elongated Siame
+search scroll 6 (#5, section 77): 2ms 77|, an elongated Siame
+PASS F6-result-jumps: ok
+PASS S2-navigator-wheel: ok
+edge pages top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge pages top (lower zone): bars true,true; under the pointer div.host svelte-twub32
+edge pages bottom: bars true,true; under the pointer span.
+edge scroll top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge scroll top (lower zone): bars true,true; under the pointer foliate-view.
+edge scroll bottom: bars true,true; under the pointer span.
+PASS S9-edge-reveal-modes: ok
+PASS D1-no-uncaught-errors: ok
+PASS     N3-bodymatter: ok
+PASS     I8-keys-next: ok
+PASS     I8-keys-prev: ok
+PASS     I8-keys-app-focus: ok
+PASS     I8-space: ok
+PASS     I8-page-keys: ok
+PASS     I11-margins: ok
+PASS     I11-activating-click: ok
+PASS     I11-column-click: ok
+PASS     I1-wheel-roll: ok
+PASS     I2-I5-trackpad: ok
+PASS     I7-rapid-chip: ok
+PASS     N1-back: ok
+PASS     progress-saved: ok
+PASS     N5-quit-save: ok
+PASS     N5-restore: ok
+PASS     L10-resize: ok
+PASS     I15-rtl-keys: ok
+PASS     I15-rtl-margin: ok
+PASS     I15-rtl-progress: ok
+PASS     V8-chrome-out: ok
+PASS     S9-edge-reveal: ok
+PASS     G8-opening-line: ok
+PASS     L8-spread: ok
+PASS     E2-fixed-layout: ok
+PASS     I17-fixed-zoom: ok
+PASS     L16-long-chapter: ok
+PASS     L16-chunk-traversal: ok
+PASS     L16-deep-jump-restore: ok
+PASS     X3-announcements: ok
+PASS     B1-pages-settle: ok
+PASS     B8-scroll-mode: ok
+PASS     real-wheel: ok
+PASS     L15-font-fallback: ok
+PASS     N6-contents-nav: ok
+PASS     S2-esc-navigator: ok
+PASS     S13-dock-remembered: ok
+PASS     S2-navigator-floats: ok
+PASS     N6-contents-ncx: ok
+PASS     N6-contents-headings: ok
+PASS     N6-contents-damaged: ok
+PASS     N8-goto-percent: ok
+PASS     N8-goto-chapter: ok
+PASS     S2-esc-order: ok
+PASS     N7-scrubber: ok
+PASS     N8-goto-page: ok
+PASS     N9-footnote-peek: ok
+PASS     N9-peek-actions: ok
+PASS     N9-endnote-peek: ok
+PASS     N11-image-view: ok
+PASS     N10-external-links: ok
+PASS     K9-palette: ok
+PASS     K9-cheat-sheet: ok
+PASS     K-commands-reachable: ok
+PASS     K1-chapter-keys: ok
+PASS     F-golden-results: ok
+PASS     F5-results-land: ok
+PASS     F7-esc-return: ok
+PASS     F6-keys: ok
+PASS     F3-F8-streaming-persisted: ok
+PASS     F2-minimum-length: ok
+PASS     A1-selection-bar: ok
+PASS     A4-highlight: ok
+PASS     B4-overlaps: ok
+PASS     A5-click-highlight: ok
+PASS     A7-delete-undo: ok
+PASS     A11-caret-browsing: ok
+PASS     A10-context-menu: ok
+PASS     A3-keys: ok
+PASS     A6-margin-note: ok
+PASS     A6-empty-note: ok
+PASS     A6-note-sheet: ok
+PASS     A6-note-quit: ok
+PASS     A8-notes-tab: ok
+PASS     A9-reflow: ok
+PASS     A9-reimport: ok
+PASS     A9-w3c-roundtrip: ok
+PASS     L4-aa-scope: ok
+PASS     K8-text-size: ok
+PASS     P22-font-change-place: ok
+PASS     L18-E2-aa-hints: ok
+PASS     E6-library: ok
+PASS     E8-return-resumes: ok
+PASS     E7-remove-undo: ok
+PASS     E10-book-info: ok
+PASS     E3-damaged-card: ok
+PASS     G2-settings: ok
+PASS     P5-install-consent: ok
+PASS     P5-incompatible-at-load: ok
+PASS     P10-selection-actions: ok
+FAIL     P2-hostile-extension: canary: 
+PASS     P6-watchdog: ok
+PASS     P9-theme-pack: ok
+PASS     P8-pinned-and-export: ok
+PASS     P7-safe-mode: ok
+PASS     X-axe-states: ok
+PASS     X6-zoom: ok
+PASS     X5-text-spacing: ok
+PASS     I16-vertical: ok
+PASS     D7-webkit-message: ok
+PASS     D1-crash-log: ok
+PASS     budget-open: ok
+PASS     budget-reflow: ok
+PASS     S14-warm-book: ok
+PASS     reader-cleanup: ok
+PASS     I6-turn-budget: ok
+PASS     E-hostile-in-product: ok
+PASS     D6-update-available: ok
+PASS     11-font-and-width: ok
+PASS     C5-simplify-styles: ok
+PASS     11-look-up: ok
+PASS     11-library-list: ok
+PASS     11-reading-sessions: ok
+PASS     C4-remap: ok
+PASS     B6-search-options: ok
+PASS     11-aa-short-window: ok
+PASS     input-paths: ok
+PASS     N6-contents-jumps: ok
+PASS     F6-result-jumps: ok
+PASS     S2-navigator-wheel: ok
+PASS     S9-edge-reveal-modes: ok
+PASS     D1-no-uncaught-errors: ok
+wrote docs/spikes/raw/e2e-reader.json

@@ -235,7 +235,8 @@ const typeNote = (text: string) => {
   field.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
-type Check = { id: string; description: string; run: () => Promise<string> }
+/** `optIn`: measurements, not checks; they run only when selected by id. */
+type Check = { id: string; description: string; run: () => Promise<string>; optIn?: boolean }
 
 export async function spikeE2E(): Promise<SpikeResult> {
   // Import the test books before the app lists the library.
@@ -4532,6 +4533,600 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- jumps, wheel and edges with real input
+  // The wheel over the Navigator and the pointer over a book's frame take paths that
+  // synthetic DOM events skip, so these checks post real events (spike_scroll_wheel,
+  // spike_mouse). Each check opens its own book, so they also run alone.
+
+  // As a real wheel arrives (through the HID tap; the cursor moves there), so WebKit
+  // scrolls what is under it and AppKit's monitor sees it too.
+  const realWheel = (x: number, y: number, delta: number, count: number, pixels: boolean) =>
+    invoke('spike_scroll_wheel', { x, y, delta, count, pixels, hid: true })
+  const realMouse = (x: number, y: number, click = false) => invoke('spike_mouse', { x, y, click })
+  /** These checks move the system cursor; put it back where it was afterwards. */
+  async function withCursor<T>(run: () => Promise<T>): Promise<T> {
+    await invoke('spike_cursor', { restore: false })
+    try {
+      return await run()
+    } finally {
+      await invoke('spike_cursor', { restore: true })
+    }
+  }
+  const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()))
+  type Shown = HTMLElement & {
+    renderer?: { getContents(): { doc?: Document; index: number }[] }
+  }
+  /** The book's views on screen (the visible view in Pages, the stacked slots in Scroll). */
+  const shownViews = () =>
+    Array.from(reader()!.engine.view.parentElement!.querySelectorAll<Shown>('foliate-view')).filter(
+      (v) => v.style.visibility !== 'hidden',
+    )
+  /** What a reader sees at a point: the section and the words there, from the frame under it. */
+  function seenAt(x: number, y: number): { index: number; text: string } | null {
+    for (const v of shownViews()) {
+      const box = v.getBoundingClientRect()
+      if (x < box.left || x > box.right || y < box.top || y > box.bottom) continue
+      for (const c of v.renderer?.getContents() ?? []) {
+        const f = c.doc?.defaultView?.frameElement?.getBoundingClientRect()
+        if (!c.doc || !f || x < f.left || x > f.right || y < f.top || y > f.bottom) continue
+        const range = c.doc.caretRangeFromPoint(x - f.left, y - f.top)
+        if (!range) return { index: c.index, text: '' }
+        const text = range.startContainer.textContent ?? ''
+        return { index: c.index, text: text.slice(range.startOffset, range.startOffset + 20) }
+      }
+    }
+    return null
+  }
+  /** Where to look: the middle of the text column, a line below the top of the page. */
+  const probe = () => {
+    const box = reader()!.engine.view.getBoundingClientRect()
+    return { x: Math.round(box.left + box.width / 2), y: 110 }
+  }
+  type Frame = { t: number; index: number; seen: string }
+  /** Film what shows at the probe every frame from `act` until nothing has changed for 1 s. */
+  async function film(act: () => unknown, limit = 6000): Promise<Frame[]> {
+    const { x, y } = probe()
+    const frames: Frame[] = []
+    const t0 = performance.now()
+    let last = ''
+    let changedAt = t0
+    void act()
+    while (performance.now() - t0 < limit && performance.now() - changedAt < 1000) {
+      await nextFrame()
+      const s = seenAt(x, y)
+      const key = s ? `${s.index}|${s.text}` : 'nothing'
+      if (key === last) continue
+      last = key
+      changedAt = performance.now()
+      frames.push({ t: Math.round(changedAt - t0), index: s?.index ?? -1, seen: key })
+    }
+    return frames
+  }
+  /**
+   * A jump from section `from` to `to` should show `from`, then `to` once and stay there.
+   * Anything else is what a reader sees as stutter: another section on the way, the
+   * target showing and going, or the text moving again after it arrived.
+   */
+  function judge(frames: Frame[], from: number, to: number): string | null {
+    // A frame with no page under the probe is a blank (the view loading), reported apart.
+    const shown = frames.filter((f) => f.index >= 0)
+    const sections = shown.map((f) => f.index).filter((i, k, a) => k === 0 || a[k - 1] !== i)
+    const strays = sections.filter((i) => i !== from && i !== to)
+    const arrived = shown.findIndex((f) => f.index === to)
+    const after = arrived < 0 ? [] : shown.slice(arrived + 1)
+    const trail = frames.map((f) => `${f.t}ms ${f.seen}`).join(' · ')
+    if (frames.at(-1)?.index !== to) return `ended in section ${frames.at(-1)?.index}: ${trail}`
+    if (strays.length) return `passed through ${strays.join(', ')}: ${trail}`
+    // Within one chapter the first frame is the old place, and the one move is the jump.
+    const moves = after.length - (from === to ? 1 : 0)
+    if (moves > 0) return `moved ${moves}× after arriving: ${trail}`
+    return null
+  }
+  /** The section a Contents entry leads to, from the book's own navigation. */
+  function tocSection(label: string): number {
+    const book = reader()!.engine.book
+    type Item = { label?: string; href?: string; subitems?: Item[] }
+    const find = (items: Item[] | null | undefined): Item | undefined => {
+      for (const i of items ?? []) {
+        if (String(i.label ?? '').trim() === label.trim()) return i
+        const sub = find(i.subitems)
+        if (sub) return sub
+      }
+    }
+    const href = find(book?.toc as Item[] | undefined)?.href
+    return href ? (book?.resolveHref?.(href)?.index ?? -1) : -1
+  }
+  /** What the top of the text shows now. */
+  const seenNow = () => {
+    const { x, y } = probe()
+    return seenAt(x, y)?.index ?? -1
+  }
+
+  /** Contents jumps: far ahead, back, the next row, the same row again, and two quick choices. */
+  async function contentsJumps(mode: string): Promise<string[]> {
+    const problems: string[] = []
+    const plan = [40, 5, 6, 6, 90, 12]
+    const open = async () => {
+      if (!document.querySelector('.navigator .row')) hooks.run?.('navigator.contents')
+      await navRows()
+      await settled(400)
+    }
+    for (const [n, row] of plan.entries()) {
+      await open()
+      const rows = await navRows()
+      const label = rows[row].querySelector('.label')!.textContent!
+      const to = tocSection(label)
+      const from = seenNow()
+      const frames = await film(() => rows[row].click())
+      const blank = frames.filter((f) => f.index < 0).length
+      const bad = judge(frames, from, to)
+      // Choosing the chapter already at the top may change nothing at all.
+      if (bad && !(from === to && frames.length <= 1)) {
+        problems.push(`${mode} jump ${n + 1} to “${label}” (section ${to}): ${bad}`)
+        const d = reader()!.engine.debug()
+        log(`engine after it: ${JSON.stringify({ views: d.views, slots: d.slots })}`)
+      }
+      log(
+        `contents ${mode} ${n + 1} → ${to}${blank ? ` (blank ${blank}×)` : ''}: ${frames.map((f) => `${f.t}ms ${f.seen}`).join(' · ')}`,
+      )
+    }
+    // Two quick choices: the second one wins.
+    await open()
+    const rows = await navRows()
+    const second = rows[70].querySelector('.label')!.textContent!
+    rows[30].click()
+    await sleep(120)
+    if (!document.querySelector('.navigator .row')) await open()
+    ;(await navRows())[70].click()
+    await settled(2500)
+    if (seenNow() !== tocSection(second))
+      problems.push(
+        `${mode}: after two quick choices the top shows section ${seenNow()}, not ${tocSection(second)} (“${second}”)`,
+      )
+    return problems
+  }
+
+  /** Search jumps across chapters, back and forth; the active match must be on screen. */
+  async function searchJumps(mode: string): Promise<string[]> {
+    const problems: string[] = []
+    await searchFor('Queequeg')
+    const search = reader()!.search
+    const hits = search.hits
+    const picks = [0, Math.floor(hits.length / 2), 3, hits.length - 1, 4, 4]
+    for (const [n, k] of picks.entries()) {
+      const hit = hits[k]
+      // Results fold by chapter: open the hit's chapter (and “Show all”) as a reader would.
+      const sel = `.navigator .search .hit[data-hit="${hit.index}:${hit.n}"]`
+      const group = document.querySelectorAll('.navigator .search .group')[
+        search.groups.findIndex((g) => g.index === hit.index)
+      ]
+      for (const more of ['.head[aria-expanded="false"]', '.more']) {
+        if (document.querySelector(sel)) break
+        group?.querySelector<HTMLButtonElement>(more)?.click()
+        await settled(200)
+      }
+      const button = document.querySelector<HTMLButtonElement>(sel)
+      if (!button) {
+        problems.push(`${mode}: no button for result ${k + 1}`)
+        continue
+      }
+      button.scrollIntoView({ block: 'center' })
+      await settled(200)
+      const from = seenNow()
+      const frames = await film(() => button.click())
+      const bad = judge(frames, from, hit.index)
+      if (bad && !(from === hit.index && frames.length <= 1))
+        problems.push(`${mode} result ${k + 1}: ${bad}`)
+      const box = matchBox(hit.index, hit.match.start, hit.match.end)
+      if (!box) problems.push(`${mode} result ${k + 1}: the match is not laid out`)
+      else if (!box.visible)
+        problems.push(`${mode} result ${k + 1}: the match is off screen at ${box.where}`)
+      log(
+        `search ${mode} ${n + 1} (#${k + 1}, section ${hit.index}): ${frames.map((f) => `${f.t}ms ${f.seen}`).join(' · ')}`,
+      )
+    }
+    await closeSearch()
+    return problems
+  }
+  /** A match's first line box on screen, and whether a reader can see it. */
+  function matchBox(index: number, start: number, end: number) {
+    const engine = reader()!.engine
+    for (const v of shownViews()) {
+      const view = v.getBoundingClientRect()
+      for (const c of v.renderer?.getContents() ?? []) {
+        if (c.index !== index || !c.doc) continue
+        const r = engine.textRange(c.doc, start, end)?.getClientRects()[0]
+        const f = c.doc.defaultView?.frameElement?.getBoundingClientRect()
+        if (!r || !f) continue
+        const left = f.left + r.left
+        const top = f.top + r.top
+        const visible =
+          left >= Math.max(0, view.left) - 1 &&
+          left + r.width <= Math.min(innerWidth, view.right) + 1 &&
+          top >= Math.max(0, view.top) &&
+          top + r.height <= Math.min(innerHeight, view.bottom)
+        return { visible, where: `${Math.round(left)},${Math.round(top)}` }
+      }
+    }
+    return null
+  }
+
+  async function inMode<T>(mode: 'pages' | 'scroll', run: () => Promise<T>): Promise<T> {
+    if (reader()!.engine.mode !== mode) {
+      hooks.run?.(`layout.${mode}`)
+      await settled(1500)
+    }
+    try {
+      return await run()
+    } finally {
+      if (reader()?.engine.mode === 'scroll') {
+        hooks.run?.('layout.pages')
+        await settled(1500)
+      }
+    }
+  }
+  async function atWidth<T>(width: number, height: number, run: () => Promise<T>): Promise<T> {
+    const w = getCurrentWindow()
+    const size = await w.innerSize()
+    const factor = await w.scaleFactor()
+    await w.setSize(new LogicalSize(width, height))
+    await settled(1200)
+    try {
+      return await run()
+    } finally {
+      await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+      await settled(1200)
+    }
+  }
+  const closeNavigator = async () => {
+    if (!document.querySelector('.navigator')) return
+    key('Escape', { code: 'Escape' })
+    await settled(500)
+  }
+
+  checks.push({
+    id: 'input-paths',
+    description:
+      'Harness: where posted wheel events and spike_mouse moves arrive (the page, the Contents list, a book frame)',
+    run: () =>
+      withCursor(async () => {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        hooks.run?.('navigator.contents')
+        await navRows()
+        await settled(500)
+        const list = document.querySelector<HTMLElement>('.navigator .list')!
+        const box = list.getBoundingClientRect()
+        let wheels = 0
+        const onWheel = () => wheels++
+        list.addEventListener('wheel', onWheel)
+        const top0 = list.scrollTop
+        await realWheel(box.left + box.width / 2, box.top + box.height / 2, -3, 8, false)
+        await settled(900)
+        list.removeEventListener('wheel', onWheel)
+        const wheel = `posted wheel: ${wheels} DOM wheel events on the list, list moved ${list.scrollTop - top0} px`
+        await closeNavigator()
+        const counts = { page: 0, frame: 0 }
+        const onPage = () => counts.page++
+        const onFrame = () => counts.frame++
+        document.addEventListener('pointermove', onPage, true)
+        const docs = shownViews().flatMap((v) =>
+          (v.renderer?.getContents() ?? []).map((c) => c.doc),
+        )
+        for (const d of docs) d?.addEventListener('pointermove', onFrame, true)
+        const x = Math.round(innerWidth / 2)
+        await realMouse(x, 20)
+        await settled(200)
+        const atTop = { ...counts }
+        await realMouse(x, Math.round(innerHeight / 2))
+        await settled(200)
+        document.removeEventListener('pointermove', onPage, true)
+        for (const d of docs) d?.removeEventListener('pointermove', onFrame, true)
+        const mouse = `spike_mouse: top margin → page ${atTop.page}, frame ${atTop.frame}; text → page ${counts.page - atTop.page}, frame ${counts.frame - atTop.frame}`
+        log(`${wheel}; ${mouse}`)
+        await realMouse(x, Math.round(innerHeight / 2) + 1)
+        await hideControls()
+        return counts.page && counts.frame ? 'ok' : `${wheel}; ${mouse}`
+      }),
+  })
+
+  checks.push({
+    id: 'N6-contents-jumps',
+    description:
+      'Contents jumps (docked and floating, Pages and Scroll, repeated, across chapters) reach the chapter and show nothing else on the way',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      for (const mode of ['pages', 'scroll'] as const) {
+        problems.push(...(await inMode(mode, () => contentsJumps(`${mode} docked`))))
+        await closeNavigator()
+        problems.push(
+          ...(await atWidth(1000, 760, () =>
+            inMode(mode, () => contentsJumps(`${mode} floating`)),
+          )),
+        )
+        await closeNavigator()
+      }
+      return problems.length ? problems.join(' | ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'F6-result-jumps',
+    description:
+      'Choosing search results across chapters (Pages and Scroll, back and forth, the same one twice) shows the match without stops on the way',
+    run: async () => {
+      await backToLibrary()
+      await openFromLibrary(/Moby Dick(?!;)/)
+      const problems: string[] = []
+      for (const mode of ['pages', 'scroll'] as const)
+        problems.push(...(await inMode(mode, () => searchJumps(mode))))
+      return problems.length ? problems.join(' | ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'S2-navigator-wheel',
+    description:
+      'The wheel and trackpad over Contents scroll only Contents, also at its top and bottom, docked and floating, in Pages and Scroll',
+    run: () =>
+      withCursor(async () => {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        const problems: string[] = []
+        const host = reader()!.engine.view.parentElement!
+        const place = () => `${where()} @${Math.round(host.scrollTop)}`
+        const one = async (label: string) => {
+          hooks.run?.('navigator.contents')
+          await navRows()
+          await settled(500)
+          const list = document.querySelector<HTMLElement>('.navigator .list')!
+          const box = list.getBoundingClientRect()
+          const x = box.left + box.width / 2
+          const y = box.top + box.height / 2
+          const steps: [string, () => Promise<unknown>][] = [
+            ['wheel down', () => realWheel(x, y, -3, 8, false)],
+            ['trackpad down', () => realWheel(x, y, -14, 30, true)],
+            [
+              'to the bottom',
+              async () => {
+                list.scrollTop = list.scrollHeight
+                await settled(200)
+                await realWheel(x, y, -14, 30, true)
+              },
+            ],
+            [
+              'to the top',
+              async () => {
+                list.scrollTop = 0
+                await settled(200)
+                await realWheel(x, y, 14, 30, true)
+              },
+            ],
+            ['wheel up at the top', () => realWheel(x, y, 3, 8, false)],
+          ]
+          for (const [what, act] of steps) {
+            await settled(1200) // past any wheel cooldown
+            const before = place()
+            const listBefore = list.scrollTop
+            await act()
+            await settled(900)
+            const after = place()
+            if (after !== before)
+              problems.push(`${label} ${what}: the book moved ${before} → ${after}`)
+            if (what.endsWith('down') && list.scrollTop === listBefore)
+              problems.push(`${label} ${what}: Contents did not scroll`)
+          }
+          await closeNavigator()
+        }
+        for (const mode of ['pages', 'scroll'] as const) {
+          await inMode(mode, () => one(`${mode} docked`))
+          await atWidth(1000, 760, () => inMode(mode, () => one(`${mode} floating`)))
+        }
+        return problems.length ? problems.join(' | ') : 'ok'
+      }),
+  })
+
+  checks.push({
+    id: 'S9-edge-reveal-modes',
+    description:
+      'Real pointer moves: the top and bottom edges reveal both bars in Pages and in Scroll alike; they hide when the pointer goes, and their buttons work',
+    run: () =>
+      withCursor(async () => {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        const problems: string[] = []
+        const bars = () =>
+          `${!!document.querySelector('.chrome.top')},${!!document.querySelector('.chrome.bottom')}`
+        // Off centre: a message (Back, Resumed) sits at the middle of the foot; the text column is here too.
+        const x = Math.round(innerWidth * 0.3)
+        // First, that posted moves reach WebKit at all (else this check proves nothing).
+        let moves = 0
+        const count = () => moves++
+        document.addEventListener('pointermove', count, true)
+        // (Pages mode, the top margin: the app's page, not a book's frame.)
+        await realMouse(x, 20)
+        await realMouse(x, 21)
+        await settled(300)
+        document.removeEventListener('pointermove', count, true)
+        if (!moves) return 'error: posted mouse moves never reached the page'
+        // Over the text (in a book's frame in both modes), then in each edge zone.
+        for (const mode of ['pages', 'scroll'] as const)
+          await inMode(mode, async () => {
+            await hideControls()
+            const mid = Math.round(innerHeight / 2)
+            for (const [edge, y] of [
+              ['top', 20],
+              ['top (lower zone)', 56],
+              ['bottom', innerHeight - 30],
+            ] as const) {
+              await realMouse(x, mid)
+              await settled(500)
+              if (bars() !== 'false,false') problems.push(`${mode}: bars ${bars()} over the text`)
+              await realMouse(x, y)
+              await sleep(80)
+              await realMouse(x, y + 1)
+              await settled(600)
+              if (bars() !== 'true,true') problems.push(`${mode} ${edge} edge: bars ${bars()}`)
+              const under = document.elementFromPoint(x, y)
+              log(
+                `edge ${mode} ${edge}: bars ${bars()}; under the pointer ${under?.tagName.toLowerCase()}.${under?.className}`,
+              )
+              await realMouse(x, mid)
+              await settled(500)
+              if (bars() !== 'false,false')
+                problems.push(`${mode} ${edge}: bars ${bars()} after leaving`)
+            }
+            // The revealed bars work: the bottom bar's Go to label, then the top bar's Contents.
+            await realMouse(x, innerHeight - 30)
+            await settled(600)
+            const label = document
+              .querySelector<HTMLElement>('.goto-label')
+              ?.getBoundingClientRect()
+            if (!label) problems.push(`${mode}: no bottom bar to use`)
+            else {
+              await realMouse(label.left + label.width / 2, label.top + label.height / 2, true)
+              await settled(500)
+              if (!document.querySelector('.goto'))
+                problems.push(`${mode}: clicking the progress label did not open Go to`)
+              key('Escape', { code: 'Escape' })
+              await settled(400)
+            }
+            await realMouse(x, mid)
+            await settled(500)
+            await realMouse(x, 20)
+            await settled(600)
+            const contents = document
+              .querySelector<HTMLElement>('.chrome.top .tool')
+              ?.getBoundingClientRect()
+            if (!contents) problems.push(`${mode}: no top bar to use`)
+            else {
+              await realMouse(
+                contents.left + contents.width / 2,
+                contents.top + contents.height / 2,
+                true,
+              )
+              await settled(600)
+              if (!document.querySelector('.navigator'))
+                problems.push(`${mode}: clicking Contents in the top bar did not open it`)
+              await closeNavigator()
+            }
+            await realMouse(x, mid)
+            await settled(500)
+          })
+        return problems.length ? problems.join(' | ') : 'ok'
+      }),
+  })
+
+  checks.push({
+    id: 'size-survey',
+    optIn: true,
+    description:
+      'Measurement for a minimum window size: what still fits in the reader and the library as the window shrinks (no verdict)',
+    run: async () => {
+      const { computeLayout } = await import('../reader/layout')
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      const sizes = [
+        [1280, 800],
+        [1000, 700],
+        [900, 640],
+        [800, 600],
+        [760, 560],
+        [700, 520],
+        [640, 480],
+        [600, 460],
+        [560, 420],
+        [520, 400],
+        [480, 380],
+        [420, 340],
+      ]
+      const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect()
+      const overlap = (a?: DOMRect, b?: DOMRect) =>
+        !!a && !!b && a.right > b.left + 0.5 && b.right > a.left + 0.5
+      const fits = (r?: DOMRect) =>
+        !r
+          ? 'absent'
+          : r.left >= 0 &&
+              r.top >= 0 &&
+              r.right <= innerWidth + 0.5 &&
+              r.bottom <= innerHeight + 0.5
+            ? 'fits'
+            : `cut (${Math.round(r.left)},${Math.round(r.top)})–(${Math.round(r.right)},${Math.round(r.bottom)})`
+      const rows: string[] = []
+      try {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        for (const [width, height] of sizes) {
+          await w.setSize(new LogicalSize(width, height))
+          await settled(1200)
+          const at = (fontPx: number) =>
+            computeLayout({
+              width: innerWidth,
+              height: innerHeight,
+              fontPx,
+              spacing: 'default',
+              allowSpread: true,
+            })
+          const l19 = at(19)
+          const l28 = at(28)
+          await showControls()
+          const tools = rect('.chrome.top .tools')
+          const title = rect('.chrome.top .title')
+          const top =
+            [
+              overlap(rect('.chrome.top .library'), tools) && 'Library under the tools',
+              overlap(rect('.chrome.top .tool'), tools) && 'Contents under the tools',
+              title && title.width < 60 && `title ${Math.round(title.width)} px`,
+              tools && tools.right > innerWidth + 0.5 && 'tools cut off',
+            ]
+              .filter(Boolean)
+              .join(', ') || 'clear'
+          const [chapter, progress] = Array.from(
+            document.querySelectorAll('.chrome.bottom .labels span'),
+          ).map((e) => e.getBoundingClientRect())
+          const bottom = overlap(chapter, progress) ? 'labels overlap' : 'clear'
+          await invoke('spike_capture', { name: `survey-${width}x${height}-controls` })
+          hooks.run?.('reader.settings')
+          await settled(600)
+          const aa = fits(rect('.aa'))
+          key('Escape', { code: 'Escape' })
+          await settled(300)
+          hooks.run?.('goto.open')
+          await settled(600)
+          const goto = fits(rect('.goto'))
+          key('Escape', { code: 'Escape' })
+          await settled(300)
+          hooks.run?.('navigator.contents')
+          await settled(700)
+          const nav = rect('.navigator')
+          const share = nav ? `${Math.round((nav.width / innerWidth) * 100)}%` : 'absent'
+          await closeNavigator()
+          await hideControls()
+          await backToLibrary()
+          const header = document.querySelector<HTMLElement>('.library header')
+          const crowded = header && header.scrollWidth > header.clientWidth + 1
+          const tiles = Array.from(document.querySelectorAll('.library .tile')).map(
+            (t) => t.getBoundingClientRect().top,
+          )
+          const perRow = tiles.filter((t) => Math.abs(t - tiles[0]) < 2).length
+          await invoke('spike_capture', { name: `survey-${width}x${height}-library` })
+          await openFromLibrary(/Moby Dick(?!;)/)
+          rows.push(
+            `${innerWidth}×${innerHeight}: 19 px text ${l19.columnWidth} px = ${Math.round(l19.measureCh)} ch × ${l19.lines} lines, 28 px ${Math.round(l28.measureCh)} ch × ${l28.lines} lines; top bar ${top}; bottom bar ${bottom}; Aa ${aa}; Go to ${goto}; Navigator ${share} of the width; library header ${crowded ? 'overflows' : 'fits'}, ${perRow} covers a row`,
+          )
+        }
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+      for (const r of rows) log(`size ${r}`)
+      return 'ok'
+    },
+  })
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',
@@ -4551,7 +5146,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
   const criteria: Criterion[] = []
   const only = (await invoke<{ only?: string | null }>('spike_info')).only
   for (const c of checks) {
-    if (only && !new RegExp(only).test(c.id)) continue
+    if (only ? !new RegExp(only).test(c.id) : c.optIn) continue
     let evidence: string
     try {
       evidence = await c.run()

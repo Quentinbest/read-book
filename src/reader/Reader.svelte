@@ -1389,12 +1389,17 @@
     }
   }
 
-  /** `y` is in the reader's coordinates. */
-  function onPointerAt(y: number) {
+  /** S9, S11: the edge zone `y` is in, if any (`y` in the reader's coordinates). */
+  function edgeAt(y: number): 'top' | 'bottom' | null {
     const nearTop = y >= edges.topStart && y <= edges.topStart + REVEAL_ZONE
     const bottomEnd = window.innerHeight - (edges.dockBottom ? DOCK_STRIP : 0)
     const nearBottom = y >= window.innerHeight - REVEAL_ZONE && y <= bottomEnd
-    const edge = nearTop ? 'top' : nearBottom ? 'bottom' : null
+    return nearTop ? 'top' : nearBottom ? 'bottom' : null
+  }
+
+  /** `y` is in the reader's coordinates. */
+  function onPointerAt(y: number) {
+    const edge = edgeAt(y)
     clearTimeout(hideTimer)
     if (lanes.chromePeek) {
       // S9: the bars the pointer revealed stay while the pointer is on one of them or in an
@@ -1425,15 +1430,20 @@
     }
   }
   const onPointerMove = (e: PointerEvent) => onPointerAt(e.clientY)
-  /** The book's frames swallow pointer moves; without these a bar would stay up over the text. */
+  /**
+   * The book's frames swallow pointer moves; without these a bar would stay up over the
+   * text. In Scroll mode the text runs under the window edges (G8), so the edge zones
+   * are over a frame too, and a move there must start the reveal as it does in Pages (S9).
+   */
   function onBookPointerMove(doc: Document) {
     doc.addEventListener('pointermove', (e) => {
-      if (!lanes.chromePeek && !dwellTimer) return
       const frame = doc.defaultView?.frameElement?.getBoundingClientRect()
       if (!frame) return
       // Fixed layout scales the frame (I17); map the pointer through it.
       const scale = frame.height / (doc.defaultView?.innerHeight || frame.height || 1)
-      onPointerAt(frame.top + e.clientY * scale)
+      const y = frame.top + e.clientY * scale
+      if (!lanes.chromePeek && !dwellTimer && !edgeAt(y)) return
+      onPointerAt(y)
     })
   }
 
@@ -1638,9 +1648,11 @@
       cleanups.push(
         await listen<NativeScroll>('native-scroll', ({ payload }) => {
           if (!active) return // S14: the library is on top
+          // Over a panel (the Navigator, docked or floating, included) the wheel scrolls
+          // the panel only, also once it has reached its top or bottom.
           const panel = document
             .elementFromPoint(payload.x, payload.y)
-            ?.closest('.chrome, dialog, .popover')
+            ?.closest('.chrome, dialog, .popover, .navigator')
           if (panel) return
           // I17: a zoomed page pans with the wheel and two fingers; no page turns.
           if (engine?.zoom && engine.zoom > 1) return

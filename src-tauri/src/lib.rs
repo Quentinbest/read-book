@@ -137,6 +137,8 @@ pub fn run() {
         spikes::spike_memory,
         spikes::spike_capture,
         spikes::spike_scroll_wheel,
+        spikes::spike_mouse,
+        spikes::spike_cursor,
         spikes::spike_read_pasteboard,
         spikes::spike_crash_log,
         spikes::spike_exit

@@ -1,0 +1,61 @@
+spikes: canary server failed to bind 127.0.0.1:8765: Address already in use (os error 48)
+== spike r
+import standardebooks-moby-dick.epub: imported
+import idpf-regime-anticancer-arabic.epub: imported
+import hostile-content.epub: imported
+import idpf-page-blanche.epub: imported
+import long-chapter.epub: imported
+import broken-bad-css-and-font.epub: imported
+import gutenberg-2701-moby-dick-epub2.epub: imported
+import broken-no-toc.epub: imported
+import broken-missing-items.epub: imported
+import idpf-childrens-literature.epub: imported
+import notes-and-images.epub: imported
+import idpf-sous-le-vent.epub: imported
+import idpf-kusamakura-japanese-vertical-writing.epub: imported
+import code-heavy.epub: imported
+posted wheel: 1 DOM wheel events on the list, list moved 960 px; spike_mouse: top margin → page 1, frame 0; text → page 0, frame 1
+PASS input-paths: ok
+contents pages docked 1 → 40: 4ms 6|ree, some time or ot · 38ms 40|XXXV
+contents pages docked 2 → 5: 1ms 40|XXXV · 43ms 5|Moby Dick
+contents pages docked 3 → 6 (blank 1×): 2ms nothing · 43ms 6|I
+contents pages docked 4 → 6: 2ms 6|I
+contents pages docked 5 → 90 (blank 1×): 1ms 6|I · 3ms nothing · 31ms 90|LXXXV
+contents pages docked 6 → 12: 1ms 90|LXXXV · 28ms 12|VII
+contents pages floating 1 → 40: 4ms 70|LXV · 37ms 40|XXXV
+contents pages floating 2 → 5: 4ms 40|XXXV · 83ms 5|Moby Dick
+contents pages floating 3 → 6 (blank 1×): 5ms nothing · 39ms 6|I
+contents pages floating 4 → 6: 4ms 6|I
+contents pages floating 5 → 90 (blank 1×): 4ms 6|I · 7ms nothing · 33ms 90|LXXXV
+contents pages floating 6 → 12: 4ms 90|LXXXV · 31ms 12|VII
+engine after it: {"views":[{"index":40,"chunk":0},{"index":39,"chunk":0},{"index":41,"chunk":0},{"index":11,"chunk":0}],"slots":[{"unit":"39:0","top":95,"height":5614,"current":false},{"unit":"40:0","top":5833,"height":6522,"current":true},{"unit":"41:0","top":12479,"height":7596,"current":false}]}
+contents scroll docked 1 → 40: 2ms 70|e as a Dish · 39ms 40|thead · 113ms 40|XXXV
+contents scroll docked 2 → 5: 4ms 40|XXXV · 15ms 5|Moby Dick
+engine after it: {"views":[{"index":6,"chunk":0},{"index":5,"chunk":0},{"index":6,"chunk":0},{"index":11,"chunk":0}],"slots":[{"unit":"5:0","top":15084,"height":249,"current":false},{"unit":"6:0","top":15457,"height":5536,"current":true},{"unit":"7:0","top":21117,"height":249,"current":false}]}
+contents scroll docked 3 → 6: 4ms 5|Moby Dick
+engine after it: {"views":[{"index":6,"chunk":0},{"index":5,"chunk":0},{"index":6,"chunk":0},{"index":11,"chunk":0}],"slots":[{"unit":"5:0","top":15084,"height":249,"current":false},{"unit":"6:0","top":15457,"height":5536,"current":true},{"unit":"7:0","top":21117,"height":249,"current":false}]}
+contents scroll docked 4 → 6: 4ms 5|Moby Dick
+engine after it: {"views":[{"index":90,"chunk":0},{"index":89,"chunk":0},{"index":90,"chunk":0},{"index":11,"chunk":0}],"slots":[{"unit":"5:0","top":15084,"height":249,"current":false},{"unit":"6:0","top":15457,"height":5092,"current":true},{"unit":"7:0","top":20673,"height":2308,"current":false}]}
+contents scroll docked 5 → 90: 2ms 5|Moby Dick
+engine after it: {"views":[{"index":12,"chunk":0},{"index":11,"chunk":0},{"index":12,"chunk":0},{"index":11,"chunk":0}],"slots":[{"unit":"5:0","top":15084,"height":249,"current":false},{"unit":"6:0","top":15457,"height":3419,"current":true},{"unit":"7:0","top":19000,"height":2366,"current":false}]}
+contents scroll docked 6 → 12: 3ms 5|Moby Dick
+contents scroll floating 1 → 40: 5ms 66|sly seeking to feel  · 30ms 40|XXXV
+contents scroll floating 2 → 5: 3ms 40|XXXV · 34ms 5|Moby Dick
+contents scroll floating 3 → 6: 4ms 5|Moby Dick · 33ms 6|I
+contents scroll floating 4 → 6: 5ms 6|I
+contents scroll floating 5 → 90 (blank 1×): 3ms 6|I · 6ms nothing · 39ms 90|LXXXV
+contents scroll floating 6 → 12 (blank 1×): 4ms 90|LXXXV · 8ms nothing · 35ms 12|VII
+FAIL N6-contents-jumps: scroll docked jump 1 to “XXXV: The Masthead” (section 40): moved 1× after arriving: 2ms 70|e as a Dish · 39ms 40|thead · 113ms 40|XXXV | scroll docked jump 3 to “I: Loomings” (section 6): ended in section 5: 4ms 5|Moby Dick | scroll docked jump 4 to “I: Loomings” (section 6): ended in section 5: 4ms 5|Moby Dick | scroll docked jump 5 to “LXXXV: The Fountain” (section 90): ended in section 5: 2ms 5|Moby Dick | scroll docked jump 6 to “VII: The Chapel” (section 12): ended in section 5: 3ms 5|Moby Dick | scroll docked: after two quick choices the top shows section 5, not 70 (“LXV: The Whale as a Dish”)
+FAIL S2-navigator-wheel: pages docked wheel down: the book moved 66:7 @0 → 66:8 @0 | pages docked trackpad down: the book moved 66:8 @0 → 67:1 @0 | pages docked wheel up at the top: the book moved 67:1 @0 → 66:8 @0 | pages floating wheel down: the book moved 66:9 @0 → 67:1 @0 | pages floating wheel up at the top: the book moved 67:1 @0 → 66:9 @0 | scroll docked wheel down: the book moved 66:? @8565 → 67:? @9525 | scroll docked trackpad down: the book moved 67:? @9525 → 67:? @9945 | scroll docked to the bottom: the book moved 67:? @9945 → 68:? @10365 | scroll docked to the top: the book moved 68:? @10365 → 67:? @9945 | scroll docked wheel up at the top: the book moved 67:? @9945 → 67:? @8985 | scroll floating wheel down: the book moved 64:5 @0 → 64:5 @573 | scroll floating wheel up at the top: the book moved 64:5 @573 → 64:5 @0
+edge pages top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge pages top (lower zone): bars true,true; under the pointer div.host svelte-twub32
+edge pages bottom: bars false,false; under the pointer div.message svelte-lrgix4
+edge scroll top: bars false,false; under the pointer foliate-view.
+edge scroll top (lower zone): bars false,false; under the pointer foliate-view.
+edge scroll bottom: bars false,false; under the pointer foliate-view.
+FAIL S9-edge-reveal-modes: pages bottom edge: bars false,false | pages: no bottom bar to use | scroll top edge: bars false,false | scroll top (lower zone) edge: bars false,false | scroll bottom edge: bars false,false | scroll: no bottom bar to use | scroll: no top bar to use
+PASS     input-paths: ok
+FAIL     N6-contents-jumps: scroll docked jump 1 to “XXXV: The Masthead” (section 40): moved 1× after arriving: 2ms 70|e as a Dish · 39ms 40|thead · 113ms 40|XXXV | scroll docked jump 3 to “I: Loomings” (section 6): ended in section 5: 4ms 5|Moby Dick | scroll docked jump 4 to “I: Loomings” (section 6): ended in section 5: 4ms 5|Moby Dick | scroll docked jump 5 to “LXXXV: The Fountain” (section 90): ended in section 5: 2ms 5|Moby Dick | scroll docked jump 6 to “VII: The Chapel” (section 12): ended in section 5: 3ms 5|Moby Dick | scroll docked: after two quick choices the top shows section 5, not 70 (“LXV: The Whale as a Dish”)
+FAIL     S2-navigator-wheel: pages docked wheel down: the book moved 66:7 @0 → 66:8 @0 | pages docked trackpad down: the book moved 66:8 @0 → 67:1 @0 | pages docked wheel up at the top: the book moved 67:1 @0 → 66:8 @0 | pages floating wheel down: the book moved 66:9 @0 → 67:1 @0 | pages floating wheel up at the top: the book moved 67:1 @0 → 66:9 @0 | scroll docked wheel down: the book moved 66:? @8565 → 67:? @9525 | scroll docked trackpad down: the book moved 67:? @9525 → 67:? @9945 | scroll docked to the bottom: the book moved 67:? @9945 → 68:? @10365 | scroll docked to the top: the book moved 68:? @10365 → 67:? @9945 | scroll docked wheel up at the top: the book moved 67:? @9945 → 67:? @8985 | scroll floating wheel down: the book moved 64:5 @0 → 64:5 @573 | scroll floating wheel up at the top: the book moved 64:5 @573 → 64:5 @0
+FAIL     S9-edge-reveal-modes: pages bottom edge: bars false,false | pages: no bottom bar to use | scroll top edge: bars false,false | scroll top (lower zone) edge: bars false,false | scroll bottom edge: bars false,false | scroll: no bottom bar to use | scroll: no top bar to use
+wrote docs/spikes/raw/e2e-reader.json

@@ -7,7 +7,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 
-Nothing is waiting for the owner now. The items below are kept for their details.
+Waiting now: items 53 and 54 (reader review, 2026-10-06). The other items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -54,3 +54,25 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 41. **Settings captures for 1.1.** `docs/visual/app/11-settings-reading.png` (Font, Page width, Publisher styles) and `11-settings-shortcuts.png` (the remapping list) are new captures, taken on Desktop 2; neither screen had a capture before.
     *Recommendation:* approve them as baselines.
+
+## Reader review (2026-10-06)
+
+53. **A minimum window size (owner's item 3).** The minimum belongs to the main window, which holds the library and the reader. Below 1100 px the reading area is the whole window, because the Navigator floats there (L8). Today the window has no minimum. The Settings window already has one: 720 × 480. Measured (`docs/reader-review-2026-10-06.md`, captures in `docs/visual/survey/`):
+    - **Reader:** clear down to 640 × 480. From 600 px the top bar's title runs over its buttons, because it does not truncate.
+    - **Text measure:** L1's 56 ch at 19 px holds from 591 px.
+    - **Library:** wide layout from 721 px; at 720 px and below (its X6 narrow form) “Library” touches the window buttons.
+    - **Height:** L9 already treats 480 px as the line; at 480 px the page holds 10 lines at 19 px, and Aa and Go to fit.
+    - **Apple Books:** library window 1001 × 530, measured; its book window was not measured (that needs a book opened in your Books library).
+
+    Options; the height is 480 in each:
+    - **A. 760 × 480.** L8's narrow breakpoint, the width Screen 15 is drawn at. Everything measured is clean, and nothing else needs to change.
+    - **B. 721 × 480.** The smallest width at which the library keeps its wide layout.
+    - **C. 640 × 480.** The smallest clean reader measured. It needs two fixes first: the top-bar title must truncate, and the library's narrow header must clear the window buttons.
+
+    *Recommendation:* A. Once agreed: `minWidth`/`minHeight` on the `main` window in `src-tauri/tauri.conf.json` and `tauri.spikes.conf.json`, plus an in-app check that resizing below them is refused and that the bars still work at that size. The X6 narrow forms stay: zoom (200–400%) still produces narrow CSS widths.
+
+54. **Hands-on acceptance of the reader fixes (owner's items 1, 2 and 4).** They were reproduced and verified with real posted input in the in-app suite (`N6-contents-jumps`, `F6-result-jumps`, `S2-navigator-wheel`, `S9-edge-reveal-modes`). They have not been tried by hand, with a real trackpad's momentum, or with your own books.
+    - **Jumps in Scroll mode:** they now go blank briefly while the chapter loads (the target shows 20–110 ms after the click in the runs here), as Pages jumps already do, instead of drawing it at the wrong place first.
+    - **Edge zones in Scroll mode:** they are the same 64 px as in Pages, at the top and the bottom.
+
+    *Recommendation:* try the steps in `docs/reader-review-2026-10-06.md` (Contents and search in both modes; the wheel over Contents at its ends; the pointer at the top and bottom in Scroll) and accept, or say what still differs.
