@@ -48,6 +48,15 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
 - **Checked before publishing:** both archives are 0.2.0 for their architecture (arm64, x86_64), verify against the key in the app (a changed byte is refused), and match `latest.json`. The bundled icon is the `linen-a-v002` icon. The draft got user-facing release notes.
 - **After publishing:** the update address answers 0.2.0 (HTTP 200), byte for byte the verified `latest.json`.
 
+**v0.2.1, published 2026-10-06** (https://github.com/Quentinbest/read-book/releases/tag/v0.2.1): the reader review (#10; `docs/reader-review-2026-10-06.md`), the version bump in #11. Published by Claude at the owner's request (“merge it and cut the release”).
+- **Release workflow:** passed on its first run; both builds and the draft.
+- **Checked before publishing:**
+  - Both archives are 0.2.1 for their architecture (arm64, x86_64).
+  - Both verify against the key in the app, the trusted comment included, and a changed byte is refused.
+  - `latest.json` lists them, with signatures equal to the `.sig` files.
+  - The draft got user-facing release notes.
+- **After publishing:** the update address answers 0.2.1 (HTTP 200), byte for byte the verified `latest.json`.
+
 ## Work items
 
 | Item | Status |

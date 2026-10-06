@@ -2,6 +2,7 @@
 
 - **Asked for:** the owner, 2026-10-06, from manual testing: review and fix (1) Contents and search jumps that stutter or miss, (2) the wheel over Contents also moving the book, (3) a minimum reader size (Apple Books as the reference; dimensions undecided), (4) the top edge not revealing the bars in Scroll mode. Reproduce first; report causes, changes and verification as Pass / Fail / Not verified / Pending human acceptance; no invented thresholds or dimensions.
 - **Branch:** `worktree-reader-nav-fixes`, from `main` at `bcb174c` (0.2.0).
+- **Shipped:** merged in #10, released as **Linen 0.2.1** on 2026-10-06 (#11; https://github.com/Quentinbest/read-book/releases/tag/v0.2.1). The release checks are in `docs/phase8-status.md`.
 - **Evidence:** `docs/spikes/raw/reader-review-2026-10-06/` (run logs before and after), `docs/visual/survey/` (size captures).
 
 ## How it was reproduced
