@@ -144,3 +144,15 @@ The owner left item 42 to Claude ("Make your best calls"). The evidence is in `d
 |---|---|
 | E6 (author sort) | Authors sort by the publisher's sort form of the first author (`opf:file-as`, or a `file-as` meta refining the creator), read at import and stored in `books.author_sort` (schema 4). Libraries from before schema 4 read it in the background at launch. Without one, the last word of the name is the surname, but a name already written surname first keeps its order and Jr., Sr. and numerals are not surnames. No model is involved. |
 | TypeSafe | Not built. Linen has no server, and the repository and app are public, so there is no safe way to ship an API key; asking readers for their own key does not suit a quiet reader, and every call would leave the device (Screen 12). The ⌘K fallback (45/50 against 17/50) is the case to revisit if Linen ever has a server. The opening-position experiment needs heading-level candidates for Gutenberg books first. |
+
+## Decided 2026-10-06 (items 45–50, next-steps plan)
+
+The owner left items 45–50 to Claude ("Make your best calls"), with items 43 and 44 set aside (no Apple membership for now). The evidence is in `docs/next-steps-plan.md`, `docs/spikes/cross-engine.md` and `docs/release-stats.md`.
+
+| # | Decided |
+|---|---|
+| Gate W (49) | **No-go** for a Windows or Linux port. Anchors and isolation hold on both engines and pagination is close, but there is no demand on record (one DMG download per release, no platform requests), and vertical writing paginates differently on each engine (Linux +45%, Windows −22%). The weekly cross-engine workflow keeps the answer current. Revisit when someone asks. |
+| Spike A criterion (49) | Parity is now: each chapter within ±1 page, and the total within 2%. On that measure Linux passes; Windows misses at +2.7%. |
+| Sync before iPad (50) | **Sync (Phase 13) comes next, before the iPad.** The iPad needs the Apple membership (item 43, set aside); sync does not. Two Macs sharing a folder the reader chooses, such as one in iCloud Drive, need no entitlement. Sync is designed so that the iPad can join later. This reverses the plan's recommendation (O8) because of item 43. |
+| Sync approach (48) | A built-in **sync folder**, chosen by the reader, holding per-device change logs; no server, no account. Linen's side talks to the folder through an adapter interface so that extension adapters (WebDAV and others) can plug in later, but the Host API for them waits, like item 44. Merge rules, device IDs and the edge cases are as in Phase 13 of the plan. |
+| iPad channel, extensions, test iPad (45–47) | As recommended (TestFlight first; extensions on TestFlight only, decided again before any App Store submission; any iPad Tauri supports), but **parked** with item 43: nothing is built until there is an Apple membership. |
