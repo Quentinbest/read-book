@@ -340,8 +340,8 @@
     {
       "id": "F5-results-land",
       "description": "Every result lands on its match on the page shown, marked as F5 says (tint + 1 px outline; active 2 px accent); marks go when Search closes",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "result 84: active mark null, theme {\"tint\":\"rgba(211,154,115,0.14)\",\"outline\":\"#B98664\",\"activeTint\":\"rgba(211,154,115,0.26)\",\"activeOutline\":\"#D39A73\"}"
     },
     {
       "id": "F7-esc-return",
@@ -616,8 +616,8 @@
     {
       "id": "budget-reflow",
       "description": "Reflow after a resize: < 150 ms from the end of the 120 ms debounce to the page (§6.4)",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "reflow after debounce: 124, 158, 67, 45 ms"
     },
     {
       "id": "S14-warm-book",
@@ -724,6 +724,12 @@
     {
       "id": "S9-edge-reveal-modes",
       "description": "Real pointer moves: the top and bottom edges reveal both bars in Pages and in Scroll alike; they hide when the pointer goes, and their buttons work",
+      "verdict": "fail",
+      "evidence": "pages: clicking the progress label did not open Go to"
+    },
+    {
+      "id": "L8-minimum-size",
+      "description": "The window cannot be made smaller than 760 × 480 (item 53); at that size the bars, Aa and Go to fit and the bars’ buttons work",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -740,7 +746,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791293818,
+    "time": 1791296313,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

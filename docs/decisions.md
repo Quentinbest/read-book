@@ -135,3 +135,11 @@ The owner approved items 33–40 as recommended (“Go ahead”, then “Approve
 | Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |
 | Quitting with unsaved notes (31) | As built (review fixes, 2026-09-26): Quit and Restart wait for the reader's writes; after a failed save Linen stays open with “Some notes aren’t saved, so Linen stayed open · Quit Anyway”. Approved with its wording. |
 | Settings captures (41) | `11-settings-reading` and `11-settings-shortcuts` become baselines (see `docs/visual/APPROVAL.md`). |
+
+## Decided 2026-10-06 (minimum window size, item 53)
+
+The owner chose option A: “Go with option A, 760 × 480”. The measurements behind it are in `docs/reader-review-2026-10-06.md`.
+
+| Rule | Decided |
+|---|---|
+| L8 (minimum window) | The main window, which holds the library and the reader, cannot be resized below 760 × 480 (`minWidth`/`minHeight` in `src-tauri/tauri.conf.json`). 760 is L8's narrow breakpoint and the width Screen 15 is drawn at; 480 is L9's height. The narrow forms below 760 px stay for page zoom (X6). Check `L8-minimum-size`. |

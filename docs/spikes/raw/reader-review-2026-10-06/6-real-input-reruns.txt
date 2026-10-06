@@ -1,0 +1,47 @@
+spikes: canary server failed to bind 127.0.0.1:8765: Address already in use (os error 48)
+== spike r
+import standardebooks-moby-dick.epub: imported
+import idpf-regime-anticancer-arabic.epub: imported
+import hostile-content.epub: imported
+import idpf-page-blanche.epub: imported
+import long-chapter.epub: imported
+import broken-bad-css-and-font.epub: imported
+import gutenberg-2701-moby-dick-epub2.epub: imported
+import broken-no-toc.epub: imported
+import broken-missing-items.epub: imported
+import idpf-childrens-literature.epub: imported
+import notes-and-images.epub: imported
+import idpf-sous-le-vent.epub: imported
+import idpf-kusamakura-japanese-vertical-writing.epub: imported
+import code-heavy.epub: imported
+FAIL S2-navigator-wheel: pages docked wheel down: the book moved 6:1 @0 → 38:1 @0
+edge pages top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge pages top (lower zone): bars true,true; under the pointer div.host svelte-twub32
+edge pages bottom: bars true,true; under the pointer span.
+edge scroll top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge scroll top (lower zone): bars true,true; under the pointer foliate-view.
+edge scroll bottom: bars true,true; under the pointer span.
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+FAIL     S2-navigator-wheel: pages docked wheel down: the book moved 6:1 @0 → 38:1 @0
+PASS     S9-edge-reveal-modes: ok
+PASS     L8-minimum-size: ok
+wrote docs/spikes/raw/e2e-reader.json
+
+== Further reruns, one block per run. The S2, S9, L8 blocks are stab2 and stab3, after the window is made active (both pass). The N6-contents-nav, F5, budget-reflow, S9, L8 blocks are rerun1 and rerun2, the second full run's failures alone, before that change: F5 and budget-reflow pass in both; S9 failed in rerun2.
+PASS S2-navigator-wheel: ok
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+PASS N6-contents-nav: ok
+PASS F5-results-land: ok
+PASS budget-reflow: ok
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+PASS S2-navigator-wheel: ok
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+PASS N6-contents-nav: ok
+PASS F5-results-land: ok
+PASS budget-reflow: ok
+FAIL S9-edge-reveal-modes: pages: no bottom bar to use | pages: no top bar to use | scroll: clicking the progress label did not open Go to
+PASS L8-minimum-size: ok

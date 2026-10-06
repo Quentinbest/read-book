@@ -17,6 +17,7 @@ The in-app suite gained checks that drive the real app with **real input**, beca
 | 1 | `F6-result-jumps` | Search “Queequeg” (252 results). Results 1, 127, 4, 252, 5, 5 (again), clicked in the panel (chapters unfolded as a reader would); Pages and Scroll. The match must also be on screen. |
 | 2 | `S2-navigator-wheel` | Real wheel (lines) and trackpad (pixels) over Contents: down, at the bottom, at the top, up at the top. The book must not move. Pages and Scroll; docked and floating. |
 | 4 | `S9-edge-reveal-modes` | Real pointer: over the text, then the top edge, the lower part of the top zone, the bottom edge; then away. Pages and Scroll. Then real clicks on the bottom bar's progress label (Go to) and the top bar's Contents. |
+| 3 | `L8-minimum-size` | After the decision: a real drag of the window's corner toward 200 × 150 must stop at 760 × 480. At that size, the top bar's items must not overlap, the bottom bar, Aa and Go to must fit, and a real click on Contents must open it. |
 | 3 | `size-survey` (opt-in) | Steps the window from 1280 × 800 down to 420 × 340; measures the text column, the bars, Aa, Go to, the Navigator and the library; captures each step. |
 
 To repeat (spike build, see CLAUDE.md):
@@ -58,7 +59,7 @@ scripts/e2e.sh r '^size-survey$'
   - Frame pointer moves that fall in an edge zone start the reveal (`edgeAt`), as moves over the page do. S9 and S10 are unchanged: both bars, hidden on leaving; the 3 s delay applies only to the full controls.
 - **Harness (spike builds only):** `spike_mouse`, `spike_cursor`, `spike_scroll_wheel { hid }`; the checks above; opt-in checks (`optIn`), which run only when selected.
 
-Item 3 changes nothing yet: the dimensions wait for the owner (`docs/pending-approvals.md`, item 53).
+- **Item 3, after the owner chose option A (2026-10-06, `docs/decisions.md`):** the main window's `minWidth`/`minHeight` are 760 × 480, in `tauri.conf.json` and the spike config. The harness gained `spike_mouse_drag`, which drags as a person does: AppKit's minimum limits a person's resize, not `setSize`.
 
 ## Minimum size (item 3)
 
@@ -81,7 +82,7 @@ Item 3 changes nothing yet: the dimensions wait for the owner (`docs/pending-app
 - The top bar's breaking point depends on the title's length, because the title does not truncate (see Side findings). The figures above are for “Moby Dick · LXXII: The Monkey-Rope”.
 - **Apple Books (measured here, macOS 14):** its library window stops at **1001 × 530**. Its book window was **not measured**: that needs a book open in the owner's Books library, which changes its reading state. Not verified.
 
-The proposal, with options and a recommendation, is item 53 in `docs/pending-approvals.md`.
+The proposal, with options and a recommendation, is item 53 in `docs/pending-approvals.md`. The owner chose **A, 760 × 480**, on 2026-10-06.
 
 ## Verification
 
@@ -92,7 +93,8 @@ All runs were on this Mac (macOS 14, current desktop), with the spike build of t
 | 1 · Contents jumps, both modes, docked and floating, repeated, across chapters | **Pass.** Before: Scroll-mode jumps failed (docked: jumps 3–6 and the double choice) and stuttered. After: every jump shows the old place, at most one blank, then the target, and nothing moves after it arrives. The target shows 20–110 ms after the click in Scroll and 30–95 ms in Pages. | `N6-contents-jumps`; logs 2 and 4 |
 | 1 · Search-result jumps, both modes, back and forth, the same one twice | **Pass.** Before: every cross-chapter result in Scroll mode was drawn at the wrong place, then moved. After: one change, and the match is on screen. | `F6-result-jumps`; logs 1 and 4 |
 | 2 · Wheel over Contents, at the top and bottom too | **Pass**, Pages and Scroll, docked and floating. The book does not move; the list scrolls. | `S2-navigator-wheel`; logs 2 and 4 |
-| 3 · Minimum size | **Pending human acceptance:** the dimensions (item 53). Nothing is constrained yet, so “resizing cannot go below them” is **not verified**. | `size-survey`; `docs/visual/survey/` |
+| 3 · Minimum size: which window, and the dimensions | The application window; the owner chose 760 × 480 (item 53). | `size-survey`; `docs/visual/survey/` |
+| 3 · Resizing stops at 760 × 480; the reader and its controls work there | **Pass.** A real corner drag toward 200 × 150 stopped at 760 × 480; the top bar is clear, the bottom bar, Aa and Go to fit, and a real click on Contents opens it. | `L8-minimum-size`; log 5 |
 | 3 · Apple Books book-window minimum | **Not verified** (needs a book opened in the owner's Books library). Its library window: 1001 × 530. | — |
 | 4 · Top (and bottom) edge in Scroll as in Pages; both bars work | **Pass.** Top edge, lower top zone and bottom edge reveal both bars in both modes, and hide when the pointer leaves. Real clicks open Go to (bottom bar) and Contents (top bar). | `S9-edge-reveal-modes`; logs 2 and 4 |
 | 1, 2, 4 by hand (real trackpad momentum, the owner's books) | **Pending human acceptance** (item 54). | — |
@@ -100,6 +102,12 @@ All runs were on this Mac (macOS 14, current desktop), with the spike build of t
 Regression checks:
 - **Full in-app suite (log 4):** 121 of 122 pass. That includes B8 Scroll mode, real-wheel, the N6, F5–F7, S2, S9 and S13 checks, the reflow and open budgets, and D1 (no uncaught error in the whole run).
   - The one failure is `P2-hostile-extension`, **not verified**. Its canary server could not bind 127.0.0.1:8765, which an unrelated `python -m http.server 8765` (started 20:46 that day) was holding, so it saw no requests. It does not touch the code changed here.
+- **Full in-app suite with the 760 × 480 minimum (log 5):** 119 of 123 pass, including `L8-minimum-size`, every check added here and D1. The four failures:
+  - `P2-hostile-extension`: as above, the port was still taken.
+  - `F5-results-land`: one result's active mark was missing. It passes in both reruns (log 6). It flaked the same way in the 1.1 runs, and the Pages-mode search path is unchanged here.
+  - `budget-reflow`: one of four resizes took 158 ms (budget 150; the others 124, 67 and 45 ms). It passed in log 4 and in both reruns.
+  - `S9-edge-reveal-modes`: the reveal passed; a real click on a revealed bar did not register. Before the change below, that happened in 3 of the 7 runs that included this check. The click was spent activating the window (I11). The real-input checks now make the window active first, and the click step gets three attempts, each logged. The reveal itself stays strict. Since then: 3 runs of S2, S9 and L8, with no retry needed.
+  - One of those 3 runs had a stray `S2-navigator-wheel` failure: the book jumped from section 6 to 38, as a click on a Contents row would. The check never clicks, and the failure did not recur. These checks move the real cursor into the window, so another click on this Mac at that moment would do exactly this. **Not explained.**
 - **Visual (`scripts/e2e.sh v`, `node tests/visual/compare.mjs`):**
   - 24 of 25 baselines match. `17-goto` differs by 0.141%, only in the field's focus ring and the window buttons: the active-window difference already noted for that capture in `docs/release-1.1-status.md`.
   - The seven `g8-*` captures, including Scroll reading and the chapter join, are pixel-identical to the committed ones.
@@ -110,6 +118,10 @@ Logs, in `docs/spikes/raw/reader-review-2026-10-06/`:
 2. `2-before-real-input.txt`: unchanged code, real input.
 3. `3-after-fix.txt`: the fixed code, the size survey. Its one F6 failure was the check's own mistake (a result in the chapter already showing), corrected before log 4.
 4. `4-full-suite.txt`: the whole suite on the fixed code.
+5. `5-full-suite-min-size.txt`: the whole suite with the 760 × 480 minimum (`docs/spikes/raw/e2e-reader.json` holds this run).
+6. `6-real-input-reruns.txt`: reruns of the real-input checks and of log 5's failures.
+
+The real-input checks (`input-paths`, `S2-navigator-wheel`, `S9-edge-reveal-modes`, `L8-minimum-size`) move the system cursor, activate Linen's window and click in it. Run them with nobody using the Mac.
 
 ## Side findings (not changed; outside the four items)
 

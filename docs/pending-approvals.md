@@ -7,7 +7,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 
-Waiting now: items 53 and 54 (reader review, 2026-10-06). The other items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Waiting now: item 54 (reader review, 2026-10-06). Item 53 was approved on 2026-10-06 (option A, 760 × 480) and built. The other items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -70,6 +70,7 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
     - **C. 640 × 480.** The smallest clean reader measured. It needs two fixes first: the top-bar title must truncate, and the library's narrow header must clear the window buttons.
 
     *Recommendation:* A. Once agreed: `minWidth`/`minHeight` on the `main` window in `src-tauri/tauri.conf.json` and `tauri.spikes.conf.json`, plus an in-app check that resizing below them is refused and that the bars still work at that size. The X6 narrow forms stay: zoom (200–400%) still produces narrow CSS widths.
+    **Approved 2026-10-06: option A, built as recommended.** A real drag of the window's corner stops at 760 × 480. At that size the bars, Aa and Go to fit, and the bars' buttons work (`L8-minimum-size`). The check drags the corner because AppKit's minimum limits a person's resize, not a programmatic one.
 
 54. **Hands-on acceptance of the reader fixes (owner's items 1, 2 and 4).** They were reproduced and verified with real posted input in the in-app suite (`N6-contents-jumps`, `F6-result-jumps`, `S2-navigator-wheel`, `S9-edge-reveal-modes`). They have not been tried by hand, with a real trackpad's momentum, or with your own books.
     - **Jumps in Scroll mode:** they now go blank briefly while the chapter loads (the target shows 20–110 ms after the click in the runs here), as Pages jumps already do, instead of drawing it at the wrong place first.

@@ -4546,6 +4546,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
   /** These checks move the system cursor; put it back where it was afterwards. */
   async function withCursor<T>(run: () => Promise<T>): Promise<T> {
     await invoke('spike_cursor', { restore: false })
+    // A click on an inactive window only activates it (I11): make this one active first.
+    await getCurrentWindow().setFocus()
+    await settled(300)
     try {
       return await run()
     } finally {
@@ -4978,44 +4981,136 @@ export async function spikeE2E(): Promise<SpikeResult> {
               if (bars() !== 'false,false')
                 problems.push(`${mode} ${edge}: bars ${bars()} after leaving`)
             }
-            // The revealed bars work: the bottom bar's Go to label, then the top bar's Contents.
-            await realMouse(x, innerHeight - 30)
-            await settled(600)
-            const label = document
-              .querySelector<HTMLElement>('.goto-label')
-              ?.getBoundingClientRect()
-            if (!label) problems.push(`${mode}: no bottom bar to use`)
-            else {
-              await realMouse(label.left + label.width / 2, label.top + label.height / 2, true)
-              await settled(500)
-              if (!document.querySelector('.goto'))
-                problems.push(`${mode}: clicking the progress label did not open Go to`)
-              key('Escape', { code: 'Escape' })
-              await settled(400)
+            // The revealed bars work: the bottom bar's Go to label, then the top bar's
+            // Contents. The reveal is checked strictly above; here the cursor is shared
+            // with anything else moving it on this Mac, so a step gets three attempts.
+            const use = async (
+              edgeY: number,
+              target: string,
+              opened: string,
+              what: string,
+            ): Promise<void> => {
+              const tries: string[] = []
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                await realMouse(x, mid)
+                await settled(400)
+                await realMouse(x, edgeY)
+                await sleep(80)
+                await realMouse(x, edgeY + 1)
+                const box = await waitFor(
+                  'the bar',
+                  () => document.querySelector<HTMLElement>(target)?.getBoundingClientRect(),
+                  2000,
+                ).catch(() => null)
+                if (!box) {
+                  tries.push('no bar')
+                  continue
+                }
+                await realMouse(box.left + box.width / 2, box.top + box.height / 2, true)
+                await settled(600)
+                const ok = !!document.querySelector(opened)
+                key('Escape', { code: 'Escape' })
+                await settled(400)
+                if (ok) {
+                  if (tries.length) log(`S9 ${mode} ${what}: worked on attempt ${attempt}`)
+                  return
+                }
+                tries.push('the click did nothing')
+              }
+              problems.push(`${mode}: ${what} failed 3 times (${tries.join(', ')})`)
             }
-            await realMouse(x, mid)
-            await settled(500)
-            await realMouse(x, 20)
-            await settled(600)
-            const contents = document
-              .querySelector<HTMLElement>('.chrome.top .tool')
-              ?.getBoundingClientRect()
-            if (!contents) problems.push(`${mode}: no top bar to use`)
-            else {
-              await realMouse(
-                contents.left + contents.width / 2,
-                contents.top + contents.height / 2,
-                true,
-              )
-              await settled(600)
-              if (!document.querySelector('.navigator'))
-                problems.push(`${mode}: clicking Contents in the top bar did not open it`)
-              await closeNavigator()
-            }
+            await use(innerHeight - 30, '.goto-label', '.goto', 'Go to from the bottom bar')
+            await use(20, '.chrome.top .tool', '.navigator', 'Contents from the top bar')
             await realMouse(x, mid)
             await settled(500)
           })
         return problems.length ? problems.join(' | ') : 'ok'
+      }),
+  })
+
+  checks.push({
+    id: 'L8-minimum-size',
+    description:
+      'The window cannot be made smaller than 760 × 480 (item 53); at that size the bars, Aa and Go to fit and the bars’ buttons work',
+    run: () =>
+      withCursor(async () => {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        const w = getCurrentWindow()
+        const size = await w.innerSize()
+        const factor = await w.scaleFactor()
+        const problems: string[] = []
+        const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect()
+        const inside = (r?: DOMRect) =>
+          !!r &&
+          r.left >= 0 &&
+          r.top >= 0 &&
+          r.right <= innerWidth + 0.5 &&
+          r.bottom <= innerHeight + 0.5
+        try {
+          // AppKit's minimum limits a person's resize, not a programmatic one: drag the
+          // window's lower-right corner (just outside the content) toward 200 × 150.
+          await w.setSize(new LogicalSize(900, 640))
+          await settled(1200)
+          await invoke('spike_mouse_drag', {
+            from: [innerWidth + 2, innerHeight + 2],
+            to: [200, 150],
+          })
+          await settled(1500)
+          const now = (await w.innerSize()).toLogical(factor)
+          const got = `${Math.round(now.width)} × ${Math.round(now.height)}`
+          if (got === '900 × 640') return 'error: the drag did not resize the window at all'
+          if (got !== '760 × 480') problems.push(`dragged toward 200 × 150, the window is ${got}`)
+          // The rest at exactly the minimum.
+          if (got !== '760 × 480') await w.setSize(new LogicalSize(760, 480))
+          await settled(1200)
+          await showControls()
+          // The top bar: Library, Contents, the title and the tools side by side, no text over another.
+          const boxes = [
+            '.chrome.top .library',
+            '.chrome.top .tool',
+            '.chrome.top .title .book',
+            '.chrome.top .tools',
+          ].map(rect)
+          if (boxes.some((b) => !b)) problems.push('a top-bar control is missing')
+          else
+            for (let i = 1; i < boxes.length; i++)
+              if (boxes[i]!.left < boxes[i - 1]!.right - 0.5)
+                problems.push(
+                  `top bar: item ${i + 1} starts at ${Math.round(boxes[i]!.left)}, before ${Math.round(boxes[i - 1]!.right)}`,
+                )
+          if (!inside(rect('.chrome.bottom'))) problems.push('the bottom bar does not fit')
+          hooks.run?.('reader.settings')
+          await settled(600)
+          if (!inside(rect('.aa'))) problems.push('Aa does not fit')
+          key('Escape', { code: 'Escape' })
+          await settled(300)
+          hooks.run?.('goto.open')
+          await settled(600)
+          if (!inside(rect('.goto'))) problems.push('Go to does not fit')
+          key('Escape', { code: 'Escape' })
+          await settled(300)
+          // A real click on the top bar's Contents opens the (floating) Navigator.
+          await showControls()
+          const contents = rect('.chrome.top .tool')
+          if (contents) {
+            await realMouse(
+              contents.left + contents.width / 2,
+              contents.top + contents.height / 2,
+              true,
+            )
+            await settled(700)
+            if (!document.querySelector('.navigator.floating'))
+              problems.push('clicking Contents did not open the floating Navigator')
+            await closeNavigator()
+          }
+          await realMouse(Math.round(innerWidth * 0.3), Math.round(innerHeight / 2))
+          await hideControls()
+        } finally {
+          await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+          await settled(1200)
+        }
+        return problems.length ? problems.join('; ') : 'ok'
       }),
   })
 

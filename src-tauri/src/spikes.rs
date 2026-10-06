@@ -504,6 +504,38 @@ pub fn spike_mouse<R: Runtime>(
     Ok(())
 }
 
+/// A real left-button drag from one point in the window to another (CSS px, origin
+/// top-left), in steps, through the HID tap: what a person resizing the window by its
+/// corner does. AppKit's minimum size limits this, not a programmatic resize.
+#[tauri::command]
+pub fn spike_mouse_drag<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Result<(), String> {
+    const DRAGGED: u32 = 6; // kCGEventLeftMouseDragged
+    let start = screen_point(&window, from.0, from.1)?;
+    let end = screen_point(&window, to.0, to.1)?;
+    post_mouse(MOUSE_MOVED, start);
+    std::thread::sleep(Duration::from_millis(100));
+    post_mouse(MOUSE_DOWN, start);
+    const STEPS: u32 = 20;
+    for i in 1..=STEPS {
+        let t = f64::from(i) / f64::from(STEPS);
+        std::thread::sleep(Duration::from_millis(16));
+        post_mouse(
+            DRAGGED,
+            CGPoint {
+                x: start.x + (end.x - start.x) * t,
+                y: start.y + (end.y - start.y) * t,
+            },
+        );
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    post_mouse(MOUSE_UP, end);
+    Ok(())
+}
+
 /// Where the cursor was before a check moved it.
 static SAVED_CURSOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 

@@ -7,6 +7,8 @@
         "visible": false,
         "width": 1400,
         "height": 900,
+        "minWidth": 760,
+        "minHeight": 480,
         "resizable": true,
         "fullscreen": false,
         "alwaysOnTop": true,
@@ -27,6 +29,7 @@
           "windows": ["main"],
           "permissions": [
             "core:window:allow-set-size",
+            "core:window:allow-set-focus",
             "core:window:allow-inner-size",
             "core:webview:allow-set-webview-zoom"
           ]

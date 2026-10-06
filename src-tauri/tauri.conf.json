@@ -16,6 +16,8 @@
         "title": "Linen",
         "width": 1280,
         "height": 800,
+        "minWidth": 760,
+        "minHeight": 480,
         "resizable": true,
         "fullscreen": false,
         "titleBarStyle": "Overlay",
