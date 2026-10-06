@@ -63,7 +63,7 @@ jobs:
       - name: Run Spikes A, DX, E and D
         shell: bash
         env:
-          LINEN_SPIKE: a,dx,e,d
+          LINEN_SPIKE: a,ax,dx,e,d
           LINEN_SPIKE_TIMEOUT: '3000'
         run: |
           export LINEN_DATA_DIR="$(mktemp -d)"
@@ -103,6 +103,9 @@ jobs:
         continue-on-error: true
       - name: Run 2
         run: mkdir r2 && cp runs/*-2/*.json r2/ && node scripts/compare-spike-a.mjs r2 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Other content, RTL to zoom (run 1)
+        run: node scripts/compare-spike-a.mjs r1 ax-content | tee -a "$GITHUB_STEP_SUMMARY"
         continue-on-error: true
       - name: Anchors across engines (run 1)
         run: node scripts/compare-spike-dx.mjs r1 | tee -a "$GITHUB_STEP_SUMMARY"

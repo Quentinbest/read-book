@@ -133,3 +133,90 @@ export async function spikeA(): Promise<SpikeResult> {
     raw: { engine: navigator.userAgent, checks },
   }
 }
+
+interface Variant {
+  id: string
+  book: string
+  width?: number
+  height?: number
+  css?: string
+}
+
+/**
+ * Spike A on content Moby-Dick at one column doesn't exercise (next-steps plan,
+ * Phase 10): RTL, vertical writing, CJK, hyphenation, fixed layout, the two-page
+ * spread, and 200% zoom (a 1280 × 800 window at 200% is 640 × 400 CSS px).
+ * Reported as ax-content-<platform>, compared like Spike A.
+ */
+const VARIANTS: Variant[] = [
+  { id: 'rtl-arabic', book: 'idpf-regime-anticancer-arabic.epub' },
+  { id: 'vertical-japanese', book: 'idpf-kusamakura-japanese-vertical-writing.epub' },
+  { id: 'cjk-horizontal', book: 'idpf-jlreq-in-japanese.epub' },
+  { id: 'fixed-layout', book: 'idpf-sous-le-vent.epub' },
+  {
+    id: 'hyphenation',
+    book: 'standardebooks-moby-dick.epub',
+    css: 'p { hyphens: auto; -webkit-hyphens: auto; text-align: justify; }',
+  },
+  { id: 'spread-1600', book: 'standardebooks-moby-dick.epub', width: 1600, height: 900 },
+  { id: 'zoom-200', book: 'standardebooks-moby-dick.epub', width: 640, height: 400 },
+]
+
+export async function spikeAx(): Promise<SpikeResult> {
+  const faces = await literataFaces()
+  const checks: (PageCheck & { variant: string })[] = []
+  const failures: string[] = []
+  const fontPx = 19
+  for (const v of VARIANTS) {
+    try {
+      const { view } = await openView(v.book, { fontPx, width: v.width, height: v.height })
+      const sections = view.book.sections
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => s.linear !== 'no' && s.size > 2000)
+        .map(({ i }) => i)
+      const picked = [
+        ...new Set(
+          Array.from({ length: 8 }, (_, k) => sections[Math.floor((k * sections.length) / 8)]),
+        ),
+      ]
+      for (const chapter of picked.filter((c) => c !== undefined)) {
+        await view.goTo(chapter)
+        view.renderer.setStyles(faces + readerCss(fontPx) + (v.css ?? ''))
+        await view.renderer.getContents()[0].doc.fonts.ready
+        await painted()
+        await painted()
+        const { splitLines, measureCh } = inspect(view)
+        // Fixed-layout books have no paginator page count; count the section once.
+        const pages = typeof view.renderer.pages === 'number' ? view.renderer.pages - 2 : 1
+        checks.push({ variant: v.id, chapter, fontPx, pages, splitLines, measureCh })
+      }
+      view.close()
+      log(`AX: ${v.id} done`)
+    } catch (e) {
+      failures.push(`${v.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  const split = checks
+    .filter((c) => c.variant !== 'fixed-layout')
+    .reduce((a, c) => a + c.splitLines, 0)
+  return {
+    spike: `ax-content-${platform()}`,
+    criteria: [
+      {
+        id: 'AX-opens',
+        description: 'Every variant opens and lays out',
+        verdict: failures.length ? 'fail' : 'pass',
+        evidence: failures.length
+          ? failures.join('; ')
+          : `${VARIANTS.length} variants, ${checks.length} sections`,
+      },
+      {
+        id: 'AX-no-split-lines',
+        description: 'No clipped or split lines at page boundaries (reflowable variants)',
+        verdict: split === 0 ? 'pass' : 'fail',
+        evidence: `${split} line boxes crossing a page edge`,
+      },
+    ],
+    raw: { engine: navigator.userAgent, checks },
+  }
+}

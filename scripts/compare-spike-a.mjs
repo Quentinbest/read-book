@@ -1,18 +1,20 @@
 // Spike A parity (next-steps plan, Phase 10): compare page counts per chapter and
 // size between engines, against the macOS (WKWebView) run of the same workflow.
-// Usage: node scripts/compare-spike-a.mjs <dir with a-rendering-*.json>
+// Usage: node scripts/compare-spike-a.mjs <dir> [report prefix, default a-rendering]
+// (ax-content: the extended content set, keyed by variant as well)
 // Exits 1 when any engine misses a criterion; prints a Markdown report.
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const LIMIT = 0.02
 const dir = process.argv[2] ?? 'docs/spikes/raw'
+const prefix = process.argv[3] ?? 'a-rendering'
 const runs = Object.fromEntries(
   readdirSync(dir, { recursive: true })
-    .filter((f) => /a-rendering-(macos|windows|linux)\.json$/.test(f))
+    .filter((f) => new RegExp(`${prefix}-(macos|windows|linux)\\.json$`).test(f))
     .map((f) => {
       const r = JSON.parse(readFileSync(join(dir, f), 'utf8'))
-      return [r.spike.replace('a-rendering-', ''), r]
+      return [r.spike.replace(`${prefix}-`, ''), r]
     }),
 )
 const base = runs.macos
@@ -20,7 +22,7 @@ if (!base) {
   console.log('No macOS run to compare against.')
   process.exit(1)
 }
-const key = (c) => `${c.fontPx}px ch${c.chapter}`
+const key = (c) => `${c.variant ? `${c.variant} ` : ''}${c.fontPx}px ch${c.chapter}`
 const basePages = new Map(base.raw.checks.map((c) => [key(c), c.pages]))
 const verdict = (ok) => (ok ? 'pass' : 'FAIL')
 let failed = false
@@ -44,7 +46,7 @@ for (const [name, run] of Object.entries(runs)) {
     if (d > worst) [worst, worstAt] = [d, `${key(c)}: ${c.pages} vs ${b}`]
   }
   const parity = worst <= LIMIT && missing === 0
-  const literata = crit['A-literata'] === 'pass'
+  const literata = (crit['A-literata'] ?? crit['AX-opens']) === 'pass'
   if (!parity || !literata || split > 0) failed = true
   out.push(
     `| ${name} | ${verdict(literata)} | ${split} | ${run.raw.checks.length - missing}/${run.raw.checks.length} | ${(worst * 100).toFixed(1)}% (${worstAt}) | ${verdict(parity)} |`,
