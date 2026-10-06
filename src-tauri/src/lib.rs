@@ -8,6 +8,7 @@ pub mod import;
 pub mod native;
 pub mod native_input;
 pub mod store;
+pub mod sync;
 pub mod updater;
 
 #[cfg(feature = "spikes")]
