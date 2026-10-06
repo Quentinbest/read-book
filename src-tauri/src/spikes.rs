@@ -243,7 +243,14 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::
         return Ok(());
     };
     start_canary_server(app.handle().clone());
-    let url = window.url()?.join(&format!("spikes.html?run={run}"))?;
+    // Before the first page loads, WebView2 reports an address that can't be a
+    // base (about:blank); the app's own origin there is http://tauri.localhost/.
+    let base = window
+        .url()
+        .ok()
+        .filter(|u| !u.cannot_be_a_base())
+        .map_or_else(|| tauri::Url::parse("http://tauri.localhost/"), Ok)?;
+    let url = base.join(&format!("spikes.html?run={run}"))?;
     window.navigate(url)?;
 
     // Automation safety net: never leave a hung harness running.
@@ -328,6 +335,13 @@ pub fn spike_memory() -> Result<serde_json::Value, String> {
 }
 
 /// A process's physical footprint in bytes (same user only).
+#[cfg(not(target_os = "macos"))]
+fn phys_footprint(_pid: u32) -> Option<u64> {
+    None
+}
+
+/// A process's physical footprint in bytes (same user only).
+#[cfg(target_os = "macos")]
 fn phys_footprint(pid: u32) -> Option<u64> {
     let mut info = std::mem::MaybeUninit::<libc::rusage_info_v2>::zeroed();
     // SAFETY: proc_pid_rusage fills a rusage_info_v2 of the size the flavor names.
@@ -352,27 +366,36 @@ pub fn spike_capture<R: Runtime>(
     if !valid_name(&name) {
         return Err(format!("invalid name: {name}"));
     }
-    let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
-    // SAFETY: Tauri hands out the window's own NSWindow; windowNumber is a plain getter.
-    let number = unsafe { (*(ptr as *const objc2_app_kit::NSWindow)).windowNumber() };
-    let dir = repo_root().join("docs/visual/app");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let path = dir.join(format!("{name}.png"));
-    // The window server's own capture of this one window: it works wherever the
-    // window is, including another desktop (LINEN_SPACE), where screencapture fails.
-    // It can refuse once in a while (the window between frames): try a few times.
-    let mut result = capture::window_png(number as u32, &path);
-    for _ in 0..5 {
-        if result.is_ok() {
-            break;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(250));
-        result = capture::window_png(number as u32, &path);
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = window;
+        Err("window capture is macOS only".into())
     }
-    result?;
-    Ok(path.display().to_string())
+    #[cfg(target_os = "macos")]
+    {
+        let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
+        // SAFETY: Tauri hands out the window's own NSWindow; windowNumber is a plain getter.
+        let number = unsafe { (*(ptr as *const objc2_app_kit::NSWindow)).windowNumber() };
+        let dir = repo_root().join("docs/visual/app");
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let path = dir.join(format!("{name}.png"));
+        // The window server's own capture of this one window: it works wherever the
+        // window is, including another desktop (LINEN_SPACE), where screencapture fails.
+        // It can refuse once in a while (the window between frames): try a few times.
+        let mut result = capture::window_png(number as u32, &path);
+        for _ in 0..5 {
+            if result.is_ok() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+            result = capture::window_png(number as u32, &path);
+        }
+        result?;
+        Ok(path.display().to_string())
+    }
 }
 
+#[cfg(target_os = "macos")]
 #[repr(C)]
 #[derive(Clone, Copy)]
 struct CGPoint {
@@ -380,6 +403,7 @@ struct CGPoint {
     y: f64,
 }
 
+#[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
     fn CGEventCreateScrollWheelEvent(
@@ -406,30 +430,42 @@ pub fn spike_scroll_wheel<R: Runtime>(
     count: u32,
     pixels: bool,
 ) -> Result<(), String> {
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let origin = window.inner_position().map_err(|e| e.to_string())?;
-    let point = CGPoint {
-        x: origin.x as f64 / scale + x,
-        y: origin.y as f64 / scale + y,
-    };
-    let pid = std::process::id() as i32;
-    std::thread::spawn(move || {
-        for _ in 0..count {
-            // SAFETY: CoreGraphics creates the event; it is posted to this process and released.
-            unsafe {
-                let event =
-                    CGEventCreateScrollWheelEvent(std::ptr::null(), u32::from(!pixels), 1, delta);
-                if event.is_null() {
-                    return;
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (window, x, y, delta, count, pixels);
+        Err("synthetic scroll events are macOS only".into())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let scale = window.scale_factor().map_err(|e| e.to_string())?;
+        let origin = window.inner_position().map_err(|e| e.to_string())?;
+        let point = CGPoint {
+            x: origin.x as f64 / scale + x,
+            y: origin.y as f64 / scale + y,
+        };
+        let pid = std::process::id() as i32;
+        std::thread::spawn(move || {
+            for _ in 0..count {
+                // SAFETY: CoreGraphics creates the event; it is posted to this process and released.
+                unsafe {
+                    let event = CGEventCreateScrollWheelEvent(
+                        std::ptr::null(),
+                        u32::from(!pixels),
+                        1,
+                        delta,
+                    );
+                    if event.is_null() {
+                        return;
+                    }
+                    CGEventSetLocation(event, point);
+                    CGEventPostToPid(pid, event);
+                    CFRelease(event);
                 }
-                CGEventSetLocation(event, point);
-                CGEventPostToPid(pid, event);
-                CFRelease(event);
+                std::thread::sleep(std::time::Duration::from_millis(16));
             }
-            std::thread::sleep(std::time::Duration::from_millis(16));
-        }
-    });
-    Ok(())
+        });
+        Ok(())
+    }
 }
 
 /// Phase 7: read back a file an extension exported (test exports only).
@@ -454,12 +490,17 @@ pub fn spike_crash_log(log: tauri::State<crate::crashlog::CrashLog>) -> String {
 /// The general pasteboard's plain text, so tests can check Copy.
 #[tauri::command]
 pub fn spike_read_pasteboard() -> String {
-    use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
-    // SAFETY: a static framework constant.
-    NSPasteboard::generalPasteboard()
-        .stringForType(unsafe { NSPasteboardTypeString })
-        .map(|s| s.to_string())
-        .unwrap_or_default()
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+        // SAFETY: a static framework constant.
+        NSPasteboard::generalPasteboard()
+            .stringForType(unsafe { NSPasteboardTypeString })
+            .map(|s| s.to_string())
+            .unwrap_or_default()
+    }
+    #[cfg(not(target_os = "macos"))]
+    String::new()
 }
 
 /// macOS desktops (Spaces). There is no public API for putting a window on another
@@ -560,6 +601,7 @@ mod desktops {
 }
 
 /// Capture one of this app's windows to a PNG, on any desktop (spike builds only).
+#[cfg(target_os = "macos")]
 mod capture {
     use std::ffi::c_void;
     use std::path::Path;

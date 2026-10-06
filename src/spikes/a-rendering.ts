@@ -1,6 +1,7 @@
-// Spike A (macOS part): foliate-js pagination in WKWebView with the L1–L3 canvas.
-// Cross-engine parity is deferred (macOS-only scope); the page counts recorded
-// here are the WKWebView baseline for that comparison.
+// Spike A: foliate-js pagination with the L1–L3 canvas. Runs on each engine
+// (WKWebView, WebView2, WebKitGTK) and reports as a-rendering-<platform>;
+// scripts/compare-spike-a.mjs compares the page counts (next-steps plan, Phase 10).
+// Literata is loaded from the bundle, so every engine lays out the same font.
 
 import type { View } from 'foliate-js/view.js'
 import {
@@ -8,10 +9,12 @@ import {
   measurePx,
   openView,
   painted,
+  platform,
   readerCss,
   type Criterion,
   type SpikeResult,
 } from './common'
+import { literataFaces } from '../reader/fonts'
 
 const SIZES = [16, 19, 24]
 
@@ -66,6 +69,8 @@ function inspect(view: View): { splitLines: number; measureCh: number } {
 
 export async function spikeA(): Promise<SpikeResult> {
   const checks: PageCheck[] = []
+  const faces = await literataFaces()
+  let literata = true
   for (const fontPx of SIZES) {
     const { view } = await openView('standardebooks-moby-dick.epub', { fontPx })
     const chapters = view.book.sections
@@ -78,7 +83,10 @@ export async function spikeA(): Promise<SpikeResult> {
     )
     for (const chapter of picked) {
       await view.goTo(chapter)
-      view.renderer.setStyles(readerCss(fontPx))
+      view.renderer.setStyles(faces + readerCss(fontPx))
+      const { doc } = view.renderer.getContents()[0]
+      await doc.fonts.ready
+      literata &&= doc.fonts.check(`${fontPx}px Literata`)
       await painted()
       await painted()
       const { splitLines, measureCh } = inspect(view)
@@ -104,18 +112,115 @@ export async function spikeA(): Promise<SpikeResult> {
       evidence: `${inRange}/${measures.length} layouts within 56–74 characters per line; range ${Math.min(...measures)}–${Math.max(...measures)}`,
     },
     {
+      id: 'A-literata',
+      description: 'The bundled Literata is the font laid out (a fair cross-engine comparison)',
+      verdict: literata ? 'pass' : 'fail',
+      evidence: literata
+        ? 'Literata loaded at every size'
+        : 'Literata did not load; a fallback font was measured',
+    },
+    {
       id: 'A-parity',
       description:
         'Page count per chapter differs by ≤ 2% between WKWebView, WebView2 and WebKitGTK',
       verdict: 'deferred',
-      evidence: 'macOS-only scope; WKWebView page counts recorded in raw.checks as the baseline',
-    },
-    {
-      id: 'A-screenshots',
-      description: 'Screenshots differ only in font rasterisation across engines',
-      verdict: 'deferred',
-      evidence: 'macOS-only scope',
+      evidence: 'computed across runs by scripts/compare-spike-a.mjs',
     },
   ]
-  return { spike: 'a-rendering-macos', criteria, raw: { checks } }
+  return {
+    spike: `a-rendering-${platform()}`,
+    criteria,
+    raw: { engine: navigator.userAgent, checks },
+  }
+}
+
+interface Variant {
+  id: string
+  book: string
+  width?: number
+  height?: number
+  css?: string
+}
+
+/**
+ * Spike A on content Moby-Dick at one column doesn't exercise (next-steps plan,
+ * Phase 10): RTL, vertical writing, CJK, hyphenation, fixed layout, the two-page
+ * spread, and 200% zoom (a 1280 × 800 window at 200% is 640 × 400 CSS px).
+ * Reported as ax-content-<platform>, compared like Spike A.
+ */
+const VARIANTS: Variant[] = [
+  { id: 'rtl-arabic', book: 'idpf-regime-anticancer-arabic.epub' },
+  { id: 'vertical-japanese', book: 'idpf-kusamakura-japanese-vertical-writing.epub' },
+  { id: 'cjk-horizontal', book: 'idpf-jlreq-in-japanese.epub' },
+  { id: 'fixed-layout', book: 'idpf-sous-le-vent.epub' },
+  {
+    id: 'hyphenation',
+    book: 'standardebooks-moby-dick.epub',
+    css: 'p { hyphens: auto; -webkit-hyphens: auto; text-align: justify; }',
+  },
+  { id: 'spread-1600', book: 'standardebooks-moby-dick.epub', width: 1600, height: 900 },
+  { id: 'zoom-200', book: 'standardebooks-moby-dick.epub', width: 640, height: 400 },
+]
+
+export async function spikeAx(): Promise<SpikeResult> {
+  const faces = await literataFaces()
+  const checks: (PageCheck & { variant: string })[] = []
+  const failures: string[] = []
+  const fontPx = 19
+  for (const v of VARIANTS) {
+    try {
+      const { view } = await openView(v.book, { fontPx, width: v.width, height: v.height })
+      const sections = view.book.sections
+        .map((s, i) => ({ s, i }))
+        .filter(({ s }) => s.linear !== 'no' && s.size > 2000)
+        .map(({ i }) => i)
+      const picked = [
+        ...new Set(
+          Array.from({ length: 8 }, (_, k) => sections[Math.floor((k * sections.length) / 8)]),
+        ),
+      ]
+      for (const chapter of picked.filter((c) => c !== undefined)) {
+        await view.goTo(chapter)
+        view.renderer.setStyles?.(faces + readerCss(fontPx) + (v.css ?? ''))
+        await view.renderer.getContents?.()[0]?.doc.fonts.ready
+        await painted()
+        await painted()
+        const { splitLines, measureCh } = inspect(view)
+        // Fixed-layout books have no paginator page count; count the section once.
+        const pages = typeof view.renderer.pages === 'number' ? view.renderer.pages - 2 : 1
+        checks.push({ variant: v.id, chapter, fontPx, pages, splitLines, measureCh })
+      }
+      view.close()
+      log(`AX: ${v.id} done`)
+    } catch (e) {
+      failures.push(`${v.id}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  // inspect() checks line boxes against the page's top and bottom, which says nothing
+  // in vertical writing (lines run top to bottom); fixed layout has no pages to split.
+  const unchecked = ['fixed-layout', 'vertical-japanese']
+  const split = checks
+    .filter((c) => !unchecked.includes(c.variant))
+    .reduce((a, c) => a + c.splitLines, 0)
+  return {
+    spike: `ax-content-${platform()}`,
+    criteria: [
+      {
+        id: 'AX-opens',
+        description: 'Every variant opens and lays out',
+        verdict: failures.length ? 'fail' : 'pass',
+        evidence: failures.length
+          ? failures.join('; ')
+          : `${VARIANTS.length} variants, ${checks.length} sections`,
+      },
+      {
+        id: 'AX-no-split-lines',
+        description:
+          'No clipped or split lines at page boundaries (horizontal reflowable variants; vertical writing and fixed layout not checked)',
+        verdict: split === 0 ? 'pass' : 'fail',
+        evidence: `${split} line boxes crossing a page edge`,
+      },
+    ],
+    raw: { engine: navigator.userAgent, checks },
+  }
 }

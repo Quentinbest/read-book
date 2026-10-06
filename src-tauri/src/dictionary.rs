@@ -92,6 +92,7 @@ pub fn open_dictionary(text: String) -> Result<(), String> {
 }
 
 /// Percent-encode everything but unreserved characters (RFC 3986).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn encode(s: &str) -> String {
     s.bytes()
         .map(|b| match b {

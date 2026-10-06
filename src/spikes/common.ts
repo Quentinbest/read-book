@@ -68,6 +68,15 @@ export function readerCss(fontPx: number) {
   `
 }
 
+/** The engine family this run measures, from the user agent. */
+export function platform(): 'windows' | 'linux' | 'macos' {
+  const ua = navigator.userAgent
+  return /Windows/.test(ua) ? 'windows' : /Linux/.test(ua) ? 'linux' : 'macos'
+}
+
+/** A report name per engine; macOS keeps the name its stored results already use. */
+export const perEngine = (name: string) => (platform() === 'macos' ? name : `${name}-${platform()}`)
+
 /** L1: 66 ch, about 640 px at 19 px. */
 export const measurePx = (fontPx: number) => Math.round((fontPx * 640) / 19)
 
@@ -102,7 +111,8 @@ export async function openView(
   view.renderer.setAttribute('gap', '6%')
   // L8: one column below 1480 px; the two-page spread starts there.
   view.renderer.setAttribute('max-column-count', (opts.width ?? 1280) >= 1480 ? '2' : '1')
-  view.renderer.setStyles(readerCss(opts.fontPx ?? 19))
+  // The fixed-layout renderer takes no reader styles (it has no setStyles).
+  view.renderer.setStyles?.(readerCss(opts.fontPx ?? 19))
   await view.init({ showTextStart: true })
   const t2 = await painted()
   return { view, openMs: t1 - t0, firstPageMs: t2 - t0 }

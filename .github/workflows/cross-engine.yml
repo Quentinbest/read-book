@@ -1,0 +1,125 @@
+name: Cross-engine
+
+# Spikes A, D (with cross-engine anchors) and E on WKWebView, WebView2 and WebKitGTK (docs/next-steps-plan.md, Phase 10).
+# Answers whether a Windows or Linux port is feasible; nothing here ships.
+# Each engine runs twice; a verdict counts only when both runs agree.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/workflows/cross-engine.yml
+      - src/spikes/a-rendering.ts
+      - src/spikes/d-fidelity.ts
+      - src/spikes/e-isolation.ts
+      - scripts/compare-spike-dx.mjs
+      - scripts/compare-spike-a.mjs
+  schedule:
+    - cron: '0 6 * * 1'
+
+jobs:
+  spike:
+    name: Spikes (${{ matrix.os }}, run ${{ matrix.run }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest, ubuntu-22.04]
+        run: [1, 2]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Linux WebView and build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev build-essential xvfb
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: pnpm install --frozen-lockfile
+      # Spike A needs only the Standard Ebooks Moby-Dick. Another file whose hash has
+      # drifted (Gutenberg 2701, 2026-10-02) must not stop it; the fetch still reports it.
+      - name: Fetch the corpus
+        run: python scripts/corpus/fetch.py
+        continue-on-error: true
+      - name: The Spike A book is present
+        shell: bash
+        run: test -s corpus/cache/standardebooks-moby-dick.epub
+      - name: Generate the broken, hostile and large books (Spikes D and E)
+        run: python scripts/corpus/generate.py
+      - name: Build the spikes binary
+        shell: bash
+        run: LINEN_SPIKES=1 pnpm tauri build --no-bundle --features spikes --config src-tauri/tauri.spikes.conf.json
+      - name: Run Spikes A, DX, E and D
+        shell: bash
+        env:
+          LINEN_SPIKE: a,ax,dx,e,d
+          LINEN_SPIKE_TIMEOUT: '3000'
+        run: |
+          export LINEN_DATA_DIR="$(mktemp -d)"
+          bin=src-tauri/target/release/linen
+          rm -f docs/spikes/raw/*.json
+          case "$RUNNER_OS" in
+            Linux) xvfb-run -a -s '-screen 0 1600x1000x24 -dpi 96' "$bin" || status=$? ;;
+            Windows) "$bin.exe" || status=$? ;;
+            *) "$bin" || status=$? ;;
+          esac
+          # A spike that misses a criterion still reports; only a missing report fails here.
+          echo "harness exit ${status:-0}"
+          ls docs/spikes/raw/*.json
+          test -s docs/spikes/raw/a-rendering-*.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: spike-a-${{ matrix.os }}-${{ matrix.run }}
+          path: docs/spikes/raw/*.json
+
+  compare:
+    name: Compare page counts
+    needs: spike
+    if: always()
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          package-manager-cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          path: runs
+      - name: Run 1
+        run: mkdir r1 && cp runs/*-1/*.json r1/ && node scripts/compare-spike-a.mjs r1 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Run 2
+        run: mkdir r2 && cp runs/*-2/*.json r2/ && node scripts/compare-spike-a.mjs r2 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Other content, RTL to zoom (run 1)
+        run: node scripts/compare-spike-a.mjs r1 ax-content | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Anchors across engines (run 1)
+        run: node scripts/compare-spike-dx.mjs r1 | tee -a "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
+      - name: Spikes D and E per engine (run 1)
+        run: |
+          node -e '
+            const fs = require("fs"), path = require("path")
+            const rows = ["| Report | Criterion | Verdict | Evidence |", "|---|---|---|---|"]
+            for (const f of fs.readdirSync("r1").filter((f) => /^(d-fidelity|e-isolation)/.test(f)).sort()) {
+              const r = JSON.parse(fs.readFileSync(path.join("r1", f), "utf8"))
+              for (const c of r.criteria) rows.push(`| ${r.spike} | ${c.id} | ${c.verdict} | ${String(c.evidence).replace(/\|/g, "/").slice(0, 160)} |`)
+            }
+            console.log(rows.join("\n"))
+          ' | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Runs agree
+        run: diff <(node scripts/compare-spike-a.mjs r1 | head -20) <(node scripts/compare-spike-a.mjs r2 | head -20) && echo 'Both runs agree' | tee -a "$GITHUB_STEP_SUMMARY"

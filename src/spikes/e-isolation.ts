@@ -2,7 +2,7 @@
 
 import { invoke } from '@tauri-apps/api/core'
 import type { Book } from 'foliate-js/view.js'
-import { log, openView, sleep, type Criterion, type SpikeResult } from './common'
+import { log, openView, perEngine, sleep, type Criterion, type SpikeResult } from './common'
 
 /** CSP injected into every book document (defence in depth, variant "csp+meta"). */
 export const BOOK_DOCUMENT_CSP =
@@ -280,7 +280,7 @@ export async function spikeE(): Promise<SpikeResult> {
     evidence: 'macOS-only scope (docs/decisions.md)',
   })
   return {
-    spike: 'e-isolation',
+    spike: perEngine('e-isolation'),
     criteria,
     raw: {
       variants,

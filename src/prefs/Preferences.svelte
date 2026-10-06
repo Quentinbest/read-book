@@ -103,6 +103,32 @@
     await changeSetting('theme', v)
   }
 
+  let syncFolder = $state<string | null>(null)
+  let syncStatus = $state('')
+
+  async function chooseSyncFolder() {
+    const dir = await open({ directory: true, title: t.prefs.syncFolderTitle })
+    if (typeof dir !== 'string') return
+    await ipc.syncSetFolder(dir)
+    syncFolder = dir
+    await syncNow()
+  }
+
+  async function turnSyncOff() {
+    await ipc.syncSetFolder(null)
+    syncFolder = null
+    syncStatus = ''
+  }
+
+  async function syncNow() {
+    try {
+      const r = await ipc.syncNow()
+      syncStatus = r ? t.prefs.synced(r.applied) : ''
+    } catch {
+      syncStatus = t.prefs.syncFailed
+    }
+  }
+
   async function exportAll() {
     const dir = await open({ directory: true, title: t.prefs.exportAll })
     if (typeof dir !== 'string') return
@@ -122,6 +148,7 @@
   onMount(() => {
     void (async () => {
       const get = (k: string) => ipc.settingGet(k)
+      syncFolder = await ipc.syncFolder()
       theme = ((await get('theme')) as ThemeChoice | null) ?? 'auto'
       applyTheme(theme)
       atLaunch = (await get('openAtLaunch')) === 'book' ? 'book' : 'library'
@@ -241,6 +268,25 @@
         </div>
         <p class="help">{t.prefs.exportHelp}</p>
         {#if status}<p class="status" role="status">{status}</p>{/if}
+      </div>
+      <div class="field">
+        <span class="label">{t.prefs.sync}</span>
+        {#if syncFolder}<code class="path">{syncFolder}</code>{/if}
+        <p class="help">{t.prefs.syncHelp}</p>
+        <div>
+          <button type="button" class="btn" onclick={() => void chooseSyncFolder()}
+            >{t.prefs.syncChoose}</button
+          >
+          {#if syncFolder}
+            <button type="button" class="btn" onclick={() => void syncNow()}
+              >{t.prefs.syncNow}</button
+            >
+            <button type="button" class="btn" onclick={() => void turnSyncOff()}
+              >{t.prefs.syncOff}</button
+            >
+          {/if}
+        </div>
+        {#if syncStatus}<p class="status" role="status">{syncStatus}</p>{/if}
       </div>
       <p class="help">{t.prefs.uninstall}</p>
     {:else if section === 'extensions'}

@@ -7,6 +7,8 @@ import {
   log,
   openView,
   painted,
+  perEngine,
+  platform,
   readCorpus,
   readerCss,
   rng,
@@ -232,7 +234,7 @@ async function pageTurns(turns: number) {
 export async function spikeDTurns(): Promise<SpikeResult> {
   const turns = await pageTurns(200)
   return {
-    spike: 'd-page-turns',
+    spike: perEngine('d-page-turns'),
     criteria: [
       {
         id: 'D-page-turn',
@@ -289,5 +291,45 @@ export async function spikeD(): Promise<SpikeResult> {
       evidence: `turn work (input → new page laid out): all p95 ${turns.work.p95} ms; within a chapter p95 ${turns.workWithinChapter.p95} ms (n=${turns.workWithinChapter.n}); crossing a chapter ${turns.workAcrossChapter ? `p95 ${turns.workAcrossChapter.p95} ms (n=${turns.workAcrossChapter.n})` : 'none'}`,
     },
   ]
-  return { spike: 'd-fidelity', criteria, raw: { open, turns, cfi, highlights: hl } }
+  return { spike: perEngine('d-fidelity'), criteria, raw: { open, turns, cfi, highlights: hl } }
+}
+
+/**
+ * Anchors across engines (next-steps plan, Phase 10): the same seeded 200 ranges,
+ * picked the same way on every engine, give each CFI and its text. compare-spike-dx.mjs
+ * checks that every engine makes the same CFI for the same text, so a highlight
+ * made on one engine lands on the same words on another.
+ */
+export async function spikeDx(): Promise<SpikeResult> {
+  const random = rng(20261003)
+  const { view } = await openView(MOBY, { fontPx: 19 })
+  const chapters = view.book.sections
+    .map((s, i) => ({ s, i }))
+    .filter(({ s }) => s.linear !== 'no' && s.size > 4000)
+  const anchors: { n: number; cfi: string; text: string; resolved: string }[] = []
+  for (let n = 0; n < 200; n++) {
+    const { i } = chapters[Math.floor(random() * chapters.length)]
+    await view.goTo(i)
+    await painted()
+    const doc = view.renderer.getContents()[0].doc
+    const range = randomTextRange(doc, random)
+    if (!range) continue
+    const cfi = view.getCFI(i, range)
+    const back = view.resolveCFI(cfi).anchor(doc) as Range
+    anchors.push({ n, cfi, text: range.toString(), resolved: back.toString() })
+  }
+  view.close()
+  const self = anchors.filter((a) => a.text === a.resolved).length
+  return {
+    spike: `dx-anchors-${platform()}`,
+    criteria: [
+      {
+        id: 'DX-self',
+        description: 'Each seeded CFI resolves back to its own text on this engine',
+        verdict: self === anchors.length && anchors.length === 200 ? 'pass' : 'fail',
+        evidence: `${self}/${anchors.length} (of 200 seeded)`,
+      },
+    ],
+    raw: { engine: navigator.userAgent, anchors },
+  }
 }

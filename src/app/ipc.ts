@@ -11,6 +11,8 @@ export interface Book {
   title: string
   title_source: 'package' | 'heading' | 'filename'
   authors: string[]
+  /** E6: the publisher's sort form of the first author (“Melville, Herman”); '' or null if none. */
+  author_sort: string | null
   language: string | null
   page_direction: string
   layout: 'reflowable' | 'fixed'
@@ -97,6 +99,12 @@ export const ipc = {
   openReleasePage: (version: string) => invoke<void>('open_release_page', { version }),
   positionGet: (bookId: string) => invoke<[string, number] | null>('position_get', { bookId }),
   settingGet: (key: string) => invoke<string | null>('setting_get', { key }),
+  syncFolder: () => invoke<string | null>('sync_folder'),
+  syncSetFolder: (folder: string | null) => invoke<void>('sync_set_folder', { folder }),
+  syncNow: () =>
+    invoke<{ written: number; applied: number; waiting: number; setAside: number } | null>(
+      'sync_now',
+    ),
   settingSet: (key: string, value: string) => invoke<void>('setting_set', { key, value }),
   /** Results of files opened from the OS before the UI was listening. */
   openedTake: () => invoke<ImportResult[]>('opened_take'),
