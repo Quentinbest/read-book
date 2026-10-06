@@ -181,8 +181,8 @@ export async function spikeAx(): Promise<SpikeResult> {
       ]
       for (const chapter of picked.filter((c) => c !== undefined)) {
         await view.goTo(chapter)
-        view.renderer.setStyles(faces + readerCss(fontPx) + (v.css ?? ''))
-        await view.renderer.getContents()[0].doc.fonts.ready
+        view.renderer.setStyles?.(faces + readerCss(fontPx) + (v.css ?? ''))
+        await view.renderer.getContents?.()[0]?.doc.fonts.ready
         await painted()
         await painted()
         const { splitLines, measureCh } = inspect(view)
