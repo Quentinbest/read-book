@@ -135,3 +135,30 @@ The owner approved items 33–40 as recommended (“Go ahead”, then “Approve
 | Baselines (40) | The 1.1 captures become baselines: `01-library`, `03-more-menu`, `05-navigator-search`, `06-selection-bar`, `09-reading-settings`, `12-damaged-book`, `12-extension-failure`, `14-night-selection`, `g10-cheat-sheet` (see `docs/visual/APPROVAL.md`). |
 | Quitting with unsaved notes (31) | As built (review fixes, 2026-09-26): Quit and Restart wait for the reader's writes; after a failed save Linen stays open with “Some notes aren’t saved, so Linen stayed open · Quit Anyway”. Approved with its wording. |
 | Settings captures (41) | `11-settings-reading` and `11-settings-shortcuts` become baselines (see `docs/visual/APPROVAL.md`). |
+
+## Decided 2026-10-06 (minimum window size, item 53)
+
+The owner chose option A: “Go with option A, 760 × 480”. The measurements behind it are in `docs/reader-review-2026-10-06.md`.
+
+| Rule | Decided |
+|---|---|
+| L8 (minimum window) | The main window, which holds the library and the reader, cannot be resized below 760 × 480 (`minWidth`/`minHeight` in `src-tauri/tauri.conf.json`). 760 is L8's narrow breakpoint and the width Screen 15 is drawn at; 480 is L9's height. The narrow forms below 760 px stay for page zoom (X6). Check `L8-minimum-size`. |
+
+## Approved 2026-10-06 (reader review, item 54)
+
+After item 53, the owner answered “Go ahead”, which approves the last waiting item as recommended (`docs/pending-approvals.md`). That reply did not say whether the steps were tried by hand.
+
+| # | Approved |
+|---|---|
+| Reader fixes (54) | As built and verified in the app (`docs/reader-review-2026-10-06.md`). Contents and search jumps in Scroll mode reach the target in one step, with a brief blank while a chapter loads, as in Pages. The wheel over the Navigator scrolls only the Navigator. In Scroll mode both edges reveal both bars, as in Pages. |
+
+## Decided 2026-10-06 (the review's side findings; the owner: “Make your best calls”)
+
+These came up during the reader review (`docs/reader-review-2026-10-06.md`, Side findings). The owner left the calls to Claude. Check `S3-title-and-message`.
+
+| Rule | Decided |
+|---|---|
+| Screen 03 (top-bar title) | The title stays centred on the window, inset on both sides by whichever side's buttons take more room, plus 12 px. A long title ends in “…”, the chapter part first. |
+| X6 (library narrow form) | The narrow header starts 18 pt past the window buttons (90 CSS px from the window's edge), as the wide header and the reader's bar do. |
+| M1 (messages and the bottom bar) | While the reader's bottom bar shows, a message sits 12 px above it, and returns to the foot when the bar goes. A pointer resting on a message does not reveal the bars, so the message never moves out from under it. |
+| Pages-mode jumps | Unchanged: at most one blank frame while a chapter loads. Removing it would mean loading jumps into a hidden view and swapping (D-D1), for a frame or two. |

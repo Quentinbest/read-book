@@ -389,14 +389,55 @@ extern "C" {
         wheel1: i32,
         ...
     ) -> *mut std::ffi::c_void;
+    fn CGEventCreateMouseEvent(
+        source: *const std::ffi::c_void,
+        kind: u32,
+        point: CGPoint,
+        button: u32,
+    ) -> *mut std::ffi::c_void;
+    fn CGEventCreate(source: *const std::ffi::c_void) -> *mut std::ffi::c_void;
+    fn CGEventGetLocation(event: *mut std::ffi::c_void) -> CGPoint;
     fn CGEventSetLocation(event: *mut std::ffi::c_void, point: CGPoint);
     fn CGEventPostToPid(pid: i32, event: *mut std::ffi::c_void);
+    fn CGEventPost(tap: u32, event: *mut std::ffi::c_void);
+    fn CGWarpMouseCursorPosition(point: CGPoint) -> i32;
     fn CFRelease(cf: *const std::ffi::c_void);
 }
 
-/// Post real scroll-wheel events to this app only (not the rest of the system), at a
-/// point in the window, so end-to-end tests exercise AppKit and WebKit scrolling.
-/// `pixels`: continuous (trackpad-like) deltas in points; otherwise wheel lines.
+/// kCGHIDEventTap: events enter the system where a real mouse's do.
+const HID_TAP: u32 = 0;
+
+/// A point in the window (CSS px, origin top-left) on the screen.
+fn screen_point<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    x: f64,
+    y: f64,
+) -> Result<CGPoint, String> {
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let origin = window.inner_position().map_err(|e| e.to_string())?;
+    Ok(CGPoint {
+        x: origin.x as f64 / scale + x,
+        y: origin.y as f64 / scale + y,
+    })
+}
+
+/// Post a mouse event of `kind` (a CGEventType) at `point`, through the HID tap.
+fn post_mouse(kind: u32, point: CGPoint) {
+    // SAFETY: CoreGraphics creates the event; it is posted and released.
+    unsafe {
+        let event = CGEventCreateMouseEvent(std::ptr::null(), kind, point, 0);
+        if !event.is_null() {
+            CGEventPost(HID_TAP, event);
+            CFRelease(event);
+        }
+    }
+}
+
+/// Post real scroll-wheel events at a point in the window, so end-to-end tests exercise
+/// AppKit and WebKit scrolling. `pixels`: continuous (trackpad-like) deltas in points;
+/// otherwise wheel lines. By default they go to this app only (not the rest of the
+/// system); AppKit's monitor sees them, but WebKit scrolls only what is under the real
+/// cursor. `hid`: move the cursor there and post them as a real wheel would arrive.
 #[tauri::command]
 pub fn spike_scroll_wheel<R: Runtime>(
     window: tauri::WebviewWindow<R>,
@@ -405,17 +446,17 @@ pub fn spike_scroll_wheel<R: Runtime>(
     delta: i32,
     count: u32,
     pixels: bool,
+    hid: Option<bool>,
 ) -> Result<(), String> {
-    let scale = window.scale_factor().map_err(|e| e.to_string())?;
-    let origin = window.inner_position().map_err(|e| e.to_string())?;
-    let point = CGPoint {
-        x: origin.x as f64 / scale + x,
-        y: origin.y as f64 / scale + y,
-    };
+    let point = screen_point(&window, x, y)?;
+    let hid = hid.unwrap_or(false);
+    if hid {
+        post_mouse(MOUSE_MOVED, point);
+    }
     let pid = std::process::id() as i32;
     std::thread::spawn(move || {
         for _ in 0..count {
-            // SAFETY: CoreGraphics creates the event; it is posted to this process and released.
+            // SAFETY: CoreGraphics creates the event; it is posted and released.
             unsafe {
                 let event =
                     CGEventCreateScrollWheelEvent(std::ptr::null(), u32::from(!pixels), 1, delta);
@@ -423,13 +464,100 @@ pub fn spike_scroll_wheel<R: Runtime>(
                     return;
                 }
                 CGEventSetLocation(event, point);
-                CGEventPostToPid(pid, event);
+                if hid {
+                    CGEventPost(HID_TAP, event);
+                } else {
+                    CGEventPostToPid(pid, event);
+                }
                 CFRelease(event);
             }
             std::thread::sleep(std::time::Duration::from_millis(16));
         }
     });
     Ok(())
+}
+
+/// kCGEventMouseMoved, kCGEventLeftMouseDown, kCGEventLeftMouseUp
+const MOUSE_MOVED: u32 = 5;
+const MOUSE_DOWN: u32 = 1;
+const MOUSE_UP: u32 = 2;
+
+/// A real mouse move, or a left click, at a point in the window (CSS px, origin
+/// top-left). Posted through the HID tap, so the system cursor moves and WebKit's own
+/// hit testing sends the pointer to the page or a book's frame. (Moves posted to the
+/// process alone never reach WebKit: AppKit tracks the real cursor.)
+#[tauri::command]
+pub fn spike_mouse<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    x: f64,
+    y: f64,
+    click: bool,
+) -> Result<(), String> {
+    let point = screen_point(&window, x, y)?;
+    post_mouse(MOUSE_MOVED, point);
+    if click {
+        std::thread::sleep(Duration::from_millis(30));
+        post_mouse(MOUSE_DOWN, point);
+        std::thread::sleep(Duration::from_millis(60));
+        post_mouse(MOUSE_UP, point);
+    }
+    Ok(())
+}
+
+/// A real left-button drag from one point in the window to another (CSS px, origin
+/// top-left), in steps, through the HID tap: what a person resizing the window by its
+/// corner does. AppKit's minimum size limits this, not a programmatic resize.
+#[tauri::command]
+pub fn spike_mouse_drag<R: Runtime>(
+    window: tauri::WebviewWindow<R>,
+    from: (f64, f64),
+    to: (f64, f64),
+) -> Result<(), String> {
+    const DRAGGED: u32 = 6; // kCGEventLeftMouseDragged
+    let start = screen_point(&window, from.0, from.1)?;
+    let end = screen_point(&window, to.0, to.1)?;
+    post_mouse(MOUSE_MOVED, start);
+    std::thread::sleep(Duration::from_millis(100));
+    post_mouse(MOUSE_DOWN, start);
+    const STEPS: u32 = 20;
+    for i in 1..=STEPS {
+        let t = f64::from(i) / f64::from(STEPS);
+        std::thread::sleep(Duration::from_millis(16));
+        post_mouse(
+            DRAGGED,
+            CGPoint {
+                x: start.x + (end.x - start.x) * t,
+                y: start.y + (end.y - start.y) * t,
+            },
+        );
+    }
+    std::thread::sleep(Duration::from_millis(100));
+    post_mouse(MOUSE_UP, end);
+    Ok(())
+}
+
+/// Where the cursor was before a check moved it.
+static SAVED_CURSOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
+
+/// Remember the system cursor's place (`restore: false`), or put it back there.
+#[tauri::command]
+pub fn spike_cursor(restore: bool) {
+    let mut saved = SAVED_CURSOR.lock().unwrap_or_else(|e| e.into_inner());
+    // SAFETY: CoreGraphics calls on an event it creates and releases.
+    unsafe {
+        if restore {
+            if let Some((x, y)) = saved.take() {
+                CGWarpMouseCursorPosition(CGPoint { x, y });
+            }
+        } else {
+            let event = CGEventCreate(std::ptr::null());
+            if !event.is_null() {
+                let p = CGEventGetLocation(event);
+                *saved = Some((p.x, p.y));
+                CFRelease(event);
+            }
+        }
+    }
 }
 
 /// Phase 7: read back a file an extension exported (test exports only).

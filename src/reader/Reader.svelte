@@ -1371,6 +1371,36 @@
   let hideTimer = 0
   let topBar: HTMLElement | undefined = $state()
   let bottomBar: HTMLElement | undefined = $state()
+  /**
+   * Screen 03: the title stays centred on the window but never runs under the bar's
+   * buttons. It is inset by whichever side's buttons take more room, and a long title
+   * ends in “…”, the chapter before the book.
+   */
+  let titleInset = $state(0)
+  const TITLE_GAP = 12
+  $effect(() => {
+    const bar = topBar
+    if (!bar) return
+    const measure = () => {
+      const r = bar.getBoundingClientRect()
+      const left = bar.querySelector('.tool')?.getBoundingClientRect().right ?? r.left
+      const right = bar.querySelector('.tools')?.getBoundingClientRect().left ?? r.right
+      titleInset = Math.ceil(Math.max(left - r.left, r.right - right)) + TITLE_GAP
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(bar)
+    measure()
+    return () => observer.disconnect()
+  })
+  /** M1: while the bottom bar shows, a message sits above it, never over the progress bar. */
+  const BOTTOM_BAR_PX = 64
+  const MESSAGE_GAP = 12
+  $effect(() => {
+    if (!active || !chromeVisible) return
+    const root = document.documentElement.style
+    root.setProperty('--message-bottom', `${BOTTOM_BAR_PX + MESSAGE_GAP}px`)
+    return () => root.removeProperty('--message-bottom')
+  })
   /** S11: the strip at the window's foot where an auto-hiding Dock slides in. */
   const DOCK_STRIP = 6
   /**
@@ -1389,12 +1419,17 @@
     }
   }
 
-  /** `y` is in the reader's coordinates. */
-  function onPointerAt(y: number) {
+  /** S9, S11: the edge zone `y` is in, if any (`y` in the reader's coordinates). */
+  function edgeAt(y: number): 'top' | 'bottom' | null {
     const nearTop = y >= edges.topStart && y <= edges.topStart + REVEAL_ZONE
     const bottomEnd = window.innerHeight - (edges.dockBottom ? DOCK_STRIP : 0)
     const nearBottom = y >= window.innerHeight - REVEAL_ZONE && y <= bottomEnd
-    const edge = nearTop ? 'top' : nearBottom ? 'bottom' : null
+    return nearTop ? 'top' : nearBottom ? 'bottom' : null
+  }
+
+  /** `y` is in the reader's coordinates. */
+  function onPointerAt(y: number) {
+    const edge = edgeAt(y)
     clearTimeout(hideTimer)
     if (lanes.chromePeek) {
       // S9: the bars the pointer revealed stay while the pointer is on one of them or in an
@@ -1425,15 +1460,20 @@
     }
   }
   const onPointerMove = (e: PointerEvent) => onPointerAt(e.clientY)
-  /** The book's frames swallow pointer moves; without these a bar would stay up over the text. */
+  /**
+   * The book's frames swallow pointer moves; without these a bar would stay up over the
+   * text. In Scroll mode the text runs under the window edges (G8), so the edge zones
+   * are over a frame too, and a move there must start the reveal as it does in Pages (S9).
+   */
   function onBookPointerMove(doc: Document) {
     doc.addEventListener('pointermove', (e) => {
-      if (!lanes.chromePeek && !dwellTimer) return
       const frame = doc.defaultView?.frameElement?.getBoundingClientRect()
       if (!frame) return
       // Fixed layout scales the frame (I17); map the pointer through it.
       const scale = frame.height / (doc.defaultView?.innerHeight || frame.height || 1)
-      onPointerAt(frame.top + e.clientY * scale)
+      const y = frame.top + e.clientY * scale
+      if (!lanes.chromePeek && !dwellTimer && !edgeAt(y)) return
+      onPointerAt(y)
     })
   }
 
@@ -1638,9 +1678,11 @@
       cleanups.push(
         await listen<NativeScroll>('native-scroll', ({ payload }) => {
           if (!active) return // S14: the library is on top
+          // Over a panel (the Navigator, docked or floating, included) the wheel scrolls
+          // the panel only, also once it has reached its top or bottom.
           const panel = document
             .elementFromPoint(payload.x, payload.y)
-            ?.closest('.chrome, dialog, .popover')
+            ?.closest('.chrome, dialog, .popover, .navigator')
           if (panel) return
           // I17: a zoomed page pans with the wheel and two fingers; no page turns.
           if (engine?.zoom && engine.zoom > 1) return
@@ -2159,7 +2201,7 @@
         <button type="button" class="tool" aria-label={t.reader.contents} onclick={openContents}>
           <Icon name="contents" size={18} />
         </button>
-        <div class="title" aria-live="off">
+        <div class="title" aria-live="off" style:--title-inset="{titleInset}px">
           <!-- S9: bars the pointer revealed name the book only. -->
           <span class="book">{book.title}</span
           >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
@@ -2530,12 +2572,15 @@
   }
   .title {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: var(--title-inset, 0);
+    right: var(--title-inset, 0);
     text-align: center;
     font-size: 13px;
     color: var(--ink-secondary);
     pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .book {
     color: var(--ink);

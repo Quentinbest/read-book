@@ -956,7 +956,9 @@ export class ReaderEngine {
    * taken out of the flow (N9). Returns false when the match cannot be placed.
    */
   async goToText(index: number, start: number, end: number): Promise<boolean> {
-    const view = this.#current
+    // B8: in Scroll mode this navigation supersedes any stack still being built.
+    const seq = this.#mode === 'scroll' ? ++this.#stackSeq : 0
+    const view = seq ? this.#scrollViewFor(index) : this.#current
     const node = (doc: Document) => this.textRange(doc, start, end)?.startContainer ?? null
     if (this.#indexOf(view) !== index) {
       this.#requests.set(view, { kind: 'node', node })
@@ -975,14 +977,19 @@ export class ReaderEngine {
     }
     const doc = this.#docOf(view)
     const range = doc ? this.textRange(doc, start, end) : null
-    if (!range) return false
+    if (!range) {
+      // The stack may be hidden for the load: show the section rather than nothing.
+      if (seq === this.#stackSeq && seq) await this.#scrollToTarget(view, index, seq)
+      return false
+    }
     const el =
       range.startContainer.nodeType === 1
         ? (range.startContainer as Element)
         : range.startContainer.parentElement
     el?.closest('[data-linen-footnote]')?.removeAttribute('data-linen-footnote')
-    if (this.#mode === 'scroll') await this.#scrollToTarget(view, range)
-    else {
+    if (seq) {
+      if (seq === this.#stackSeq) await this.#scrollToTarget(view, range, seq)
+    } else {
       await view.renderer.goTo({ index, anchor: range })
       this.#prepareNeighbours()
     }
@@ -1808,9 +1815,9 @@ export class ReaderEngine {
   async #navigate(target: string | number | { fraction: number }) {
     const seq = this.#mode === 'scroll' ? ++this.#stackSeq : 0
     if (seq) this.#scrollPin = { target, view: null, y: NaN }
-    const view = this.#current
-    const resolved = view.resolveNavigation(target) as { index: number } | undefined
+    const resolved = this.#current.resolveNavigation(target) as { index: number } | undefined
     if (!resolved) return
+    const view = seq ? this.#scrollViewFor(resolved.index) : this.#current
     if (this.#indexOf(view) === resolved.index) {
       const c = this.#chunksOf(view)
       if (c) {
@@ -2008,7 +2015,42 @@ export class ReaderEngine {
     }
   }
 
-  /** Scroll mode after a navigation: rebuild the stack around `view` and bring the target to the top. */
+  /**
+   * Scroll mode: the view a navigation to section `index` uses. A section already in
+   * the stack is scrolled to, not loaded again. Otherwise the current view loads it,
+   * and the stack is hidden until the target is in place, so the new section never
+   * shows where the old one was and then jumps (B8).
+   */
+  #scrollViewFor(index: number): View {
+    const shown = this.#slots.find((x) => this.#indexOf(x.view) === index)
+    if (shown) return shown.view
+    for (const x of this.#slots) x.view.style.visibility = 'hidden'
+    for (const j of this.#joins) j.remove()
+    this.#joins = []
+    return this.#current
+  }
+
+  /**
+   * Scroll mode: make the view the reader is in current. The neighbours keep the other
+   * two views, so the three views stay distinct (`#views`); a navigation that found
+   * the same view twice there lost one and stopped halfway.
+   */
+  #makeCurrent(view: View) {
+    const old = this.#current
+    if (view === old) return
+    if (view === this.#next.view) this.#next.view = old
+    else if (view === this.#prev.view) this.#prev.view = old
+    this.#next.unit = null
+    this.#prev.unit = null
+    this.#current = view
+  }
+
+  /**
+   * Scroll mode after a navigation: bring the target to the top of the window. If the
+   * stack already holds the target's unit and its neighbours, that is only a scroll.
+   * Otherwise the target is placed alone first and its neighbours load out of sight,
+   * then join it above and below without moving it.
+   */
   async #scrollToTarget(view: View, target: ScrollTarget, seq = ++this.#stackSeq) {
     if (this.#scrollPin?.target !== target) this.#scrollPin = { target, view: null, y: NaN }
     const stale = () => seq !== this.#stackSeq
@@ -2017,22 +2059,50 @@ export class ReaderEngine {
       await this.#settled(view)
       const unit = this.#unitOf(view)
       if (!unit || stale()) return
-      const centre: Slot = { view, unit, top: 0, height: view.renderer.viewSize }
-      const others = this.#views().filter((v) => v !== view && v !== this.#counter)
+      this.#makeCurrent(view)
+      if (this.#scrollPin) this.#scrollPin.view = view
       const before = this.#adjacentUnit(-1, view)
       const after = this.#adjacentUnit(1, view)
+      const holds = (slot: Slot | undefined, u: Unit | null) =>
+        u ? !!slot && slot.unit.index === u.index && slot.unit.chunk === u.chunk : !slot
+      const k = this.#slots.findIndex((x) => x.view === view)
+      const placed = this.#slots[k]
+      if (
+        placed &&
+        holds(placed, unit) &&
+        holds(this.#slots[k - 1], before) &&
+        holds(this.#slots[k + 1], after)
+      ) {
+        // Heights change with a relayout: place the stack again around the target first.
+        for (const x of this.#slots) x.height = x.view.renderer?.viewSize ?? x.height
+        this.#placeSlots(k)
+        this.#alignTo(placed, target)
+        return
+      }
+      const centre: Slot = { view, unit, top: 0, height: view.renderer.viewSize }
+      this.#slots = [centre]
+      this.#placeSlots(0)
+      this.#alignTo(centre, target)
+      this.#emitScrollLocation()
+      const others = this.#views().filter((v) => v !== view && v !== this.#counter)
       const slots: Slot[] = [centre]
-      if (before) slots.unshift(await this.#loadUnit(others[0], before))
-      if (stale()) return
-      if (after) slots.push(await this.#loadUnit(others[1], after))
-      if (stale()) return
+      if (before) {
+        const slot = await this.#loadUnit(others[0], before)
+        if (stale()) return
+        slots.unshift(slot)
+      }
+      if (after) {
+        const slot = await this.#loadUnit(others[1], after)
+        if (stale()) return
+        slots.push(slot)
+      }
       // Heights read now, after the neighbours loaded (fonts may have changed them).
       for (const x of slots) x.height = x.view.renderer?.viewSize ?? x.height
       this.#slots = slots
-      this.#current = view
-      this.#placeSlots(0)
-      if (this.#scrollPin) this.#scrollPin.view = view
-      this.#alignTo(centre, target)
+      // The target keeps its place on screen; the stack grows around it.
+      this.#placeSlots(slots.indexOf(centre))
+      // Until the reader moves, the target stays at the top (B8), e.g. if its height changed.
+      if (this.#pinned()) this.#alignTo(centre, target)
     } finally {
       if (!stale()) this.#stackBusy = false
     }
@@ -2179,7 +2249,7 @@ export class ReaderEngine {
     this.#checkHeights()
     // The chapter under the middle of the window is the current one (G8 note 3).
     const i = this.#slotIndexAt(this.#host.scrollTop + this.#host.clientHeight / 2)
-    this.#current = this.#slots[i].view
+    this.#makeCurrent(this.#slots[i].view)
     this.#emitScrollLocation()
     if (!this.#stackBusy) void this.#slide(i)
   }

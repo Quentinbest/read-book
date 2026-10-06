@@ -1,0 +1,84 @@
+spikes: canary server failed to bind 127.0.0.1:8765: Address already in use (os error 48)
+== spike r
+import standardebooks-moby-dick.epub: imported
+import idpf-regime-anticancer-arabic.epub: imported
+import hostile-content.epub: imported
+import idpf-page-blanche.epub: imported
+import long-chapter.epub: imported
+import broken-bad-css-and-font.epub: imported
+import gutenberg-2701-moby-dick-epub2.epub: imported
+import broken-no-toc.epub: imported
+import broken-missing-items.epub: imported
+import idpf-childrens-literature.epub: imported
+import notes-and-images.epub: imported
+import idpf-sous-le-vent.epub: imported
+import idpf-kusamakura-japanese-vertical-writing.epub: imported
+import code-heavy.epub: imported
+posted wheel: 8 DOM wheel events on the list, list moved 960 px; spike_mouse: top margin → page 1, frame 0; text → page 0, frame 1
+PASS input-paths: ok
+contents pages docked 1 → 40: 3ms 6|I · 38ms 40|XXXV
+contents pages docked 2 → 5: 1ms 40|XXXV · 94ms 5|Moby Dick
+contents pages docked 3 → 6 (blank 1×): 2ms nothing · 31ms 6|I
+contents pages docked 4 → 6: 2ms 6|I
+contents pages docked 5 → 90: 1ms 6|I · 30ms 90|LXXXV
+contents pages docked 6 → 12: 2ms 90|LXXXV · 28ms 12|VII
+contents pages floating 1 → 40: 4ms 70|LXV · 35ms 40|XXXV
+contents pages floating 2 → 5: 4ms 40|XXXV · 39ms 5|Moby Dick
+contents pages floating 3 → 6 (blank 1×): 4ms nothing · 49ms 6|I
+contents pages floating 4 → 6: 4ms 6|I
+contents pages floating 5 → 90: 4ms 6|I · 33ms 90|LXXXV
+contents pages floating 6 → 12: 4ms 90|LXXXV · 31ms 12|VII
+contents scroll docked 1 → 40 (blank 1×): 3ms nothing · 63ms 40|XXXV
+contents scroll docked 2 → 5 (blank 1×): 3ms nothing · 59ms 5|Moby Dick
+contents scroll docked 3 → 6: 3ms 5|Moby Dick · 23ms 6|I
+contents scroll docked 4 → 6: 3ms 6|I
+contents scroll docked 5 → 90 (blank 1×): 2ms nothing · 55ms 90|LXXXV
+contents scroll docked 6 → 12 (blank 1×): 4ms nothing · 52ms 12|VII
+contents scroll floating 1 → 40 (blank 1×): 6ms nothing · 42ms 40|XXXV
+contents scroll floating 2 → 5 (blank 1×): 7ms nothing · 66ms 5|Moby Dick
+contents scroll floating 3 → 6: 8ms 5|Moby Dick · 27ms 6|I
+contents scroll floating 4 → 6: 9ms 6|I
+contents scroll floating 5 → 90 (blank 1×): 8ms nothing · 42ms 90|LXXXV
+contents scroll floating 6 → 12 (blank 1×): 7ms nothing · 56ms 12|VII
+PASS N6-contents-jumps: ok
+search pages 1 (#1, section 71): 4ms nothing · 66ms 71|ver, where these fis
+search pages 2 (#127, section 18): 4ms 71|ver, where these fis · 44ms 18|ets, their ice-cover
+search pages 3 (#4, section 77): 5ms 18|ets, their ice-cover · 41ms 77|LXXII
+search pages 4 (#252, section 66): 9ms nothing · 57ms 66|er the fish. All ali
+search pages 5 (#5, section 77): 2ms 66|er the fish. All ali · 41ms 77|st entirely submerge
+search pages 6 (#5, section 77): 3ms 77|st entirely submerge
+search scroll 1 (#1, section 77): 6ms 77|arpooneer flounders  · 43ms 77|hat the harpooneer s
+search scroll 2 (#127, section 18): 6ms nothing · 67ms 18|as he mildly turned 
+search scroll 3 (#4, section 77): 10ms nothing · 48ms 77| sink to rise no mor
+search scroll 4 (#252, section 71): 7ms nothing · 39ms 71|t be one dam Ingin.”
+search scroll 5 (#5, section 77): 5ms nothing · 64ms 77|, an elongated Siame
+search scroll 6 (#5, section 77): 2ms 77|, an elongated Siame
+FAIL F6-result-jumps: scroll result 1: moved 1× after arriving: 6ms 77|arpooneer flounders  · 43ms 77|hat the harpooneer s
+PASS S2-navigator-wheel: ok
+edge pages top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge pages top (lower zone): bars true,true; under the pointer div.host svelte-twub32
+edge pages bottom: bars true,true; under the pointer span.
+edge scroll top: bars true,true; under the pointer header.chrome top svelte-twub32
+edge scroll top (lower zone): bars true,true; under the pointer foliate-view.
+edge scroll bottom: bars true,true; under the pointer span.
+PASS S9-edge-reveal-modes: ok
+size 1280×800: 19 px text 640 px = 66 ch × 21 lines, 28 px 66 ch × 14 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 25% of the width; library header fits, 6 covers a row
+size 1000×700: 19 px text 640 px = 66 ch × 18 lines, 28 px 66 ch × 12 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 32% of the width; library header fits, 5 covers a row
+size 900×640: 19 px text 640 px = 66 ch × 16 lines, 28 px 60 ch × 10 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 36% of the width; library header fits, 4 covers a row
+size 800×600: 19 px text 640 px = 66 ch × 14 lines, 28 px 53 ch × 10 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 40% of the width; library header fits, 4 covers a row
+size 760×560: 19 px text 640 px = 66 ch × 13 lines, 28 px 50 ch × 9 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 42% of the width; library header overflows, 3 covers a row
+size 700×520: 19 px text 640 px = 66 ch × 12 lines, 28 px 46 ch × 8 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 46% of the width; library header fits, 4 covers a row
+size 640×480: 19 px text 592 px = 61 ch × 10 lines, 28 px 41 ch × 7 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 50% of the width; library header fits, 4 covers a row
+size 600×460: 19 px text 552 px = 57 ch × 10 lines, 28 px 39 ch × 6 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 53% of the width; library header fits, 4 covers a row
+size 560×420: 19 px text 512 px = 53 ch × 8 lines, 28 px 36 ch × 5 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 57% of the width; library header fits, 3 covers a row
+size 520×400: 19 px text 472 px = 49 ch × 7 lines, 28 px 33 ch × 5 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 62% of the width; library header fits, 3 covers a row
+size 480×380: 19 px text 432 px = 45 ch × 7 lines, 28 px 30 ch × 4 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 67% of the width; library header fits, 3 covers a row
+size 420×340: 19 px text 372 px = 38 ch × 5 lines, 28 px 26 ch × 4 lines; top bar clear; bottom bar clear; Aa fits; Go to fits; Navigator 76% of the width; library header fits, 2 covers a row
+PASS size-survey: ok
+PASS     input-paths: ok
+PASS     N6-contents-jumps: ok
+FAIL     F6-result-jumps: scroll result 1: moved 1× after arriving: 6ms 77|arpooneer flounders  · 43ms 77|hat the harpooneer s
+PASS     S2-navigator-wheel: ok
+PASS     S9-edge-reveal-modes: ok
+PASS     size-survey: ok
+wrote docs/spikes/raw/e2e-reader.json

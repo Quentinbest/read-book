@@ -544,8 +544,8 @@
     {
       "id": "P2-hostile-extension",
       "description": "A hostile extension reaches no undeclared host, no Tauri command, no book text or selection without permission, no other extension’s storage, and no more than 10 MB",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "canary: "
     },
     {
       "id": "P6-watchdog",
@@ -644,6 +644,102 @@
       "evidence": "ok"
     },
     {
+      "id": "D6-update-available",
+      "description": "Item 32: an update this install cannot apply shows “Linen x.y.z is available · Download”, opening its release page",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "11-font-and-width",
+      "description": "1.1: Font and Page width (all books) apply at once: OpenDyslexic loads and replaces the book’s face; Narrow < Normal < Wide",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "C5-simplify-styles",
+      "description": "C5: Simplify Styles for This Book turns the book’s stylesheets off in place, with Undo; running it again brings them back",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "11-look-up",
+      "description": "1.1: Look Up in the selection bar shows a definition from this Mac’s dictionaries in a peek; Open in Dictionary hands the word over",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "11-library-list",
+      "description": "1.1: All books shows as a list (cover, title and author, progress, when opened) and remembers it; a row opens its book",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "11-reading-sessions",
+      "description": "1.1: an extension with reading.sessions hears a session as it ends (when, how long, pages turned; the title with book.metadata); the install sheet says so",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "C4-remap",
+      "description": "C4: Settings › Shortcuts gives a command a new shortcut that works at once; an extension command can’t take a core shortcut; Reset All goes back",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "B6-search-options",
+      "description": "B6: Whole words narrows a search to whole words; a regular expression finds its matches; an invalid one says so",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "11-aa-short-window",
+      "description": "1.1: in a window too short for every Aa row, the rows scroll and the popover stays inside the window",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "input-paths",
+      "description": "Harness: where posted wheel events and spike_mouse moves arrive (the page, the Contents list, a book frame)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N6-contents-jumps",
+      "description": "Contents jumps (docked and floating, Pages and Scroll, repeated, across chapters) reach the chapter and show nothing else on the way",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "F6-result-jumps",
+      "description": "Choosing search results across chapters (Pages and Scroll, back and forth, the same one twice) shows the match without stops on the way",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S2-navigator-wheel",
+      "description": "The wheel and trackpad over Contents scroll only Contents, also at its top and bottom, docked and floating, in Pages and Scroll",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S9-edge-reveal-modes",
+      "description": "Real pointer moves: the top and bottom edges reveal both bars in Pages and in Scroll alike; they hide when the pointer goes, and their buttons work",
+      "verdict": "fail",
+      "evidence": "pages: bars true,true over the text"
+    },
+    {
+      "id": "L8-minimum-size",
+      "description": "The window cannot be made smaller than 760 × 480 (item 53); at that size the bars, Aa and Go to fit and the bars’ buttons work",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S3-title-and-message",
+      "description": "At the smallest window: the top bar’s title stays centred and clear of the buttons, ending in “…” when too long; a message sits above the bottom bar while it shows (M1); the library’s narrow header clears the window buttons",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "D1-no-uncaught-errors",
       "description": "No uncaught error or unhandled rejection in the whole run (read from the crash log)",
       "verdict": "pass",
@@ -656,7 +752,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1790826573,
+    "time": 1791300160,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
