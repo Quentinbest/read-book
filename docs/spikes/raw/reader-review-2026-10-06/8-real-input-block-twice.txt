@@ -1,0 +1,13 @@
+PASS N6-contents-jumps: ok
+PASS F6-result-jumps: ok
+PASS S2-navigator-wheel: ok
+S9 pages Go to from the bottom bar: worked on attempt 2
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+PASS S3-title-and-message: ok
+PASS N6-contents-jumps: ok
+PASS F6-result-jumps: ok
+PASS S2-navigator-wheel: ok
+PASS S9-edge-reveal-modes: ok
+PASS L8-minimum-size: ok
+PASS S3-title-and-message: ok

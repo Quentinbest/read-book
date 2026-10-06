@@ -151,3 +151,14 @@ After item 53, the owner answered “Go ahead”, which approves the last waitin
 | # | Approved |
 |---|---|
 | Reader fixes (54) | As built and verified in the app (`docs/reader-review-2026-10-06.md`). Contents and search jumps in Scroll mode reach the target in one step, with a brief blank while a chapter loads, as in Pages. The wheel over the Navigator scrolls only the Navigator. In Scroll mode both edges reveal both bars, as in Pages. |
+
+## Decided 2026-10-06 (the review's side findings; the owner: “Make your best calls”)
+
+These came up during the reader review (`docs/reader-review-2026-10-06.md`, Side findings). The owner left the calls to Claude. Check `S3-title-and-message`.
+
+| Rule | Decided |
+|---|---|
+| Screen 03 (top-bar title) | The title stays centred on the window, inset on both sides by whichever side's buttons take more room, plus 12 px. A long title ends in “…”, the chapter part first. |
+| X6 (library narrow form) | The narrow header starts 18 pt past the window buttons (90 CSS px from the window's edge), as the wide header and the reader's bar do. |
+| M1 (messages and the bottom bar) | While the reader's bottom bar shows, a message sits 12 px above it, and returns to the foot when the bar goes. A pointer resting on a message does not reveal the bars, so the message never moves out from under it. |
+| Pages-mode jumps | Unchanged: at most one blank frame while a chapter loads. Removing it would mean loading jumps into a hidden view and swapping (D-D1), for a frame or two. |

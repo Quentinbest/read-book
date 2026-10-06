@@ -1371,6 +1371,36 @@
   let hideTimer = 0
   let topBar: HTMLElement | undefined = $state()
   let bottomBar: HTMLElement | undefined = $state()
+  /**
+   * Screen 03: the title stays centred on the window but never runs under the bar's
+   * buttons. It is inset by whichever side's buttons take more room, and a long title
+   * ends in “…”, the chapter before the book.
+   */
+  let titleInset = $state(0)
+  const TITLE_GAP = 12
+  $effect(() => {
+    const bar = topBar
+    if (!bar) return
+    const measure = () => {
+      const r = bar.getBoundingClientRect()
+      const left = bar.querySelector('.tool')?.getBoundingClientRect().right ?? r.left
+      const right = bar.querySelector('.tools')?.getBoundingClientRect().left ?? r.right
+      titleInset = Math.ceil(Math.max(left - r.left, r.right - right)) + TITLE_GAP
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(bar)
+    measure()
+    return () => observer.disconnect()
+  })
+  /** M1: while the bottom bar shows, a message sits above it, never over the progress bar. */
+  const BOTTOM_BAR_PX = 64
+  const MESSAGE_GAP = 12
+  $effect(() => {
+    if (!active || !chromeVisible) return
+    const root = document.documentElement.style
+    root.setProperty('--message-bottom', `${BOTTOM_BAR_PX + MESSAGE_GAP}px`)
+    return () => root.removeProperty('--message-bottom')
+  })
   /** S11: the strip at the window's foot where an auto-hiding Dock slides in. */
   const DOCK_STRIP = 6
   /**
@@ -2171,7 +2201,7 @@
         <button type="button" class="tool" aria-label={t.reader.contents} onclick={openContents}>
           <Icon name="contents" size={18} />
         </button>
-        <div class="title" aria-live="off">
+        <div class="title" aria-live="off" style:--title-inset="{titleInset}px">
           <!-- S9: bars the pointer revealed name the book only. -->
           <span class="book">{book.title}</span
           >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
@@ -2542,12 +2572,15 @@
   }
   .title {
     position: absolute;
-    left: 0;
-    right: 0;
+    left: var(--title-inset, 0);
+    right: var(--title-inset, 0);
     text-align: center;
     font-size: 13px;
     color: var(--ink-secondary);
     pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .book {
     color: var(--ink);

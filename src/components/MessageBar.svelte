@@ -50,7 +50,9 @@
   .message {
     position: fixed;
     left: 50%;
-    bottom: 24px;
+    /* The reader lifts it above its bottom bar while the bar shows (M1). */
+    bottom: var(--message-bottom, 24px);
+    transition: bottom var(--motion-chrome-in) ease-out;
     z-index: 40;
     transform: translateX(-50%);
     display: flex;

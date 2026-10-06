@@ -782,7 +782,8 @@
       height: auto;
       min-height: 64px;
       flex-wrap: wrap;
-      margin: 0 0 12px 56px;
+      /* Clear of the window buttons (x = 20, 52 wide), then the 18 px gap of Screen 03. */
+      margin: 0 0 12px 74px;
       padding: 12px 0;
     }
     .grow {

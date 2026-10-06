@@ -18,6 +18,7 @@ The in-app suite gained checks that drive the real app with **real input**, beca
 | 2 | `S2-navigator-wheel` | Real wheel (lines) and trackpad (pixels) over Contents: down, at the bottom, at the top, up at the top. The book must not move. Pages and Scroll; docked and floating. |
 | 4 | `S9-edge-reveal-modes` | Real pointer: over the text, then the top edge, the lower part of the top zone, the bottom edge; then away. Pages and Scroll. Then real clicks on the bottom bar's progress label (Go to) and the top bar's Contents. |
 | 3 | `L8-minimum-size` | After the decision: a real drag of the window's corner toward 200 × 150 must stop at 760 × 480. At that size, the top bar's items must not overlap, the bottom bar, Aa and Go to must fit, and a real click on Contents must open it. |
+| Side findings | `S3-title-and-message` | At 760 × 480, the title must sit between the buttons, centred. At 150% zoom it must be cut with “…”. A message must sit above the bottom bar while the bars show, and 24 px from the foot without them. At 110% zoom, the library's narrow header must start 18 pt past the window buttons. |
 | 3 | `size-survey` (opt-in) | Steps the window from 1280 × 800 down to 420 × 340; measures the text column, the bars, Aa, Go to, the Navigator and the library; captures each step. |
 
 To repeat (spike build, see CLAUDE.md):
@@ -120,12 +121,27 @@ Logs, in `docs/spikes/raw/reader-review-2026-10-06/`:
 4. `4-full-suite.txt`: the whole suite on the fixed code.
 5. `5-full-suite-min-size.txt`: the whole suite with the 760 × 480 minimum (`docs/spikes/raw/e2e-reader.json` holds this run).
 6. `6-real-input-reruns.txt`: reruns of the real-input checks and of log 5's failures.
+7. `7-full-suite-follow-ups.txt`: the whole suite with the side-finding fixes (`docs/spikes/raw/e2e-reader.json` holds this run). 122 of 124 pass:
+   - `P2-hostile-extension`: the port again.
+   - `S9-edge-reveal-modes`: the bars were already up over the text before its first step. Every reveal and hide after that passed. The check now starts by moving over the text and waiting up to 4 s for no bars (the full controls take 3 s, S10), and logs it when it had to wait.
+8. `8-real-input-block-twice.txt`: the real-input checks in suite order, run twice after that change. All pass. One Go to click took a second attempt, as logged; neither run had to wait for the bars.
+
+Visual, with the side-finding fixes: 20 of 25 baselines match.
+- `03-reader-controls-paper` and `14-night-controls` differ by 264 px, the window buttons only, so the title change leaves the full-width bar as it was.
+- The 5 that differ are active-window differences: focus rings in `04`, `08` and `12-extension-failure`, the blue selection in `06` and `14-night-selection`. On Desktop 2, where the baselines were taken, the window is never active (`docs/visual/APPROVAL.md`).
+- `04` also lacks the location line its baseline still shows; that line was removed on 2026-09-29, before this branch. No capture shows a message with the bars up, so no baseline covers the lift.
 
 The real-input checks (`input-paths`, `S2-navigator-wheel`, `S9-edge-reveal-modes`, `L8-minimum-size`) move the system cursor, activate Linen's window and click in it. Run them with nobody using the Mac.
 
-## Side findings (not changed; outside the four items)
+## Side findings
 
-- **The reader's top-bar title does not truncate.** Below about 600 px, or at wider windows with a long title and chapter, it runs over the buttons.
-- **The library's narrow header (below about 720 px) puts “Library” against the window buttons.**
-- **Message lines** (“Resumed in …”, “Back to p. …”) sit at the middle of the window's foot. While one shows, a pointer on it does not reveal the bars: the message is outside the reader. This is the same in both modes; the reveal check moves the pointer off-centre.
-- **Pages-mode jumps show at most one blank frame** while foliate-js loads the chapter into the visible view. Scroll-mode jumps now do the same instead of drawing the chapter at the wrong place.
+Found during the review, outside the four items. After the owner's “Make your best calls” (2026-10-06), the first three were fixed; `docs/decisions.md` records each call. The check `S3-title-and-message` failed on the old code for each of the three and passes now.
+
+- **The reader's top-bar title did not truncate.** Its box spanned the whole bar, so a long title ran over the buttons: below about 600 px, at page zoom, or with a long title and chapter.
+  - **Fixed:** the title is inset equally on both sides by whichever side's buttons take more room, so it stays centred on the window. A long title ends in “…”, the chapter before the book.
+- **The library's narrow header put “Library” against the window buttons.** With the 760 × 480 minimum, the narrow form (at or below 720 CSS px) now comes only from page zoom (X6). At 110% “Library” started at 79 pt, 7 pt past the buttons.
+  - **Fixed:** the narrow header starts where the wide one and the reader's bar do, 18 pt past the buttons: 90 CSS px, so 99 pt at 110%.
+- **Message lines** (“Resumed in …”, “Back to p. …”) covered the middle of the progress bar while the bars showed.
+  - **Fixed:** while the bottom bar shows, the message sits 12 px above it, and moves back to the foot when the bar goes.
+  - A pointer resting on a message still does not reveal the bars. That is kept on purpose: the pointer is there for the message, and the reveal would move the message out from under it.
+- **Pages-mode jumps show at most one blank frame** while foliate-js loads the chapter into the visible view. Scroll-mode jumps now do the same instead of drawing the chapter at the wrong place. Not changed: avoiding the blank means loading the chapter into a hidden view and swapping, a larger change to the page-turn machinery (D-D1) for a frame or two.

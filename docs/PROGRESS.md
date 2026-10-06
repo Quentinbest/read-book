@@ -21,6 +21,6 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 ## How the work is checked
 
 - **Unit tests.** `pnpm test` (Vitest) and `cargo test` (Rust); CI runs both on every push.
-- **The in-app end-to-end suite.** `scripts/e2e.sh`, on the current desktop; `LINEN_SPACE=2` moves it to Desktop 2 (required 2026-09-25, optional since 2026-09-29). It has 123 checks in total (plus opt-in measurements such as `size-survey`, run only by name); the last fails on any uncaught error in the run. The safe-mode checks also run with `LINEN_SAFE_MODE=1`.
+- **The in-app end-to-end suite.** `scripts/e2e.sh`, on the current desktop; `LINEN_SPACE=2` moves it to Desktop 2 (required 2026-09-25, optional since 2026-09-29). It has 124 checks in total (plus opt-in measurements such as `size-survey`, run only by name); the last fails on any uncaught error in the run. The safe-mode checks also run with `LINEN_SAFE_MODE=1`.
 - **Visual captures.** `scripts/e2e.sh v`, compared with the approved baselines by `node tests/visual/compare.mjs`.
 - **Budgets.** `scripts/perf-coldstart.py` and `scripts/perf-memory.sh`, on the reference machine.

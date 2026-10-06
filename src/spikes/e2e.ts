@@ -4959,6 +4959,18 @@ export async function spikeE2E(): Promise<SpikeResult> {
           await inMode(mode, async () => {
             await hideControls()
             const mid = Math.round(innerHeight / 2)
+            // Start from no bars with the pointer over the text. The full controls, if an
+            // earlier step left them up, go 3 s after the pointer leaves an edge (S10).
+            await realMouse(x, mid)
+            const t0 = performance.now()
+            const clear = await waitFor('no bars', () => bars() === 'false,false', 4000)
+              .then(() => true)
+              .catch(() => false)
+            if (!clear) problems.push(`${mode}: bars ${bars()} stayed over the text`)
+            else if (performance.now() - t0 > 600)
+              log(
+                `S9 ${mode}: bars from before went after ${Math.round(performance.now() - t0)} ms`,
+              )
             for (const [edge, y] of [
               ['top', 20],
               ['top (lower zone)', 56],
@@ -5112,6 +5124,91 @@ export async function spikeE2E(): Promise<SpikeResult> {
         }
         return problems.length ? problems.join('; ') : 'ok'
       }),
+  })
+
+  checks.push({
+    id: 'S3-title-and-message',
+    description:
+      'At the smallest window: the top bar’s title stays centred and clear of the buttons, ending in “…” when too long; a message sits above the bottom bar while it shows (M1); the library’s narrow header clears the window buttons',
+    run: async () => {
+      const { getCurrentWebview } = await import('@tauri-apps/api/webview')
+      const w = getCurrentWindow()
+      const size = await w.innerSize()
+      const factor = await w.scaleFactor()
+      const problems: string[] = []
+      const rect = (sel: string) => document.querySelector(sel)?.getBoundingClientRect()
+      /** The title between the buttons, centred on the bar; returns whether it was cut. */
+      const titleFits = (where: string): boolean => {
+        const title = document.querySelector<HTMLElement>('.chrome.top .title')
+        const bar = rect('.chrome.top')
+        const left = rect('.chrome.top .tool')
+        const tools = rect('.chrome.top .tools')
+        if (!title || !bar || !left || !tools) {
+          problems.push(`${where}: the top bar is incomplete`)
+          return false
+        }
+        const t = title.getBoundingClientRect()
+        if (t.left < left.right || t.right > tools.left)
+          problems.push(
+            `${where}: title ${Math.round(t.left)}–${Math.round(t.right)} over the buttons (${Math.round(left.right)}, ${Math.round(tools.left)})`,
+          )
+        if (Math.abs((t.left + t.right) / 2 - (bar.left + bar.right) / 2) > 1)
+          problems.push(`${where}: the title is off centre`)
+        const cut = title.scrollWidth > title.clientWidth + 1
+        if (cut && getComputedStyle(title).textOverflow !== 'ellipsis')
+          problems.push(`${where}: a cut title has no “…”`)
+        return cut
+      }
+      try {
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        await w.setSize(new LogicalSize(760, 480))
+        await settled(1200)
+        await showControls()
+        titleFits('760 × 480')
+        // A message while the bars show: above the bottom bar; without them, at the foot.
+        const message = hooks.messages!.push({ text: 'A message for the layout check' })
+        await settled(500)
+        const bottomBar = rect('.chrome.bottom')
+        const m = rect('.message')
+        if (!m || !bottomBar) problems.push('no message or no bottom bar')
+        else if (m.bottom > bottomBar.top)
+          problems.push(
+            `the message (to ${Math.round(m.bottom)}) covers the bottom bar (from ${Math.round(bottomBar.top)})`,
+          )
+        await hideControls()
+        await settled(500)
+        const foot = rect('.message')
+        if (foot && Math.abs(innerHeight - foot.bottom - 24) > 1)
+          problems.push(
+            `without the bars the message ends ${Math.round(innerHeight - foot.bottom)} px above the foot, not 24`,
+          )
+        hooks.messages!.dismiss(message.id)
+        // 150% zoom: the bar is 507 CSS px wide, so the title must be cut.
+        await getCurrentWebview().setZoom(1.5)
+        await settled(1500)
+        await showControls()
+        if (!titleFits('760 × 480 at 150%')) problems.push('at 150% the title was not cut')
+        await hideControls()
+        // 110%: the library's narrow form; its header starts 18 pt past the window buttons.
+        await getCurrentWebview().setZoom(1.1)
+        await settled(1500)
+        await backToLibrary()
+        const header = document.querySelector<HTMLElement>('.library header')
+        const h1 = rect('.library header h1')
+        if (!header || getComputedStyle(header).flexWrap !== 'wrap')
+          problems.push('110%: the library is not in its narrow form')
+        else if (!h1 || h1.left * 1.1 < 20 + 52 + 18 - 0.5)
+          problems.push(
+            `110%: “Library” starts at ${Math.round((h1?.left ?? 0) * 1.1)} pt, within the window buttons' 90`,
+          )
+      } finally {
+        await getCurrentWebview().setZoom(1)
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1500)
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
   })
 
   checks.push({
