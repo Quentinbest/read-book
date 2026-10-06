@@ -16,7 +16,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | 7 Extensions | Done | Verified 2026-09-25 (98/98 on Desktop 2); baselines and the P6 memory budget approved 2026-09-26 | `docs/phase7-status.md` |
 | 8 Hardening and release | Done | 2026-09-26: 107/107 on Desktop 2; unit tests and budgets pass; CI passes on GitHub; every approval item settled (9, 10, 21–30) | `docs/phase8-status.md` |
 | Release 1.1 (owner, 2026-10-01; without TTS, sync and Developer ID signing) | Done; approved 2026-10-01 (items 31, 33–41); released as 0.2.0 on 2026-10-02 | Each feature's in-app check passes; local and GitHub CI green | `docs/release-1.1-status.md` |
-| Reader review (owner, 2026-10-06: jumps, the wheel over Contents, minimum size, Scroll-mode reveal) | Fixed and verified in the app; minimum size 760 × 480 approved and built (item 53, 2026-10-06); waiting for the owner: hands-on acceptance (item 54) | The owner's items reproduced with real input, then pass; full suite and local CI green | `docs/reader-review-2026-10-06.md` |
+| Reader review (owner, 2026-10-06: jumps, the wheel over Contents, minimum size, Scroll-mode reveal) | Done; approved 2026-10-06 (items 53, 54); minimum window 760 × 480 | The owner's items reproduced with real input, then pass; full suite and local CI green | `docs/reader-review-2026-10-06.md` |
 
 ## How the work is checked
 

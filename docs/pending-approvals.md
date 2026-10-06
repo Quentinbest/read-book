@@ -7,7 +7,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 
-Waiting now: item 54 (reader review, 2026-10-06). Item 53 was approved on 2026-10-06 (option A, 760 × 480) and built. The other items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -77,3 +77,4 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
     - **Edge zones in Scroll mode:** they are the same 64 px as in Pages, at the top and the bottom.
 
     *Recommendation:* try the steps in `docs/reader-review-2026-10-06.md` (Contents and search in both modes; the wheel over Contents at its ends; the pointer at the top and bottom in Scroll) and accept, or say what still differs.
+    **Approved 2026-10-06** (“Go ahead”). The owner's reply records no hands-on run of these steps.

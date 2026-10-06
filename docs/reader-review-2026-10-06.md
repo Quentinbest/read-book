@@ -97,7 +97,7 @@ All runs were on this Mac (macOS 14, current desktop), with the spike build of t
 | 3 · Resizing stops at 760 × 480; the reader and its controls work there | **Pass.** A real corner drag toward 200 × 150 stopped at 760 × 480; the top bar is clear, the bottom bar, Aa and Go to fit, and a real click on Contents opens it. | `L8-minimum-size`; log 5 |
 | 3 · Apple Books book-window minimum | **Not verified** (needs a book opened in the owner's Books library). Its library window: 1001 × 530. | — |
 | 4 · Top (and bottom) edge in Scroll as in Pages; both bars work | **Pass.** Top edge, lower top zone and bottom edge reveal both bars in both modes, and hide when the pointer leaves. Real clicks open Go to (bottom bar) and Contents (top bar). | `S9-edge-reveal-modes`; logs 2 and 4 |
-| 1, 2, 4 by hand (real trackpad momentum, the owner's books) | **Pending human acceptance** (item 54). | — |
+| 1, 2, 4 by hand (real trackpad momentum, the owner's books) | **Accepted** by the owner on 2026-10-06 (“Go ahead”, item 54). No hands-on run is recorded, so real trackpad momentum is still **not verified** by a test. | `docs/decisions.md` |
 
 Regression checks:
 - **Full in-app suite (log 4):** 121 of 122 pass. That includes B8 Scroll mode, real-wheel, the N6, F5–F7, S2, S9 and S13 checks, the reflow and open budgets, and D1 (no uncaught error in the whole run).

@@ -143,3 +143,11 @@ The owner chose option A: “Go with option A, 760 × 480”. The measurements b
 | Rule | Decided |
 |---|---|
 | L8 (minimum window) | The main window, which holds the library and the reader, cannot be resized below 760 × 480 (`minWidth`/`minHeight` in `src-tauri/tauri.conf.json`). 760 is L8's narrow breakpoint and the width Screen 15 is drawn at; 480 is L9's height. The narrow forms below 760 px stay for page zoom (X6). Check `L8-minimum-size`. |
+
+## Approved 2026-10-06 (reader review, item 54)
+
+After item 53, the owner answered “Go ahead”, which approves the last waiting item as recommended (`docs/pending-approvals.md`). That reply did not say whether the steps were tried by hand.
+
+| # | Approved |
+|---|---|
+| Reader fixes (54) | As built and verified in the app (`docs/reader-review-2026-10-06.md`). Contents and search jumps in Scroll mode reach the target in one step, with a brief blank while a chapter loads, as in Pages. The wheel over the Navigator scrolls only the Navigator. In Scroll mode both edges reveal both bars, as in Pages. |
