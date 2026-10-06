@@ -1,0 +1,423 @@
+{
+  "spike": "ax-content-macos",
+  "criteria": [
+    {
+      "id": "AX-opens",
+      "description": "Every variant opens and lays out",
+      "verdict": "pass",
+      "evidence": "7 variants, 49 sections"
+    },
+    {
+      "id": "AX-no-split-lines",
+      "description": "No clipped or split lines at page boundaries (reflowable variants)",
+      "verdict": "pass",
+      "evidence": "0 line boxes crossing a page edge"
+    }
+  ],
+  "raw": {
+    "engine": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)",
+    "checks": [
+      {
+        "variant": "rtl-arabic",
+        "chapter": 2,
+        "fontPx": 19,
+        "pages": 22,
+        "splitLines": 0,
+        "measureCh": 87
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 0,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 2,
+        "fontPx": 19,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 7
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 4,
+        "fontPx": 19,
+        "pages": 12,
+        "splitLines": 0,
+        "measureCh": 8
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 6,
+        "fontPx": 19,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 9
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 8,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 10
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 10,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 12,
+        "fontPx": 19,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 11
+      },
+      {
+        "variant": "vertical-japanese",
+        "chapter": 14,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 11
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 0,
+        "fontPx": 19,
+        "pages": 2,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 21,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 39,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 56,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 73,
+        "fontPx": 19,
+        "pages": 2,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 91,
+        "fontPx": 19,
+        "pages": 9,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 108,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "cjk-horizontal",
+        "chapter": 135,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 1,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 2,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 3,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 4,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 8,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 9,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 11,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "fixed-layout",
+        "chapter": 12,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 0
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 1,
+        "fontPx": 19,
+        "pages": 2,
+        "splitLines": 0,
+        "measureCh": 58
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 20,
+        "fontPx": 19,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 62
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 38,
+        "fontPx": 19,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 63
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 55,
+        "fontPx": 19,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 64
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 73,
+        "fontPx": 19,
+        "pages": 5,
+        "splitLines": 0,
+        "measureCh": 66
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 91,
+        "fontPx": 19,
+        "pages": 8,
+        "splitLines": 0,
+        "measureCh": 64
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 108,
+        "fontPx": 19,
+        "pages": 4,
+        "splitLines": 0,
+        "measureCh": 66
+      },
+      {
+        "variant": "hyphenation",
+        "chapter": 126,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 65
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 1,
+        "fontPx": 19,
+        "pages": 1,
+        "splitLines": 0,
+        "measureCh": 55
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 20,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 59
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 38,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 58
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 55,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 59
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 73,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 60
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 91,
+        "fontPx": 19,
+        "pages": 4,
+        "splitLines": 0,
+        "measureCh": 61
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 108,
+        "fontPx": 19,
+        "pages": 2,
+        "splitLines": 0,
+        "measureCh": 61
+      },
+      {
+        "variant": "spread-1600",
+        "chapter": 126,
+        "fontPx": 19,
+        "pages": 2,
+        "splitLines": 0,
+        "measureCh": 61
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 1,
+        "fontPx": 19,
+        "pages": 3,
+        "splitLines": 0,
+        "measureCh": 55
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 20,
+        "fontPx": 19,
+        "pages": 13,
+        "splitLines": 0,
+        "measureCh": 58
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 38,
+        "fontPx": 19,
+        "pages": 11,
+        "splitLines": 0,
+        "measureCh": 60
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 55,
+        "fontPx": 19,
+        "pages": 11,
+        "splitLines": 0,
+        "measureCh": 59
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 73,
+        "fontPx": 19,
+        "pages": 13,
+        "splitLines": 0,
+        "measureCh": 60
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 91,
+        "fontPx": 19,
+        "pages": 18,
+        "splitLines": 0,
+        "measureCh": 62
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 108,
+        "fontPx": 19,
+        "pages": 10,
+        "splitLines": 0,
+        "measureCh": 61
+      },
+      {
+        "variant": "zoom-200",
+        "chapter": 126,
+        "fontPx": 19,
+        "pages": 7,
+        "splitLines": 0,
+        "measureCh": 61
+      }
+    ]
+  },
+  "info": {
+    "cpu": "Apple M1 (Virtual)",
+    "memory_bytes": "7516192768",
+    "only": null,
+    "os": "26.6.2",
+    "time": 1791272294,
+    "webkit": "21624.5.1.11.3"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

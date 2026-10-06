@@ -4,8 +4,9 @@
 - **Anchors** (CFIs, highlights) are identical across all three engines.
 - **Content isolation** holds on WebView2 and WebKitGTK.
 - **Pagination:** Linux (WebKitGTK) is at parity in practice; Windows (WebView2) lays out about 3% more pages, consistently. As written, the 2% page criterion fails on both, because it can't be met on short chapters (see below).
+- **Vertical writing is the one real divergence:** Japanese vertical text paginates 45% more on Linux and 22% less on Windows. A Windows or Linux port would need its own work there.
 
-- **Date:** 2026-10-02 (Spike A); 2026-10-03 (D, DX, E; run 37062812749)
+- **Date:** 2026-10-02 (Spike A); 2026-10-03 (D, DX, E; run 37062812749); 2026-10-06 (AX; run 37430598658)
 - **Raw results:** `docs/spikes/raw/*-linux.json`, `*-windows.json`, `dx-anchors-macos.json` (run 1 of each)
 - **Workflow:** `.github/workflows/cross-engine.yml` (PR #7). Each engine runs twice, and both runs gave the same result.
 - **Comparison:** `scripts/compare-spike-a.mjs`, against the macOS run from the same workflow (not the stored 2026-09-24 file).
@@ -60,14 +61,32 @@ Windows by size: +1.7% at 16 px, +2.3% at 19 px, +3.7% at 24 px.
   - It passes on Windows (Chromium).
   - Either way, isolation rests on the CSP, which passes on all three.
 
+## Content Moby-Dick doesn't exercise (Spike AX)
+
+`spikeAx` lays out up to 8 sections of each case at 19 px with the bundled Literata. `node scripts/compare-spike-a.mjs <dir> ax-content` compares them with macOS. Both runs agreed on every engine.
+
+| Case | Book | macOS pages | Linux: identical, pages | Windows: identical, pages |
+|---|---|---|---|---|
+| Arabic, RTL | `idpf-regime-anticancer-arabic` (1 long section) | 22 | 0/1, 23 (+4.5%) | 0/1, 21 (−4.5%) |
+| **Japanese, vertical** | `idpf-kusamakura-japanese-vertical-writing` | 67 | 1/8, 97 (**+44.8%**) | 1/8, 52 (**−22.4%**) |
+| Japanese, horizontal | `idpf-jlreq-in-japanese` | 34 | 6/8, 32 (−5.9%) | 7/8, 35 (+2.9%) |
+| Fixed layout | `idpf-sous-le-vent` | 8 | 8/8, 8 | 8/8, 8 |
+| Hyphenation (`hyphens: auto`, justified) | Moby-Dick | 37 | 8/8, 37 | 7/8, 38 (+2.7%) |
+| Two-page spread, 1600 × 900 | Moby-Dick | 21 | 8/8, 21 | 8/8, 21 |
+| 200% zoom (640 × 400 CSS px) | Moby-Dick | 86 | 6/8, 88 (+2.3%) | 8/8, 86 |
+
+- **Vertical writing diverges far beyond rounding,** and in opposite directions on the two engines. That fits the engines' known differences in vertical text layout: line breaking, character spacing and how vertical columns are counted. A port must treat vertical writing (I16) as its own work item, with per-engine baselines.
+- **The split-line check** (no line crossing a page edge) passes on every horizontal case on all three engines. It isn't valid for vertical writing, where lines run top to bottom, so vertical text is left out of it and its page edges are unverified. Fixed layout has no page edges to check, and those books open and lay out the same everywhere.
+- **The rest is rounding-sized:** the two-page spread and fixed layout are identical, and zoom, hyphenation, CJK horizontal and RTL are within one page per section.
+- **Still to cover:** RTL with more than one section (the Arabic book has one long one), and a book with NFC and NFD text and soft hyphens for the anchors.
+
 ## Not covered yet
 
-- Content Moby-Dick doesn't exercise (next-steps plan, Phase 10 edge cases): vertical writing, RTL, CJK, hyphenation, fixed layout, spreads, 200% zoom.
 - Spikes B (trackpad) and C (NVDA, Orca) need hardware and a person.
 
 ## Found on the way
 
-- **The corpus has drifted.** `gutenberg-2701-moby-dick-epub2.epub` no longer matches its pinned hash (Project Gutenberg changed the file). `scripts/corpus/fetch.py` reports it, and the cross-engine workflow tolerates it, because Spike A doesn't use that file. Re-pin it or pin an archived copy.
+- **The corpus had drifted.** Project Gutenberg changed `gutenberg-2701-moby-dick-epub2.epub`, so it no longer matched its pinned hash. It is re-pinned (2026-10-06) to the new file (`0fd65838…`). The in-app checks that use it should be rerun before the next release, in case the content changed and not only the packaging.
 - **Portability fixes:** the product build and the `spikes` harness now compile on Windows and Linux.
   - `open_external`, `open_software_update` and `copy_text` called AppKit with no fallback; they now return an error elsewhere.
   - The harness's memory, capture, scroll and pasteboard helpers are gated to macOS.
