@@ -196,8 +196,11 @@ export async function spikeAx(): Promise<SpikeResult> {
       failures.push(`${v.id}: ${e instanceof Error ? e.message : String(e)}`)
     }
   }
+  // inspect() checks line boxes against the page's top and bottom, which says nothing
+  // in vertical writing (lines run top to bottom); fixed layout has no pages to split.
+  const unchecked = ['fixed-layout', 'vertical-japanese']
   const split = checks
-    .filter((c) => c.variant !== 'fixed-layout')
+    .filter((c) => !unchecked.includes(c.variant))
     .reduce((a, c) => a + c.splitLines, 0)
   return {
     spike: `ax-content-${platform()}`,
@@ -212,7 +215,8 @@ export async function spikeAx(): Promise<SpikeResult> {
       },
       {
         id: 'AX-no-split-lines',
-        description: 'No clipped or split lines at page boundaries (reflowable variants)',
+        description:
+          'No clipped or split lines at page boundaries (horizontal reflowable variants; vertical writing and fixed layout not checked)',
         verdict: split === 0 ? 'pass' : 'fail',
         evidence: `${split} line boxes crossing a page edge`,
       },
