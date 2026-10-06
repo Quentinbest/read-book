@@ -27,5 +27,5 @@
 
 ## Verification (2026-10-06, local)
 
-- `cargo test`: 85 passed. `cargo clippy --all-targets -- -D warnings`, with and without `--features spikes`, and `cargo fmt --check` are clean.
+- `scripts/ci-local.sh`: all green. `cargo test`: 85 unit tests and both migration tests passed (fixture `tests/fixtures/schema-v5.sql`). `cargo clippy --all-targets -- -D warnings`, with and without `--features spikes`, and `cargo fmt --check` are clean.
 - `pnpm test`: 300 passed. `pnpm check`: 0 errors. `pnpm lint` is clean.
