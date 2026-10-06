@@ -86,6 +86,19 @@ export const en = {
       'Your books, covers, highlights and notes are all in this folder. Back it up to keep them; Time Machine does.',
     showFolder: 'Show in Finder',
     exportAll: 'Export all highlights and notes…',
+    // PROVISIONAL (Phase 13, sync; owner approval pending): sync wording.
+    sync: 'Sync',
+    syncHelp:
+      'Share reading positions, highlights and notes with your other Macs through a folder you choose, such as one in iCloud Drive. Books themselves are not copied.',
+    syncChoose: 'Choose Folder…',
+    syncOff: 'Turn Off',
+    syncNow: 'Sync Now',
+    syncFolderTitle: 'Choose a folder to sync through',
+    synced: (applied: number) =>
+      applied
+        ? `Synced · ${applied} ${applied === 1 ? 'change' : 'changes'} from other Macs`
+        : 'Synced',
+    syncFailed: 'Couldn’t reach the sync folder. Linen will try again.',
     exportHelp: 'One W3C Web Annotation file per book, which other apps can read.',
     exported: (n: number) => `Exported ${n} ${n === 1 ? 'book' : 'books'}`,
     nothingToExport: 'There are no highlights to export.',

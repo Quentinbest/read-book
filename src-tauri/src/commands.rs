@@ -119,6 +119,12 @@ pub fn import_paths(state: &AppState, paths: &[PathBuf]) -> CmdResult<Vec<Import
         let mut store = state.store.lock().unwrap();
         for path in paths {
             let outcome = import_book(&mut store, &state.library, path)?;
+            if let ImportOutcome::Imported { book_id, .. } = &outcome {
+                // Sync: records from other devices that waited for this book.
+                if let Err(e) = crate::sync_store::book_imported(&mut store, book_id) {
+                    log::warn!("sync: applying waiting records: {e}");
+                }
+            }
             results.push(ImportResult {
                 path: path.to_string_lossy().into_owned(),
                 outcome,
@@ -476,7 +482,21 @@ pub fn annotation_save(
     state: State<AppState>,
     annotation: crate::store::AnnotationRow,
 ) -> CmdResult<()> {
-    Ok(state.store.lock().unwrap().save_annotation(&annotation)?)
+    let mut store = state.store.lock().unwrap();
+    store.save_annotation(&annotation)?;
+    synced(crate::sync_store::annotation_changed(
+        &mut store,
+        &annotation.id,
+    ));
+    Ok(())
+}
+
+/// Sync is never a reason for a reader's save to fail: the save stands, and the
+/// change is logged when sync can.
+fn synced(result: crate::store::Result<()>) {
+    if let Err(e) = result {
+        log::warn!("sync: logging a local change: {e}");
+    }
 }
 
 /// G4 (provisional): Remove at once, with Undo; the file goes at the next launch.
@@ -649,12 +669,18 @@ pub fn book_info(state: State<AppState>, book_id: String) -> CmdResult<serde_jso
 /// A7: delete at once; Undo restores it.
 #[tauri::command]
 pub fn annotation_delete(state: State<AppState>, id: String) -> CmdResult<()> {
-    Ok(state.store.lock().unwrap().delete_annotation(&id)?)
+    let mut store = state.store.lock().unwrap();
+    store.delete_annotation(&id)?;
+    synced(crate::sync_store::annotation_changed(&mut store, &id));
+    Ok(())
 }
 
 #[tauri::command]
 pub fn annotation_restore(state: State<AppState>, id: String) -> CmdResult<()> {
-    Ok(state.store.lock().unwrap().restore_annotation(&id)?)
+    let mut store = state.store.lock().unwrap();
+    store.restore_annotation(&id)?;
+    synced(crate::sync_store::annotation_changed(&mut store, &id));
+    Ok(())
 }
 
 /// E3, N6: the book's damaged spine items (zip paths), recorded at import.
@@ -727,12 +753,52 @@ pub fn position_save(
     fraction: f64,
     chapter_label: Option<String>,
 ) -> CmdResult<()> {
-    Ok(state.store.lock().unwrap().save_position(
-        &book_id,
-        &cfi,
-        fraction,
-        chapter_label.as_deref(),
+    let mut store = state.store.lock().unwrap();
+    store.save_position(&book_id, &cfi, fraction, chapter_label.as_deref())?;
+    synced(crate::sync_store::position_saved(&mut store, &book_id));
+    Ok(())
+}
+
+/// Sync (Phase 13): the folder in use, or None while sync is off.
+#[tauri::command]
+pub fn sync_folder(state: State<AppState>) -> CmdResult<Option<String>> {
+    Ok(crate::sync_store::folder(&state.store.lock().unwrap())?)
+}
+
+/// Turn sync on with a folder the reader chose, or off with None.
+#[tauri::command]
+pub fn sync_set_folder(state: State<AppState>, folder: Option<String>) -> CmdResult<()> {
+    if let Some(f) = &folder {
+        if !std::path::Path::new(f).is_dir() {
+            return Err(CommandError::Failed {
+                message: format!("not a folder: {f}"),
+            });
+        }
+    }
+    let mut store = state.store.lock().unwrap();
+    Ok(crate::sync_store::set_folder(
+        &mut store,
+        folder.as_deref(),
     )?)
+}
+
+/// Sync now: write this device's changes, apply the others'.
+#[tauri::command]
+pub fn sync_now(state: State<AppState>) -> CmdResult<Option<crate::sync_store::Report>> {
+    sync_once(&state)
+}
+
+pub fn sync_once(state: &AppState) -> CmdResult<Option<crate::sync_store::Report>> {
+    let mut store = state.store.lock().unwrap();
+    let Some(folder) = crate::sync_store::folder(&store)? else {
+        return Ok(None);
+    };
+    let adapter = crate::sync::FolderAdapter::new(std::path::Path::new(&folder));
+    crate::sync_store::run(&mut store, &adapter)
+        .map(Some)
+        .map_err(|e| CommandError::Failed {
+            message: format!("sync: {e}"),
+        })
 }
 
 #[tauri::command]

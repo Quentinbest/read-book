@@ -80,3 +80,14 @@ From `docs/next-steps-plan.md` §4. Release downloads so far (`docs/release-stat
 48. **(O6) Sync approach.** *Recommendation:* an adapter API plus a built-in sync folder (iCloud Drive).
 49. **(O7) Gate W**, after Phase 10. Phase 10 (`docs/spikes/cross-engine.md`): anchors identical and isolation holding on all three engines; pages: Linux at parity in practice, Windows +2.7%; vertical Japanese diverges (Linux +45%, Windows −22%), a work item of its own if ported. *Recommendation:* no-go unless someone asks; so far nobody has. Also approve the reworded criterion: each chapter within ±1 page, and the total within 2%.
 50. **(O8) iPad before sync.** *Recommendation:* yes.
+
+## Sync (Phase 13, 2026-10-06)
+
+51. **Sync wording (PROVISIONAL, `src/lib/strings/en.ts`).** Settings › Library › Sync: “Share reading positions, highlights and notes with your other Macs through a folder you choose, such as one in iCloud Drive. Books themselves are not copied.”, with Choose Folder…, Sync Now, Turn Off, “Synced · N changes from other Macs” and “Couldn’t reach the sync folder. Linen will try again.” *Recommendation:* approve.
+52. **Merge rules (PROVISIONAL, `docs/phase13-status.md`).**
+    - The newest change to each record wins, including a position earlier in the book.
+    - When two devices edit one note at once, both texts are kept, the losing one as a second note on the same passage.
+    - Removing a book is not synced.
+    - Clocks more than a day ahead are set aside.
+
+    *Recommendation:* approve.

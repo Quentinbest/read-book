@@ -9,6 +9,7 @@ pub mod native;
 pub mod native_input;
 pub mod store;
 pub mod sync;
+pub mod sync_store;
 pub mod updater;
 
 #[cfg(feature = "spikes")]
@@ -74,6 +75,9 @@ pub fn run() {
                 commands::book_settings_get,
                 commands::book_settings_set,
                 commands::position_save,
+                commands::sync_folder,
+                commands::sync_set_folder,
+                commands::sync_now,
                 commands::library_remove,
                 commands::library_restore,
                 commands::book_show_file,
@@ -179,6 +183,21 @@ pub fn run() {
             commands::flush_pending_opens(app.handle());
             native_input::install(app.handle());
             updater::start(app.handle());
+            // Sync (Phase 13): at launch and every minute while a folder is chosen.
+            // Applied changes reach an open book when it next reads its position.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                let state = handle.state::<commands::AppState>();
+                match commands::sync_once(&state) {
+                    Ok(Some(r)) if r.applied > 0 => {
+                        use tauri::Emitter;
+                        let _ = handle.emit("sync-applied", r.applied);
+                    }
+                    Err(e) => log::warn!("{e:?}"),
+                    _ => {}
+                }
+                std::thread::sleep(std::time::Duration::from_secs(60));
+            });
             #[cfg(feature = "spikes")]
             spikes::setup(app)?;
             Ok(())

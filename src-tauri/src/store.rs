@@ -115,6 +115,25 @@ pub const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE books ADD COLUMN author_sort TEXT;
     "#,
+    // 5: Sync (next-steps plan, Phase 13): the current version of every synced record,
+    // keyed as in sync.rs; local changes waiting to be written to this device's log;
+    // and records set aside (from a newer format, or a clock far in the future).
+    r#"
+    CREATE TABLE sync_records (
+        key TEXT PRIMARY KEY,
+        book_key TEXT NOT NULL,
+        change TEXT NOT NULL,                  -- the sync::Change, as JSON
+        applied INTEGER NOT NULL DEFAULT 1     -- 0: the book isn't in this library yet
+    );
+    CREATE TABLE sync_outbox (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT,
+        line TEXT NOT NULL
+    );
+    CREATE TABLE sync_aside (
+        line TEXT PRIMARY KEY,
+        reason TEXT NOT NULL                   -- 'format' | 'future'
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
