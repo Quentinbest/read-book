@@ -139,6 +139,7 @@ pub fn run() {
         spikes::spike_scroll_wheel,
         spikes::spike_mouse,
         spikes::spike_cursor,
+        spikes::spike_scroller_style,
         spikes::spike_mouse_drag,
         spikes::spike_read_pasteboard,
         spikes::spike_crash_log,

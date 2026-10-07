@@ -78,3 +78,14 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
     *Recommendation:* try the steps in `docs/reader-review-2026-10-06.md` (Contents and search in both modes; the wheel over Contents at its ends; the pointer at the top and bottom in Scroll) and accept, or say what still differs.
     **Approved 2026-10-06** (“Go ahead”). The owner's reply records no hands-on run of these steps.
+
+## Scroll bars (2026-10-07)
+
+55. **Overlay scroll bars when macOS asks for visible ones.** The recording you sent shows an overlay scroll bar: hidden at rest, shown while scrolling, brighter under the pointer, faded after a second. Linen's scroll bars are WebKit's own and already do this whenever macOS uses overlay scroll bars, Scroll mode included (`docs/scrollbar-survey-2026-10-07.md`, `scrollbar-survey`). On the Mac used here they are always visible because a USB mouse is attached and **Show scroll bars** is **Automatically**: macOS then asks every app for visible bars, and a plain AppKit app does the same. Whether the knob stays up while the pointer rests on it could not be checked with posted input.
+
+    Options:
+    - **A. Follow macOS (no change).** Overlay bars with a trackpad or **When scrolling**; visible bars with a mouse under **Automatically**, or with **Always**. To get the recording's behaviour on this Mac: System Settings › Appearance › Show scroll bars › When scrolling.
+    - **B. Overlay bars in Linen whatever the setting.** A custom indicator drawn by the reader in place of WebKit's bars, with its own hover, drag and timing. It overrides the choice of mouse users and of people who set **Always** (an accessibility setting on other platforms), and adds code to the reader's scroll path.
+
+    *Recommendation:* A. If you try **When scrolling**, say whether the bar under a resting pointer behaves as you expect (the one step not verified).
+    **Approved 2026-10-07: option A.** Linen keeps WebKit's own scroll bars and follows the system setting; no product change. The owner's reply records no hands-on check of a resting pointer on the knob.

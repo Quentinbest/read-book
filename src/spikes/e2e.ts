@@ -4932,6 +4932,103 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'scrollbar-survey',
+    optIn: true,
+    description:
+      'Measurement: whether WebKit shows its overlay scroll knob in Scroll mode, where the engine scrolls the host from the native stream, and over Contents, which WebKit scrolls itself (no verdict; captures scrollbar-*)',
+    run: () => {
+      // A scroller's gutter: 0 with overlay scrollbars, the bar's width with legacy ones.
+      const gutter = () => {
+        const probe = document.createElement('div')
+        probe.style.cssText = 'position:fixed;top:0;left:0;width:100px;height:100px;overflow:scroll'
+        document.body.append(probe)
+        const w = probe.offsetWidth - probe.clientWidth
+        probe.remove()
+        return w
+      }
+      const first = gutter()
+      return withCursor(async () => {
+        const style = await invoke<string>('spike_scroller_style')
+        await backToLibrary()
+        await openFromLibrary(/Moby Dick(?!;)/)
+        const notes: string[] = [style, `probe gutter ${first} px before any posted input`]
+        const shot = (name: string) => invoke('spike_capture', { name: `scrollbar-${name}` })
+        const host = reader()!.engine.view.parentElement!
+        await inMode('scroll', async () => {
+          await hideControls()
+          const r = host.getBoundingClientRect()
+          const x = Math.round(innerWidth * 0.3)
+          const mid = Math.round(innerHeight / 2)
+          notes.push(
+            `host ${Math.round(r.left)}–${Math.round(r.right)} of ${innerWidth}, gutter ${host.offsetWidth - host.clientWidth} px`,
+          )
+          await realMouse(x, mid)
+          await settled(2500)
+          await shot('1-rest')
+          const before = host.scrollTop
+          await realWheel(x, mid, -14, 20, true)
+          await sleep(400)
+          await shot('2-after-wheel')
+          notes.push(`the wheel scrolled the host ${Math.round(host.scrollTop - before)} px`)
+          await settled(2500)
+          await shot('3-rest-again')
+          // Where the overlay knob is drawn: its last few px, and its centre, which follows
+          // the scroll position. First without a scroll…
+          const knobX = Math.round(r.right) - 5
+          const knobY = () =>
+            Math.round(
+              r.top + ((host.scrollTop + host.clientHeight / 2) / host.scrollHeight) * r.height,
+            )
+          await realMouse(knobX - 1, knobY())
+          await realMouse(knobX, knobY())
+          await sleep(600)
+          await shot('4-pointer-on-knob-no-scroll')
+          // …then right after one, held past the usual fade, and after the pointer leaves.
+          await realMouse(x, mid)
+          await settled(1500)
+          await realWheel(x, mid, -14, 10, true)
+          await sleep(250)
+          await realMouse(knobX - 1, knobY())
+          await realMouse(knobX, knobY())
+          notes.push(`knob centre ${knobX},${knobY()}`)
+          await sleep(1800)
+          await shot('5-hover-after-scroll')
+          await realMouse(x, mid)
+          await sleep(2500)
+          await shot('6-after-leaving')
+        })
+        // The control: Contents is an overflow list that WebKit scrolls from the wheel itself.
+        hooks.run?.('navigator.contents')
+        await navRows()
+        await settled(800)
+        const list = document.querySelector<HTMLElement>('.navigator .list')!
+        const box = list.getBoundingClientRect()
+        const before = list.scrollTop
+        await realWheel(box.left + box.width / 2, box.top + box.height / 2, -14, 20, true)
+        await sleep(400)
+        await shot('7-contents-after-wheel')
+        notes.push(
+          `Contents ${Math.round(box.left)}–${Math.round(box.right)} scrolled ${Math.round(list.scrollTop - before)} px`,
+        )
+        // The same hover, on a scroller with no book frame under its edge.
+        await settled(2500)
+        await realWheel(box.left + box.width / 2, box.top + box.height / 2, -14, 10, true)
+        await sleep(250)
+        const listKnobY = Math.round(
+          box.top + ((list.scrollTop + list.clientHeight / 2) / list.scrollHeight) * box.height,
+        )
+        await realMouse(Math.round(box.right) - 6, listKnobY)
+        await realMouse(Math.round(box.right) - 5, listKnobY)
+        await sleep(1800)
+        await shot('8-contents-hover-after-scroll')
+        await closeNavigator()
+        notes.push(`probe gutter ${gutter()} px at the end`)
+        return notes.join('; ')
+      })
+    },
+  })
+
+  checks.push({
     id: 'S9-edge-reveal-modes',
     description:
       'Real pointer moves: the top and bottom edges reveal both bars in Pages and in Scroll alike; they hide when the pointer goes, and their buttons work',
