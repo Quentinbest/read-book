@@ -6,8 +6,8 @@ import { initLocale } from './app/locale'
 
 installErrorLogging()
 installThemeCss()
-// L-5: the language is set before the UI is imported, because command titles
-// read `t` at import.
+// L-5: the language is set before the UI is imported, so nothing that reads `t`
+// while it loads sees English first.
 await initLocale()
 const { default: App } = await import('./App.svelte')
 

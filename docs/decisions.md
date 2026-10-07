@@ -188,3 +188,11 @@ The owner approved all eleven decisions of the localisation plan as recommended.
 | L-9 | Rollout: the first release with the translations follows the system language by default; English is always one setting away. Rollback is a patch release that drops a language; its stored setting then falls back to the system language, then English. |
 | L-10 (D4) | Scope: the extension permission labels (Linen's own) are translated; text supplied by extensions stays as authored (`locales` still reserved, D4); the Finder file-kind name “EPUB book” is deferred. Documentation, the crash log and the app name stay English. |
 | L-11 | Style: Japanese uses the polite です/ます form; Chinese and Japanese use full-width punctuation and their own quotation marks (“…” in Simplified Chinese, 「…」 in Traditional Chinese and Japanese). |
+
+## Approved 2026-10-07 (extension diagnostics, item 56)
+
+The owner answered “Approve item 56, then start Stage 3”, which approves the recommendation (`docs/pending-approvals.md`).
+
+| # | Approved |
+|---|---|
+| Extension diagnostics (56) | The core's extension checks (manifest fields, permissions, Host API versions), the theme-pack contrast report and errors that reach extension code stay in English, as L-10 keeps extension-supplied text as authored. The sentence around them (““Name” can’t be installed”, “Turned off: …”) is translated. |

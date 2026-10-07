@@ -1,7 +1,6 @@
 // Each page chooses its UI language before it imports the UI (L-4, L-5): the
-// `language` setting, else macOS's preferred languages, else English. Command
-// titles and the menu bar read `t` when they are built, so the choice holds until
-// Linen restarts.
+// `language` setting, else macOS's preferred languages, else English. The menu bar
+// is built once, so the choice holds until Linen restarts.
 
 import { AVAILABLE, setLocale, type Locale } from '../lib/strings'
 import { LANGUAGE_SETTING, resolveLocale } from '../lib/strings/negotiate'

@@ -295,6 +295,14 @@ export const CORE_COMMANDS: CommandDef[] = [
   },
 ]
 
+// L-1: a core command's title is read when it is asked for, so the menu bar, ⌘K and
+// the cheat sheet use the page's language whenever they are built.
+for (const d of CORE_COMMANDS) {
+  const id = d.id as keyof typeof t.commands
+  if (id in t.commands)
+    Object.defineProperty(d, 'title', { get: () => t.commands[id], enumerable: true })
+}
+
 export class CommandRegistry {
   #defs = new Map<string, CommandDef>()
   #handlers = new Map<string, Pick<Command, 'run' | 'enabled'>>()

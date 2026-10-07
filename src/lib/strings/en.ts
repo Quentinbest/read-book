@@ -541,7 +541,26 @@ export const en = {
   /** Key names on key caps (T7: letters come from the keyboard layout). */
   keys: { esc: 'Esc', space: 'Space', pageUp: 'PgUp', pageDown: 'PgDn' },
   /** The macOS menu bar's menus (P§16). */
-  menus: { file: 'File', edit: 'Edit', view: 'View', go: 'Go', window: 'Window' },
+  menus: {
+    file: 'File',
+    edit: 'Edit',
+    view: 'View',
+    go: 'Go',
+    window: 'Window',
+    // AppKit's standard items. muda would name them in English itself
+    // (docs/spikes/i18n-spike.md, finding 5); `app` is “Linen”.
+    about: (app: string) => `About ${app}`,
+    services: 'Services',
+    hide: (app: string) => `Hide ${app}`,
+    hideOthers: 'Hide Others',
+    showAll: 'Show All',
+    quit: (app: string) => `Quit ${app}`,
+    cut: 'Cut',
+    copy: 'Copy',
+    paste: 'Paste',
+    selectAll: 'Select All',
+    minimize: 'Minimize',
+  },
   palette: {
     label: 'Command palette',
     placeholder: 'Type a command, chapter or setting',

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { en } from './en'
 import * as strings from './index'
 import { pseudo, pseudoLocalize } from './pseudo'
+import plist from '../../../src-tauri/Info.plist?raw'
 
 describe('L-1 the page language', () => {
   afterEach(() => strings.setLocale('en'))
@@ -21,6 +22,13 @@ describe('L-1 the page language', () => {
     expect(strings.locale).toBe('en-XA')
     expect(strings.t.library.title).toBe(pseudo('Library'))
     expect(strings.missingKeys).toEqual([])
+  })
+  it('the bundle declares exactly the languages that ship (spike finding 4)', () => {
+    const list = plist.slice(plist.indexOf('<key>CFBundleLocalizations</key>'))
+    const declared = [...list.slice(0, list.indexOf('</array>')).matchAll(/<string>([^<]+)</g)].map(
+      (m) => m[1],
+    )
+    expect(declared).toEqual(strings.AVAILABLE.filter((l) => l !== 'en-XA'))
   })
   it('every language has a name in its own script', () => {
     for (const l of strings.AVAILABLE) expect(strings.LANGUAGE_NAMES[l]).toBeTruthy()
