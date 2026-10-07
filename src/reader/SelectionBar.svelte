@@ -9,7 +9,7 @@
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
   import { MOTION } from '../lib/theme/tokens'
-  import { COLOR_NAMES, COLORS } from './annotations.svelte'
+  import { COLORS } from './annotations.svelte'
   import type { HighlightColor } from '../lib/annotations/model'
 
   let {
@@ -144,8 +144,8 @@
         class:current={c === color}
         tabindex={i === 0 ? 0 : -1}
         aria-label={mode === 'new'
-          ? t.annotations.highlightIn(COLOR_NAMES[c], c === color)
-          : t.annotations.colorOption(COLOR_NAMES[c], c === color)}
+          ? t.annotations.highlightIn(t.colorsInText[c], c === color)
+          : t.annotations.colorOption(t.colors[c], c === color)}
         aria-pressed={mode === 'existing' ? c === color : undefined}
         onclick={() => onhighlight(c)}
       >

@@ -21,7 +21,7 @@
     <header>
       <h2>{t.cheatSheet.title}</h2>
       <button type="button" class="close" onclick={onclose}>
-        {t.cheatSheet.close}<kbd>Esc</kbd>
+        {t.cheatSheet.close}<kbd>{t.keys.esc}</kbd>
       </button>
     </header>
     <div class="columns">

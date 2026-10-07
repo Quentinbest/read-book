@@ -49,14 +49,14 @@ export async function installMenuBar(registry: CommandRegistry) {
         }),
       )
     }
-    if (m.title === 'Edit') {
+    if (m.id === 'Edit') {
       // Text fields need the standard editing items (and their shortcuts) on macOS.
       items.push(await sep())
       for (const item of ['Cut', 'Copy', 'Paste', 'SelectAll'] as const) {
         items.push(await PredefinedMenuItem.new({ item }))
       }
     }
-    if (m.title === 'Window') {
+    if (m.id === 'Window') {
       items.push(await sep(), await PredefinedMenuItem.new({ item: 'Minimize' }))
     }
     submenus.push(await Submenu.new({ text: m.title, items }))

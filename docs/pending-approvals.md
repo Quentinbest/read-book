@@ -89,3 +89,8 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
     *Recommendation:* A. If you try **When scrolling**, say whether the bar under a resting pointer behaves as you expect (the one step not verified).
     **Approved 2026-10-07: option A.** Linen keeps WebKit's own scroll bars and follows the system setting; no product change. The owner's reply records no hands-on check of a resting pointer on the knob.
+
+## UI localisation (2026-10-07)
+
+56. **Extension diagnostics stay in English (L-10, Stage 2).** About 40 messages from the core's extension checks (`src-tauri/src/extensions/`: a manifest field that is missing or wrong, an unknown permission, a Host API version Linen lacks) and the theme-pack contrast report (`src/lib/extensions/themes.ts`: “secondary text is 3.9:1 (needs 4.5:1)”) appear inside ““Name” can’t be installed” and “Turned off: …”. They are written for extension authors, and translating them would put about 40 technical strings in every catalogue. The sentence around them is translated; the detail after it stays English. Errors that reach extension code (`ExtensionError` in `host.svelte.ts`) are developer-facing too.
+    *Recommendation:* keep them English, as L-10 keeps extension-supplied text as authored.

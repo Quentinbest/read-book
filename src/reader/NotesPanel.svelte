@@ -9,7 +9,8 @@
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
-  import { COLOR_NAMES, COLORS } from './annotations.svelte'
+  import { COLORS } from './annotations.svelte'
+  import { formatDate } from '../lib/strings/format'
 
   let {
     placed,
@@ -77,14 +78,14 @@
     if (day(ms) === day(now)) return t.annotations.today
     if (day(ms) === day(now - 86_400_000)) return t.annotations.yesterday
     const d = new Date(ms)
-    return d.toLocaleDateString(undefined, {
+    return formatDate(ms, {
       day: 'numeric',
       month: 'short',
       year: d.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric',
     })
   }
   const meta = (a: Annotation) =>
-    [COLOR_NAMES[a.color], when(a.createdAt), a.note ? t.annotations.hasNote : null]
+    [t.colors[a.color], when(a.createdAt), a.note ? t.annotations.hasNote : null]
       .filter(Boolean)
       .join(' · ')
 
@@ -128,7 +129,7 @@
         class="chip"
         class:on={only === c}
         aria-pressed={only === c}
-        aria-label={t.annotations.only(COLOR_NAMES[c])}
+        aria-label={t.annotations.only(t.colorsInText[c])}
         onclick={() => (only = only === c ? null : c)}
       >
         <span style:background="var(--hl-{c}-swatch)"></span>

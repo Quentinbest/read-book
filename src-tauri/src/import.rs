@@ -31,8 +31,11 @@ pub enum ImportOutcome {
         title: String,
         damaged: usize,
     },
-    /// Not imported. `reason` is shown on the E3 card or as the hostile-file message.
+    /// Not imported. The UI words `code` with `args` (L-1); `reason` is the English
+    /// text, for logs.
     Rejected {
+        code: String,
+        args: Vec<String>,
         reason: String,
         hostile: bool,
         drm: bool,
@@ -185,15 +188,20 @@ pub fn import_book(
     let (mut archive, package) = match parsed {
         Ok(x) => x,
         Err(r) => {
+            let (code, args) = r.code();
             return Ok(ImportOutcome::Rejected {
+                code: code.into(),
+                args,
                 hostile: hostile(&r),
                 drm: matches!(r, Rejection::Drm(_)),
                 reason: r.to_string(),
-            })
+            });
         }
     };
     if package.spine.is_empty() {
         return Ok(ImportOutcome::Rejected {
+            code: "no_chapters".into(),
+            args: vec![],
             hostile: false,
             drm: false,
             reason: "none of the book's chapters could be opened".into(),

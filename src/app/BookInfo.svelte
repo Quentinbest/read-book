@@ -6,6 +6,7 @@
   import { ipc, type Book, type BookInfo } from './ipc'
   import BookCover from './BookCover.svelte'
   import { accessibilityLines } from '../lib/library/a11y'
+  import { formatDate, formatNumber, languageName } from '../lib/strings/format'
 
   let { book, onclose }: { book: Book | null; onclose: () => void } = $props()
 
@@ -24,16 +25,11 @@
 
   const size = (bytes: number) =>
     bytes >= 1 << 20
-      ? `${(bytes / (1 << 20)).toFixed(1)} MB`
-      : `${Math.max(1, Math.round(bytes / 1024))} KB`
-  const language = (tag: string | null) => {
-    if (!tag) return null
-    try {
-      return new Intl.DisplayNames(['en'], { type: 'language' }).of(tag) ?? tag
-    } catch {
-      return tag
-    }
-  }
+      ? t.info.sizeMB(
+          formatNumber(bytes / (1 << 20), { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+        )
+      : t.info.sizeKB(formatNumber(Math.max(1, Math.round(bytes / 1024))))
+  const language = (tag: string | null) => (tag ? languageName(tag) : null)
   const rows = $derived(
     book
       ? ([
@@ -43,10 +39,7 @@
           [t.info.layout, book.layout === 'fixed' ? t.info.fixed : t.info.reflowable],
           [t.info.identifier, info?.identifier],
           [t.info.fileSize, info ? size(info.file_size) : null],
-          [
-            t.info.added,
-            new Date(book.added_at).toLocaleDateString('en-GB', { dateStyle: 'long' }),
-          ],
+          [t.info.added, formatDate(book.added_at, { dateStyle: 'long' })],
         ].filter(([, v]) => v) as [string, string][])
       : [],
   )

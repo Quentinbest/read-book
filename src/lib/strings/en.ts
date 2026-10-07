@@ -2,6 +2,8 @@
 // the source and the fallback; the other languages follow its shape (types.ts).
 // Features import `t` from ./index, which is in the page's language.
 
+import { formatPercent, plural } from './format'
+
 const fileName = (path: string) => path.split('/').pop() ?? path
 
 export const en = {
@@ -12,12 +14,12 @@ export const en = {
     open: 'Open…',
     note: 'Books are copied into your library and stay on this device.',
     title: 'Library',
-    count: (n: number) => `${n} ${n === 1 ? 'book' : 'books'}`,
+    count: (n: number) => plural(n, { one: `${n} book`, other: `${n} books` }),
     unknownAuthor: 'Unknown author',
     damaged: (n: number) => `${n} damaged`,
     new: 'New',
     finished: 'Finished',
-    percent: (fraction: number) => `${Math.round(fraction * 100)}%`,
+    percent: (fraction: number) => formatPercent(fraction),
     search: 'Search library',
     searchPlaceholder: 'Search title or author',
     sortBy: (label: string) => `Sort by: ${label}`,
@@ -28,6 +30,9 @@ export const en = {
     viewList: 'List',
     neverOpened: '—',
     continueReading: 'Continue reading',
+    // E6 (Screen 01): `day` is “today” or “yesterday”, `ago` “3 days ago” or a date
+    openedAt: (day: string, time: string) => `Opened ${day} at ${time}`,
+    openedAgo: (ago: string) => `Opened ${ago}`,
     allBooks: 'All books',
     resume: 'Resume reading',
     itemMenu: (title: string) => `More for “${title}”`,
@@ -40,7 +45,7 @@ export const en = {
     // E3; Screen 12
     damagedTitle: 'Part of this book couldn’t be opened',
     damagedBody: (n: number, total: number) =>
-      `${total ? `${n} of ${total}` : n} ${(total || n) === 1 ? 'chapter is' : 'chapters are'} damaged. You can read the rest; damaged chapters are marked in Contents so nothing looks silently missing.`,
+      `${total ? `${n} of ${total}` : n} ${plural(total || n, { one: 'chapter is', other: 'chapters are' })} damaged. You can read the rest; damaged chapters are marked in Contents so nothing looks silently missing.`,
     damagedFile: (title: string, size: string) => `${title} · ${size}`,
     readAnyway: 'Read anyway',
     showFileShort: 'Show file',
@@ -93,7 +98,7 @@ export const en = {
     showFolder: 'Show in Finder',
     exportAll: 'Export all highlights and notes…',
     exportHelp: 'One W3C Web Annotation file per book, which other apps can read.',
-    exported: (n: number) => `Exported ${n} ${n === 1 ? 'book' : 'books'}`,
+    exported: (n: number) => plural(n, { one: `Exported ${n} book`, other: `Exported ${n} books` }),
     nothingToExport: 'There are no highlights to export.',
     uninstall:
       'Removing Linen from Applications leaves this folder in place. Delete it too to remove your library.',
@@ -136,6 +141,7 @@ export const en = {
     nothing: 'Nothing — themes contain no code',
     noAccess: 'Nothing beyond its own storage',
     enabled: (name: string) => `${name} on`,
+    // English counts “once” and “twice”; other languages may simply use the number.
     failures: (n: number) =>
       `Stopped responding ${n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`} recently and was restarted. Reading wasn’t affected.`,
     suspended:
@@ -165,6 +171,28 @@ export const en = {
       'Also delete what it saved? If you keep it, it comes back if you install the extension again.',
     keepData: 'Keep its data',
     deleteData: 'Delete its data',
+    fileFilter: 'Linen extension',
+    // P3 (Screen 11, G1): what each permission allows, in plain words
+    permissions: {
+      'book.metadata': 'See the book’s title and author',
+      'book.selection': 'Read the text you select',
+      'book.text': 'Read the whole book',
+      'annotations.read': 'Read highlights and notes',
+      'annotations.write': 'Change highlights and notes',
+      'library.read': 'See every book in your library',
+      'reading.sessions': 'Know when and how long you read',
+      'files.import': 'Open files you choose',
+      'files.export': 'Save files you choose',
+      background: 'Run in the background',
+    },
+    connect: (host: string) => `Connect to ${host}`,
+    connectAny: (suffix: string) => `Connect to any address ending ${suffix}`,
+    // Screen 11 “Adds”
+    commandsAdded: (n: number) => plural(n, { one: 'Command', other: `${n} commands` }),
+    inSelectionMenu: (title: string) => `“${title}” in selection menu`,
+    navigatorTab: 'Navigator tab',
+    themesAdded: (n: number) => plural(n, { one: 'Theme', other: `${n} themes` }),
+    exportInNotes: 'Export in Notes',
   },
   // Book info (E10; G3, PROVISIONAL)
   info: {
@@ -183,6 +211,45 @@ export const en = {
     accessibility: 'Accessibility',
     noAccessibility: 'The book gives no accessibility information.',
     description: 'Description',
+    sizeMB: (n: string) => `${n} MB`,
+    sizeKB: (n: string) => `${n} KB`,
+    // E10: the book's accessibility metadata (schema.org values) in plain words
+    a11y: {
+      accessMode: {
+        textual: 'Readable as text',
+        visual: 'Has visual content',
+        auditory: 'Has audio content',
+      },
+      accessModeSufficient: {
+        textual: 'Can be read fully as text',
+        visual: 'Needs sight for some content',
+      },
+      accessibilityFeature: {
+        alternativeText: 'Has alternative text for images',
+        longDescription: 'Has long descriptions for complex images',
+        tableOfContents: 'Has a table of contents',
+        readingOrder: 'Has a logical reading order',
+        structuralNavigation: 'Has headings for navigation',
+        pageBreakMarkers: 'Marks the print pages',
+        printPageNumbers: 'Marks the print pages',
+        MathML: 'Has mathematics as MathML',
+        displayTransformability: 'Text can be restyled',
+        synchronizedAudioText: 'Has read-aloud audio',
+        ARIA: 'Uses ARIA roles',
+        index: 'Has an index',
+        captions: 'Has captions',
+      },
+      accessibilityHazard: {
+        none: 'No known hazards',
+        noFlashingHazard: 'No flashing hazard',
+        noMotionSimulationHazard: 'No motion hazard',
+        noSoundHazard: 'No sound hazard',
+        flashing: 'Warning: flashing content',
+        motionSimulation: 'Warning: motion simulation',
+        sound: 'Warning: sound',
+        unknown: 'Hazards unknown',
+      },
+    },
   },
   // D6: a quiet line; it never interrupts reading
   update: {
@@ -195,7 +262,7 @@ export const en = {
   // Import outcomes: wording PROVISIONAL until the G4 designs exist.
   import: {
     addedDamaged: (title: string, n: number) =>
-      `“${title}” was added · ${n} damaged ${n === 1 ? 'chapter' : 'chapters'}`,
+      `“${title}” was added · ${plural(n, { one: `${n} damaged chapter`, other: `${n} damaged chapters` })}`,
     alreadyInLibrary: (path: string) => `“${fileName(path)}” is already in your library`,
     replaced: (title: string) => `“${title}” was updated from a newer file`,
     drm: (path: string) => `“${fileName(path)}” is protected by DRM and can’t be opened in Linen`,
@@ -203,6 +270,21 @@ export const en = {
     rejected: (path: string, reason: string) =>
       `“${fileName(path)}” couldn’t be opened · ${reason}`,
     fileFilter: 'EPUB',
+    // Why a file was not added, by the core's rejection code (epub.rs, import.rs)
+    reasons: {
+      not_zip: 'not a zip archive or the archive is truncated',
+      too_many_entries: (max: string) => `more than ${max} entries`,
+      too_large: 'uncompressed size over 1 GB',
+      compression_ratio: (entry: string, ratio: string) =>
+        `entry ${entry} compresses more than ${ratio}:1`,
+      unsafe_path: (entry: string) => `unsafe entry path ${entry}`,
+      symlink: (entry: string) => `symbolic link entry ${entry}`,
+      no_package: 'no container.xml or no package document',
+      bad_package: 'the package document is not well-formed XML',
+      xml_entities: (entry: string) => `${entry} declares XML entities`,
+      drm: (entry: string) => `encrypted content (DRM) in ${entry}`,
+      no_chapters: 'none of the book’s chapters could be opened',
+    },
   },
   reader: {
     // C5 (1.1, approved 2026-10-01)
@@ -231,7 +313,7 @@ export const en = {
       pages.length > 1
         ? `Pages ${pages[0]}–${pages[pages.length - 1]} of ${total}`
         : `Page ${pages[0]} of ${total}`,
-    zoomLevel: (zoom: number) => `${Math.round(zoom * 100)}%`,
+    zoomLevel: (zoom: number) => formatPercent(zoom),
     zoomFit: 'Fit',
     /** G8: shown only when opening takes over 500 ms. */
     opening: (title: string) => `Opening “${title}”…`,
@@ -241,7 +323,7 @@ export const en = {
     placeholder: 'Search in book',
     clear: 'Clear search',
     count: (n: number, chapters: number) =>
-      `${n} ${n === 1 ? 'result' : 'results'} in ${chapters} ${chapters === 1 ? 'chapter' : 'chapters'}`,
+      `${plural(n, { one: `${n} result`, other: `${n} results` })} in ${plural(chapters, { one: `${chapters} chapter`, other: `${chapters} chapters` })}`,
     soFar: 'so far',
     searching: (n: number, of: number) => `Searching ${n} of ${of} chapters`,
     showAll: (n: number) => `Show all ${n}`,
@@ -310,18 +392,21 @@ export const en = {
   annotations: {
     bar: 'Selection actions',
     barAnnounce: 'Selection actions, F6',
+    // `color` is the colour as `colorsInText` names it (“yellow”).
     highlightIn: (color: string, lastUsed: boolean) =>
-      `Highlight ${color.toLowerCase()}${lastUsed ? ', last used (H or ⇧⌘H)' : ''}`,
+      `Highlight ${color}${lastUsed ? ', last used (H or ⇧⌘H)' : ''}`,
     colorOption: (color: string, current: boolean) => `${color}${current ? ', current' : ''}`,
     note: 'Note',
     copy: 'Copy',
     search: 'Search',
     delete: 'Delete',
     copied: 'Copied',
-    highlighted: (color: string) => `Highlighted ${color.toLowerCase()}`,
+    highlighted: (color: string) => `Highlighted ${color}`,
     deleted: 'Highlight deleted',
     noteDeleted: 'Note deleted',
-    recolored: (color: string) => `Highlight changed to ${color.toLowerCase()}`,
+    recolored: (color: string) => `Highlight changed to ${color}`,
+    /** ⌘K: `color` as `colors` names it (“Yellow”). */
+    highlightCommand: (color: string) => `Highlight ${color}`,
     undo: 'Undo',
     restore: (quote: string) => `Restore highlight “${quote}”`,
     restoreNote: (quote: string) => `Restore note on “${quote}”`,
@@ -339,9 +424,9 @@ export const en = {
     // Notes tab (A8; Screen 08)
     filter: 'Filter highlights and notes',
     all: 'All',
-    only: (color: string) => `Only ${color.toLowerCase()}`,
+    only: (color: string) => `Only ${color}`,
     counts: (h: number, n: number) =>
-      `${h} ${h === 1 ? 'highlight' : 'highlights'} · ${n} ${n === 1 ? 'note' : 'notes'}`,
+      `${plural(h, { one: `${h} highlight`, other: `${h} highlights` })} · ${plural(n, { one: `${n} note`, other: `${n} notes` })}`,
     today: 'Today',
     yesterday: 'Yesterday',
     hasNote: 'Note',
@@ -356,9 +441,16 @@ export const en = {
     cancel: 'Cancel',
     reattached: 'Highlight re-attached',
     unplacedAfterUpdate: (n: number) =>
-      `${n} ${n === 1 ? 'highlight' : 'highlights'} couldn’t be placed in the updated book`,
+      plural(n, {
+        one: `${n} highlight couldn’t be placed in the updated book`,
+        other: `${n} highlights couldn’t be placed in the updated book`,
+      }),
     show: 'Show',
   },
+  /** A4: highlight colours as lists and menus name them. */
+  colors: { yellow: 'Yellow', green: 'Green', blue: 'Blue', rose: 'Rose' },
+  /** The same colours inside a sentence (“Highlight yellow”). */
+  colorsInText: { yellow: 'yellow', green: 'green', blue: 'blue', rose: 'rose' },
   goto: {
     label: 'Go to location',
     percent: 'Percent',
@@ -369,7 +461,7 @@ export const en = {
     pageLabel: 'Print page',
     go: 'Go',
     stays: 'Your current place stays in Back history (⌘[).',
-    percentIn: (pct: number) => `${pct}% is in `,
+    percentIn: (pct: number) => `${formatPercent(pct / 100)} is in `,
     pageIn: (page: string) => `Page ${page} is in `,
     chapterAt: (pct: number) => ` starts at ${pct}%.`,
     noPage: (page: string) => `There is no page ${page} in this book.`,
@@ -430,7 +522,26 @@ export const en = {
     close: 'Close',
     singleKeys:
       'Single-key shortcuts (such as [ and ]) work when the book text has focus and no screen reader is running.',
+    // K9, G10: section titles and the reader's own page keys (I8, I9)
+    pages: 'Pages',
+    sections: {
+      navigation: 'Navigation',
+      reading: 'Reading',
+      search: 'Search',
+      annotation: 'Highlights and notes',
+      view: 'View',
+      app: 'App',
+      extension: 'Extensions',
+    },
+    nextPage: 'Next page',
+    previousPage: 'Previous page',
+    scrollScreen: 'Scroll by a screen (Scroll mode)',
+    scrollLines: 'Scroll by lines (Scroll mode)',
   },
+  /** Key names on key caps (T7: letters come from the keyboard layout). */
+  keys: { esc: 'Esc', space: 'Space', pageUp: 'PgUp', pageDown: 'PgDn' },
+  /** The macOS menu bar's menus (P§16). */
+  menus: { file: 'File', edit: 'Edit', view: 'View', go: 'Go', window: 'Window' },
   palette: {
     label: 'Command palette',
     placeholder: 'Type a command, chapter or setting',

@@ -1,10 +1,13 @@
 // Plurals, numbers, dates and sorting in the UI language (L-1, L-7; docs/i18n-plan.md §4).
 // Messages call these instead of English rules (`n === 1 ? …`) or fixed locales.
 
-import { locale } from './index'
+import { locale } from './current'
 
-/** The tag Intl gets: the pseudo-locale formats as English. */
-const intlLocale = () => (locale === 'en-XA' ? 'en' : locale)
+/**
+ * The tag Intl gets. Linen's English is British (“colour”, “21:40”, “7 Oct”), and
+ * the pseudo-locale formats as English.
+ */
+const intlLocale = () => (locale === 'en' || locale === 'en-XA' ? 'en-GB' : locale)
 
 const cache = new Map<string, unknown>()
 function cached<T>(kind: string, options: object, make: (l: string) => T): T {
@@ -28,18 +31,6 @@ export const formatNumber = (n: number, options: Intl.NumberFormatOptions = {}) 
 /** A fraction as a whole percentage: 0.45 → “45%” (en), “45 %” (es). */
 export const formatPercent = (fraction: number) =>
   formatNumber(fraction, { style: 'percent', maximumFractionDigits: 0 })
-
-/** A file size in KB or MB, one decimal for MB (“1.5 MB”, “1,5 MB”). */
-export function formatBytes(bytes: number): string {
-  return bytes >= 1 << 20
-    ? formatNumber(bytes / (1 << 20), {
-        style: 'unit',
-        unit: 'megabyte',
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      })
-    : formatNumber(Math.max(1, Math.round(bytes / 1024)), { style: 'unit', unit: 'kilobyte' })
-}
 
 export const formatDate = (ms: number, options: Intl.DateTimeFormatOptions) =>
   cached('date', options, (l) => new Intl.DateTimeFormat(l, options)).format(ms)

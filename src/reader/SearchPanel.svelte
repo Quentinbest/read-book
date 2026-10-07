@@ -181,7 +181,7 @@
   <div class="foot" aria-hidden="true">
     <span><kbd>↵</kbd>{t.search.next}</span>
     <span><kbd>⇧↵</kbd>{t.search.previous}</span>
-    <span><kbd>Esc</kbd>{t.search.back}</span>
+    <span><kbd>{t.keys.esc}</kbd>{t.search.back}</span>
   </div>
 </div>
 

@@ -84,7 +84,11 @@
   const authorOf = (b: Book) => b.authors.join(', ') || t.library.unknownAuthor
   const percent = (b: Book) => Math.round((b.fraction ?? 0) * 100)
   const smallLine = (b: Book) =>
-    [authorOf(b), `${percent(b)}%`, b.opened_at ? openedAgo(b.opened_at, now) : null]
+    [
+      authorOf(b),
+      t.library.percent(b.fraction ?? 0),
+      b.opened_at ? openedAgo(b.opened_at, now) : null,
+    ]
       .filter(Boolean)
       .join(' · ')
 
@@ -237,7 +241,7 @@
                   <i style:width="{percent(current)}%"></i>
                 </div>
                 <span
-                  >{[current.chapter_label, `${percent(current)}%`]
+                  >{[current.chapter_label, t.library.percent(current.fraction ?? 0)]
                     .filter(Boolean)
                     .join(' · ')}</span
                 >
@@ -316,7 +320,7 @@
                     <span class="new">{t.library.new}</span>
                   {:else}
                     <span class="bar"><i style:width="{percent(b)}%"></i></span>
-                    <span>{percent(b)}%</span>
+                    <span>{t.library.percent(b.fraction ?? 0)}</span>
                   {/if}
                   {#if b.damaged_items > 0}
                     <span class="damaged">{t.library.damaged(b.damaged_items)}</span>

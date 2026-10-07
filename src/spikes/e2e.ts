@@ -7,12 +7,16 @@ import { emit } from '@tauri-apps/api/event'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { mount } from 'svelte'
 import type { TestHooks } from '../app/testHooks'
+import { setLocale } from '../lib/strings'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
 import { step } from './interactive'
 
 // Cold opens unless a check asks for the warm book (S14).
 const hooks: TestHooks = { noWarm: true }
 ;(globalThis as { __LINEN_E2E__?: TestHooks }).__LINEN_E2E__ = hooks
+// The checks read English text, so the harness never follows the Mac's language
+// (docs/i18n-plan.md §6); it does not call initLocale.
+setLocale('en')
 
 async function waitFor<T>(
   what: string,

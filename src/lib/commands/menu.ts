@@ -1,6 +1,7 @@
 // The macOS menu bar, generated from the command registry (plan §3 “Commands”,
 // P§16). Only commands with a handler appear; later phases add theirs.
 
+import { t } from '../strings'
 import type { Chord } from './keys'
 import type { Command } from './registry'
 
@@ -14,9 +15,19 @@ export interface MenuModelItem {
 }
 
 export interface MenuModel {
-  title: MenuName
+  id: MenuName
+  /** The menu's name in the UI language. */
+  title: string
   items: MenuModelItem[]
 }
+
+const MENU_TITLES = {
+  File: 'file',
+  Edit: 'edit',
+  View: 'view',
+  Go: 'go',
+  Window: 'window',
+} as const
 
 const KEY_NAMES: Record<string, string> = {
   ArrowUp: 'Up',
@@ -41,10 +52,11 @@ export function accelerator(c: Chord): string {
 }
 
 export function menuModel(commands: Command[]): MenuModel[] {
-  return MENU_ORDER.map((title) => ({
-    title,
+  return MENU_ORDER.map((id) => ({
+    id,
+    title: t.menus[MENU_TITLES[id]],
     items: commands
-      .filter((c) => c.menu === title)
+      .filter((c) => c.menu === id)
       .map((c) => ({
         id: c.id,
         title: c.title,

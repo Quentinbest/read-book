@@ -38,7 +38,7 @@
   import SelectionBar from './SelectionBar.svelte'
   import NoteCard from './NoteCard.svelte'
   import NotesPanel from './NotesPanel.svelte'
-  import { Annotations, COLOR_NAMES, COLORS, UndoStack } from './annotations.svelte'
+  import { Annotations, COLORS, UndoStack } from './annotations.svelte'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { popUpMenu, type MenuEntry } from '../app/nativeMenu'
   import { MOTION, multipliedTint, parseColor } from '../lib/theme/tokens'
@@ -560,14 +560,14 @@
       color,
     )
     if (previousColor && previousColor !== color) offerRecolorUndo(annotation, previousColor)
-    else announce(t.annotations.highlighted(COLOR_NAMES[color]))
+    else announce(t.annotations.highlighted(t.colorsInText[color]))
     closeBar(true)
     return annotation
   }
 
   function offerRecolorUndo(a: Annotation, previous: HighlightColor) {
     offerUndo(
-      t.annotations.recolored(COLOR_NAMES[a.color]),
+      t.annotations.recolored(t.colorsInText[a.color]),
       t.annotations.restoreColor(shortQuote(a.quote.exact)),
       () => annotations.setColor(a.id, previous),
     )
@@ -724,7 +724,7 @@
     e.preventDefault()
     const entries: MenuEntry[] = [
       ...(['yellow', 'green', 'blue', 'rose'] as const).map((c) => ({
-        label: `Highlight ${COLOR_NAMES[c]}`,
+        label: t.annotations.highlightCommand(t.colors[c]),
         run: () => void (existing ? recolor(existing.id, c) : highlightSelection(c)),
       })),
       null,

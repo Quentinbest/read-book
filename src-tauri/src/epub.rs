@@ -45,6 +45,27 @@ pub enum Rejection {
     Drm(String),
 }
 
+impl Rejection {
+    /// L-1: a stable code and the values the UI fills in (`import.reasons` in the
+    /// catalogue); `Display` stays English, for logs.
+    pub fn code(&self) -> (&'static str, Vec<String>) {
+        match self {
+            Rejection::NotZip => ("not_zip", vec![]),
+            Rejection::TooManyEntries => ("too_many_entries", vec![MAX_ENTRIES.to_string()]),
+            Rejection::TooLarge => ("too_large", vec![]),
+            Rejection::CompressionRatio(e) => {
+                ("compression_ratio", vec![e.clone(), MAX_RATIO.to_string()])
+            }
+            Rejection::UnsafePath(e) => ("unsafe_path", vec![e.clone()]),
+            Rejection::Symlink(e) => ("symlink", vec![e.clone()]),
+            Rejection::NoPackage => ("no_package", vec![]),
+            Rejection::BadPackage => ("bad_package", vec![]),
+            Rejection::XmlEntities(e) => ("xml_entities", vec![e.clone()]),
+            Rejection::Drm(e) => ("drm", vec![e.clone()]),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Metadata {
     pub title: Option<String>,
@@ -672,6 +693,37 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+
+    /// L-1: every rejection code has a message in the English catalogue, with as
+    /// many values as the core sends (`no_chapters` comes from import.rs).
+    #[test]
+    fn rejection_codes_have_messages() {
+        let en = include_str!("../../src/lib/strings/en.ts");
+        let reasons = &en[en.find("reasons: {").expect("import.reasons")..];
+        let reasons = &reasons[..reasons.find("\n    },").unwrap()];
+        let all = [
+            Rejection::NotZip,
+            Rejection::TooManyEntries,
+            Rejection::TooLarge,
+            Rejection::CompressionRatio("a".into()),
+            Rejection::UnsafePath("a".into()),
+            Rejection::Symlink("a".into()),
+            Rejection::NoPackage,
+            Rejection::BadPackage,
+            Rejection::XmlEntities("a".into()),
+            Rejection::Drm("a".into()),
+        ];
+        for r in all {
+            let (code, args) = r.code();
+            let line = reasons
+                .lines()
+                .find(|l| l.trim_start().starts_with(&format!("{code}:")))
+                .unwrap_or_else(|| panic!("no message for {code}"));
+            let params = line.split("=>").next().unwrap().matches(": string").count();
+            assert_eq!(params, args.len(), "{code}: {line}");
+        }
+        assert!(reasons.contains("no_chapters:"));
+    }
 
     fn build(entries: &[(&str, &[u8])]) -> zip::ZipArchive<Cursor<Vec<u8>>> {
         let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));

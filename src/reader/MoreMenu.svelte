@@ -3,7 +3,7 @@
   // approved): every available command, grouped as in the cheat sheet, with its
   // shortcut. Arrow keys move, Return runs, Esc closes (the floating lane).
   import { chordLabel } from '../lib/commands/keys'
-  import { SECTION_TITLES } from '../lib/commands/cheatsheet'
+  import { sectionTitle } from '../lib/commands/cheatsheet'
   import type { Command, CommandRegistry, CommandSection } from '../lib/commands/registry'
   import { t } from '../lib/strings'
   import { layoutLabels } from '../app/keyLabels'
@@ -33,7 +33,7 @@
     return [
       ...byExtension,
       ...ORDER.map((s) => ({
-        title: SECTION_TITLES[s],
+        title: sectionTitle(s),
         items: all.filter((c) => c.section === s),
       })),
     ].filter((g) => g.items.length)

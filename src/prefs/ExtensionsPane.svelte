@@ -36,7 +36,7 @@
     // The e2e harness cannot drive the open dialog; it hands over a path instead.
     const path = testHooks?.pickExtensionFile
       ? await testHooks.pickExtensionFile()
-      : await open({ filters: [{ name: 'Linen extension', extensions: ['linenext'] }] })
+      : await open({ filters: [{ name: t.extSettings.fileFilter, extensions: ['linenext'] }] })
     if (typeof path !== 'string') return
     try {
       const inspection = await invoke<Inspection>('extension_inspect', { path })
@@ -140,7 +140,9 @@
         {#if m.description}<p class="description">{m.description}</p>{/if}
         {#if themeOnly}
           <p class="chips">
-            <span class="label">{t.extSettings.adds}</span><span class="chip">Theme</span>
+            <span class="label">{t.extSettings.adds}</span><span class="chip"
+              >{t.extSettings.themesAdded(1)}</span
+            >
             <span class="label">{t.extSettings.can}</span><span class="plain"
               >{t.extSettings.nothing}</span
             >

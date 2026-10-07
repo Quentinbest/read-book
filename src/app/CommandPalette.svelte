@@ -141,7 +141,7 @@
         autocomplete="off"
         spellcheck="false"
       />
-      <kbd>Esc</kbd>
+      <kbd>{t.keys.esc}</kbd>
     </div>
     <div
       class="list"

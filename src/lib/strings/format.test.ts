@@ -1,14 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const ui = vi.hoisted(() => ({ locale: 'en' }))
-vi.mock('./index', () => ({
+vi.mock('./current', () => ({
   get locale() {
     return ui.locale
   },
 }))
 
-const { compareText, formatBytes, formatDate, formatDaysAgo, formatPercent, languageName, plural } =
-  await import('./format')
+const {
+  compareText,
+  formatDate,
+  formatDaysAgo,
+  formatNumber,
+  formatPercent,
+  languageName,
+  plural,
+} = await import('./format')
 
 const forms = { one: 'one', many: 'many', other: 'other' }
 
@@ -27,23 +34,26 @@ describe('L-1 formatting in the UI language', () => {
     expect(plural(1, forms)).toBe('one')
     expect(plural(3, forms)).toBe('other')
     // A message without `many` falls back to `other`.
-    expect(plural(1_000_000, { one: 'one', other: 'other' })).toMatch(/^(other|many)$/)
+    expect(plural(1_000_000, { one: 'one', other: 'other' })).toBe('other')
   })
-  it('percentages and sizes', () => {
+  it('percentages and decimals', () => {
     expect(formatPercent(0.456)).toBe('46%')
-    expect(formatBytes(1.5 * (1 << 20))).toBe('1.5 MB')
-    expect(formatBytes(300)).toBe('1 kB')
+    expect(formatNumber(1.5, { minimumFractionDigits: 1 })).toBe('1.5')
     ui.locale = 'es'
-    // Intl puts a no-break space before the unit; which one varies by engine.
+    // Intl puts a no-break space before the sign; which one varies by engine.
     expect(formatPercent(0.456)).toMatch(/^46\s%$/)
-    expect(formatBytes(1.5 * (1 << 20))).toMatch(/^1,5\sMB$/)
+    expect(formatNumber(1.5, { minimumFractionDigits: 1 })).toBe('1,5')
   })
-  it('dates and days ago', () => {
-    const d = new Date(2026, 9, 7).getTime()
-    expect(formatDate(d, { day: 'numeric', month: 'short' })).toBe('Oct 7')
+  it('English is British: day before month, 24-hour time', () => {
+    const d = new Date(2026, 9, 7, 21, 40).getTime()
+    expect(formatDate(d, { day: 'numeric', month: 'short' })).toBe('7 Oct')
+    expect(formatDate(d, { hour: '2-digit', minute: '2-digit' })).toBe('21:40')
     expect(formatDaysAgo(0)).toBe('today')
     expect(formatDaysAgo(1)).toBe('yesterday')
     expect(formatDaysAgo(3)).toBe('3 days ago')
+  })
+  it('dates in other languages', () => {
+    const d = new Date(2026, 9, 7).getTime()
     ui.locale = 'ja'
     expect(formatDate(d, { day: 'numeric', month: 'short' })).toBe('10月7日')
     expect(formatDaysAgo(1)).toBe('昨日')

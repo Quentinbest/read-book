@@ -93,7 +93,7 @@
       >−</button
     >
     <button type="button" class="fit" onclick={() => (zoom = 1)}
-      >{zoom === 1 ? t.image.fit : `${Math.round(zoom * 100)}%`}</button
+      >{zoom === 1 ? t.image.fit : t.reader.zoomLevel(zoom)}</button
     >
     <button type="button" class="icon" aria-label={t.image.zoomIn} onclick={() => step(1)}>+</button
     >

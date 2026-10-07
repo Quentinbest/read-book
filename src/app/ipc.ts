@@ -44,7 +44,15 @@ export type ImportOutcome =
   | { kind: 'imported'; book_id: string; title: string; damaged: number }
   | { kind: 'alreadyInLibrary'; book_id: string }
   | { kind: 'replaced'; book_id: string; title: string; damaged: number }
-  | { kind: 'rejected'; reason: string; hostile: boolean; drm: boolean }
+  | {
+      kind: 'rejected'
+      /** L-1: worded by `t.import.reasons[code]`; `reason` is the core's English text. */
+      code: string
+      args: string[]
+      reason: string
+      hostile: boolean
+      drm: boolean
+    }
 
 export interface ImportResult {
   path: string
