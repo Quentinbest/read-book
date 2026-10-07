@@ -31,6 +31,7 @@ What a reviewer should look at first: the drafter's choices that a native speake
 - A book is ブック (Apple Books' word), not 本; counts use 冊 (“3冊”).
 - Digits sit right next to Japanese (“3冊”, “残り5分”). Latin words get one space (“Finder に表示”, “Linen について”), as the glossary has it; check this against macOS.
 - “Sepia / Night / Paper” are katakana (セピア / ナイト / ペーパー).
+- The Aa popover's font choices have room for about four characters each (Stage 4). The draft's サンセリフ and ディスレクシア wrapped mid-word, so they are now ゴシック (the usual Japanese name for sans-serif type) and 読字障害. The second may read as clinical; a better four-character name is welcome.
 
 ## Spanish
 
@@ -42,4 +43,4 @@ What a reviewer should look at first: the drafter's choices that a native speake
 ## Found while drafting
 
 - **Go to sentence.** The sheet added an English “. ” after the chapter's name. It is now `goto.sentenceEnd`, so Japanese can end with “にあります。” and Chinese with “。”. English is unchanged.
-- **Japanese line breaks (Stage 4).** In the empty library, “開いてください。” broke between く and だ. Japanese text needs phrase-aware line breaking (`word-break: auto-phrase` where WebKit supports it, otherwise `line-break: strict` and no forced breaks); this belongs to Stage 4's `:lang()` rules.
+- **Japanese line breaks (Stage 4, done).** In the empty library, “開いてください。” broke between く and だ. Chinese and Japanese UIs now break lines between phrases: at spaces, and after full-width punctuation, where the catalogue adds a zero-width space (`src/lib/strings/breaks.ts`; `word-break: keep-all` and `line-break: strict` in `src/app/base.css`). A translation should place its commas where a line may break.

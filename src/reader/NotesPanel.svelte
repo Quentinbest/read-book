@@ -8,6 +8,8 @@
   // each naming the extension that does the work (Screen 08).
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { COLORS } from './annotations.svelte'
   import { formatDate } from '../lib/strings/format'
@@ -158,7 +160,9 @@
           aria-current={a.id === current ? 'true' : undefined}
           onclick={() => onchoose(a)}
         >
-          <span class="quote"><span class="hl hl-{a.color}">{a.quote.exact.trim()}</span></span>
+          <span class="quote" {lang}
+            ><span class="hl hl-{a.color}">{a.quote.exact.trim()}</span></span
+          >
           {#if a.note}<span class="note">{a.note}</span>{/if}
           <span class="meta">{meta(a)}</span>
         </button>
@@ -172,7 +176,7 @@
       </div>
       {#each lost as a (a.id)}
         <div class="item unplaced" data-annotation={a.id}>
-          <span class="quote dashed">{a.quote.exact.trim()}</span>
+          <span class="quote dashed" {lang}>{a.quote.exact.trim()}</span>
           {#if a.note}<span class="note">{a.note}</span>{/if}
           <span class="meta"
             >{t.annotations.changedReason}

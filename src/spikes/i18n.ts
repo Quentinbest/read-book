@@ -4,8 +4,10 @@
 // per-app language System Settings writes.
 
 import { invoke } from '@tauri-apps/api/core'
+import { adoptMessages, type Locale, type Messages } from '../lib/strings'
+import { en } from '../lib/strings/en'
 import { negotiate } from '../lib/strings/negotiate'
-import type { Locale } from '../lib/strings'
+import { pseudoLocalize } from '../lib/strings/pseudo'
 import type { SpikeResult } from './common'
 
 const ALL: Locale[] = ['en', 'zh-Hans', 'zh-Hant', 'ja', 'es']
@@ -48,4 +50,54 @@ export async function spikeLang(): Promise<SpikeResult> {
     ],
     raw,
   }
+}
+
+// Stage 4 (docs/i18n-plan.md): the visual run in any language. `LINEN_LOCALE=ja
+// scripts/e2e.sh v` reaches the page as `?locale=ja`; captures and the report go to
+// i18n-out/visual/<tag>/ (spikes.rs), and each capture lists the text that does
+// not fit its box.
+
+const DRAFTS = import.meta.glob<Record<string, Messages>>(
+  '../lib/strings/{zh-Hans,zh-Hant,ja,es}.ts',
+  { eager: true },
+)
+
+/** Use the run's language before the app mounts: a draft, the pseudo-locale or English. */
+export function applyRunLocale(): Locale {
+  const l = (new URLSearchParams(location.search).get('locale') ?? 'en') as Locale
+  if (l === 'en') return l
+  const m =
+    l === 'en-XA' ? pseudoLocalize(en) : Object.values(DRAFTS[`../lib/strings/${l}.ts`] ?? {})[0]
+  if (!m) throw new Error(`no catalogue for ${l}`)
+  adoptMessages(l, m)
+  document.documentElement.lang = l
+  return l
+}
+
+/** UI text wider than its box (or taller, where clipped); book text is left out. */
+export function overflowing(root: Document = document): string[] {
+  const out: string[] = []
+  for (const el of Array.from(root.body.querySelectorAll<HTMLElement>('*'))) {
+    if (el instanceof HTMLIFrameElement || el.closest('[aria-hidden="true"]')) continue
+    // Book text carries its own lang and is cut short on purpose (Contents, titles).
+    if (el.closest('body [lang]')) continue
+    const text = Array.from(el.childNodes)
+      .filter((n) => n.nodeType === Node.TEXT_NODE)
+      .map((n) => n.textContent ?? '')
+      .join('')
+      .trim()
+    // Screen-reader text sits in a 1 px box by design (.visually-hidden).
+    if (!text || el.clientWidth <= 1) continue
+    const style = getComputedStyle(el)
+    if (/auto|scroll/.test(style.overflowX + style.overflowY)) continue
+    const clipped = /hidden|clip/.test(style.overflowX + style.overflowY)
+    const wide = el.scrollWidth > el.clientWidth + 1
+    const tall = clipped && el.scrollHeight > el.clientHeight + 1
+    if (!wide && !tall) continue
+    const name = `${el.localName}${el.className && typeof el.className === 'string' ? '.' + el.className.trim().split(/\s+/).join('.') : ''}`
+    out.push(
+      `${name}: “${text.slice(0, 60)}” (${el.scrollWidth}×${el.scrollHeight} in ${el.clientWidth}×${el.clientHeight})`,
+    )
+  }
+  return out
 }

@@ -234,8 +234,8 @@
               <BookCover book={current} width={112} height={168} />
             </button>
             <div class="current-meta">
-              <div class="big-title">{current.title}</div>
-              <div class="author">{authorOf(current)}</div>
+              <div class="big-title" lang={current.language ?? undefined}>{current.title}</div>
+              <div class="author" lang={current.language ?? undefined}>{authorOf(current)}</div>
               <div class="where">
                 <div class="bar" style:width="200px">
                   <i style:width="{percent(current)}%"></i>
@@ -272,7 +272,7 @@
                 >
                   <BookCover book={b} width={44} height={66} lettering={false} />
                   <span>
-                    <span class="small-title">{b.title}</span>
+                    <span class="small-title" lang={b.language ?? undefined}>{b.title}</span>
                     <span class="small-line">{smallLine(b)}</span>
                   </span>
                 </button>
@@ -311,8 +311,8 @@
                 {:else}
                   <BookCover book={b} height={198} />
                 {/if}
-                <span class="tt">{b.title}</span>
-                <span class="ta">{authorOf(b)}</span>
+                <span class="tt" lang={b.language ?? undefined}>{b.title}</span>
+                <span class="ta" lang={b.language ?? undefined}>{authorOf(b)}</span>
                 <span class="tp">
                   {#if b.finished_at}
                     <span>{t.library.finished}</span>

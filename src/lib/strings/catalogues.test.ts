@@ -7,6 +7,7 @@ import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { en } from './en'
 import enSource from './en.ts?raw'
+import limits from '../../../scripts/i18n/limits.json'
 import { SHIPPED, type Locale } from './index'
 import { pseudoLocalize } from './pseudo'
 import type { Messages } from './types'
@@ -140,6 +141,22 @@ describe.each(CATALOGUES)('catalogue %s', (locale, m) => {
     else if (same.length)
       console.info(`[strings] draft ${locale}: ${same.length} entries still in English`)
   })
+
+  it.skipIf(locale === 'en-XA')(
+    'tight places keep to their room (scripts/i18n/limits.json)',
+    () => {
+      // Widths at 13 px UI text: about 13 px for a Chinese or Japanese character or
+      // full-width punctuation, 7 px for anything else.
+      const width = (v: string) =>
+        [...v].reduce((w, c) => w + (/[⺀-鿿豈-﫿＀-｠]/.test(c) ? 13 : 7), 0)
+      const all = new Map(texts(m))
+      const over = Object.entries(limits as Record<string, { latin: number; cjk: number }>)
+        .map(([k, room]) => [k, all.get(k) ?? '', Math.max(room.latin * 7, room.cjk * 13)] as const)
+        .filter(([, v, px]) => width(v) > px)
+        .map(([k, v, px]) => `${k}: “${v}” is about ${width(v)} px, room for ${px}`)
+      expect(over).toEqual([])
+    },
+  )
 
   it.skipIf(!['zh-Hans', 'zh-Hant', 'ja'].includes(locale))('L-11 punctuation', () => {
     const bad: string[] = []

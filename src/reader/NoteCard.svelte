@@ -7,6 +7,8 @@
   import { onDestroy, onMount } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { COLORS } from './annotations.svelte'
 
@@ -123,7 +125,7 @@
     </span>
   </header>
   {#if mode === 'sheet'}
-    <p class="quote">“{quote}”</p>
+    <p class="quote" {lang}>“{quote}”</p>
   {/if}
   <label class="visually-hidden" for="note-{annotation.id}">{t.annotations.noteText}</label>
   <textarea

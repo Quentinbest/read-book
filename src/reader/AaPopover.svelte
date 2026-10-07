@@ -451,6 +451,8 @@
   }
   .seg button {
     height: 30px;
+    /* Stage 4: the browser's side padding left four Chinese characters no room. */
+    padding-inline: 2px;
     border: 0;
     border-radius: 7px;
     background: transparent;

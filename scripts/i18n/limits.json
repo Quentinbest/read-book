@@ -1,107 +1,187 @@
 {
   "aa.allBooks": {
-    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)"
+    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)",
+    "latin": 18,
+    "cjk": 9
+  },
+  "aa.anywhere": {
+    "room": "about 24 Latin or 13 Chinese/Japanese characters (Aa popover footer, right)",
+    "latin": 24,
+    "cjk": 13
   },
   "aa.auto": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.compact": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)",
+    "latin": 12,
+    "cjk": 6
   },
   "aa.fontBook": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.fontDyslexic": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.fontLiterata": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.fontSans": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.loose": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)",
+    "latin": 12,
+    "cjk": 6
+  },
+  "aa.moreSettings": {
+    "room": "about 17 Latin or 9 Chinese/Japanese characters (Aa popover footer, left)",
+    "latin": 17,
+    "cjk": 9
   },
   "aa.narrow": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)",
+    "latin": 12,
+    "cjk": 6
   },
   "aa.night": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.normal": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)",
+    "latin": 12,
+    "cjk": 6
   },
   "aa.pages": {
-    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)"
+    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)",
+    "latin": 18,
+    "cjk": 9
   },
   "aa.paper": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.scroll": {
-    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)"
+    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)",
+    "latin": 18,
+    "cjk": 9
   },
   "aa.sepia": {
-    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)"
+    "room": "about 8 Latin or 4 Chinese/Japanese characters (4-way choice in the 300 px Aa popover)",
+    "latin": 8,
+    "cjk": 4
   },
   "aa.thisBook": {
-    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)"
+    "room": "about 18 Latin or 9 Chinese/Japanese characters (2-way choice in the Aa popover)",
+    "latin": 18,
+    "cjk": 9
   },
   "aa.wide": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (3-way choice in the Aa popover)",
+    "latin": 12,
+    "cjk": 6
   },
   "annotations.copy": {
-    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)"
+    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)",
+    "latin": 10,
+    "cjk": 5
   },
   "annotations.note": {
-    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)"
+    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)",
+    "latin": 10,
+    "cjk": 5
   },
   "annotations.search": {
-    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)"
+    "room": "about 10 Latin or 5 Chinese/Japanese characters (button in the selection bar)",
+    "latin": 10,
+    "cjk": 5
   },
   "goto.chapter": {
-    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)"
+    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)",
+    "latin": 14,
+    "cjk": 8
   },
   "goto.page": {
-    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)"
+    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)",
+    "latin": 14,
+    "cjk": 8
   },
   "goto.percent": {
-    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)"
+    "room": "about 14 Latin or 8 Chinese/Japanese characters (tab in the 360 px Go to sheet)",
+    "latin": 14,
+    "cjk": 8
   },
   "library.viewGrid": {
-    "room": "about 10 Latin or 5 Chinese/Japanese characters (Covers / List switch)"
+    "room": "about 10 Latin or 5 Chinese/Japanese characters (Covers / List switch)",
+    "latin": 10,
+    "cjk": 5
   },
   "library.viewList": {
-    "room": "about 10 Latin or 5 Chinese/Japanese characters (Covers / List switch)"
+    "room": "about 10 Latin or 5 Chinese/Japanese characters (Covers / List switch)",
+    "latin": 10,
+    "cjk": 5
   },
   "navigator.contents": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)",
+    "latin": 12,
+    "cjk": 6
   },
   "navigator.more": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)",
+    "latin": 12,
+    "cjk": 6
   },
   "navigator.notes": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)",
+    "latin": 12,
+    "cjk": 6
   },
   "navigator.search": {
-    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)"
+    "room": "about 12 Latin or 6 Chinese/Japanese characters (tab in the 320 px Navigator)",
+    "latin": 12,
+    "cjk": 6
   },
   "prefs.sections.about": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   },
   "prefs.sections.extensions": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   },
   "prefs.sections.general": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   },
   "prefs.sections.library": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   },
   "prefs.sections.reading": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   },
   "prefs.sections.shortcuts": {
-    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)"
+    "room": "about 25 Latin or 13 Chinese/Japanese characters (Settings sidebar, 220 px)",
+    "latin": 25,
+    "cjk": 13
   }
 }

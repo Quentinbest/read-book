@@ -2,6 +2,7 @@
 // here. Each page sets its language once, before it imports anything that reads
 // `t` (src/app/locale.ts); a change applies at restart (L-5).
 
+import { withPhraseBreaks } from './breaks'
 import { setCurrent } from './current'
 import { en } from './en'
 import { pseudoLocalize } from './pseudo'
@@ -64,7 +65,20 @@ export function setLocale(l: Locale): void {
   const make = CATALOGUES[l]
   setCurrent(make ? l : 'en')
   missingKeys.length = 0
-  t = make && l !== 'en' ? (withFallback(make(), en, '', l) as Messages) : en
+  t = make && l !== 'en' ? prepare(withFallback(make(), en, '', l) as Messages, l) : en
+}
+
+/** Chinese and Japanese get break opportunities between phrases (breaks.ts). */
+const prepare = (m: Messages, l: Locale): Messages => (/^(zh|ja)/.test(l) ? withPhraseBreaks(m) : m)
+
+/**
+ * The e2e harness only (src/spikes/i18n.ts): use `m` as language `l`, for drafts
+ * and the pseudo-locale, which release builds leave out.
+ */
+export function adoptMessages(l: Locale, m: Messages): void {
+  setCurrent(l)
+  missingKeys.length = 0
+  t = prepare(withFallback(m, en, '', l) as Messages, l)
 }
 
 /** A gap in a catalogue shows English, never a key. */

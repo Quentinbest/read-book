@@ -52,7 +52,7 @@
       <header>
         <BookCover {book} width={72} height={108} lettering={false} />
         <div>
-          <h2>{book.title}</h2>
+          <h2 lang={book.language ?? undefined}>{book.title}</h2>
           {#if book.authors.length}<p class="by">{book.authors.join(', ')}</p>{/if}
         </div>
       </header>

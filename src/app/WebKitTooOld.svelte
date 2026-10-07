@@ -48,7 +48,7 @@
   }
   h2 {
     margin: 0;
-    font: 500 22px/1.25 var(--font-reading, Literata, Georgia, serif);
+    font: 500 22px/1.25 var(--font-ui-display, Literata, Georgia, serif);
   }
   .body {
     margin: 0;

@@ -61,3 +61,24 @@ describe('en-XA pseudo-locale', () => {
     expect(walk(en, pseudoLocalize(en))).toEqual([])
   })
 })
+
+describe('Stage 4 phrase breaks for Chinese and Japanese', () => {
+  it('a break opportunity follows full-width punctuation inside a text, not at its end', async () => {
+    const { phraseBreaks } = await import('./breaks')
+    expect(phraseBreaks('ドロップするか、開いてください。')).toBe(
+      'ドロップするか、​開いてください。',
+    )
+    expect(phraseBreaks('「本」を開く')).toBe('「本」​を開く')
+    expect(phraseBreaks('Open a book…')).toBe('Open a book…')
+  })
+  it('applies to messages and their output, and only to Chinese and Japanese', async () => {
+    const { withPhraseBreaks } = await import('./breaks')
+    const m = withPhraseBreaks({
+      ...en,
+      library: { ...en.library, removed: (x: string) => `「${x}」を削除しました` },
+    } as never) as typeof en
+    expect(m.library.removed('A')).toBe('「A」​を削除しました')
+    strings.setLocale('en-XA')
+    expect(strings.t.library.title).not.toContain('​')
+  })
+})

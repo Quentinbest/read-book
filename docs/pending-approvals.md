@@ -8,7 +8,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 56, on 2026-10-07 (UI localisation).
 
-Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Waiting for the owner: item 57 (UI localisation, 2026-10-08). Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -95,3 +95,6 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 56. **Extension diagnostics stay in English (L-10, Stage 2).** About 40 messages from the core's extension checks (`src-tauri/src/extensions/`: a manifest field that is missing or wrong, an unknown permission, a Host API version Linen lacks) and the theme-pack contrast report (`src/lib/extensions/themes.ts`: “secondary text is 3.9:1 (needs 4.5:1)”) appear inside ““Name” can’t be installed” and “Turned off: …”. They are written for extension authors, and translating them would put about 40 technical strings in every catalogue. The sentence around them is translated; the detail after it stays English. Errors that reach extension code (`ExtensionError` in `host.svelte.ts`) are developer-facing too.
     *Recommendation:* keep them English, as L-10 keeps extension-supplied text as authored.
+
+57. **Chinese and Japanese typography in the UI (Stage 4, L-8).** In Chinese and Japanese, interface text that English sets in Literata (the damaged-book and old-Safari titles) uses the system font (PingFang or Hiragino); lines break between phrases (after 、。， and at spaces) rather than between any two characters; small-capital labels lose their letter-spacing. Book text keeps Literata and the book's own language. To see it: `LINEN_LOCALE=ja scripts/e2e.sh v` (or `zh-Hans`, `zh-Hant`), captures in `i18n-out/visual/<tag>/`; `docs/i18n-plan.md`, Stage 4.
+    *Recommendation:* approve, so these screens stop being provisional; the native reviewers (L-6) may still adjust wording that breaks badly.

@@ -6,6 +6,8 @@
   import Icon from '../components/Icon.svelte'
   import Tabs from '../components/Tabs.svelte'
   import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { Contents, ContentsItem } from './contents'
 
   let {
@@ -103,7 +105,7 @@
         {/if}
       </div>
       <div class="meta">
-        <div class="title">{title}</div>
+        <div class="title" {lang}>{title}</div>
         {#if author}<div class="author">{author}</div>{/if}
         <div class="progress">
           <div class="track" aria-hidden="true">
@@ -212,7 +214,7 @@
                   onclick={() => onselect(item)}
                   onkeydown={(e) => onkeydown(e, i)}
                 >
-                  <span class="label">{item.label}</span>
+                  <span class="label" {lang}>{item.label}</span>
                   {#if item.damaged}
                     <span class="damaged"
                       ><Icon name="warning" size={14} />{t.navigator.damaged}</span

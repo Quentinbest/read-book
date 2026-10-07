@@ -3,6 +3,8 @@
   import { SvelteSet } from 'svelte/reactivity'
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import { RESULTS_PER_CHAPTER, type Hit, type SearchState } from './search.svelte'
 
   let {
@@ -138,7 +140,7 @@
       <section class="group">
         <button type="button" class="head" aria-expanded={open} onclick={() => toggle(group.index)}>
           <span class="chevron" class:open><Icon name="chevron" size={12} /></span>
-          <span class="label">{chapterLabel(group.index)}</span>
+          <span class="label" {lang}>{chapterLabel(group.index)}</span>
           {#if group.index === currentSection}<span class="here">{t.navigator.youAreHere}</span
             >{/if}
           <span class="n">{group.matches.length}</span>
@@ -152,6 +154,7 @@
                 <button
                   type="button"
                   class="hit"
+                  {lang}
                   class:active
                   data-hit="{group.index}:{n}"
                   aria-current={active ? 'true' : undefined}

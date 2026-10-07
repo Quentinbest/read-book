@@ -357,7 +357,7 @@ export const es: Messages = {
     allBooks: 'Todos los libros',
     thisBook: 'Este libro',
     moreSettings: 'Más en Ajustes…',
-    anywhere: '⌘+ ⌘− funcionan en cualquier lugar',
+    anywhere: '⌘+ ⌘− siempre funcionan',
     codeHint: 'Gran parte de este libro es código o tablas. Puede leerse mejor desplazándote.',
     fixedLayout:
       'Este libro tiene páginas fijas, así que el tamaño del texto y el espaciado no pueden cambiar. ⌘+ y ⌘− amplían la página.',

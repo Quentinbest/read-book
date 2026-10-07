@@ -12,6 +12,8 @@ How Linen sounds and looks in each language. The owner's decisions are L-2, L-3 
 - **Plurals.** Use `plural()` where English does. Chinese and Japanese need only `other`, with a counter word where natural (本, 冊, 件, 章, 個).
 - **Screen-reader text.** Labels such as “Previous page” or “Highlight yellow, last used” are spoken by VoiceOver. Translate them as natural speech, not as abbreviations.
 
+- **Line breaks in Chinese and Japanese.** The UI breaks lines between phrases, not between any two characters: at spaces, and after full-width punctuation (、。，：！？」 and the like), where Linen adds an invisible break (`src/lib/strings/breaks.ts`, `src/app/base.css`). Long sentences need their commas; a long unbroken run still wraps, but anywhere.
+
 ## Simplified Chinese (`zh-Hans`)
 
 - Mainland usage. Address the reader as 你 (recommended; matches Linen's informal English).

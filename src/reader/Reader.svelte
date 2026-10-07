@@ -19,6 +19,7 @@
   import type { MessageQueue } from '../lib/reader/messages'
   import { initialState, reduce, type ReaderEvent, type ReaderState } from '../lib/reader/state'
   import { t } from '../lib/strings'
+  import { setBookLang } from './bookLang'
   import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
   import { navigatorTab } from '../lib/reader/state'
   import { setPaletteChapters } from '../app/palette'
@@ -118,6 +119,7 @@
    * book replaced by another), and its last save would land on the wrong book.
    */
   const book = untrack(() => bookProp)
+  setBookLang(book.language)
 
   // S14: the reader's commands are attached only while it is active; a warm book in
   // the library behind keeps them, detached. Not reactive state: nothing renders from it.
@@ -2203,7 +2205,7 @@
         </button>
         <div class="title" aria-live="off" style:--title-inset="{titleInset}px">
           <!-- S9: bars the pointer revealed name the book only. -->
-          <span class="book">{book.title}</span
+          <span class="book" lang={book.language ?? undefined}>{book.title}</span
           >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
             {location.chapterLabel}{/if}
         </div>
