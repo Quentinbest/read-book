@@ -1,7 +1,7 @@
 # Scroll bars: the overlay behaviour in the owner's GIF (2026-10-07)
 
 - **Asked for:** the owner, 2026-10-07, with a screen recording of a scroll bar: identify the behaviour, recommend how Linen should reproduce it, then “Go ahead”.
-- **Result:** no product change. Linen already draws WebKit's native scroll bars, and they behave as in the recording whenever macOS uses overlay scroll bars, Scroll mode included. On the Mac used here they are always visible because a USB mouse is attached and **Show scroll bars** is **Automatically**: macOS then asks every app for always-visible (“legacy”) bars, and Linen follows it. Item 55 in `docs/pending-approvals.md` asks whether Linen should depart from that.
+- **Result:** no product change. Linen already draws WebKit's native scroll bars, and they behave as in the recording whenever macOS uses overlay scroll bars, Scroll mode included. On the Mac used here they are always visible because a USB mouse is attached and **Show scroll bars** is **Automatically**: macOS then asks every app for always-visible (“legacy”) bars, and Linen follows it. Item 55 in `docs/pending-approvals.md` asked whether Linen should depart from that; **approved 2026-10-07: option A**, follow macOS.
 
 ## The recording
 

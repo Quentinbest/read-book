@@ -162,3 +162,11 @@ These came up during the reader review (`docs/reader-review-2026-10-06.md`, Side
 | X6 (library narrow form) | The narrow header starts 18 pt past the window buttons (90 CSS px from the window's edge), as the wide header and the reader's bar do. |
 | M1 (messages and the bottom bar) | While the reader's bottom bar shows, a message sits 12 px above it, and returns to the foot when the bar goes. A pointer resting on a message does not reveal the bars, so the message never moves out from under it. |
 | Pages-mode jumps | Unchanged: at most one blank frame while a chapter loads. Removing it would mean loading jumps into a hidden view and swapping (D-D1), for a frame or two. |
+
+## Approved 2026-10-07 (scroll bars, item 55)
+
+The owner answered “Approval item 55 and proceed”, which approves the recommendation, option A (`docs/pending-approvals.md`). The measurements are in `docs/scrollbar-survey-2026-10-07.md`. The reply did not say whether a resting pointer on the knob was tried by hand.
+
+| # | Approved |
+|---|---|
+| Scroll bars (55) | Linen keeps WebKit's own scroll bars and follows macOS's **Show scroll bars** setting: overlay bars (hidden at rest, shown while scrolling, Scroll mode included) when macOS uses them; always-visible bars with **Always**, or with a mouse attached under **Automatically**. No custom indicator. Measurement `scrollbar-survey` (opt-in). |
