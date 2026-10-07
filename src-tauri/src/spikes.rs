@@ -536,6 +536,22 @@ pub fn spike_mouse_drag<R: Runtime>(
     Ok(())
 }
 
+/// What this process's AppKit makes of the scroll-bar setting: `preferredScrollerStyle`
+/// (0 legacy, 1 overlay) and the `AppleShowScrollBars` default it reads (absent:
+/// Automatically).
+#[tauri::command]
+pub fn spike_scroller_style() -> String {
+    use objc2::{class, msg_send};
+    use objc2_foundation::{NSString, NSUserDefaults};
+    // SAFETY: a class getter on NSScroller.
+    let style: isize = unsafe { msg_send![class!(NSScroller), preferredScrollerStyle] };
+    let key = NSString::from_str("AppleShowScrollBars");
+    let shown = NSUserDefaults::standardUserDefaults()
+        .stringForKey(&key)
+        .map_or_else(|| "absent".to_string(), |v| v.to_string());
+    format!("preferredScrollerStyle {style}, AppleShowScrollBars {shown}")
+}
+
 /// Where the cursor was before a check moved it.
 static SAVED_CURSOR: Mutex<Option<(f64, f64)>> = Mutex::new(None);
 
