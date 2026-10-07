@@ -461,9 +461,12 @@ export const en = {
     pageLabel: 'Print page',
     go: 'Go',
     stays: 'Your current place stays in Back history (⌘[).',
+    // The sheet reads percentIn or pageIn, then the chapter's name in bold, then
+    // sentenceEnd; or the name, then chapterAt.
     percentIn: (pct: number) => `${formatPercent(pct / 100)} is in `,
     pageIn: (page: string) => `Page ${page} is in `,
     chapterAt: (pct: number) => ` starts at ${pct}%.`,
+    sentenceEnd: '. ',
     noPage: (page: string) => `There is no page ${page} in this book.`,
     pageListOnly: 'Print page is available only when the book includes a page list.',
     open: 'Go to…',

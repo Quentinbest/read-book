@@ -24,7 +24,22 @@ const CATALOGUES: [Locale, Messages][] = [
 ]
 
 /** Text that is the same in every language. */
-const SAME_EVERYWHERE = new Set(['EPUB', '—'])
+const SAME_EVERYWHERE = new Set(['EPUB', '—', 'Literata', 'OpenDyslexic', 'Esc', 'PgUp', 'PgDn'])
+/** Entries every language writes as English does (units). */
+const SAME_KEYS = ['info.sizeMB', 'info.sizeKB']
+/** Entries a language writes as English does, on purpose (cognates, “App”). */
+const SAME_AS_ENGLISH: Partial<Record<Locale, string[]>> = {
+  'zh-Hant': ['cheatSheet.sections.app'],
+  es: [
+    'prefs.sections.general',
+    'aa.sepia',
+    'aa.auto',
+    'aa.normal',
+    'aa.fontSans',
+    'cheatSheet.sections.app',
+    'goto.sentenceEnd',
+  ],
+}
 /** Values a language may leave out of a message, by key (none yet). */
 const MAY_DROP: Partial<Record<Locale, Record<string, string[]>>> = {}
 
@@ -111,9 +126,17 @@ describe.each(CATALOGUES)('catalogue %s', (locale, m) => {
   it.skipIf(locale === 'en' || locale === 'en-XA')('nothing is left in English', () => {
     const english = new Map(texts(en))
     const same = texts(m)
-      .filter(([k, v]) => v === english.get(k) && /\p{L}/u.test(v) && !SAME_EVERYWHERE.has(v))
+      .filter(
+        ([k, v]) =>
+          v === english.get(k) &&
+          /\p{L}/u.test(v.replace(/⟨v\d+⟩/g, '')) &&
+          !SAME_EVERYWHERE.has(v) &&
+          !SAME_KEYS.includes(k) &&
+          !SAME_AS_ENGLISH[locale]?.includes(k),
+      )
       .map(([k]) => k)
-    if (SHIPPED.includes(locale)) expect(same).toEqual([])
+    // VITE_I18N_STRICT=1 holds a draft to the shipping rule (docs/i18n/README.md).
+    if (SHIPPED.includes(locale) || import.meta.env.VITE_I18N_STRICT) expect(same).toEqual([])
     else if (same.length)
       console.info(`[strings] draft ${locale}: ${same.length} entries still in English`)
   })
