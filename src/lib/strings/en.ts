@@ -141,7 +141,7 @@ export const en = {
     nothing: 'Nothing — themes contain no code',
     noAccess: 'Nothing beyond its own storage',
     enabled: (name: string) => `${name} on`,
-    // English counts “once” and “twice”; other languages may simply use the number.
+    /** English counts “once” and “twice”; other languages may simply use the number. */
     failures: (n: number) =>
       `Stopped responding ${n === 1 ? 'once' : n === 2 ? 'twice' : `${n} times`} recently and was restarted. Reading wasn’t affected.`,
     suspended:
@@ -392,7 +392,7 @@ export const en = {
   annotations: {
     bar: 'Selection actions',
     barAnnounce: 'Selection actions, F6',
-    // `color` is the colour as `colorsInText` names it (“yellow”).
+    /** `color` is the colour as `colorsInText` names it (“yellow”). */
     highlightIn: (color: string, lastUsed: boolean) =>
       `Highlight ${color}${lastUsed ? ', last used (H or ⇧⌘H)' : ''}`,
     colorOption: (color: string, current: boolean) => `${color}${current ? ', current' : ''}`,

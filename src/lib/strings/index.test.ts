@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { en } from './en'
 import * as strings from './index'
+import type { Locale } from './types'
 import { pseudo, pseudoLocalize } from './pseudo'
 import plist from '../../../src-tauri/Info.plist?raw'
 
@@ -12,12 +13,15 @@ describe('L-1 the page language', () => {
     expect(strings.t).toBe(en)
   })
   it('a language this build lacks means English', () => {
-    strings.setLocale('ja')
+    strings.setLocale('xx' as Locale)
     expect(strings.locale).toBe('en')
     expect(strings.t.library.title).toBe('Library')
   })
   it('switches `t` for importers (development builds offer the pseudo-locale)', () => {
-    expect(strings.AVAILABLE).toEqual(['en', 'en-XA'])
+    // Development builds also offer drafts in the folder (docs/i18n/README.md).
+    expect(strings.AVAILABLE[0]).toBe('en')
+    expect(strings.AVAILABLE).toContain('en-XA')
+    expect(strings.SHIPPED).toEqual(['en'])
     strings.setLocale('en-XA')
     expect(strings.locale).toBe('en-XA')
     expect(strings.t.library.title).toBe(pseudo('Library'))
@@ -28,7 +32,7 @@ describe('L-1 the page language', () => {
     const declared = [...list.slice(0, list.indexOf('</array>')).matchAll(/<string>([^<]+)</g)].map(
       (m) => m[1],
     )
-    expect(declared).toEqual(strings.AVAILABLE.filter((l) => l !== 'en-XA'))
+    expect(declared).toEqual(strings.SHIPPED)
   })
   it('every language has a name in its own script', () => {
     for (const l of strings.AVAILABLE) expect(strings.LANGUAGE_NAMES[l]).toBeTruthy()
