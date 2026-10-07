@@ -5,7 +5,7 @@
   // commands can be given a shortcut, but never one that Linen's own commands use.
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc } from '../app/ipc'
   import { changeSetting, onSettingChanged } from '../app/settingsSync'
   import { chordLabel } from '../lib/commands/keys'

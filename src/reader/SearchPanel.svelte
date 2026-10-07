@@ -2,7 +2,7 @@
   // The Navigator's Search tab (F1–F4, F6, F7; Screen 05).
   import { SvelteSet } from 'svelte/reactivity'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { RESULTS_PER_CHAPTER, type Hit, type SearchState } from './search.svelte'
 
   let {

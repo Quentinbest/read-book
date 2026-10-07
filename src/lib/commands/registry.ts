@@ -4,7 +4,7 @@
 // shortcut hints. Features register a handler for a command id when they are
 // built; commands without a handler are hidden everywhere.
 
-import { t } from '../strings/en'
+import { t } from '../strings'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
 import { remappable, type Overrides } from './remap'
 

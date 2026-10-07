@@ -5,7 +5,7 @@
   // Fixed-layout books keep only theme and zoom (E2); books that are mostly code
   // or tables get a one-line hint to try Scroll (L18). ⌘+ ⌘− ⌘0 work anywhere.
   import { onMount } from 'svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { ThemeChoice } from '../app/theme'
   import type { Spacing } from './layout'
   import { TEXT_SIZES } from './textSizes'

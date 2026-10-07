@@ -7,7 +7,7 @@
   // render at once; a stuck one is marked “Not responding” with Restart (Screen 12).
   import { fade } from 'svelte/transition'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { MOTION } from '../lib/theme/tokens'
   import { COLOR_NAMES, COLORS } from './annotations.svelte'
   import type { HighlightColor } from '../lib/annotations/model'

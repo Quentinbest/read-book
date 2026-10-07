@@ -18,7 +18,7 @@
   import { LocationHistory } from '../lib/reader/history'
   import type { MessageQueue } from '../lib/reader/messages'
   import { initialState, reduce, type ReaderEvent, type ReaderState } from '../lib/reader/state'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
   import { navigatorTab } from '../lib/reader/state'
   import { setPaletteChapters } from '../app/palette'

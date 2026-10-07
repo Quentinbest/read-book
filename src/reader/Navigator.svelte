@@ -5,7 +5,7 @@
   import type { Snippet } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import Tabs from '../components/Tabs.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { Contents, ContentsItem } from './contents'
 
   let {

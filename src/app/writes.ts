@@ -7,7 +7,7 @@
 // failure (the IPC call itself failing, seen rarely under load) is retried a few
 // times first, since the disk may be fine.
 
-import { t } from '../lib/strings/en'
+import { t } from '../lib/strings'
 import { isCommandError } from './ipc'
 import type { MessageQueue } from '../lib/reader/messages'
 

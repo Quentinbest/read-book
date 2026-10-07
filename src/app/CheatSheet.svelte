@@ -4,7 +4,7 @@
   import Modal from '../components/Modal.svelte'
   import { cheatSheet } from '../lib/commands/cheatsheet'
   import type { CommandRegistry } from '../lib/commands/registry'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { layoutLabels } from './keyLabels'
 
   let {

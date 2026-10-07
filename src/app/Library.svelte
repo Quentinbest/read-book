@@ -8,7 +8,7 @@
   import { onMount } from 'svelte'
   import Button from '../components/Button.svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc, type Book } from './ipc'
   import BookCover from './BookCover.svelte'
   import BookInfo from './BookInfo.svelte'

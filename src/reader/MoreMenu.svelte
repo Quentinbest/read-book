@@ -5,7 +5,7 @@
   import { chordLabel } from '../lib/commands/keys'
   import { SECTION_TITLES } from '../lib/commands/cheatsheet'
   import type { Command, CommandRegistry, CommandSection } from '../lib/commands/registry'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { layoutLabels } from '../app/keyLabels'
 
   let {

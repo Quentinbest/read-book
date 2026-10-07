@@ -170,3 +170,21 @@ The owner answered “Approval item 55 and proceed”, which approves the recomm
 | # | Approved |
 |---|---|
 | Scroll bars (55) | Linen keeps WebKit's own scroll bars and follows macOS's **Show scroll bars** setting: overlay bars (hidden at rest, shown while scrolling, Scroll mode included) when macOS uses them; always-visible bars with **Always**, or with a mouse attached under **Automatically**. No custom indicator. Measurement `scrollbar-survey` (opt-in). |
+
+## Decided 2026-10-07 (UI localisation: Simplified Chinese, Traditional Chinese, Japanese, Spanish)
+
+The owner approved all eleven decisions of the localisation plan as recommended. They override the plan where they differ (B10, D4); the code will cite this record.
+
+| # | Decided |
+|---|---|
+| L-1 (B10) | B10 is amended: the UI is translated now, into `zh-Hans`, `zh-Hant`, `ja` and `es`, with English as the source and fallback. Right-to-left UI mirroring stays out of scope; book content keeps its own language and direction (P§17, I15). |
+| L-2 | Traditional Chinese is one `zh-Hant` catalogue in Taiwan usage (e.g. 檔案, 資料夾). `zh-TW`, `zh-HK` and `zh-MO` all resolve to it; a separate `zh-Hant-HK` only if readers ask. |
+| L-3 | Spanish is one `es` catalogue in neutral wording that avoids regionalisms, addressing the reader as *tú*. Every `es-*` tag resolves to it; split into `es-ES` and `es-419` only if reviewers object. |
+| L-4 | The language follows macOS (including the per-app language in System Settings) and can be overridden in Settings › General › Language, whose default is “System”. Stored as the `language` setting (`system` or a tag); an unknown value counts as `system`. |
+| L-5 | A language change applies when Linen restarts; Settings offers Restart. No live switching for now. |
+| L-6 | Translations are drafted (machine or professional) and reviewed in context by a native speaker of each language, against a shared glossary and per-language style guide. Each sign-off is recorded here. |
+| L-7 | Library sorting by title and author follows the UI language (`Intl.Collator` with the UI locale). |
+| L-8 | Interface text set in Literata (a Latin-only face) uses the system Chinese or Japanese font in those languages. Book text is unchanged. The resulting screens are provisional until their design is approved. |
+| L-9 | Rollout: the first release with the translations follows the system language by default; English is always one setting away. Rollback is a patch release that drops a language; its stored setting then falls back to the system language, then English. |
+| L-10 (D4) | Scope: the extension permission labels (Linen's own) are translated; text supplied by extensions stays as authored (`locales` still reserved, D4); the Finder file-kind name “EPUB book” is deferred. Documentation, the crash log and the app name stay English. |
+| L-11 | Style: Japanese uses the polite です/ます form; Chinese and Japanese use full-width punctuation and their own quotation marks (“…” in Simplified Chinese, 「…」 in Traditional Chinese and Japanese). |

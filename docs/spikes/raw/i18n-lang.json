@@ -1,0 +1,203 @@
+{
+  "date": "2026-10-07",
+  "os": "macOS 14.6.1",
+  "runs": {
+    "app-default": {
+      "launchArgs": [],
+      "binary": "Linen.app (CFBundleLocalizations: en zh-Hans zh-Hant ja es)",
+      "navigatorLanguage": "en-US",
+      "navigatorLanguages": [
+        "en-US"
+      ],
+      "intlDefault": "en-US",
+      "preferred": [
+        "en-US",
+        "zh-Hans-US"
+      ],
+      "bundle": {
+        "bundleIdentifier": "app.linen.reader",
+        "developmentLocalization": "en",
+        "localizations": [
+          "en",
+          "zh-Hans",
+          "zh-Hant",
+          "ja",
+          "es"
+        ],
+        "preferredLocalizations": [
+          "en"
+        ]
+      },
+      "chosenFromPreferred": "en",
+      "chosenFromNavigator": "en"
+    },
+    "app-es419": {
+      "launchArgs": [
+        "-AppleLanguages",
+        "(es-419)"
+      ],
+      "binary": "Linen.app (CFBundleLocalizations: en zh-Hans zh-Hant ja es)",
+      "navigatorLanguage": "es-419",
+      "navigatorLanguages": [
+        "es-419"
+      ],
+      "intlDefault": "es-419",
+      "preferred": [
+        "es-419"
+      ],
+      "bundle": {
+        "bundleIdentifier": "app.linen.reader",
+        "developmentLocalization": "en",
+        "localizations": [
+          "en",
+          "zh-Hans",
+          "zh-Hant",
+          "ja",
+          "es"
+        ],
+        "preferredLocalizations": [
+          "es"
+        ]
+      },
+      "chosenFromPreferred": "es",
+      "chosenFromNavigator": "es"
+    },
+    "app-frja": {
+      "launchArgs": [
+        "-AppleLanguages",
+        "(fr-FR, ja-JP)"
+      ],
+      "binary": "Linen.app (CFBundleLocalizations: en zh-Hans zh-Hant ja es)",
+      "navigatorLanguage": "fr-FR",
+      "navigatorLanguages": [
+        "fr-FR"
+      ],
+      "intlDefault": "fr-FR",
+      "preferred": [
+        "fr-FR",
+        "ja-JP"
+      ],
+      "bundle": {
+        "bundleIdentifier": "app.linen.reader",
+        "developmentLocalization": "en",
+        "localizations": [
+          "en",
+          "zh-Hans",
+          "zh-Hant",
+          "ja",
+          "es"
+        ],
+        "preferredLocalizations": [
+          "ja"
+        ]
+      },
+      "chosenFromPreferred": "ja",
+      "chosenFromNavigator": "en"
+    },
+    "app-ja": {
+      "launchArgs": [
+        "-AppleLanguages",
+        "(ja-JP)"
+      ],
+      "binary": "Linen.app (CFBundleLocalizations: en zh-Hans zh-Hant ja es)",
+      "navigatorLanguage": "ja",
+      "navigatorLanguages": [
+        "ja"
+      ],
+      "intlDefault": "ja",
+      "preferred": [
+        "ja-JP"
+      ],
+      "bundle": {
+        "bundleIdentifier": "app.linen.reader",
+        "developmentLocalization": "en",
+        "localizations": [
+          "en",
+          "zh-Hans",
+          "zh-Hant",
+          "ja",
+          "es"
+        ],
+        "preferredLocalizations": [
+          "ja"
+        ]
+      },
+      "chosenFromPreferred": "ja",
+      "chosenFromNavigator": "ja"
+    },
+    "default": {
+      "launchArgs": [],
+      "binary": "target/release/linen (no bundle)",
+      "navigatorLanguage": "en-US",
+      "navigatorLanguages": [
+        "en-US"
+      ],
+      "intlDefault": "en-US",
+      "preferred": [
+        "en-US",
+        "zh-Hans-US"
+      ],
+      "bundle": {
+        "bundleIdentifier": null,
+        "developmentLocalization": null,
+        "localizations": [],
+        "preferredLocalizations": [
+          "en"
+        ]
+      },
+      "chosenFromPreferred": "en",
+      "chosenFromNavigator": "en"
+    },
+    "ja": {
+      "launchArgs": [
+        "-AppleLanguages",
+        "(ja-JP)"
+      ],
+      "binary": "target/release/linen (no bundle)",
+      "navigatorLanguage": "ja",
+      "navigatorLanguages": [
+        "ja"
+      ],
+      "intlDefault": "ja",
+      "preferred": [
+        "ja-JP"
+      ],
+      "bundle": {
+        "bundleIdentifier": null,
+        "developmentLocalization": null,
+        "localizations": [],
+        "preferredLocalizations": [
+          "en"
+        ]
+      },
+      "chosenFromPreferred": "ja",
+      "chosenFromNavigator": "ja"
+    },
+    "zhtw": {
+      "launchArgs": [
+        "-AppleLanguages",
+        "(zh-Hant-TW, en-US)"
+      ],
+      "binary": "target/release/linen (no bundle)",
+      "navigatorLanguage": "zh-TW",
+      "navigatorLanguages": [
+        "zh-TW"
+      ],
+      "intlDefault": "zh-TW",
+      "preferred": [
+        "zh-Hant-TW",
+        "en-US"
+      ],
+      "bundle": {
+        "bundleIdentifier": null,
+        "developmentLocalization": null,
+        "localizations": [],
+        "preferredLocalizations": [
+          "en"
+        ]
+      },
+      "chosenFromPreferred": "zh-Hant",
+      "chosenFromNavigator": "zh-Hant"
+    }
+  }
+}

@@ -3,7 +3,7 @@
   // is opened, until the reader chooses Read anyway. Show file and Remove as E7.
   import Modal from '../components/Modal.svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc, type Book } from './ipc'
 
   let {

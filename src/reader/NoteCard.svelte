@@ -6,7 +6,7 @@
   // and the highlight kept (the store does that).
   import { onDestroy, onMount } from 'svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { COLOR_NAMES, COLORS } from './annotations.svelte'
 

@@ -116,6 +116,8 @@ export const ipc = {
   quitSaving: () => invoke<void>('quit_saving'),
   /** E5: “Quit Anyway”: leave without the changes that could not be saved. */
   quitDiscard: () => invoke<void>('quit_discard'),
+  /** L-4: macOS's preferred languages, most preferred first (follows the per-app language). */
+  preferredLanguages: () => invoke<string[]>('preferred_languages'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */
   screenReaderRunning: () => invoke<boolean>('screen_reader_running'),
   /** T7: what each physical key prints in the current layout, keyed by KeyboardEvent.code. */

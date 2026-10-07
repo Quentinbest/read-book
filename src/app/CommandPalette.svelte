@@ -8,7 +8,7 @@
   import { fuzzy, rank } from '../lib/commands/fuzzy'
   import type { Command, CommandRegistry } from '../lib/commands/registry'
   import type { MessageQueue } from '../lib/reader/messages'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { layoutLabels } from './keyLabels'
   import { paletteChapters } from './palette'
 

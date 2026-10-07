@@ -4,7 +4,7 @@
   // Back history. Anchored above the progress label.
   import { untrack } from 'svelte'
   import SegmentedControl from '../components/SegmentedControl.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { ContentsItem } from './contents'
 
   export type GoToTarget =

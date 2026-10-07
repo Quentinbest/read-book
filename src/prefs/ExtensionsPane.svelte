@@ -9,7 +9,7 @@
   import { onMount } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import Modal from '../components/Modal.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc } from '../app/ipc'
   import { testHooks } from '../app/testHooks'
   import { contributionLabels, permissionLabel } from '../lib/extensions/labels'

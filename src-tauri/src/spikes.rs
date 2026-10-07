@@ -111,6 +111,30 @@ pub fn spike_log(line: String) {
     eprintln!("{line}");
 }
 
+/// i18n spike (docs/spikes/i18n-spike.md): what the main bundle offers macOS,
+/// and the language AppKit picks for it.
+#[tauri::command]
+pub fn spike_bundle_languages() -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::NSBundle;
+        let bundle = NSBundle::mainBundle();
+        let list = |a: objc2::rc::Retained<
+            objc2_foundation::NSArray<objc2_foundation::NSString>,
+        >| { a.iter().map(|s| s.to_string()).collect::<Vec<_>>() };
+        serde_json::json!({
+            "localizations": list(bundle.localizations()),
+            "preferredLocalizations": list(bundle.preferredLocalizations()),
+            "developmentLocalization": bundle.developmentLocalization().map(|s| s.to_string()),
+            "bundleIdentifier": bundle.bundleIdentifier().map(|s| s.to_string()),
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        serde_json::Value::Null
+    }
+}
+
 #[tauri::command]
 pub fn spike_exit<R: Runtime>(app: AppHandle<R>, code: i32) {
     app.exit(code);

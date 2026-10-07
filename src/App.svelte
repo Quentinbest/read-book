@@ -22,7 +22,7 @@
   import { CommandRegistry } from './lib/commands/registry'
   import { OVERRIDES_SETTING, parseOverrides } from './lib/commands/remap'
   import { MessageQueue } from './lib/reader/messages'
-  import { t } from './lib/strings/en'
+  import { t } from './lib/strings'
   import { ExtensionHost } from './extensions/host.svelte'
   import WebKitTooOld from './app/WebKitTooOld.svelte'
   import { readerEngineSupported } from './lib/reader/webkit'

@@ -1,6 +1,6 @@
 // Messages for import outcomes (wording in the catalogue; PROVISIONAL until G4).
 
-import { t } from '../lib/strings/en'
+import { t } from '../lib/strings'
 import type { MessageInput } from '../lib/reader/messages'
 import type { ImportResult } from './ipc'
 

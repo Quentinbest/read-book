@@ -3,7 +3,7 @@
   // The definition comes from the dictionaries installed on this Mac, so nothing
   // leaves it. It sits below the selection, or above it near the page foot, like
   // the footnote peek (N9), and never navigates. Esc closes it.
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
 
   let {
     word,

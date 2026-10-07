@@ -2,7 +2,7 @@
   // Footnote peek (N9; Screen 17). Opens below the marker, or above it near the
   // page foot, and never covers the marker's line; it never navigates. The note is
   // copied in as safe structure (notes.ts). Esc closes and returns focus to the marker.
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { NoteEvent } from './engine'
   import { copyNote } from './notes'
 

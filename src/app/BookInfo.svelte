@@ -2,7 +2,7 @@
   // Book info (E10; G3, provisional): a modal sheet, read-only (Q4), with the
   // book's metadata and its EPUB accessibility metadata in plain words.
   import Modal from '../components/Modal.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc, type Book, type BookInfo } from './ipc'
   import BookCover from './BookCover.svelte'
   import { accessibilityLines } from '../lib/library/a11y'

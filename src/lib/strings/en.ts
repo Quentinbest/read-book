@@ -1,5 +1,6 @@
-// The English message catalogue (B10): every UI string lives here, so the UI can
-// be translated later. No translations or RTL UI mirroring in the MVP.
+// The English message catalogue (B10, L-1): every UI string lives here. English is
+// the source and the fallback; the other languages follow its shape (types.ts).
+// Features import `t` from ./index, which is in the page's language.
 
 const fileName = (path: string) => path.split('/').pop() ?? path
 
@@ -66,6 +67,11 @@ export const en = {
     atLaunch: 'When Linen opens',
     atLaunchLibrary: 'Show the library',
     atLaunchBook: 'Reopen the last book',
+    // L-4, L-5 (PROVISIONAL: no screen draws it)
+    language: 'Language',
+    languageSystem: (name: string) => `System (${name})`,
+    languageRestart: 'Linen uses the new language after it restarts.',
+    restartNow: 'Restart Now',
     textSize: 'Text size',
     lineSpacing: 'Line spacing',
     // 1.1 (approved 2026-10-01)
@@ -477,5 +483,3 @@ export const en = {
     'layer.close': 'Close layer',
   },
 } as const
-
-export const t = en
