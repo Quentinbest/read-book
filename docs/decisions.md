@@ -196,3 +196,11 @@ The owner answered “Approve item 56, then start Stage 3”, which approves the
 | # | Approved |
 |---|---|
 | Extension diagnostics (56) | The core's extension checks (manifest fields, permissions, Host API versions), the theme-pack contrast report and errors that reach extension code stay in English, as L-10 keeps extension-supplied text as authored. The sentence around them (““Name” can’t be installed”, “Turned off: …”) is translated. |
+
+## Approved 2026-10-08 (Chinese and Japanese typography, item 57)
+
+The owner answered “Approve item 57, then push i18n and open a PR”, which approves the recommendation (`docs/pending-approvals.md`). The screens it covers are no longer provisional.
+
+| # | Approved |
+|---|---|
+| CJK typography (57) | In Chinese and Japanese, interface text that English sets in Literata uses the system font (L-8); lines break between phrases (after full-width punctuation and at spaces, `src/lib/strings/breaks.ts`, `src/app/base.css`); labels lose their letter-spacing. Book text keeps Literata and the book's own language. The native reviewers (L-6) may still change wording that breaks badly. |

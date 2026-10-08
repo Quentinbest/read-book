@@ -23,7 +23,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 
 | Work | State | Plan and status |
 |---|---|---|
-| UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Stages 0–4 done (item 57 waits for the design sign-off); Stage 5: kit done, four machine drafts waiting for native review; Stage 6 to come | `docs/i18n-plan.md` (stage table at its end) |
+| UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Stages 0–4 done (design approved, item 57); Stage 5: kit done, four machine drafts waiting for native review; Stage 6 to come | `docs/i18n-plan.md` (stage table at its end) |
 
 ## How the work is checked
 
