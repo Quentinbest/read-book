@@ -7,7 +7,7 @@ import { emit } from '@tauri-apps/api/event'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { mount } from 'svelte'
 import type { TestHooks } from '../app/testHooks'
-import { missingKeys, setLocale, t } from '../lib/strings'
+import { LANGUAGE_NAMES, missingKeys, setLocale, SHIPPED, t } from '../lib/strings'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
 import { applyRunLocale, englishLeft, overflowing } from './i18n'
 import { step } from './interactive'
@@ -3250,6 +3250,54 @@ export async function spikeE2E(): Promise<SpikeResult> {
         host.remove()
       }
       if (bodyFontPx() !== 19) problems.push(`not reset: ${bodyFontPx()} px`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'L4-language-setting',
+    description:
+      'Settings › General › Language lists System and every shipped language; a choice is saved and asks for a restart, without restarting (L-4, L-5)',
+    run: async () => {
+      const problems: string[] = []
+      const { default: Preferences } = await import('../prefs/Preferences.svelte')
+      const { unmount } = await import('svelte')
+      const host = document.createElement('div')
+      host.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground)'
+      document.body.append(host)
+      const prefs = mount(Preferences, { target: host })
+      const notice = () => host.textContent?.includes(t.prefs.languageRestart) ?? false
+      const choose = async (value: string) => {
+        const select = host.querySelector<HTMLSelectElement>('#prefs-language')!
+        select.value = value
+        select.dispatchEvent(new Event('change', { bubbles: true }))
+        await settled(400)
+      }
+      try {
+        await settled(500)
+        const select = host.querySelector<HTMLSelectElement>('#prefs-language')
+        if (!select) return 'no Language row in Settings › General'
+        const values = Array.from(select.options).map((o) => o.value)
+        if (values.join() !== ['system', ...SHIPPED].join())
+          problems.push(`options ${values.join(', ')}`)
+        const named = Array.from(select.options)
+          .slice(1)
+          .map((o) => o.textContent?.trim())
+        if (named.join() !== SHIPPED.map((l) => LANGUAGE_NAMES[l]).join())
+          problems.push(`names ${named.join(', ')}`)
+        if (notice()) problems.push('a restart notice before any change')
+        await choose('ja')
+        if ((await invoke<string | null>('setting_get', { key: 'language' })) !== 'ja')
+          problems.push('Japanese not saved')
+        if (!notice()) problems.push('no restart notice after choosing Japanese')
+        await choose('system')
+        if ((await invoke<string | null>('setting_get', { key: 'language' })) !== 'system')
+          problems.push('System not saved')
+        if (notice()) problems.push('the restart notice stayed after going back to System')
+      } finally {
+        void unmount(prefs)
+        host.remove()
+      }
       return problems.length ? problems.join('; ') : 'ok'
     },
   })

@@ -1,5 +1,7 @@
 # The machine drafts: notes for reviewers
 
+**Signed off 2026-10-08, as drafted** (`docs/decisions.md`): all four languages ship. The notes below record what the reviewers were asked to check.
+
 On 2026-10-08 all four catalogues were machine-drafted, as L-6 allows: `src/lib/strings/zh-Hans.ts`, `zh-Hant.ts`, `ja.ts` and `es.ts`. They are drafts. Development builds offer them in Settings; release builds do not (checked: no draft text in a release bundle). Each waits for a native speaker's review in context (`README.md`, steps 4–5).
 
 They pass every automatic check, the shipping rule included (`VITE_I18N_STRICT=1`). Every entry is translated except numbers, symbols, font names, key caps and the cognates `catalogues.test.ts` lists. Every message keeps its values, and Chinese and Japanese follow the punctuation rules. A first look at the Japanese library in the app was right, except for one line break (Stage 4, below).

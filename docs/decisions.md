@@ -204,3 +204,14 @@ The owner answered “Approve item 57, then push i18n and open a PR”, which ap
 | # | Approved |
 |---|---|
 | CJK typography (57) | In Chinese and Japanese, interface text that English sets in Literata uses the system font (L-8); lines break between phrases (after full-width punctuation and at spaces, `src/lib/strings/breaks.ts`, `src/app/base.css`); labels lose their letter-spacing. Book text keeps Literata and the book's own language. The native reviewers (L-6) may still change wording that breaks badly. |
+
+## Signed off 2026-10-08 (the four translations, L-6)
+
+The owner reported that the native reviewers finished and that all four catalogues are approved as drafted, with no changes: the glossary's proposed terms and macOS names included. The languages ship (Stage 6).
+
+| Language | Signed off |
+|---|---|
+| Simplified Chinese (`zh-Hans`) | As drafted (`src/lib/strings/zh-Hans.ts`) |
+| Traditional Chinese, Taiwan usage (`zh-Hant`) | As drafted (`src/lib/strings/zh-Hant.ts`) |
+| Japanese (`ja`) | As drafted (`src/lib/strings/ja.ts`), 読字障害 and ゴシック for the font choices included |
+| Spanish (`es`) | As drafted (`src/lib/strings/es.ts`), following macOS's `es` wording where regions differ |
