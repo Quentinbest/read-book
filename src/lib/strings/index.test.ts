@@ -21,7 +21,7 @@ describe('L-1 the page language', () => {
     // Development builds also offer drafts in the folder (docs/i18n/README.md).
     expect(strings.AVAILABLE[0]).toBe('en')
     expect(strings.AVAILABLE).toContain('en-XA')
-    expect(strings.SHIPPED).toEqual(['en'])
+    expect(strings.SHIPPED).toEqual(['en', 'zh-Hans', 'zh-Hant', 'ja', 'es'])
     strings.setLocale('en-XA')
     expect(strings.locale).toBe('en-XA')
     expect(strings.t.library.title).toBe(pseudo('Library'))

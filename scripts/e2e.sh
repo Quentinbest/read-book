@@ -14,6 +14,12 @@ set -e
 # requestAnimationFrame, so a run longer than the display-sleep delay stalls when
 # nobody is at the Mac (seen 2026-09-26: a 100 s stall). Only while the run lasts.
 cd "$(dirname "$0")/.."
+# Only a test build honours LINEN_DATA_DIR. Any other build (a release bundle's
+# `pnpm tauri build` leaves one here) would open the real library, so refuse it.
+if ! strings src-tauri/target/release/linen 2>/dev/null | grep -q spike_capture; then
+  echo "src-tauri/target/release/linen is not a test build; build it first (see above)." >&2
+  exit 1
+fi
 DATA=$(mktemp -d)
 SPIKE="${1:-r}"
 ONLY="${2:-}"

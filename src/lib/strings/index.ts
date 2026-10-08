@@ -12,38 +12,49 @@ export type { Locale, Messages } from './types'
 export { locale } from './current'
 
 /**
- * The catalogue of each language Linen ships. English is the source and the
- * fallback. Registering a language here means adding it to src-tauri/Info.plist
- * too (docs/i18n/README.md, “Ship”).
+ * The languages Linen ships, each loaded when a page uses it: English is built in,
+ * and the others stay out of the first paint (§6.4). Registering a language here
+ * means adding it to src-tauri/Info.plist too (docs/i18n/README.md, “Ship”).
  */
-const SHIPPED_CATALOGUES: Partial<Record<Locale, () => Messages>> = {
-  en: () => en,
+const SHIPPED_LOADERS: Partial<Record<Locale, () => Promise<Messages>>> = {
+  en: async () => en,
+  // Signed off by native reviewers, 2026-10-08 (L-6, docs/decisions.md).
+  'zh-Hans': () => import('./zh-Hans').then((m) => m.zhHans),
+  'zh-Hant': () => import('./zh-Hant').then((m) => m.zhHant),
+  ja: () => import('./ja').then((m) => m.ja),
+  es: () => import('./es').then((m) => m.es),
 }
 
 /**
- * Development builds also offer the pseudo-locale and every draft catalogue in
- * this folder, so a translation can be read in the app before it ships.
+ * Catalogues ready to use. English always; development builds also have every
+ * catalogue in this folder, drafts included, and the pseudo-locale, so a
+ * translation can be read in the app before it ships.
  */
-const DEV_CATALOGUES: Partial<Record<Locale, () => Messages>> = import.meta.env.DEV
-  ? {
-      ...Object.fromEntries(
-        Object.entries(
+const loaded = new Map<Locale, Messages>([
+  ['en', en],
+  ...(import.meta.env.DEV
+    ? [
+        ...Object.entries(
           import.meta.glob<Record<string, Messages>>('./{zh-Hans,zh-Hant,ja,es}.ts', {
             eager: true,
           }),
-        ).map(([path, mod]) => [path.slice(2, -3), () => Object.values(mod)[0]]),
-      ),
-      'en-XA': () => pseudoLocalize(en),
-    }
-  : {}
-
-const CATALOGUES = { ...SHIPPED_CATALOGUES, ...DEV_CATALOGUES, ...SHIPPED_CATALOGUES }
+        ).map(([path, mod]) => [path.slice(2, -3) as Locale, Object.values(mod)[0]] as const),
+        ['en-XA', pseudoLocalize(en)] as const,
+      ]
+    : []),
+])
 
 /** The languages that ship (Info.plist lists the same). */
-export const SHIPPED = Object.keys(SHIPPED_CATALOGUES) as Locale[]
+export const SHIPPED = Object.keys(SHIPPED_LOADERS) as Locale[]
 
 /** The languages this build offers, English first. */
-export const AVAILABLE = Object.keys(CATALOGUES) as Locale[]
+export const AVAILABLE = [...new Set([...SHIPPED, ...loaded.keys()])]
+
+/** Fetch `l`'s catalogue, once; call before setLocale(l). An unknown language does nothing. */
+export async function loadLocale(l: Locale): Promise<void> {
+  const load = SHIPPED_LOADERS[l]
+  if (load && !loaded.has(l)) loaded.set(l, await load())
+}
 
 /** Each language named in its own script, as Settings lists them (L-4). */
 export const LANGUAGE_NAMES: Record<Locale, string> = {
@@ -60,12 +71,12 @@ export const missingKeys: string[] = []
 
 export let t: Messages = en
 
-/** Use `l` for this page. An unknown language means English. */
+/** Use `l` for this page (loaded with loadLocale). An unknown language means English. */
 export function setLocale(l: Locale): void {
-  const make = CATALOGUES[l]
-  setCurrent(make ? l : 'en')
+  const m = loaded.get(l)
+  setCurrent(m ? l : 'en')
   missingKeys.length = 0
-  t = make && l !== 'en' ? prepare(withFallback(make(), en, '', l) as Messages, l) : en
+  t = m && l !== 'en' ? prepare(withFallback(m, en, '', l) as Messages, l) : en
 }
 
 /** Chinese and Japanese get break opportunities between phrases (breaks.ts). */

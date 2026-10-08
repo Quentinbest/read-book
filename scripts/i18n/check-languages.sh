@@ -12,6 +12,11 @@
 #   --features spikes --config src-tauri/tauri.spikes.conf.json
 set -e
 cd "$(dirname "$0")/../.."
+# A test build only (scripts/e2e.sh refuses others too, but this loop would go on).
+strings src-tauri/target/release/linen 2>/dev/null | grep -q spike_capture || {
+  echo "src-tauri/target/release/linen is not a test build; build it first." >&2
+  exit 1
+}
 LOCALES="${*:-zh-Hans zh-Hant ja es}"
 OUT=i18n-out/visual
 
