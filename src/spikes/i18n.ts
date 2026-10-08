@@ -4,7 +4,7 @@
 // per-app language System Settings writes.
 
 import { invoke } from '@tauri-apps/api/core'
-import { adoptMessages, type Locale, type Messages } from '../lib/strings'
+import { adoptMessages, t, type Locale, type Messages } from '../lib/strings'
 import { en } from '../lib/strings/en'
 import { negotiate } from '../lib/strings/negotiate'
 import { pseudoLocalize } from '../lib/strings/pseudo'
@@ -100,4 +100,43 @@ export function overflowing(root: Document = document): string[] {
     )
   }
   return out
+}
+
+/** Plain texts of a catalogue, by key (messages, which take values, are left out). */
+function plainTexts(m: unknown, path = ''): Map<string, string> {
+  const out = new Map<string, string>()
+  for (const [k, v] of Object.entries(m as Record<string, unknown>)) {
+    const key = path ? `${path}.${k}` : k
+    if (typeof v === 'string') out.set(key, v)
+    else if (v && typeof v === 'object') for (const e of plainTexts(v, key)) out.set(...e)
+  }
+  return out
+}
+
+/**
+ * Stage 6 (plan §6): UI text still in English in a translated UI, which means it
+ * bypassed `t`. Visible text and labels (aria-label, title, placeholder) equal to
+ * an English catalogue text that this language translates differently; book text,
+ * which carries its own lang, is left out.
+ */
+export function englishLeft(root: Document = document): string[] {
+  const ours = plainTexts(t)
+  const english = new Set(
+    [...plainTexts(en)]
+      .filter(([k, v]) => /\p{L}{4}/u.test(v) && ours.get(k) !== v)
+      .map(([, v]) => v),
+  )
+  const out = new Set<string>()
+  for (const el of Array.from(root.body.querySelectorAll<HTMLElement>('*'))) {
+    // Book text (its own lang) and extension text (translate="no"; L-10) are not ours.
+    if (el instanceof HTMLIFrameElement || el.closest('body [lang], [translate="no"]')) continue
+    for (const n of Array.from(el.childNodes))
+      if (n.nodeType === Node.TEXT_NODE && english.has((n.textContent ?? '').trim()))
+        out.add(`${el.localName}: “${(n.textContent ?? '').trim()}”`)
+    for (const a of ['aria-label', 'title', 'placeholder']) {
+      const v = el.getAttribute(a)
+      if (v && english.has(v.trim())) out.add(`${el.localName}[${a}]: “${v.trim()}”`)
+    }
+  }
+  return [...out]
 }

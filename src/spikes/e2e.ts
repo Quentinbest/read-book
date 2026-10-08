@@ -7,9 +7,9 @@ import { emit } from '@tauri-apps/api/event'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { mount } from 'svelte'
 import type { TestHooks } from '../app/testHooks'
-import { setLocale, t } from '../lib/strings'
+import { missingKeys, setLocale, t } from '../lib/strings'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
-import { applyRunLocale, overflowing } from './i18n'
+import { applyRunLocale, englishLeft, overflowing } from './i18n'
 import { step } from './interactive'
 
 // Cold opens unless a check asks for the warm book (S14).
@@ -5611,10 +5611,12 @@ export async function spikeVisual(): Promise<SpikeResult> {
 
   const shots: Record<string, string> = {}
   const overflow: Record<string, string[]> = {}
+  const english: Record<string, string[]> = {}
   const capture = async (name: string) => {
     await settled(700)
     shots[name] = await invoke<string>('spike_capture', { name })
     overflow[name] = overflowing()
+    if (locale !== 'en') english[name] = englishLeft()
     log(`captured ${name}${overflow[name].length ? ` (${overflow[name].length} overflowing)` : ''}`)
   }
   const openIn = async (theme: string) => {
@@ -5935,6 +5937,7 @@ export async function spikeVisual(): Promise<SpikeResult> {
   key('Escape', { code: 'Escape' })
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   const crowded = Object.entries(overflow).filter(([, v]) => v.length)
+  const untranslated = Object.entries(english).filter(([, v]) => v.length)
   return {
     spike: locale === 'en' ? 'visual-candidates' : `visual-${locale}`,
     criteria: [
@@ -5950,8 +5953,26 @@ export async function spikeVisual(): Promise<SpikeResult> {
         verdict: 'manual',
         evidence: crowded.length ? crowded.map(([k, v]) => `${k}: ${v.length}`).join(', ') : 'none',
       },
+      ...(locale === 'en'
+        ? []
+        : [
+            {
+              id: 'I18N-english-left',
+              description: 'No UI text left in English (Stage 6)',
+              verdict: untranslated.length ? 'fail' : 'pass',
+              evidence: untranslated.length
+                ? untranslated.map(([k, v]) => `${k}: ${v.join('; ')}`).join(' | ')
+                : 'none',
+            } as const,
+            {
+              id: 'I18N-missing-keys',
+              description: 'The catalogue lacks no key (Stage 6)',
+              verdict: missingKeys.length ? 'fail' : 'pass',
+              evidence: missingKeys.join(', ') || 'none',
+            } as const,
+          ]),
     ],
-    raw: { locale, shots, overflow },
+    raw: { locale, shots, overflow, english, missingKeys: [...missingKeys] },
   }
 }
 

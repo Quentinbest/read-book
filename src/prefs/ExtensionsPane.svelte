@@ -120,7 +120,7 @@
       <span class="icon" aria-hidden="true">{m.name.slice(0, 1)}</span>
       <div class="body">
         <div class="title-row">
-          <span class="name">{m.name}</span>
+          <span class="name" translate="no">{m.name}</span>
           <span class="meta"
             >{[kind(x), m.version, x.enabled ? null : t.extSettings.off]
               .filter(Boolean)
@@ -137,7 +137,7 @@
             onclick={() => void setEnabled(x, !x.enabled)}><span class="thumb"></span></button
           >
         </div>
-        {#if m.description}<p class="description">{m.description}</p>{/if}
+        {#if m.description}<p class="description" translate="no">{m.description}</p>{/if}
         {#if themeOnly}
           <p class="chips">
             <span class="label">{t.extSettings.adds}</span><span class="chip"
