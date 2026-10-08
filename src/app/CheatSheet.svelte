@@ -4,7 +4,7 @@
   import Modal from '../components/Modal.svelte'
   import { cheatSheet } from '../lib/commands/cheatsheet'
   import type { CommandRegistry } from '../lib/commands/registry'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { layoutLabels } from './keyLabels'
 
   let {
@@ -21,7 +21,7 @@
     <header>
       <h2>{t.cheatSheet.title}</h2>
       <button type="button" class="close" onclick={onclose}>
-        {t.cheatSheet.close}<kbd>Esc</kbd>
+        {t.cheatSheet.close}<kbd>{t.keys.esc}</kbd>
       </button>
     </header>
     <div class="columns">

@@ -7,9 +7,12 @@
   // Exporters from extensions (Markdown Export is built in) sit in the footer,
   // each naming the extension that does the work (Screen 08).
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
-  import { COLOR_NAMES, COLORS } from './annotations.svelte'
+  import { COLORS } from './annotations.svelte'
+  import { formatDate } from '../lib/strings/format'
 
   let {
     placed,
@@ -77,14 +80,14 @@
     if (day(ms) === day(now)) return t.annotations.today
     if (day(ms) === day(now - 86_400_000)) return t.annotations.yesterday
     const d = new Date(ms)
-    return d.toLocaleDateString(undefined, {
+    return formatDate(ms, {
       day: 'numeric',
       month: 'short',
       year: d.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric',
     })
   }
   const meta = (a: Annotation) =>
-    [COLOR_NAMES[a.color], when(a.createdAt), a.note ? t.annotations.hasNote : null]
+    [t.colors[a.color], when(a.createdAt), a.note ? t.annotations.hasNote : null]
       .filter(Boolean)
       .join(' · ')
 
@@ -128,7 +131,7 @@
         class="chip"
         class:on={only === c}
         aria-pressed={only === c}
-        aria-label={t.annotations.only(COLOR_NAMES[c])}
+        aria-label={t.annotations.only(t.colorsInText[c])}
         onclick={() => (only = only === c ? null : c)}
       >
         <span style:background="var(--hl-{c}-swatch)"></span>
@@ -157,7 +160,9 @@
           aria-current={a.id === current ? 'true' : undefined}
           onclick={() => onchoose(a)}
         >
-          <span class="quote"><span class="hl hl-{a.color}">{a.quote.exact.trim()}</span></span>
+          <span class="quote" {lang}
+            ><span class="hl hl-{a.color}">{a.quote.exact.trim()}</span></span
+          >
           {#if a.note}<span class="note">{a.note}</span>{/if}
           <span class="meta">{meta(a)}</span>
         </button>
@@ -171,7 +176,7 @@
       </div>
       {#each lost as a (a.id)}
         <div class="item unplaced" data-annotation={a.id}>
-          <span class="quote dashed">{a.quote.exact.trim()}</span>
+          <span class="quote dashed" {lang}>{a.quote.exact.trim()}</span>
           {#if a.note}<span class="note">{a.note}</span>{/if}
           <span class="meta"
             >{t.annotations.changedReason}

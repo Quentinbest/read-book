@@ -6,9 +6,11 @@
   // and the highlight kept (the store does that).
   import { onDestroy, onMount } from 'svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
-  import { COLOR_NAMES, COLORS } from './annotations.svelte'
+  import { COLORS } from './annotations.svelte'
 
   let {
     annotation,
@@ -117,13 +119,13 @@
     {#if mode === 'margin'}
       <span class="swatch" style:background="var(--hl-{annotation.color}-swatch)"></span>
     {/if}
-    <span class="title">{t.annotations.noteTitle(COLOR_NAMES[annotation.color])}</span>
+    <span class="title">{t.annotations.noteTitle(t.colors[annotation.color])}</span>
     <span class="status" role="status">
       {#if status === 'saved'}<Icon name="check" size={14} />{/if}{statusText}
     </span>
   </header>
   {#if mode === 'sheet'}
-    <p class="quote">“{quote}”</p>
+    <p class="quote" {lang}>“{quote}”</p>
   {/if}
   <label class="visually-hidden" for="note-{annotation.id}">{t.annotations.noteText}</label>
   <textarea
@@ -138,7 +140,7 @@
         type="button"
         class="color"
         class:current={c === annotation.color}
-        aria-label={t.annotations.colorOption(COLOR_NAMES[c], c === annotation.color)}
+        aria-label={t.annotations.colorOption(t.colors[c], c === annotation.color)}
         aria-pressed={c === annotation.color}
         onclick={() => oncolor(c)}
       >

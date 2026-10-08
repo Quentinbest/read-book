@@ -7,12 +7,17 @@ import { emit } from '@tauri-apps/api/event'
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
 import { mount } from 'svelte'
 import type { TestHooks } from '../app/testHooks'
+import { setLocale, t } from '../lib/strings'
 import { log, sleep, type Criterion, type SpikeResult } from './common'
+import { applyRunLocale, overflowing } from './i18n'
 import { step } from './interactive'
 
 // Cold opens unless a check asks for the warm book (S14).
 const hooks: TestHooks = { noWarm: true }
 ;(globalThis as { __LINEN_E2E__?: TestHooks }).__LINEN_E2E__ = hooks
+// The checks read English text, so the harness never follows the Mac's language
+// (docs/i18n-plan.md §6); it does not call initLocale.
+setLocale('en')
 
 async function waitFor<T>(
   what: string,
@@ -5574,7 +5579,18 @@ export async function spikeMemoryTrace(): Promise<SpikeResult> {
  * 02, 03, 10 and 14 — Moby-Dick chapter 1 at 1280 × 800 in the mock's theme —
  * captured from this app's own window only, for the owner's side-by-side review.
  */
+/** The visual run reads labels from the catalogue, so it runs in any language. */
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const startsWith = (s: string) => new RegExp(`^${escapeRegExp(s)}`)
+/** A colour's button in the selection bar, last used or not. */
+const highlightLabel = (color: string) =>
+  new RegExp(
+    `^(${[false, true].map((u) => escapeRegExp(t.annotations.highlightIn(color, u))).join('|')})$`,
+  )
+
 export async function spikeVisual(): Promise<SpikeResult> {
+  // Stage 4: any language (LINEN_LOCALE); English writes the baseline candidates.
+  const locale = applyRunLocale()
   const names = [
     'standardebooks-moby-dick.epub',
     'idpf-regime-anticancer-arabic.epub',
@@ -5594,10 +5610,12 @@ export async function spikeVisual(): Promise<SpikeResult> {
   mount(App, { target: document.getElementById('reader')! })
 
   const shots: Record<string, string> = {}
+  const overflow: Record<string, string[]> = {}
   const capture = async (name: string) => {
     await settled(700)
     shots[name] = await invoke<string>('spike_capture', { name })
-    log(`captured ${name}`)
+    overflow[name] = overflowing()
+    log(`captured ${name}${overflow[name].length ? ` (${overflow[name].length} overflowing)` : ''}`)
   }
   const openIn = async (theme: string) => {
     await invoke('setting_set', { key: 'theme', value: theme })
@@ -5754,25 +5772,25 @@ export async function spikeVisual(): Promise<SpikeResult> {
     if (current) hooks.messages!.dismiss(current.id)
   }
   await selectPhrase(NOVEMBER)
-  await pressBar(/highlight yellow/i)
+  await pressBar(highlightLabel(t.colorsInText.yellow))
   await selectPhrase(MANHATTOES)
   await waitFor('selection bar', selBar)
   clearMessage()
   await capture('06-selection-bar')
-  await pressBar(/highlight green/i)
+  await pressBar(highlightLabel(t.colorsInText.green))
   const manhattoesId = reader()!.annotations.items.at(-1)!.id
   const openNoteOn = async () => {
     const range = await selectPhrase(MANHATTOES)
     pageDoc().doc.getSelection()?.removeAllRanges()
     clickOn(range)
     await waitFor('bar', selBar)
-    await pressBar(/^note$/i)
+    await pressBar(new RegExp(`^${escapeRegExp(t.annotations.note)}$`))
     return waitFor('note', noteCard)
   }
   const card = await openNoteOn()
   typeNote(NOTE)
   await waitFor('saved', () =>
-    card.querySelector('[role="status"]')?.textContent?.includes('Saved'),
+    card.querySelector('[role="status"]')?.textContent?.includes(t.annotations.saved),
   )
   // The mock shows the card at rest, focus not in the field.
   card.querySelector('textarea')!.blur()
@@ -5909,15 +5927,16 @@ export async function spikeVisual(): Promise<SpikeResult> {
   clearMessage()
   await selectPhrase('spleen')
   await waitFor('bar', selBar)
-  barButton(/more actions from extensions/i)?.click()
+  barButton(startsWith(t.extensions.more))?.click()
   ;(document.activeElement as HTMLElement | null)?.blur()
   await settled(300)
   await capture('12-extension-failure')
   pageDoc().doc.getSelection()?.removeAllRanges()
   key('Escape', { code: 'Escape' })
   await invoke('setting_set', { key: 'theme', value: 'auto' })
+  const crowded = Object.entries(overflow).filter(([, v]) => v.length)
   return {
-    spike: 'visual-candidates',
+    spike: locale === 'en' ? 'visual-candidates' : `visual-${locale}`,
     criteria: [
       {
         id: 'visual-captured',
@@ -5925,8 +5944,14 @@ export async function spikeVisual(): Promise<SpikeResult> {
         verdict: 'manual',
         evidence: Object.keys(shots).join(', '),
       },
+      {
+        id: 'visual-overflow',
+        description: 'Text that does not fit its box, per capture (Stage 4)',
+        verdict: 'manual',
+        evidence: crowded.length ? crowded.map(([k, v]) => `${k}: ${v.length}`).join(', ') : 'none',
+      },
     ],
-    raw: { shots },
+    raw: { locale, shots, overflow },
   }
 }
 

@@ -8,7 +8,7 @@
   import { onMount } from 'svelte'
   import Button from '../components/Button.svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc, type Book } from './ipc'
   import BookCover from './BookCover.svelte'
   import BookInfo from './BookInfo.svelte'
@@ -84,7 +84,11 @@
   const authorOf = (b: Book) => b.authors.join(', ') || t.library.unknownAuthor
   const percent = (b: Book) => Math.round((b.fraction ?? 0) * 100)
   const smallLine = (b: Book) =>
-    [authorOf(b), `${percent(b)}%`, b.opened_at ? openedAgo(b.opened_at, now) : null]
+    [
+      authorOf(b),
+      t.library.percent(b.fraction ?? 0),
+      b.opened_at ? openedAgo(b.opened_at, now) : null,
+    ]
       .filter(Boolean)
       .join(' · ')
 
@@ -230,14 +234,14 @@
               <BookCover book={current} width={112} height={168} />
             </button>
             <div class="current-meta">
-              <div class="big-title">{current.title}</div>
-              <div class="author">{authorOf(current)}</div>
+              <div class="big-title" lang={current.language ?? undefined}>{current.title}</div>
+              <div class="author" lang={current.language ?? undefined}>{authorOf(current)}</div>
               <div class="where">
                 <div class="bar" style:width="200px">
                   <i style:width="{percent(current)}%"></i>
                 </div>
                 <span
-                  >{[current.chapter_label, `${percent(current)}%`]
+                  >{[current.chapter_label, t.library.percent(current.fraction ?? 0)]
                     .filter(Boolean)
                     .join(' · ')}</span
                 >
@@ -268,7 +272,7 @@
                 >
                   <BookCover book={b} width={44} height={66} lettering={false} />
                   <span>
-                    <span class="small-title">{b.title}</span>
+                    <span class="small-title" lang={b.language ?? undefined}>{b.title}</span>
                     <span class="small-line">{smallLine(b)}</span>
                   </span>
                 </button>
@@ -307,8 +311,8 @@
                 {:else}
                   <BookCover book={b} height={198} />
                 {/if}
-                <span class="tt">{b.title}</span>
-                <span class="ta">{authorOf(b)}</span>
+                <span class="tt" lang={b.language ?? undefined}>{b.title}</span>
+                <span class="ta" lang={b.language ?? undefined}>{authorOf(b)}</span>
                 <span class="tp">
                   {#if b.finished_at}
                     <span>{t.library.finished}</span>
@@ -316,7 +320,7 @@
                     <span class="new">{t.library.new}</span>
                   {:else}
                     <span class="bar"><i style:width="{percent(b)}%"></i></span>
-                    <span>{percent(b)}%</span>
+                    <span>{t.library.percent(b.fraction ?? 0)}</span>
                   {/if}
                   {#if b.damaged_items > 0}
                     <span class="damaged">{t.library.damaged(b.damaged_items)}</span>

@@ -2,6 +2,7 @@
 // registry so it cannot drift from the keys that work; page keys (I8, I9) are
 // handled by the reader rather than the registry, so they are listed here.
 
+import { t } from '../strings'
 import { chordLabel, type Chord } from './keys'
 import type { Command, CommandSection } from './registry'
 
@@ -16,23 +17,19 @@ export interface CheatSection {
   rows: CheatRow[]
 }
 
-export const SECTION_TITLES: Record<CommandSection, string> = {
-  navigation: 'Navigation',
-  reading: 'Reading',
-  search: 'Search',
-  annotation: 'Highlights and notes',
-  view: 'View',
-  app: 'App',
-  extension: 'Extensions',
-}
+/** Section titles, in the UI language. */
+export const sectionTitle = (s: CommandSection) => t.cheatSheet.sections[s]
 
 /** Page keys (I8 Pages, I9 Scroll): the reader's own, not registry commands. */
-export const PAGE_KEYS: CheatRow[] = [
-  { label: 'Next page', keys: ['→', 'Space', 'PgDn', '↓'] },
-  { label: 'Previous page', keys: ['←', '⇧Space', 'PgUp', '↑'] },
-  { label: 'Scroll by a screen (Scroll mode)', keys: ['Space', '⇧Space'] },
-  { label: 'Scroll by lines (Scroll mode)', keys: ['↓', '↑'] },
-]
+export function pageKeys(): CheatRow[] {
+  const { space, pageUp, pageDown } = t.keys
+  return [
+    { label: t.cheatSheet.nextPage, keys: ['→', space, pageDown, '↓'] },
+    { label: t.cheatSheet.previousPage, keys: ['←', `⇧${space}`, pageUp, '↑'] },
+    { label: t.cheatSheet.scrollScreen, keys: [space, `⇧${space}`] },
+    { label: t.cheatSheet.scrollLines, keys: ['↓', '↑'] },
+  ]
+}
 
 const ORDER: CommandSection[] = [
   'navigation',
@@ -62,9 +59,9 @@ export function cheatSheet(
     bySection.set(c.section, rows)
   }
   return [
-    { title: 'Pages', rows: PAGE_KEYS },
+    { title: t.cheatSheet.pages, rows: pageKeys() },
     ...ORDER.filter((s) => bySection.has(s)).map((s) => ({
-      title: SECTION_TITLES[s],
+      title: sectionTitle(s),
       rows: bySection.get(s)!,
     })),
   ]

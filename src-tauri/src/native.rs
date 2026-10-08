@@ -65,6 +65,25 @@ pub fn screen_reader_running() -> bool {
     }
 }
 
+/// L-4: the reader's preferred languages, most preferred first (e.g. "zh-Hant-TW").
+/// `NSLocale` follows the per-app language set in System Settings, which
+/// `navigator.languages` in WKWebView may not (docs/spikes/i18n-spike.md).
+#[tauri::command]
+pub fn preferred_languages() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::NSLocale;
+        NSLocale::preferredLanguages()
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        Vec::new()
+    }
+}
+
 /// macOS virtual key codes (ANSI positions) for the `KeyboardEvent.code` values
 /// Linen binds or shows (T7).
 #[cfg(target_os = "macos")]

@@ -2,7 +2,9 @@
   // Footnote peek (N9; Screen 17). Opens below the marker, or above it near the
   // page foot, and never covers the marker's line; it never navigates. The note is
   // copied in as safe structure (notes.ts). Esc closes and returns focus to the marker.
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
+  import { bookLang } from './bookLang'
+  const lang = bookLang()
   import type { NoteEvent } from './engine'
   import { copyNote } from './notes'
 
@@ -48,7 +50,7 @@
     <span class="hint">{t.peek.hint}</span>
   </div>
   <!-- eslint-disable-next-line svelte/no-at-html-tags -- built by copyNote from text and bare p/em/strong/sup/sub only -->
-  <div class="body">{@html html}</div>
+  <div class="body" {lang}>{@html html}</div>
   {#if !note.note}
     <p class="missing">{t.peek.missing}</p>
   {/if}

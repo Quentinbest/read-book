@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { Message, MessageQueue } from '../lib/reader/messages'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import Kbd from './Kbd.svelte'
 
   // M1: one message at a time, bottom centre, non-modal. M2: pointer or focus pauses its timer.

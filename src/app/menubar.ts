@@ -1,18 +1,32 @@
-// Install the generated menu model as the macOS app menu.
+// Install the generated menu model as the macOS app menu. Every item is named from
+// the catalogue, AppKit's standard ones too (L-1; muda names those in English).
 
-import { Menu, MenuItem, PredefinedMenuItem, Submenu } from '@tauri-apps/api/menu'
+import {
+  Menu,
+  MenuItem,
+  PredefinedMenuItem,
+  type PredefinedMenuItemOptions,
+  Submenu,
+} from '@tauri-apps/api/menu'
 import { menuModel } from '../lib/commands/menu'
 import type { CommandRegistry } from '../lib/commands/registry'
+import { t } from '../lib/strings'
+
+/** The app's name, which is not translated (L-10). */
+const APP = 'Linen'
 
 export async function installMenuBar(registry: CommandRegistry) {
   const sep = () => PredefinedMenuItem.new({ item: 'Separator' })
+  const m = t.menus
+  const standard = (item: PredefinedMenuItemOptions['item'], text: string) =>
+    PredefinedMenuItem.new({ item, text })
   const model = menuModel(registry.available())
   const settings = registry.available().find((c) => c.id === 'app.settings')
 
   const appMenu = await Submenu.new({
-    text: 'Linen',
+    text: APP,
     items: [
-      await PredefinedMenuItem.new({ item: { About: null } }),
+      await standard({ About: null }, m.about(APP)),
       await sep(),
       // macOS puts Settings… (⌘,) in the app menu.
       ...(settings
@@ -26,20 +40,20 @@ export async function installMenuBar(registry: CommandRegistry) {
             await sep(),
           ]
         : []),
-      await PredefinedMenuItem.new({ item: 'Services' }),
+      await standard('Services', m.services),
       await sep(),
-      await PredefinedMenuItem.new({ item: 'Hide' }),
-      await PredefinedMenuItem.new({ item: 'HideOthers' }),
-      await PredefinedMenuItem.new({ item: 'ShowAll' }),
+      await standard('Hide', m.hide(APP)),
+      await standard('HideOthers', m.hideOthers),
+      await standard('ShowAll', m.showAll),
       await sep(),
-      await PredefinedMenuItem.new({ item: 'Quit' }),
+      await standard('Quit', m.quit(APP)),
     ],
   })
 
   const submenus = []
-  for (const m of model) {
+  for (const menu of model) {
     const items = []
-    for (const it of m.items) {
+    for (const it of menu.items) {
       items.push(
         await MenuItem.new({
           id: it.id,
@@ -49,18 +63,21 @@ export async function installMenuBar(registry: CommandRegistry) {
         }),
       )
     }
-    if (m.title === 'Edit') {
+    if (menu.id === 'Edit') {
       // Text fields need the standard editing items (and their shortcuts) on macOS.
-      items.push(await sep())
-      for (const item of ['Cut', 'Copy', 'Paste', 'SelectAll'] as const) {
-        items.push(await PredefinedMenuItem.new({ item }))
-      }
+      items.push(
+        await sep(),
+        await standard('Cut', m.cut),
+        await standard('Copy', m.copy),
+        await standard('Paste', m.paste),
+        await standard('SelectAll', m.selectAll),
+      )
     }
-    if (m.title === 'Window') {
-      items.push(await sep(), await PredefinedMenuItem.new({ item: 'Minimize' }))
+    if (menu.id === 'Window') {
+      items.push(await sep(), await standard('Minimize', m.minimize))
     }
-    submenus.push(await Submenu.new({ text: m.title, items }))
+    submenus.push(await Submenu.new({ text: menu.title, items }))
   }
-  const menu = await Menu.new({ items: [appMenu, ...submenus] })
-  await menu.setAsAppMenu()
+  const bar = await Menu.new({ items: [appMenu, ...submenus] })
+  await bar.setAsAppMenu()
 }

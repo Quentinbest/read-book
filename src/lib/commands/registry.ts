@@ -4,7 +4,7 @@
 // shortcut hints. Features register a handler for a command id when they are
 // built; commands without a handler are hidden everywhere.
 
-import { t } from '../strings/en'
+import { t } from '../strings'
 import { type Chord, type KeyContext, matchesChord, singleKeyAllowed } from './keys'
 import { remappable, type Overrides } from './remap'
 
@@ -294,6 +294,14 @@ export const CORE_COMMANDS: CommandDef[] = [
     chord: { code: 'Escape' },
   },
 ]
+
+// L-1: a core command's title is read when it is asked for, so the menu bar, ⌘K and
+// the cheat sheet use the page's language whenever they are built.
+for (const d of CORE_COMMANDS) {
+  const id = d.id as keyof typeof t.commands
+  if (id in t.commands)
+    Object.defineProperty(d, 'title', { get: () => t.commands[id], enumerable: true })
+}
 
 export class CommandRegistry {
   #defs = new Map<string, CommandDef>()

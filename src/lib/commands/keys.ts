@@ -1,6 +1,8 @@
 // Key chords bound to physical key positions (plan T7: KeyboardEvent.code), the
 // single-key gating rules (§2.8), and macOS shortcut labels.
 
+import { t } from '../strings'
+
 export interface Chord {
   /** KeyboardEvent.code: the physical key, independent of keyboard layout. */
   code: string
@@ -61,8 +63,6 @@ const US_LABELS: Record<string, string> = {
   Equal: '+',
   Minus: '−',
   Slash: '/',
-  Escape: 'Esc',
-  Space: 'Space',
   Enter: '↵',
   Backspace: '⌫',
   Tab: '⇥',
@@ -76,6 +76,8 @@ const SYMBOLIC = new Set(['Equal', 'Minus'])
 export function keyLabel(code: string, layout?: ReadonlyMap<string, string>): string {
   const native = SYMBOLIC.has(code) ? undefined : layout?.get(code)
   if (native) return native.length === 1 ? native.toUpperCase() : native
+  if (code === 'Escape') return t.keys.esc
+  if (code === 'Space') return t.keys.space
   if (code in US_LABELS) return US_LABELS[code]
   const m = /^(Key|Digit)(.)$/.exec(code)
   if (m) return m[2]

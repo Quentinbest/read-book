@@ -4,7 +4,7 @@
   // drag pans once the image is larger than the window. Esc or a click outside
   // closes, and focus returns to the image in the text. Night dims it 10%.
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { ImageEvent } from './engine'
 
   export const IMAGE_ZOOM = [1, 1.5, 2, 3, 4]
@@ -93,7 +93,7 @@
       >−</button
     >
     <button type="button" class="fit" onclick={() => (zoom = 1)}
-      >{zoom === 1 ? t.image.fit : `${Math.round(zoom * 100)}%`}</button
+      >{zoom === 1 ? t.image.fit : t.reader.zoomLevel(zoom)}</button
     >
     <button type="button" class="icon" aria-label={t.image.zoomIn} onclick={() => step(1)}>+</button
     >

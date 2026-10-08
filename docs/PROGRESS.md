@@ -19,6 +19,12 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | Reader review (owner, 2026-10-06: jumps, the wheel over Contents, minimum size, Scroll-mode reveal) | Done; approved 2026-10-06 (items 53, 54); minimum window 760 × 480; released as 0.2.1 on 2026-10-06 | The owner's items reproduced with real input, then pass; full suite and local CI green | `docs/reader-review-2026-10-06.md` |
 | Scroll bars (owner, 2026-10-07: the overlay scroll bar in a recording) | Done; approved 2026-10-07 (item 55, option A: follow macOS); no product change | Measured in the app with real input, with this Mac's setting and with overlay bars (`scrollbar-survey`); local CI green | `docs/scrollbar-survey-2026-10-07.md` |
 
+## After the plan
+
+| Work | State | Plan and status |
+|---|---|---|
+| UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Stages 0–4 done (design approved, item 57); Stage 5: kit done, four machine drafts waiting for native review; Stage 6 to come | `docs/i18n-plan.md` (stage table at its end) |
+
 ## How the work is checked
 
 - **Unit tests.** `pnpm test` (Vitest) and `cargo test` (Rust); CI runs both on every push.

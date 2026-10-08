@@ -5,11 +5,11 @@
   // commands can be given a shortcut, but never one that Linen's own commands use.
   import { onMount } from 'svelte'
   import { invoke } from '@tauri-apps/api/core'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc } from '../app/ipc'
   import { changeSetting, onSettingChanged } from '../app/settingsSync'
   import { chordLabel } from '../lib/commands/keys'
-  import { SECTION_TITLES } from '../lib/commands/cheatsheet'
+  import { sectionTitle } from '../lib/commands/cheatsheet'
   import { CORE_COMMANDS, type CommandDef, type CommandSection } from '../lib/commands/registry'
   import {
     OVERRIDES_SETTING,
@@ -44,7 +44,7 @@
   const defs = $derived([...CORE_COMMANDS, ...extensionDefs])
   const groups = $derived(
     ORDER.map((s) => ({
-      title: SECTION_TITLES[s],
+      title: sectionTitle(s),
       // Esc and ⌘, stay Linen's (K14, G2); extensions' commands are all listed.
       items: defs.filter((d) => d.section === s && (d.palette || d.chord) && remappable(d)),
     })).filter((g) => g.items.length),

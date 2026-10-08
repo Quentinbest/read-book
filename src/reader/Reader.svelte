@@ -18,7 +18,8 @@
   import { LocationHistory } from '../lib/reader/history'
   import type { MessageQueue } from '../lib/reader/messages'
   import { initialState, reduce, type ReaderEvent, type ReaderState } from '../lib/reader/state'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
+  import { setBookLang } from './bookLang'
   import { THEMES, themeVariables, type Theme } from '../lib/theme/tokens'
   import { navigatorTab } from '../lib/reader/state'
   import { setPaletteChapters } from '../app/palette'
@@ -38,7 +39,7 @@
   import SelectionBar from './SelectionBar.svelte'
   import NoteCard from './NoteCard.svelte'
   import NotesPanel from './NotesPanel.svelte'
-  import { Annotations, COLOR_NAMES, COLORS, UndoStack } from './annotations.svelte'
+  import { Annotations, COLORS, UndoStack } from './annotations.svelte'
   import type { Annotation, HighlightColor } from '../lib/annotations/model'
   import { popUpMenu, type MenuEntry } from '../app/nativeMenu'
   import { MOTION, multipliedTint, parseColor } from '../lib/theme/tokens'
@@ -118,6 +119,7 @@
    * book replaced by another), and its last save would land on the wrong book.
    */
   const book = untrack(() => bookProp)
+  setBookLang(book.language)
 
   // S14: the reader's commands are attached only while it is active; a warm book in
   // the library behind keeps them, detached. Not reactive state: nothing renders from it.
@@ -560,14 +562,14 @@
       color,
     )
     if (previousColor && previousColor !== color) offerRecolorUndo(annotation, previousColor)
-    else announce(t.annotations.highlighted(COLOR_NAMES[color]))
+    else announce(t.annotations.highlighted(t.colorsInText[color]))
     closeBar(true)
     return annotation
   }
 
   function offerRecolorUndo(a: Annotation, previous: HighlightColor) {
     offerUndo(
-      t.annotations.recolored(COLOR_NAMES[a.color]),
+      t.annotations.recolored(t.colorsInText[a.color]),
       t.annotations.restoreColor(shortQuote(a.quote.exact)),
       () => annotations.setColor(a.id, previous),
     )
@@ -724,7 +726,7 @@
     e.preventDefault()
     const entries: MenuEntry[] = [
       ...(['yellow', 'green', 'blue', 'rose'] as const).map((c) => ({
-        label: `Highlight ${COLOR_NAMES[c]}`,
+        label: t.annotations.highlightCommand(t.colors[c]),
         run: () => void (existing ? recolor(existing.id, c) : highlightSelection(c)),
       })),
       null,
@@ -2203,7 +2205,7 @@
         </button>
         <div class="title" aria-live="off" style:--title-inset="{titleInset}px">
           <!-- S9: bars the pointer revealed name the book only. -->
-          <span class="book">{book.title}</span
+          <span class="book" lang={book.language ?? undefined}>{book.title}</span
           >{#if location?.chapterLabel && !lanes.chromePeek}&nbsp;·
             {location.chapterLabel}{/if}
         </div>

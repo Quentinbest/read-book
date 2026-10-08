@@ -6,7 +6,8 @@
   import { emit } from '@tauri-apps/api/event'
   import { open } from '@tauri-apps/plugin-dialog'
   import Switch from '../components/Switch.svelte'
-  import { t } from '../lib/strings/en'
+  import { AVAILABLE, LANGUAGE_NAMES, locale, t, type Locale } from '../lib/strings'
+  import { LANGUAGE_SETTING, SYSTEM, negotiate } from '../lib/strings/negotiate'
   import { ipc } from '../app/ipc'
   import { applyTheme, type ThemeChoice } from '../app/theme'
   import { changeSetting as change, onSettingChanged } from '../app/settingsSync'
@@ -34,6 +35,12 @@
   let section = $state<Section>('general')
   let theme = $state<ThemeChoice>('auto')
   let atLaunch = $state<'library' | 'book'>('library')
+  /** L-4: the `language` setting (the page's own language until it loads), and the
+   * language “System” stands for. */
+  let language = $state<string>(locale)
+  let systemLocale = $state<Locale>('en')
+  /** L-5: the choice applies at restart; until then this page keeps its language. */
+  const languagePending = $derived((language === SYSTEM ? systemLocale : language) !== locale)
   let fontPx = $state(DEFAULT_TEXT_SIZE)
   let spacing = $state('default')
   let font = $state<FontChoice>('book')
@@ -125,6 +132,11 @@
       theme = ((await get('theme')) as ThemeChoice | null) ?? 'auto'
       applyTheme(theme)
       atLaunch = (await get('openAtLaunch')) === 'book' ? 'book' : 'library'
+      if (AVAILABLE.length > 1) {
+        const stored = await get(LANGUAGE_SETTING)
+        language = AVAILABLE.find((l) => l === stored) ?? SYSTEM
+        systemLocale = negotiate(await ipc.preferredLanguages().catch(() => []), AVAILABLE)
+      }
       fontPx = Number((await get('fontPx')) ?? DEFAULT_TEXT_SIZE) || DEFAULT_TEXT_SIZE
       spacing = (await get('lineSpacing')) ?? 'default'
       font = parseFont(await get(TYPE_SETTING.font))
@@ -178,6 +190,30 @@
         atLaunch = v
         void changeSetting('openAtLaunch', v)
       })}
+      {#if AVAILABLE.length > 1}
+        <div class="field">
+          <label for="prefs-language">{t.prefs.language}</label>
+          <select
+            id="prefs-language"
+            value={language}
+            onchange={(e) => {
+              language = e.currentTarget.value
+              void changeSetting(LANGUAGE_SETTING, language)
+            }}
+          >
+            <option value={SYSTEM}>{t.prefs.languageSystem(LANGUAGE_NAMES[systemLocale])}</option>
+            {#each AVAILABLE as l (l)}<option value={l} lang={l}>{LANGUAGE_NAMES[l]}</option>{/each}
+          </select>
+          {#if languagePending}
+            <p class="help" role="status">{t.prefs.languageRestart}</p>
+            <div>
+              <button type="button" class="btn" onclick={() => void ipc.appRestart()}
+                >{t.prefs.restartNow}</button
+              >
+            </div>
+          {/if}
+        </div>
+      {/if}
     {:else if section === 'reading'}
       <div class="field">
         <label for="prefs-size">{t.prefs.textSize}</label>

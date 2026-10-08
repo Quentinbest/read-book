@@ -10,6 +10,7 @@ import { spikeE } from './e-isolation'
 import { spikeE2E, spikeMemory, spikeMemoryTrace, spikeSeed500, spikeVisual, spikeX3 } from './e2e'
 import { spikeF } from './f-search'
 import { spikeG } from './g-extension-network'
+import { spikeLang } from './i18n'
 import { spikeB, spikeBTrackpad, spikeC } from './interactive'
 
 const SPIKES: Record<string, () => Promise<SpikeResult>> = {
@@ -28,6 +29,7 @@ const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   c: spikeC,
   x3: spikeX3,
   seed500: spikeSeed500,
+  lang: spikeLang,
 }
 
 async function main() {

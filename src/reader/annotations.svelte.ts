@@ -176,13 +176,6 @@ export class Annotations {
   }
 }
 
-/** Colour names as lists show them (A4: lists always name the colour). */
-export const COLOR_NAMES: Record<HighlightColor, string> = {
-  yellow: 'Yellow',
-  green: 'Green',
-  blue: 'Blue',
-  rose: 'Rose',
-}
 export { COLORS }
 
 /**

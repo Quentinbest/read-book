@@ -1,8 +1,14 @@
 // Messages for import outcomes (wording in the catalogue; PROVISIONAL until G4).
 
-import { t } from '../lib/strings/en'
+import { t } from '../lib/strings'
 import type { MessageInput } from '../lib/reader/messages'
 import type { ImportResult } from './ipc'
+
+/** Why a file was rejected, in the UI language; an unknown code shows the core's text. */
+function reasonText(code: string, args: string[], fallback: string): string {
+  const m = (t.import.reasons as Record<string, string | ((...a: string[]) => string)>)[code]
+  return typeof m === 'function' ? m(...args) : (m ?? fallback)
+}
 
 export function importMessages(results: ImportResult[]): MessageInput[] {
   const out: MessageInput[] = []
@@ -24,7 +30,7 @@ export function importMessages(results: ImportResult[]): MessageInput[] {
             ? t.import.drm(path)
             : outcome.hostile
               ? t.import.hostile(path)
-              : t.import.rejected(path, outcome.reason),
+              : t.import.rejected(path, reasonText(outcome.code, outcome.args, outcome.reason)),
           politeness: 'assertive',
         })
         break

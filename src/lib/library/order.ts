@@ -1,6 +1,8 @@
 // Library search and sort (E6): search by title and author; sort by Recent,
 // Title or Author. Pure, so the order is tested on a 500-book fixture.
 
+import { compareText } from '../strings/format'
+
 export type SortKey = 'recent' | 'title' | 'author'
 
 export interface Sortable {
@@ -34,7 +36,8 @@ export function authorKey(authors: string[]): string {
   return [parts.at(-1), ...parts.slice(0, -1)].join(' ')
 }
 
-const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+/** L-7: titles and authors sort in the UI language's order. */
+const collator = { compare: compareText }
 
 /** Every word typed must start a word of the title or an author (in any order). */
 export function matches(book: Sortable, query: string): boolean {

@@ -4,7 +4,7 @@
   // the current theme's colours. The extension's Worker runs while the tab shows.
   // A stopped or suspended extension shows one quiet line with Restart (P6).
   import { onDestroy, onMount } from 'svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { themeVariables, type Theme } from '../lib/theme/tokens'
   import type { ExtensionHost } from '../extensions/host.svelte'
 

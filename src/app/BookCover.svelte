@@ -29,7 +29,9 @@
   {#if src}
     <img {src} alt="" loading="lazy" decoding="async" onerror={() => (failed = true)} />
   {:else if lettering}
-    <span class="ct" class:long={book.title.length > 32}>{book.title}</span>
+    <span class="ct" class:long={book.title.length > 32} lang={book.language ?? undefined}
+      >{book.title}</span
+    >
     <span class="ca">{author}</span>
   {/if}
 </div>

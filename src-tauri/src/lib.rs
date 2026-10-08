@@ -104,6 +104,7 @@ pub fn run() {
                 commands::quit_saving,
                 commands::quit_discard,
                 native::screen_reader_running,
+                native::preferred_languages,
                 native::keyboard_layout_labels,
                 native::screen_edges,
                 native::set_window_controls,
@@ -143,6 +144,7 @@ pub fn run() {
         spikes::spike_mouse_drag,
         spikes::spike_read_pasteboard,
         spikes::spike_crash_log,
+        spikes::spike_bundle_languages,
         spikes::spike_exit
     ));
     builder

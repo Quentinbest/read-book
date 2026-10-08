@@ -1,5 +1,9 @@
 // When a book was last opened, as the library says it (Screen 01):
-// “today at 21:40” (Continue reading), “yesterday”, “3 days ago”, then a date.
+// “today at 21:40” (Continue reading), “yesterday”, “3 days ago”, then a date,
+// in the UI language (L-1).
+
+import { t } from '../strings'
+import { formatDate, formatDaysAgo } from '../strings/format'
 
 const DAY = 86_400_000
 
@@ -16,11 +20,9 @@ export function daysAgo(then: number, now: number): number {
 
 export function openedAgo(then: number, now: number): string {
   const days = daysAgo(then, now)
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 7) return `${days} days ago`
+  if (days < 7) return formatDaysAgo(Math.max(0, days))
   const d = new Date(then)
-  return d.toLocaleDateString('en-GB', {
+  return formatDate(then, {
     day: 'numeric',
     month: 'short',
     year: d.getFullYear() === new Date(now).getFullYear() ? undefined : 'numeric',
@@ -29,9 +31,8 @@ export function openedAgo(then: number, now: number): string {
 
 /** Continue reading: “Opened today at 21:40”. */
 export function openedLine(then: number, now: number): string {
-  const time = new Date(then).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
   const days = daysAgo(then, now)
-  if (days <= 0) return `Opened today at ${time}`
-  if (days === 1) return `Opened yesterday at ${time}`
-  return `Opened ${openedAgo(then, now)}`
+  if (days > 1) return t.library.openedAgo(openedAgo(then, now))
+  const time = formatDate(then, { hour: '2-digit', minute: '2-digit' })
+  return t.library.openedAt(formatDaysAgo(Math.max(0, days)), time)
 }

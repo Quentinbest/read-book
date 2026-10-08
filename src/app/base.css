@@ -4,6 +4,8 @@
 :root {
   --font-ui: system-ui, -apple-system, 'SF Pro Text', 'Segoe UI Variable', sans-serif;
   --font-reading: Literata, Georgia, serif;
+  /* L-8: interface text set like the book; Chinese and Japanese UIs use --font-ui. */
+  --font-ui-display: var(--font-reading);
   --text-caption: 12px;
   --text-body: 14px;
   --text-title: 17px;
@@ -95,4 +97,27 @@ textarea {
   src: url('/fonts/Literata-Italic.ttf') format('truetype');
   font-weight: 200 900;
   font-style: italic;
+}
+
+/* Stage 4 (docs/i18n-plan.md §4): Chinese and Japanese UIs. English and Spanish
+   are unaffected. Book text the UI shows carries the book's own lang
+   (src/reader/bookLang.ts) and keeps normal line breaking. */
+:root:is(:lang(zh), :lang(ja)) {
+  /* L-8: Literata has no Chinese or Japanese; the system font sets them. */
+  --font-ui-display: var(--font-ui);
+}
+:root:is(:lang(zh), :lang(ja)) body {
+  /* Break lines between phrases, not inside a word: at spaces, and after full-width
+     punctuation, where the catalogue puts a zero-width space (strings/breaks.ts). A
+     run too long for its box still breaks. Strict rules keep 。、」 off a line start. */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  line-break: strict;
+}
+:root:is(:lang(zh), :lang(ja)) body [lang] {
+  word-break: normal;
+}
+/* Tracking suits Latin small capitals; Chinese and Japanese are set solid. */
+:root:is(:lang(zh), :lang(ja)) body * {
+  letter-spacing: normal !important;
 }

@@ -4,7 +4,7 @@
   // Back history. Anchored above the progress label.
   import { untrack } from 'svelte'
   import SegmentedControl from '../components/SegmentedControl.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import type { ContentsItem } from './contents'
 
   export type GoToTarget =
@@ -58,7 +58,7 @@
   const preview = $derived.by((): [string, string, string] | null => {
     if (mode === 'percent') {
       if (percent.trim() === '' || Number.isNaN(Number(percent))) return null
-      return [t.goto.percentIn(pct), chapterAt(pct / 100), '. ']
+      return [t.goto.percentIn(pct), chapterAt(pct / 100), t.goto.sentenceEnd]
     }
     if (mode === 'chapter') {
       const item = chapters[chapter]
@@ -67,7 +67,7 @@
     }
     if (!page.trim()) return null
     if (!pageTarget) return [t.goto.noPage(page.trim()), '', '']
-    return [t.goto.pageIn(pageTarget.label), chapterAt(pageTarget.href), '. ']
+    return [t.goto.pageIn(pageTarget.label), chapterAt(pageTarget.href), t.goto.sentenceEnd]
   })
 
   const ready = $derived(

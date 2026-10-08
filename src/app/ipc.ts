@@ -44,7 +44,15 @@ export type ImportOutcome =
   | { kind: 'imported'; book_id: string; title: string; damaged: number }
   | { kind: 'alreadyInLibrary'; book_id: string }
   | { kind: 'replaced'; book_id: string; title: string; damaged: number }
-  | { kind: 'rejected'; reason: string; hostile: boolean; drm: boolean }
+  | {
+      kind: 'rejected'
+      /** L-1: worded by `t.import.reasons[code]`; `reason` is the core's English text. */
+      code: string
+      args: string[]
+      reason: string
+      hostile: boolean
+      drm: boolean
+    }
 
 export interface ImportResult {
   path: string
@@ -116,6 +124,8 @@ export const ipc = {
   quitSaving: () => invoke<void>('quit_saving'),
   /** E5: “Quit Anyway”: leave without the changes that could not be saved. */
   quitDiscard: () => invoke<void>('quit_discard'),
+  /** L-4: macOS's preferred languages, most preferred first (follows the per-app language). */
+  preferredLanguages: () => invoke<string[]>('preferred_languages'),
   /** T6: VoiceOver running (single-key shortcuts and page-turn motion switch off). */
   screenReaderRunning: () => invoke<boolean>('screen_reader_running'),
   /** T7: what each physical key prints in the current layout, keyed by KeyboardEvent.code. */

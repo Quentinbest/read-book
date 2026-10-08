@@ -3,7 +3,7 @@
   // Safari 16.4 (provisional; styled as Screen 12's damaged-book card).
   import Modal from '../components/Modal.svelte'
   import Icon from '../components/Icon.svelte'
-  import { t } from '../lib/strings/en'
+  import { t } from '../lib/strings'
   import { ipc } from './ipc'
 
   let { open, onclose }: { open: boolean; onclose: () => void } = $props()
@@ -48,7 +48,7 @@
   }
   h2 {
     margin: 0;
-    font: 500 22px/1.25 var(--font-reading, Literata, Georgia, serif);
+    font: 500 22px/1.25 var(--font-ui-display, Literata, Georgia, serif);
   }
   .body {
     margin: 0;

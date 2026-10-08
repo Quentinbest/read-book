@@ -29,6 +29,22 @@ fn repo_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".."))
 }
 
+/// Stage 4 (docs/i18n-plan.md): `LINEN_LOCALE=<tag>` runs the page in that language;
+/// its captures and reports go to i18n-out/visual/<tag>/, away from the baselines.
+fn run_locale() -> Option<String> {
+    std::env::var("LINEN_LOCALE")
+        .ok()
+        .filter(|l| l != "en" && valid_name(l))
+}
+
+/// Where a run's captures (`docs/visual/app`) or reports (`docs/spikes/raw`) go.
+fn output_dir(default: &str) -> PathBuf {
+    match run_locale() {
+        Some(l) => repo_root().join("i18n-out/visual").join(l),
+        None => repo_root().join(default),
+    }
+}
+
 fn valid_name(name: &str) -> bool {
     !name.is_empty()
         && !name.starts_with('.')
@@ -78,7 +94,7 @@ pub fn spike_report(name: String, json: String) -> Result<String, String> {
     if !valid_name(&name) {
         return Err(format!("invalid report name: {name}"));
     }
-    let dir = repo_root().join("docs/spikes/raw");
+    let dir = output_dir("docs/spikes/raw");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.json"));
     std::fs::write(&path, json).map_err(|e| e.to_string())?;
@@ -109,6 +125,30 @@ pub fn spike_info() -> serde_json::Value {
 #[tauri::command]
 pub fn spike_log(line: String) {
     eprintln!("{line}");
+}
+
+/// i18n spike (docs/spikes/i18n-spike.md): what the main bundle offers macOS,
+/// and the language AppKit picks for it.
+#[tauri::command]
+pub fn spike_bundle_languages() -> serde_json::Value {
+    #[cfg(target_os = "macos")]
+    {
+        use objc2_foundation::NSBundle;
+        let bundle = NSBundle::mainBundle();
+        let list = |a: objc2::rc::Retained<
+            objc2_foundation::NSArray<objc2_foundation::NSString>,
+        >| { a.iter().map(|s| s.to_string()).collect::<Vec<_>>() };
+        serde_json::json!({
+            "localizations": list(bundle.localizations()),
+            "preferredLocalizations": list(bundle.preferredLocalizations()),
+            "developmentLocalization": bundle.developmentLocalization().map(|s| s.to_string()),
+            "bundleIdentifier": bundle.bundleIdentifier().map(|s| s.to_string()),
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        serde_json::Value::Null
+    }
 }
 
 #[tauri::command]
@@ -243,7 +283,12 @@ pub fn setup<R: Runtime>(app: &tauri::App<R>) -> Result<(), Box<dyn std::error::
         return Ok(());
     };
     start_canary_server(app.handle().clone());
-    let url = window.url()?.join(&format!("spikes.html?run={run}"))?;
+    let locale = run_locale()
+        .map(|l| format!("&locale={l}"))
+        .unwrap_or_default();
+    let url = window
+        .url()?
+        .join(&format!("spikes.html?run={run}{locale}"))?;
     window.navigate(url)?;
 
     // Automation safety net: never leave a hung harness running.
@@ -355,7 +400,7 @@ pub fn spike_capture<R: Runtime>(
     let ptr = window.ns_window().map_err(|e| e.to_string())? as usize;
     // SAFETY: Tauri hands out the window's own NSWindow; windowNumber is a plain getter.
     let number = unsafe { (*(ptr as *const objc2_app_kit::NSWindow)).windowNumber() };
-    let dir = repo_root().join("docs/visual/app");
+    let dir = output_dir("docs/visual/app");
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let path = dir.join(format!("{name}.png"));
     // The window server's own capture of this one window: it works wherever the
