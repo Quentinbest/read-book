@@ -57,6 +57,15 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
   - The draft got user-facing release notes.
 - **After publishing:** the update address answers 0.2.1 (HTTP 200), byte for byte the verified `latest.json`.
 
+**v0.3.0, published 2026-10-09** (https://github.com/Quentinbest/read-book/releases/tag/v0.3.0): the UI in Simplified Chinese, Traditional Chinese, Japanese and Spanish (#14, #16, #17; `docs/i18n-plan.md`), the version bump in #18. Published by Claude at the owner's request, after the check below (the owner chose “check first, then publish”).
+- **Release workflow:** the Intel build and the draft passed first time, with `pnpm/action-setup` v6 (#15). The Apple silicon build waited 15 minutes without a runner (GitHub's arm64 capacity) and was cancelled; its rerun passed.
+- **Checked before publishing:**
+  - The arm64 DMG's checksum is valid; its app is 0.3.0, declares en, zh-Hans, zh-Hant, ja and es, and its signature verifies.
+  - Installed over 0.2.1 in /Applications, with Linen's per-app language set to Japanese the way System Settings does (`AppleLanguages` in `app.linen.reader`, removed afterwards): Linen started in Japanese, the menu bar and the library included.
+  - Not seen: System Settings' list of apps, and an open panel (a ⌘O sent through System Events did not reach Linen). The spike's finding stands for both: with these languages declared, AppKit chooses the per-app language.
+  - The draft got user-facing release notes.
+- **Checked after publishing:** the update address answers 0.3.0 for both architectures. Both archives are 0.3.0 for their architecture (arm64, x86_64), verify against the key in the app with `minisign-verify` (the updater's library; trusted comment `version:0.3.0`), and a changed byte is refused; `latest.json`'s signatures equal the `.sig` files. Last time these were checked before publishing.
+
 ## Work items
 
 | Item | Status |
