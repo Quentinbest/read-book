@@ -622,7 +622,7 @@ pub fn with_ends(mdx: &Mdx, mut keys: Vec<Key>) -> Vec<(Key, u64)> {
     let mut offsets: Vec<u64> = keys.iter().map(|k| k.offset).collect();
     offsets.sort_unstable();
     offsets.dedup();
-    keys.sort_by(|a, b| a.offset.cmp(&b.offset));
+    keys.sort_by_key(|k| k.offset);
     keys.into_iter()
         .map(|k| {
             let i = offsets.partition_point(|&o| o <= k.offset);
