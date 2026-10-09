@@ -3,7 +3,8 @@
 // the provider's own, HTML, percentages or confidence scores (EQ1, EQ2). The
 // label above an answer comes from a closed set the core owns.
 
-export type LookupStatus = 'ok' | 'needs_context' | 'error'
+/** `notice` (item 76, EX8): before the first request to a host, the provider says what it will send. */
+export type LookupStatus = 'ok' | 'needs_context' | 'error' | 'notice'
 
 /** LK10: failures a provider reports; the core words them and offers the action. */
 export type LookupErrorKind = 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
@@ -25,6 +26,11 @@ export interface LookupResult {
   missing?: string
   /** LK10, error: what went wrong. */
   error?: LookupErrorKind
+  /**
+   * Item 76, notice: what the provider will send and where. The core draws Continue and
+   * Not now; Continue asks again with `acknowledged: true` in the request.
+   */
+  notice?: { title: string; text: string; host: string }
 }
 
 export const LIMITS = {
@@ -39,6 +45,8 @@ export const LIMITS = {
   model: 80,
   sent: 6000,
   missing: 300,
+  noticeTitle: 120,
+  noticeText: 600,
 } as const
 
 const TOP = new Set([
@@ -52,6 +60,7 @@ const TOP = new Set([
   'sent',
   'missing',
   'error',
+  'notice',
 ])
 const SOURCE = new Set(['kind', 'name', 'model'])
 const ERRORS = new Set<LookupErrorKind>(['offline', 'unauthorized', 'rate_limited', 'unavailable'])
@@ -87,8 +96,8 @@ export function validateResult(raw: unknown): Validated {
     const r = raw as Record<string, unknown>
     for (const k of Object.keys(r)) if (!TOP.has(k)) throw new Error(`unknown field “${k}”`)
     const status = r.status
-    if (status !== 'ok' && status !== 'needs_context' && status !== 'error')
-      throw new Error('status must be ok, needs_context or error')
+    if (status !== 'ok' && status !== 'needs_context' && status !== 'error' && status !== 'notice')
+      throw new Error('status must be ok, needs_context, error or notice')
     const s = r.source as Record<string, unknown> | undefined
     if (!s || typeof s !== 'object' || Array.isArray(s)) throw new Error('source is missing')
     for (const k of Object.keys(s))
@@ -136,6 +145,23 @@ export function validateResult(raw: unknown): Validated {
         throw new Error('error must be offline, unauthorized, rate_limited or unavailable')
       result.error = r.error as LookupErrorKind
     } else if (r.error !== undefined) throw new Error('error belongs to status error')
+    if (status === 'notice') {
+      const n = r.notice as Record<string, unknown> | undefined
+      if (!n || typeof n !== 'object' || Array.isArray(n)) throw new Error('notice is missing')
+      for (const k of Object.keys(n))
+        if (k !== 'title' && k !== 'text' && k !== 'host')
+          throw new Error(`notice has an unknown field “${k}”`)
+      const host = text(n.host, 'notice.host', 253, true)!
+      if (
+        !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*(:\d{1,5})?$/.test(host)
+      )
+        throw new Error('notice.host is not a host')
+      result.notice = {
+        title: text(n.title, 'notice.title', LIMITS.noticeTitle, true)!,
+        text: text(n.text, 'notice.text', LIMITS.noticeText, true)!,
+        host,
+      }
+    } else if (r.notice !== undefined) throw new Error('notice belongs to status notice')
     return { ok: true, result }
   } catch (e) {
     return { ok: false, why: (e as Error).message }

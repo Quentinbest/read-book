@@ -31,11 +31,13 @@ export interface LookupRequest {
   bookLang: string
   /** The language to answer in (BCP 47). */
   language: string
+  /** The reader chose Continue on your notice (status `notice`). */
+  acknowledged?: boolean
 }
 
 /** 1.1, experimental: plain text in fixed fields; Linen renders it and writes the label. */
 export interface LookupAnswer {
-  status: 'ok' | 'needs_context' | 'error'
+  status: 'ok' | 'needs_context' | 'error' | 'notice'
   headword: string
   term?: string
   meaning: string
@@ -49,6 +51,8 @@ export interface LookupAnswer {
   /** needs_context: what the passage lacks. */
   missing?: string
   error?: 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
+  /** notice: before the first request to a host; Linen draws Continue and Not now. */
+  notice?: { title: string; text: string; host: string }
 }
 
 /** A W3C Web Annotation (A9), with Linen's colour and the chapter it is in. */

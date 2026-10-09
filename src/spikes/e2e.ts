@@ -6211,6 +6211,51 @@ export async function spikeE2E(): Promise<SpikeResult> {
   )
 
   lensCheck(
+    'EX8-notice',
+    'Item 76: a provider’s first-request notice shows with Continue and Not now; nothing is sent until Continue, which asks again acknowledged',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ answer: 'notice' })
+      hooks.lookupRequests = []
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      const peek = lensPeek()!
+      if (!peek.querySelector('[data-notice]'))
+        problems.push(`no notice: “${(peek.textContent ?? '').slice(0, 80)}”`)
+      if (peek.querySelector('[data-source-label]'))
+        problems.push('a notice carries an answer label')
+      if (peek.querySelector('[data-notice] strong')?.textContent !== '127.0.0.1:8765')
+        problems.push('the host is not set apart')
+      const button = (re: RegExp) =>
+        Array.from(peek.querySelectorAll<HTMLButtonElement>('.footer button')).find((b) =>
+          re.test(b.textContent ?? ''),
+        )
+      button(/Not now/)?.click()
+      await settled(250)
+      if (lensPeek()) problems.push('Not now left the peek open')
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      const go = Array.from(lensPeek()!.querySelectorAll<HTMLButtonElement>('.footer button')).find(
+        (b) => /Continue/.test(b.textContent ?? ''),
+      )
+      if (!go) problems.push('no Continue')
+      go?.click()
+      await settled(100)
+      await waitFor(
+        'the answer after Continue',
+        () => peekState() === 'answer' && !lensPeek()?.querySelector('[data-notice]'),
+        5000,
+      ).catch(() => problems.push('Continue did not bring an answer'))
+      const acks = (hooks.lookupRequests ?? []).map(
+        (r) => !!(r.request as { acknowledged?: boolean }).acknowledged,
+      )
+      if (acks.join() !== 'false,false,true') problems.push(`requests acknowledged: ${acks.join()}`)
+    },
+  )
+
+  lensCheck(
     'LK15-single-provider',
     'With one provider the label above the answer is plain text, with no menu; with two it is a menu that switches and asks only then',
     async (problems) => {
@@ -6943,6 +6988,121 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await capture('12-extension-failure')
   pageDoc().doc.getSelection()?.removeAllRanges()
   key('Escape', { code: 'Escape' })
+
+  // Reading Lens (item 75): the lookup peek's states, from the test provider, to compare
+  // with Canvas 2–11. Paper for each state, Night for the answer and the menu, Sepia once.
+  hooks.extensions!.status['org.example.dictionary'] = 'idle'
+  await invoke('spike_install_unchecked', {
+    path: await invoke<string>('spike_corpus_path', { name: 'lookup.linenext' }),
+  })
+  await hooks.extensions!.load()
+  await emit('extensions-changed')
+  await settled(400)
+  const lensScript = (script: Record<string, unknown>) =>
+    invoke('extension_storage_set', {
+      id: 'test.lookup',
+      key: 'script',
+      value: JSON.stringify(script),
+    })
+  const peekShown = () => document.querySelector<HTMLElement>('[data-lookup]')
+  const explain = async (phrase: string, wait: (state: string | null) => boolean) => {
+    await selectPhrase(phrase)
+    await waitFor('bar', selBar)
+    barButton(startsWith(t.extensions.more))?.click()
+    await settled(150)
+    selBar()!
+      .querySelector<HTMLButtonElement>('[data-lookup-item="test.lookup/explain@en"]')!
+      .click()
+    await waitFor(
+      'the peek',
+      () => peekShown() && wait(peekShown()!.getAttribute('data-state')),
+      5000,
+    )
+    ;(document.activeElement as HTMLElement | null)?.blur()
+  }
+  const peekButton = (re: RegExp) =>
+    Array.from(peekShown()?.querySelectorAll<HTMLButtonElement>('button') ?? []).find((b) =>
+      re.test(b.textContent ?? ''),
+    )
+  const closeLens = async () => {
+    key('Escape', { code: 'Escape' })
+    await settled(300)
+  }
+  const lensStates = async (theme: string, states: string[]) => {
+    await openIn(theme)
+    await hideControls()
+    clearMessage()
+    const answered = (s: string | null) => s !== 'pending'
+    if (states.includes('pending')) {
+      await lensScript({ delayMs: 60_000 })
+      await explain('spleen', (s) => s === 'pending')
+      await capture(`rl-02-pending-${theme}`)
+      await closeLens()
+    }
+    await lensScript({ details: true })
+    if (states.includes('answer')) {
+      await explain('spleen', answered)
+      await capture(`rl-03-answer-${theme}`)
+      if (states.includes('more')) {
+        peekButton(/^More$/)?.click()
+        await capture(`rl-04-more-${theme}`)
+      }
+      if (states.includes('menu')) {
+        peekShown()!.querySelector<HTMLButtonElement>('button.provider')?.click()
+        await settled(200)
+        ;(document.activeElement as HTMLElement | null)?.blur()
+        await capture(`rl-05-menu-${theme}`)
+        key('Escape', { code: 'Escape' })
+        await settled(200)
+      }
+      if (states.includes('sent')) {
+        peekButton(/What was sent/)?.click()
+        await capture(`rl-06-sent-${theme}`)
+      }
+      await closeLens()
+    }
+    for (const [state, script] of [
+      ['needs-context', { answer: 'needs_context' }],
+      ['notice', { answer: 'notice' }],
+      ['error-offline', { answer: 'offline' }],
+      ['error-key', { answer: 'unauthorized' }],
+    ] as const) {
+      if (!states.includes(state)) continue
+      await lensScript(script)
+      await explain('spleen', answered)
+      await capture(
+        `rl-${state === 'needs-context' ? '07' : state === 'notice' ? '08' : '09'}-${state}-${theme}`,
+      )
+      await closeLens()
+    }
+    if (states.includes('mac')) {
+      await selectPhrase('spleen')
+      await pressBar(new RegExp(`^${escapeRegExp(t.lookUp.action)}$`))
+      await waitFor(
+        'definition',
+        () => peekShown() && !/Looking up/.test(peekShown()!.textContent ?? ''),
+        5000,
+      )
+      ;(document.activeElement as HTMLElement | null)?.blur()
+      await capture(`rl-11-mac-dictionary-${theme}`)
+      await closeLens()
+    }
+    pageDoc().doc.getSelection()?.removeAllRanges()
+  }
+  await lensStates('paper', [
+    'pending',
+    'answer',
+    'more',
+    'menu',
+    'sent',
+    'needs-context',
+    'notice',
+    'error-offline',
+    'error-key',
+    'mac',
+  ])
+  await lensStates('night', ['answer', 'menu', 'mac'])
+  await lensStates('sepia', ['answer'])
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   const crowded = Object.entries(overflow).filter(([, v]) => v.length)
   const untranslated = Object.entries(english).filter(([, v]) => v.length)

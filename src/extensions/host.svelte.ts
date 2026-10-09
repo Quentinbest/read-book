@@ -69,6 +69,8 @@ export interface LookupRequest {
   bookLang: string
   /** LK11: the language to answer in (BCP 47). */
   language: string
+  /** Item 76: the reader chose Continue on the provider's notice. */
+  acknowledged?: boolean
 }
 
 export class ExtensionHost {

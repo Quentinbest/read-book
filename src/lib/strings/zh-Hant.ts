@@ -495,6 +495,8 @@ export const zhHant: Messages = {
     badAnswer: (name: string) => `${name} 傳來的回答無法顯示。`,
     stopped: (name: string) => `${name} 停止回應。`,
     stoppedDetail: '閱讀未受影響。',
+    continue: '繼續',
+    notNow: '以後再說',
     tryAgain: '再試一次',
     restart: (name: string) => `重新啟動 ${name}`,
   },

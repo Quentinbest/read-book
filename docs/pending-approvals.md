@@ -169,3 +169,15 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
 76. **The first-request notice has no shape in LK2 (Canvas 8, EX8).** Explain shows its own notice before the first request to a host (“Explain sends text to DeepSeek · Continue · Not now”), but LK2's fields cannot carry it, so the core renders nothing for it.
     *Recommendation:* add a `notice` status to LK2 (title, text, the host, Continue and Not now; the core draws the buttons), before Stage 3.
     **Approved 2026-10-09.**
+
+## Reading Lens follow-ups (2026-10-09)
+
+77. **Lookup peek baselines (item 75).** Captured with `scripts/e2e.sh v` on the current desktop (active window), in `docs/visual/app/`:
+    - Paper: `rl-02-pending`, `rl-03-answer`, `rl-04-more`, `rl-05-menu`, `rl-06-sent`, `rl-07-needs-context`, `rl-08-notice`, `rl-09-error-offline`, `rl-09-error-key`, `rl-11-mac-dictionary`;
+    - Night: `rl-03-answer`, `rl-05-menu`, `rl-11-mac-dictionary`; Sepia: `rl-03-answer`.
+
+    They follow Canvas 2–11 in layout and wording, with the test provider's text. Two differences from the canvas: the pending line names the extension (“Asking Test Lookup…”), where the canvas names the model's provider (“Asking DeepSeek…”), because Explain's name is the extension's; and errors have no “Open options” or “Change key” until Stage 2d.
+    Two approved screens change on purpose: `11-settings-extensions` (the sample Dictionary is 0.5.0 and adds “Free Dictionary” in the lookup peek) and `12-extension-failure` (the stuck Dictionary's lookup joins its action in “⋯”, with one Restart for both; the focus ring is the bar's ink, item 73).
+    `03-more-menu`, `04-navigator-contents`, `05-navigator-search`, `16-command-palette` and `17-goto` also differ from their baselines (0.1–1.1% of pixels: a visible scroll bar, shortcut glyph edges, search snippets). This branch does not change them; their baselines were taken on Desktop 2 on 2026-10-08. Not verified against a capture from `main`.
+    *Recommendation:* approve the 14 peek captures and the two changed screens as baselines (`docs/visual/APPROVAL.md`).
+

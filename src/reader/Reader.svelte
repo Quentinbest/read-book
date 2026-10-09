@@ -980,7 +980,9 @@
   /** The longest text looked up: a phrase, not a passage. */
   const LOOKUP_MAX = 80
   const bookLanguageName = $derived(
-    book.language && primaryLang(book.language) ? languageName(book.language, locale) : '',
+    book.language && primaryLang(book.language)
+      ? languageName(primaryLang(book.language), locale)
+      : '',
   )
 
   function selectionTarget(sel: SelectionEvent): LookupTarget {
@@ -1088,7 +1090,7 @@
     lookup = { ...lookup, invocation: null }
   }
   /** Ask the current provider; only the reader's choice sends anything (EP1, LK11). */
-  function ask() {
+  function ask(acknowledged = false) {
     const l = lookup
     if (!l) return
     cancelLookupRequest()
@@ -1123,6 +1125,7 @@
       },
       bookLang: primaryLang(book.language),
       language: p.language ?? 'en',
+      ...(acknowledged ? { acknowledged } : {}),
     }
     const { invocation, result } = extensions.lookup(extId, p.lookupId!, request, {
       text: l.text,
@@ -2381,12 +2384,14 @@
           dispatch({ type: 'closeFloating' })
           searchFor(word)
         }}
-        onretry={ask}
+        onretry={() => ask()}
+        oncontinue={() => ask(true)}
+        onnotnow={() => dispatch({ type: 'closeFloating' })}
         onrestart={() => {
           const extId =
             lookup?.invocation?.extId ??
             lookup?.providers.find((p) => p.key === lookup?.current)?.extId
-          if (extId) void extensions.restart(extId).then(ask)
+          if (extId) void extensions.restart(extId).then(() => ask())
         }}
       />
     {/if}

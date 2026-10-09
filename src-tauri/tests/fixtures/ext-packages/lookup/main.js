@@ -4,7 +4,7 @@
 // follows it. It echoes what it was sent in `sent`, so checks can compare the context
 // (LK5, EP3), and counts the cancellations it heard (LK4).
 //
-// script: { delayMs, answer: 'ok' | 'needs_context' | 'offline' | 'unauthorized' |
+// script: { delayMs, answer: 'ok' | 'notice' | 'needs_context' | 'offline' | 'unauthorized' |
 //           'rate_limited' | 'bad' | 'crash' | 'fetch', details: boolean }
 'use strict'
 
@@ -36,6 +36,20 @@ linen.lookups.register('explain', async (request, { signal }) => {
   const source = { kind: 'ai', name: 'Test', model: 'test-model' }
   const headword = request.text
   switch (script.answer) {
+    case 'notice':
+      // Item 76: nothing goes out before the reader chooses Continue.
+      if (!request.acknowledged)
+        return {
+          status: 'notice',
+          headword,
+          notice: {
+            title: 'Test sends text to 127.0.0.1',
+            text: 'To explain this, Test sends the sentence and one on each side to 127.0.0.1:8765.',
+            host: '127.0.0.1:8765',
+          },
+          source,
+        }
+      break
     case 'needs_context':
       return {
         status: 'needs_context',

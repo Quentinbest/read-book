@@ -848,6 +848,12 @@
       "evidence": "ok"
     },
     {
+      "id": "EX8-notice",
+      "description": "Item 76: a provider’s first-request notice shows with Continue and Not now; nothing is sent until Continue, which asks again acknowledged",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "LK15-single-provider",
       "description": "With one provider the label above the answer is plain text, with no menu; with two it is a menu that switches and asks only then",
       "verdict": "pass",
@@ -855,7 +861,7 @@
     },
     {
       "id": "LK1-fixed-layout",
-      "description": "O13 (provisional): a fixed-layout book offers no extension lookups",
+      "description": "O13 (approved 2026-10-09): a fixed-layout book offers no extension lookups",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -902,7 +908,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791542991,
+    "time": 1791550937,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

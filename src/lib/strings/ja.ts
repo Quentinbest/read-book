@@ -505,6 +505,8 @@ export const ja: Messages = {
     badAnswer: (name: string) => `${name} から表示できない回答が届きました。`,
     stopped: (name: string) => `${name} が応答しなくなりました。`,
     stoppedDetail: '読書には影響ありません。',
+    continue: '続ける',
+    notNow: '今はしない',
     tryAgain: 'もう一度試す',
     restart: (name: string) => `${name} を再起動`,
   },

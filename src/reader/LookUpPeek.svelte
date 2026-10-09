@@ -48,6 +48,8 @@
     onopen,
     onretry,
     onrestart,
+    oncontinue,
+    onnotnow,
   }: {
     word: string
     /** The book's language, for the word and the quoted sentence (EA2). */
@@ -67,6 +69,9 @@
     onopen: () => void
     onretry: () => void
     onrestart: () => void
+    /** Item 76: the first-request notice's buttons. */
+    oncontinue: () => void
+    onnotnow: () => void
   } = $props()
 
   const GAP = 12
@@ -78,6 +83,8 @@
   let natural = $state(0)
   let view = $state<'main' | 'more' | 'sent'>('main')
   let menuOpen = $state(false)
+  /** Where the menu hangs, under its button (it sits on the peek, outside the scrolling answer). */
+  let menuTop = $state(36)
   let winW = $state(innerWidth)
   let winH = $state(innerHeight)
 
@@ -185,6 +192,11 @@
       : t.lens.lookUpWord(word),
   )
 
+  /** The notice's text with its host set apart (Canvas 8). */
+  function noticeParts(text: string, host: string): string[] {
+    return text.split(new RegExp(`(${host.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`))
+  }
+
   function menuKey(e: KeyboardEvent) {
     const items = Array.from(
       peek?.querySelectorAll<HTMLElement>('.menu [role="menuitemradio"]') ?? [],
@@ -239,7 +251,9 @@
           aria-haspopup="menu"
           aria-expanded={menuOpen}
           data-provider-label
-          onclick={() => {
+          onclick={(e) => {
+            const b = (e.currentTarget as HTMLElement).getBoundingClientRect()
+            menuTop = b.bottom - (peek?.getBoundingClientRect().top ?? 0) + 4
             menuOpen = !menuOpen
             if (menuOpen)
               requestAnimationFrame(() =>
@@ -251,40 +265,10 @@
           ></button
         >
       {/if}
-      {#if label && shown.kind !== 'pending' && shown.kind !== 'error'}
+      {#if label && shown.kind !== 'pending' && shown.kind !== 'error' && result?.status !== 'notice'}
         <span class="meta label" data-source-label>{label}</span>
       {/if}
     </div>
-
-    {#if menuOpen}
-      <div
-        class="menu"
-        role="menu"
-        aria-label={t.lens.lookUpWith}
-        tabindex="-1"
-        onkeydown={menuKey}
-      >
-        {#each menu.items as item, i (item.key)}
-          {#if i > 0 && menu.items[i - 1].group !== item.group}
-            <span class="sep" aria-hidden="true"></span>
-          {/if}
-          <button
-            type="button"
-            role="menuitemradio"
-            aria-checked={item.checked}
-            tabindex="-1"
-            onclick={() => {
-              menuOpen = false
-              if (!item.checked) onprovider(item.key)
-            }}
-          >
-            <svg class="check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"
-              >{#if item.checked}<path d="M5 12.5l4.5 4.5L19 7.5" />{/if}</svg
-            >{item.label}
-          </button>
-        {/each}
-      </div>
-    {/if}
 
     <div class="body" aria-live="polite">
       {#if shown.kind === 'pending'}
@@ -311,6 +295,16 @@
       {:else if result && view === 'sent'}
         <p class="meta">{t.lens.sentBy(name)}</p>
         <pre class="sent" lang={wordLang}>{result.sent}</pre>
+      {:else if result?.status === 'notice' && result.notice}
+        <!-- Item 76 (EX8): the provider's notice; only Continue sends anything. -->
+        <div class="notice" data-notice>
+          <p class="notice-title">{result.notice.title}</p>
+          <p class="notice-text">
+            {#each noticeParts(result.notice.text, result.notice.host) as part, i (i)}{#if part === result.notice.host}<strong
+                  >{part}</strong
+                >{:else}{part}{/if}{/each}
+          </p>
+        </div>
       {:else if result}
         <div lang={answerLang}>
           {#if result.status === 'needs_context'}
@@ -348,6 +342,9 @@
         {/if}
       {:else if result && view === 'sent'}
         <button type="button" onclick={() => (view = 'main')}>{t.lens.back}</button>
+      {:else if result?.status === 'notice'}
+        <button type="button" class="primary" onclick={oncontinue}>{t.lens.continue}</button>
+        <button type="button" onclick={onnotnow}>{t.lens.notNow}</button>
       {:else if result?.status === 'needs_context'}
         <button type="button" onclick={onsearch}>{t.lens.searchInBook}</button>
       {:else if result}
@@ -366,6 +363,36 @@
           >
         {/if}
       {/if}
+    </div>
+  {/if}
+  {#if menuOpen}
+    <div
+      class="menu"
+      style:top="{menuTop}px"
+      role="menu"
+      aria-label={t.lens.lookUpWith}
+      tabindex="-1"
+      onkeydown={menuKey}
+    >
+      {#each menu.items as item, i (item.key)}
+        {#if i > 0 && menu.items[i - 1].group !== item.group}
+          <span class="sep" aria-hidden="true"></span>
+        {/if}
+        <button
+          type="button"
+          role="menuitemradio"
+          aria-checked={item.checked}
+          tabindex="-1"
+          onclick={() => {
+            menuOpen = false
+            if (!item.checked) onprovider(item.key)
+          }}
+        >
+          <svg class="check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"
+            >{#if item.checked}<path d="M5 12.5l4.5 4.5L19 7.5" />{/if}</svg
+          >{item.label}
+        </button>
+      {/each}
     </div>
   {/if}
   <span class="pointer" aria-hidden="true"></span>
@@ -482,7 +509,6 @@
   .menu {
     position: absolute;
     left: 10px;
-    top: 36px;
     z-index: 3;
     display: flex;
     flex-direction: column;
@@ -647,6 +673,20 @@
   }
   .footer button:hover {
     background: var(--hover-wash);
+  }
+  .footer .primary {
+    background: var(--accent);
+    color: var(--popover);
+  }
+  .notice-title {
+    margin-top: 6px !important;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .notice-text {
+    margin-top: 4px !important;
+    font-size: 13px;
+    line-height: 1.5;
   }
   .footer .link {
     background: none;

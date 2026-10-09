@@ -71,6 +71,16 @@
 
   let menuOpen = $state(false)
   const stuck = (status: string) => status === 'not-responding' || status === 'suspended'
+  /** Extension actions are for a new selection only. */
+  const menuActions = $derived(mode === 'new' ? extensionActions : [])
+  /** One Restart per stuck extension, after its last item (a lookup and an action may share one). */
+  const restartAfter = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local to the derivation
+    const last = new Map<string, string>()
+    for (const l of lookups) if (stuck(l.status)) last.set(l.extId, `l:${l.key}`)
+    for (const a of menuActions) if (stuck(a.status)) last.set(a.extId, `a:${a.extId}/${a.command}`)
+    return new Set(last.values())
+  })
 
   const GAP = 12
   const FLIP_BELOW = 56
@@ -180,8 +190,7 @@
         <Icon name="dictionary" size={16} />{t.lookUp.action}
       </button>
     {/if}
-    {@const actions = mode === 'new' ? extensionActions : []}
-    {#if lookups.length || actions.length}
+    {#if lookups.length || menuActions.length}
       <span class="divider" aria-hidden="true"></span>
       <button
         type="button"
@@ -215,7 +224,7 @@
                   >{t.extensions.notResponding}</span
                 >{/if}</button
             >
-            {#if stuck(l.status)}
+            {#if restartAfter.has(`l:${l.key}`)}
               <button
                 type="button"
                 role="menuitem"
@@ -227,10 +236,10 @@
               >
             {/if}
           {/each}
-          {#if lookups.length && actions.length}
+          {#if lookups.length && menuActions.length}
             <span class="sep" aria-hidden="true"></span>
           {/if}
-          {#each actions as a (a.extId + a.command)}
+          {#each menuActions as a (a.extId + a.command)}
             <button
               type="button"
               role="menuitem"
@@ -244,7 +253,7 @@
                   >{t.extensions.notResponding}</span
                 >{/if}</button
             >
-            {#if stuck(a.status)}
+            {#if restartAfter.has(`a:${a.extId}/${a.command}`)}
               <button
                 type="button"
                 role="menuitem"
@@ -325,8 +334,10 @@
   .action:hover {
     background: var(--selbar-hover);
   }
+  /* Item 73 (O7, approved 2026-10-09): the accent ring was 2.24:1 on Paper's bar and 1.90:1 at
+     Night, under 3:1; the bar's own ink holds 7:1 or more in every theme. */
   .action:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--selbar-ink);
     outline-offset: 1px;
   }
   .strong {
@@ -385,7 +396,7 @@
     opacity: 0.7;
   }
   .item:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--selbar-ink);
     outline-offset: -2px;
   }
   .stuck {

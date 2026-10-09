@@ -493,6 +493,8 @@ export const zhHans: Messages = {
     badAnswer: (name: string) => `${name} 发来的回答无法显示。`,
     stopped: (name: string) => `${name} 停止响应。`,
     stoppedDetail: '阅读未受影响。',
+    continue: '继续',
+    notNow: '以后再说',
     tryAgain: '重试',
     restart: (name: string) => `重新启动 ${name}`,
   },

@@ -39,8 +39,9 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 - **The core “Look up” is this Mac's dictionaries.** The plan predates 1.1's Look Up (item 61). Linen's MDX dictionaries join in Stage 2b.
 - **The sample Dictionary keeps its Navigator tab** and adds a lookup (“Free Dictionary”) beside it, so the existing P10 checks still cover selection actions and tabs.
 - **Fixed-layout books** keep the Mac's Look Up; only extension lookups are off there (item 67).
-- **The first-request notice (Canvas 8, EX8)** has no LK2 field. Explain owns it; the core renders nothing for it yet. It needs a shape (a `notice` status with Continue / Not now) before Stage 3.
+- **The first-request notice (Canvas 8, EX8)** is LK2's `notice` status (item 76): the provider gives the title, text and host; Linen draws Continue and Not now, and Continue asks again with `acknowledged: true`. Check `EX8-notice`.
 - **Explain options… and key errors' “Change key”** wait for Stage 2d; a key error shows no action in 2a.
+- **The selection bar's focus ring** is the bar's ink (item 73), 7:1 or more in every theme, where the accent was 2.24:1 on Paper and 1.90:1 at Night.
 
 ### Spike H (§6.5) — passed
 
@@ -54,11 +55,11 @@ Machine: Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop. The suite's l
 |---|---|---|
 | AC1–AC8, AC10–AC13 with the test provider, 20 of 20 where stated | **Pass** | AC1 `EP1-no-request-on-select` (net.fetch spy and canary); AC2 `LK1-menu-items` (when-clause, 41 words, safe mode, ⌘K); AC3 `LK1-peek-placement` (within a frame, below with pointer, above at the page foot; Pages and Scroll); AC4 `LK5-repeated-string`; AC5 `LK5-context-bounds`; AC6 `LK4-cancel-stale` (20 of 20, and the provider heard 20 cancellations); AC7 `LK4-position-integrity` (20 runs); AC8 `EQ1-labels`; AC10 `LK10-failure-states`; AC11 `EA1-focus-and-announce` (role and label, polite live region, Tab and Esc, axe, 7:1 in Paper, Sepia and Night); AC12 `EB1-budgets-pending` (turn p95 3.0 ms with a request pending); AC13 `D1-no-uncaught-errors` |
 | The §6.6 Stage 2a checks, alone and in the full suite | **Partly** | Built and passing: `LK14-highlight-lookup`, `LK13-no-room`, `LK12-close-triggers` (resize, ⌘+, Navigator, page turn, a jump, ⌘L; theme keeps it), `LK1-fixed-layout`, `LK15-single-provider`, `LK5-chunk-boundary`, `LK5-context-cleanup`, `LK4-rapid`, `S14-warm-cancel`, `N5-quit-pending`, `EP3-context-excludes`, `EP5-crashlog-clean`. **Not built:** `LK9-language-fallback` (the corpus has no book without a language or with `und`; covered by unit tests), `LK1-layouts` (spread, vertical, right-to-left), `LK1-touch`, `EA1-keyboard-path` (F7 caret path), `EA3-reduced-motion` and `X7-peek-forced-colours` (the CSS is in place; the harness cannot switch these media queries) |
-| Visual baselines for Canvas 2–9, Paper and Night | **Not done** | No captures yet; they need the owner's approval once taken (§6.4) |
+| Visual baselines for Canvas 2–9, Paper and Night | **Captured; waiting for approval (item 77)** | 14 peek captures in `docs/visual/app/rl-*.png` (Paper, Night, Sepia once); reviewing them found and fixed a provider menu clipped by the scrolling answer, a source label reading “American English”, and a doubled Restart in “⋯” |
 | Page-turn and memory budgets | **Turns pass; memory not measured** | `I6-turn-budget` p95 8 ms within and 3 ms across chapters (final run); `EB1` above. `scripts/perf-memory.sh` was not run on this branch |
 
 ### Runs
 
 - **Unit tests:** `pnpm test` 391 passed (6 skipped drafts); `cargo test` 66 passed (1 ignored) plus 2 migration tests; `pnpm check`, `pnpm lint`, `pnpm format:check`, `cargo clippy -D warnings`, `cargo fmt --check` clean.
-- **In-app, full suite:** first run 135/141 (five load flakes while other checks ran at the same time, and P10 against a stale sample package); each passed alone. Second run 146/147 (Spike H timing, fixed above). **Final run: 149/149**, with Spike H's worst context at 2 ms and `I6-turn-budget` p95 8 ms within and 3 ms across chapters.
+- **In-app, full suite:** first run 135/141 (five load flakes while other checks ran at the same time, and P10 against a stale sample package); each passed alone. Second run 146/147 (Spike H timing, fixed above). **Final run: 149/149**; after items 73, 75 and 76, 150/150, with Spike H's worst context at 2 ms and `I6-turn-budget` p95 8 ms within and 3 ms across chapters.
 - **Found and fixed by the checks:** a removed extension kept its “not responding” state when installed again (`host.svelte.ts`); leaving a book cold did not cancel a pending lookup (`Reader.svelte`); whitespace between indented blocks counted as a sentence, so the sentence before a chunk was lost (`context.ts`, with a unit test).

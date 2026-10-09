@@ -518,6 +518,8 @@ export const es: Messages = {
     badAnswer: (name: string) => `${name} envió una respuesta que Linen no puede mostrar.`,
     stopped: (name: string) => `${name} dejó de responder.`,
     stoppedDetail: 'La lectura no se vio afectada.',
+    continue: 'Continuar',
+    notNow: 'Ahora no',
     tryAgain: 'Reintentar',
     restart: (name: string) => `Reiniciar ${name}`,
   },

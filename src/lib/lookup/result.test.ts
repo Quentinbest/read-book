@@ -88,6 +88,36 @@ describe('LK2 result validator', () => {
   })
 })
 
+describe('item 76: the first-request notice', () => {
+  const notice = {
+    status: 'notice',
+    headword: 'invalidates',
+    notice: {
+      title: 'Explain sends text to DeepSeek',
+      text: 'To explain this, Explain sends the sentence and one on each side.',
+      host: 'api.deepseek.com',
+    },
+    source: { kind: 'ai', name: 'DeepSeek' },
+  }
+  it('accepts a notice with a title, its text and the host', () => {
+    const v = validateResult(notice)
+    expect(v.ok).toBe(true)
+    if (v.ok) expect(v.result.notice?.host).toBe('api.deepseek.com')
+  })
+  it('refuses a notice without a host, with markup, or outside its status', () => {
+    expect(
+      validateResult({ ...notice, notice: { ...notice.notice, host: 'https://x.org/' } }),
+    ).toMatchObject({ ok: false })
+    expect(
+      validateResult({ ...notice, notice: { ...notice.notice, text: '<a href=x>ok</a>' } }),
+    ).toMatchObject({ ok: false })
+    expect(
+      validateResult({ ...notice, notice: { ...notice.notice, button: 'Accept' } }),
+    ).toMatchObject({ ok: false })
+    expect(validateResult({ ...notice, status: 'ok', meaning: 'm' })).toMatchObject({ ok: false })
+  })
+})
+
 describe('LK11, LK15, EQ1 providers', () => {
   const lookups = [{ extId: 'org.test.explain', id: 'explain', title: 'Explain', name: 'Explain' }]
 

@@ -546,6 +546,8 @@ export const en = {
     badAnswer: (name: string) => `${name} sent an answer Linen can’t show.`,
     stopped: (name: string) => `${name} stopped responding.`,
     stoppedDetail: 'Reading wasn’t affected.',
+    continue: 'Continue',
+    notNow: 'Not now',
     tryAgain: 'Try again',
     restart: (name: string) => `Restart ${name}`,
   },

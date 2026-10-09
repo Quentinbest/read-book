@@ -76,8 +76,9 @@ A lookup answers in the lookup peek, under the selection (Reading Lens, `docs/re
 - **Answer it** with `linen.lookups.register(id, handler)`. The handler gets the request (`text`, `context`, `bookLang`, `language`) and `{ signal }`; it returns the fields below. `book.selection()` gives the same selection, with its context, while the lookup runs.
 - **The context** is `{ before, sentence, after, paragraph, chapter }`: whole sentences around the selection in its own chapter, 1,200 characters at most in all. It never includes other chapters, front matter, highlights or notes; footnote markers and soft hyphens are taken out.
 - **The answer** is plain text in fixed fields, which Linen renders:
-  `{ status: "ok" | "needs_context" | "error", headword, term?, meaning, qualifier?, details?: [{ label, text }], source: { kind: "ai" | "dictionary", name, model? }, sent?, missing?, error? }`.
+  `{ status: "ok" | "needs_context" | "error" | "notice", headword, term?, meaning, qualifier?, details?: [{ label, text }], source: { kind: "ai" | "dictionary", name, model? }, sent?, missing?, error?, notice? }`.
   - `qualifier` is shown with the meaning, never only under More; `missing` (for `needs_context`) says what the passage lacks; `error` is `offline`, `unauthorized`, `rate_limited` or `unavailable`.
+  - `notice` (`{ title, text, host }`) says, before the first request to a host, what will be sent and where. Linen shows it with Continue and Not now; Continue asks again with `acknowledged: true` in the request, and Not now closes the peek. Send nothing until then.
   - Linen writes the label above the answer itself: “AI explanation · ‹model›” or “Dictionary · ‹name›”.
   - An answer with an unknown field, a label of its own, markup, or a percentage or confidence score is refused, and the peek says the answer can't be shown.
 - **Closing the peek cancels the request.** `signal` aborts; whatever the handler returns afterwards is dropped. The 10 s work budget and the watchdog apply as for commands.
