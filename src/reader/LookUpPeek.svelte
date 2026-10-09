@@ -5,7 +5,9 @@
   export type PeekState =
     | { kind: 'pending' }
     /** 1.1's Mac dictionaries: undefined while looking up, null when none has the word. */
-    | { kind: 'mac'; definition: string | null | undefined }
+    | { kind: 'mac'; definition: string | null | undefined; noEntry?: boolean }
+    /** Stage 2b: an entry from one of the reader's dictionaries, in its own frame (DX6). */
+    | { kind: 'dict'; url: string; title: string }
     | { kind: 'answer'; result: LookupResult }
     | {
         kind: 'error'
@@ -50,6 +52,7 @@
     onrestart,
     oncontinue,
     onnotnow,
+    onexplain,
   }: {
     word: string
     /** The book's language, for the word and the quoted sentence (EA2). */
@@ -72,6 +75,8 @@
     /** Item 76: the first-request notice's buttons. */
     oncontinue: () => void
     onnotnow: () => void
+    /** DX14, Canvas 11: “Explain in context”, when an Explain-like lookup applies. */
+    onexplain?: () => void
   } = $props()
 
   const GAP = 12
@@ -83,6 +88,9 @@
   let natural = $state(0)
   let view = $state<'main' | 'more' | 'sent'>('main')
   let menuOpen = $state(false)
+  /** DX5: entry links navigate the frame; Back returns to the entry the peek opened on. */
+  let frameLoads = $state(0)
+  let frameKey = $state(0)
   /** Where the menu hangs, under its button (it sits on the peek, outside the scrolling answer). */
   let menuTop = $state(36)
   let winW = $state(innerWidth)
@@ -280,11 +288,26 @@
           </p>
         {/if}
         <p class="asking"><span class="progress" aria-hidden="true"></span>{t.lens.asking(name)}</p>
+      {:else if shown.kind === 'dict'}
+        <!-- DX6, DX7: sanitised, no scripts, on the light card; text is selectable. -->
+        {#key `${shown.url}#${frameKey}`}
+          <iframe
+            class="entry"
+            src={shown.url}
+            title={t.lens.dictionaryFrame(shown.title)}
+            sandbox=""
+            referrerpolicy="no-referrer"
+            data-dict-frame
+            onload={() => (frameLoads += 1)}
+          ></iframe>
+        {/key}
       {:else if shown.kind === 'mac'}
         {#if shown.definition === undefined}
           <p class="missing">{t.lookUp.looking}</p>
         {:else if shown.definition === null}
-          <p class="missing">{t.lookUp.none(word)}</p>
+          <p class="missing" data-no-entry>
+            {shown.noEntry ? t.lens.noEntry(word) : t.lookUp.none(word)}
+          </p>
         {:else}
           <div class="definition" lang={wordLang}>
             {#each paragraphs as p, i (i)}<p>{p}</p>{/each}
@@ -331,8 +354,27 @@
 
   {#if shown.kind !== 'pending'}
     <div class="footer">
-      {#if shown.kind === 'mac'}
-        <button type="button" onclick={onopen}>{t.lookUp.openDictionary}</button>
+      {#if shown.kind === 'dict'}
+        {#if frameLoads > 1}
+          <button
+            type="button"
+            onclick={() => {
+              frameLoads = 0
+              frameKey += 1
+            }}>{t.lens.back}</button
+          >
+        {/if}
+        {#if onexplain}
+          <button type="button" onclick={onexplain}>{t.lens.explainInContext}</button>
+        {/if}
+        <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
+      {:else if shown.kind === 'mac'}
+        {#if shown.definition !== null}
+          <button type="button" onclick={onopen}>{t.lookUp.openDictionary}</button>
+        {/if}
+        {#if onexplain}
+          <button type="button" onclick={onexplain}>{t.lens.explainInContext}</button>
+        {/if}
         <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
       {:else if shown.kind === 'error'}
         {#if shown.error === 'stopped'}
@@ -629,6 +671,15 @@
   .details dd {
     margin: 0;
     font: 400 15px/1.55 var(--font-reading, Literata, Georgia, serif);
+  }
+  .entry {
+    display: block;
+    width: 100%;
+    height: min(240px, 30vh);
+    margin-top: 8px;
+    border: 1px solid var(--hairline);
+    border-radius: 8px;
+    background: #fffdf9;
   }
   .missing,
   .error {

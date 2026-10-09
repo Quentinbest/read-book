@@ -192,18 +192,35 @@ def write(path, entries, *, version='2.0', encrypted=0, encoding='UTF-8', kind=2
 PNG_1x1 = bytes.fromhex(
     '89504e470d0a1a0a0000000d4948445200000001000000010806000000'
     '1f15c4890000000d4944415478da63f8cfc0f01f0005050201a5b2a8c60000000049454e44ae426082')
-CSS = b'.hw { font-weight: bold; color: #1a1a6e } .pos { font-style: italic }'
+CSS = b'.hw { font-weight: bold; font-size: 26px; color: #1a1a6e } .pos { font-style: italic }'
+
+
+def png(w, h, rgb):
+    """A solid PNG: big enough for a capture to find (Spike I)."""
+    row = b'\x00' + bytes(rgb) * w
+    raw = zlib.compress(row * h, 9)
+
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
+    return (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0))
+            + chunk(b'IDAT', raw) + chunk(b'IEND', b''))
+
+
+RED = png(24, 24, (220, 30, 30))
 
 ENTRIES = [
     ('invalidate', '<link rel="stylesheet" href="test.css"><div class="hw">in·val·i·date</div>'
                    '<span class="pos">verb</span><ol><li>to show that an argument or claim is wrong '
-                   '<span lang="zh">证明……不成立</span></li></ol><img src="dot.png" alt="">'),
+                   '<span lang="zh">证明……不成立</span></li></ol><img src="dot.png" alt=""><img src="red.png" alt="">'),
     ('Invalidate', '<div class="hw">Invalidate</div><p>A second entry with the same folded headword.</p>'),
-    ('cache', '<div class="hw">cache</div><p>a store of data kept close at hand '
-              '<a href="entry://invalidate">see invalidate</a></p>'),
+    ('cache', '<p style="margin:0"><a href="entry://invalidate" style="display:block;height:44px;line-height:44px">'
+              'see invalidate</a></p><div class="hw">cache</div><p>a store of data kept close at hand</p>'),
     ('caches', '@@@LINK=cache'),
     ('cycle-a', '@@@LINK=cycle-b'),
     ('cycle-b', '@@@LINK=cycle-a'),
+    ('spleen', '<link rel="stylesheet" href="test.css"><p style="margin:0"><a href="entry://cache" style="display:block;height:44px;line-height:44px">'
+               'see cache</a></p><div class="hw">spleen</div><p>bad temper or spite</p>'
+               '<img src="red.png" alt="" style="width:48px;height:48px">'),
     ('news', '<div class="hw">news</div><p>new information</p>'),
     ('data', '<div class="hw">data</div><p>facts and statistics</p>'),
     ('it’s', '<div class="hw">it’s</div><p>it is</p>'),
@@ -211,7 +228,7 @@ ENTRIES = [
     ('缓存', '<div class="hw">缓存</div><p>高速缓冲存储器</p>'),
     ('pronounce', '<div class="hw">pronounce</div><a href="sound://pronounce.mp3">▶</a>'),
 ]
-MDD_ENTRIES = [('\\test.css', CSS), ('\\dot.png', PNG_1x1)]
+MDD_ENTRIES = [('\\test.css', CSS), ('\\dot.png', PNG_1x1), ('\\red.png', RED)]
 
 HOSTILE = [
     ('script', '<p>before</p><script>fetch("http://127.0.0.1:8765/canary/script")</script><p>after</p>'),
@@ -232,15 +249,16 @@ HOSTILE = [
 ]
 
 
-def fixtures(out: Path):
+def fixtures(out: Path, prefix: str = ''):
     out.mkdir(parents=True, exist_ok=True)
+    pre = prefix
     # DX1: an MDX 2.0, Encrypted=2, with its MDD (split: .mdd and .1.mdd).
-    write(out / 'basic.mdx', ENTRIES, encrypted=2, title='Basic Test Dictionary')
-    write(out / 'basic.mdd', MDD_ENTRIES[:1], mdd=True, encrypted=2)
-    write(out / 'basic.1.mdd', MDD_ENTRIES[1:], mdd=True, encrypted=2)
+    write(out / f'{pre}basic.mdx', ENTRIES, encrypted=2, title='Basic Test Dictionary')
+    write(out / f'{pre}basic.mdd', MDD_ENTRIES[:1], mdd=True, encrypted=2)
+    write(out / f'{pre}basic.1.mdd', MDD_ENTRIES[1:], mdd=True, encrypted=2)
     # DX3: MDX 1.2, uncompressed blocks, and each encoding.
-    write(out / 'v1.mdx', ENTRIES, version='1.2', title='Version 1.2')
-    write(out / 'stored.mdx', ENTRIES, kind=0, title='Uncompressed')
+    write(out / f'{pre}v1.mdx', ENTRIES, version='1.2', title='Version 1.2')
+    write(out / f'{pre}stored.mdx', ENTRIES, kind=0, title='Uncompressed')
     for enc in ['UTF-16', 'GBK', 'GB18030', 'BIG5']:
         # Big5 has no 缓存 (simplified): the CJK entry is traditional there.
         entries = ENTRIES if enc != 'BIG5' else [
@@ -258,28 +276,44 @@ def fixtures(out: Path):
             except UnicodeEncodeError:
                 return False
         entries = [(k, v) for k, v in entries if fits(k) and fits(v)]
-        write(out / f'enc-{enc.lower().replace("-", "")}.mdx', entries, encoding=enc, title=f'Encoding {enc}')
+        write(out / f'{pre}enc-{enc.lower().replace("-", "")}.mdx', entries, encoding=enc, title=f'Encoding {enc}')
     # Refused before activation (DX3).
-    write(out / 'registered.mdx', ENTRIES[:2], encrypted=1, title='Registered')
-    write(out / 'lzo.mdx', ENTRIES[:2], kind=1, title='LZO')
-    write(out / 'unknown-encoding.mdx', ENTRIES[:2], header_attrs={'Encoding': 'KOI8-R'}, title='KOI8')
-    data = write(out / 'whole.mdx', ENTRIES)
-    (out / 'truncated.mdx').write_bytes(data[: len(data) * 2 // 3])
-    (out / 'whole.mdx').unlink()
+    write(out / f'{pre}registered.mdx', ENTRIES[:2], encrypted=1, title='Registered')
+    write(out / f'{pre}lzo.mdx', ENTRIES[:2], kind=1, title='LZO')
+    write(out / f'{pre}unknown-encoding.mdx', ENTRIES[:2], header_attrs={'Encoding': 'KOI8-R'}, title='KOI8')
+    data = write(out / f'{pre}whole.mdx', ENTRIES)
+    (out / f'{pre}truncated.mdx').write_bytes(data[: len(data) * 2 // 3])
+    (out / f'{pre}whole.mdx').unlink()
     # DX13: a block that decompresses past 16 MB (a bomb), and an entry over 4 MB.
-    write(out / 'bomb.mdx', [('bomb', 'a' * (17 * 1024 * 1024))], records_per_block=1, title='Bomb')
-    write(out / 'big-entry.mdx', [('big', 'b' * (4 * 1024 * 1024 + 10)), ('small', 'ok')],
+    write(out / f'{pre}bomb.mdx', [('bomb', 'a' * (17 * 1024 * 1024))], records_per_block=1, title='Bomb')
+    write(out / f'{pre}big-entry.mdx', [('big', 'b' * (4 * 1024 * 1024 + 10)), ('small', 'ok')],
           records_per_block=1, title='Big entry')
     # DX13: a key count past what the file holds.
-    data = bytearray(write(out / 'counts.mdx', ENTRIES[:2], title='Counts'))
+    data = bytearray(write(out / f'{pre}counts.mdx', ENTRIES[:2], title='Counts'))
     hlen = struct.unpack('>I', data[:4])[0]
     at = 4 + hlen + 4
     data[at + 8:at + 16] = struct.pack('>Q', 10 ** 12)  # num_entries
     head = bytes(data[at:at + 40])
     data[at + 40:at + 44] = struct.pack('>I', _adler(head))
-    (out / 'counts.mdx').write_bytes(bytes(data))
+    (out / f'{pre}counts.mdx').write_bytes(bytes(data))
     # DX6: hostile entries (the sanitiser's set); every remote URL is the canary.
-    write(out / 'hostile.mdx', HOSTILE, title='Hostile')
+    write(out / f'{pre}hostile.mdx', HOSTILE, title='Hostile')
+
+
+
+def corpus(out: Path):
+    """The corpus set for the in-app checks: the fixtures (dict-*), a newer version of
+    the basic dictionary under the same name (DX2), and a large one (DX10)."""
+    fixtures(out, 'dict-')
+    newer = [(k, v.replace('to show that an argument or claim is wrong', 'NEWER: to show a claim is wrong'))
+             for k, v in ENTRIES]
+    (out / 'dict-v2').mkdir(exist_ok=True)
+    write(out / 'dict-v2' / 'dict-basic.mdx', newer, encrypted=2, title='Basic Test Dictionary')
+    write(out / 'dict-v2' / 'dict-basic.mdd', MDD_ENTRIES[:1], mdd=True, encrypted=2)
+    write(out / 'dict-v2' / 'dict-basic.1.mdd', MDD_ENTRIES[1:], mdd=True, encrypted=2)
+    words = [f'term{i:06d}' for i in range(60_000)]
+    write(out / 'dict-large.mdx', [(w, f'<div class="hw">{w}</div><p>Entry {w} of a large test dictionary.</p>')
+                                   for w in words], keys_per_block=512, records_per_block=512, title='Large')
 
 
 if __name__ == '__main__':

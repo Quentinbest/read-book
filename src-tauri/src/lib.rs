@@ -180,6 +180,8 @@ pub fn run() {
         spikes::spike_mouse_drag,
         spikes::spike_read_pasteboard,
         spikes::spike_crash_log,
+        spikes::spike_capture_png,
+        spikes::spike_dict_generations,
         spikes::spike_bundle_languages,
         spikes::spike_exit
     ));

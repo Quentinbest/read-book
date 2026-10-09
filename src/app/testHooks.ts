@@ -37,6 +37,8 @@ export interface TestHooks {
   contextMenu?: { labels: string[]; run: (label: string) => void }
   /** Phase 7: the path the install dialog would return (the harness cannot drive it). */
   pickExtensionFile?: () => Promise<string | null>
+  /** Reading Lens DX1: the .mdx the open dialog would return. */
+  pickDictionaryFile?: () => Promise<string | null>
   /** Phase 7: where the save dialog would save (files.save). */
   pickSavePath?: (suggested: string) => Promise<string | null>
   /** Phase 7: the extension host. */

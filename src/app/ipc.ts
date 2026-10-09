@@ -84,6 +84,15 @@ export const ipc = {
   /** 1.1: a definition from this Mac's dictionaries, or null. */
   lookUp: (text: string) => invoke<string | null>('look_up', { text }),
   openDictionary: (text: string) => invoke<void>('open_dictionary', { text }),
+  // Reading Lens Stage 2b: the reader's MDX dictionaries (DX1, DX2, DX11).
+  dictList: () => invoke<DictionaryRow[]>('dict_list'),
+  dictImport: (path: string) => invoke<DictionaryRow>('dict_import', { path }),
+  dictCancelImport: () => invoke<void>('dict_cancel_import'),
+  dictRemove: (id: string) => invoke<void>('dict_remove', { id }),
+  dictEnable: (id: string, enabled: boolean) => invoke<void>('dict_enable', { id, enabled }),
+  dictReorder: (ids: string[]) => invoke<void>('dict_reorder', { ids }),
+  dictLookup: (text: string) => invoke<DictHit[]>('dict_lookup', { text }),
+  dictRelease: (generations: string[]) => invoke<void>('dict_release', { generations }),
   copyText: (text: string) => invoke<void>('copy_text', { text }),
   bookSettingsGet: (bookId: string) =>
     invoke<[string, string | null] | null>('book_settings_get', { bookId }),
@@ -131,3 +140,34 @@ export const ipc = {
   /** T7: what each physical key prints in the current layout, keyed by KeyboardEvent.code. */
   keyboardLayoutLabels: () => invoke<Record<string, string>>('keyboard_layout_labels'),
 }
+
+/** Reading Lens DX1: a dictionary the reader added. */
+export interface DictionaryRow {
+  id: string
+  name: string
+  title: string
+  source_hash: string
+  generation: string
+  position: number
+  enabled: boolean
+  entries: number
+  resources: number
+  added_at: number
+  updated_at: number
+}
+
+/** DX11: a dictionary with an entry for a selection; its entry shows at `linen-dict://<generation>/`. */
+export interface DictHit {
+  id: string
+  title: string
+  generation: string
+  headword: string
+  forWord: string | null
+}
+
+/** DX3: why a dictionary could not be added. */
+export type DictError =
+  | { kind: 'alreadyInstalled'; title: string }
+  | { kind: 'registered' | 'lzo' | 'changed' | 'cancelled' | 'notMdx' }
+  | { kind: 'encoding'; name: string }
+  | { kind: 'damaged' | 'tooLarge' | 'failed'; message: string }

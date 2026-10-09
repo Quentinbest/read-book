@@ -243,7 +243,7 @@ mod tests {
         let dir = tmp.path().join("Dictionaries");
         let no = AtomicBool::new(false);
         let built = build(&dir, &sources(&fixtures().join("basic.mdx")).unwrap(), &no).unwrap();
-        assert_eq!((built.entries, built.resources), (12, 2));
+        assert_eq!((built.entries, built.resources), (13, 3));
         assert_eq!(built.title, "Basic Test Dictionary");
         let (mdx, mdds) = files(&dir, &built.generation).unwrap();
         assert!(mdx.is_file() && mdds.len() == 2);

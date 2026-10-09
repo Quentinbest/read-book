@@ -667,7 +667,7 @@ mod tests {
         assert!(m.header.v2);
         assert_eq!(m.header.encrypted, 2);
         assert_eq!(m.header.title, "Basic Test Dictionary");
-        assert_eq!(m.entries, 12);
+        assert_eq!(m.entries, 13);
         let e = entry("basic.mdx", "invalidate");
         assert!(
             e.contains("in·val·i·date") && e.contains("证明……不成立"),
@@ -691,7 +691,7 @@ mod tests {
     fn reads_version_1_2_and_uncompressed_blocks() {
         for name in ["v1.mdx", "stored.mdx"] {
             assert!(entry(name, "cache").contains("a store of data"), "{name}");
-            assert_eq!(all(name).len(), 12, "{name}");
+            assert_eq!(all(name).len(), 13, "{name}");
         }
     }
 
@@ -807,6 +807,100 @@ mod tests {
                 outcome
             );
         }
+    }
+
+    /// A mutation fuzzer on the stable toolchain (the cargo-fuzz target in `fuzz/` needs
+    /// nightly): `LINEN_FUZZ_SECS=1800 cargo test --release fuzz_mutations -- --ignored`.
+    /// Each case is a fixture with bytes flipped, lengths overwritten or the file cut;
+    /// every outcome must be Ok or an error, within a second, never a panic or a cap breach.
+    #[test]
+    #[ignore]
+    fn fuzz_mutations() {
+        let secs: u64 = std::env::var("LINEN_FUZZ_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(10);
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/mdx");
+        let seeds: Vec<(String, Vec<u8>)> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.path()
+                    .extension()
+                    .is_some_and(|x| x == "mdx" || x == "mdd")
+            })
+            .map(|e| {
+                (
+                    e.file_name().to_string_lossy().to_string(),
+                    std::fs::read(e.path()).unwrap(),
+                )
+            })
+            .filter(|(_, d)| d.len() < 64 * 1024)
+            .collect();
+        let tmp = tempfile::tempdir().unwrap();
+        let mut rng: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            rng ^= rng << 13;
+            rng ^= rng >> 7;
+            rng ^= rng << 17;
+            rng
+        };
+        let until = std::time::Instant::now() + std::time::Duration::from_secs(secs);
+        let (mut cases, mut slowest) = (0u64, 0u128);
+        while std::time::Instant::now() < until {
+            let (name, seed) = &seeds[(next() as usize) % seeds.len()];
+            let mut d = seed.clone();
+            for _ in 0..1 + next() % 6 {
+                let at = (next() as usize) % d.len().max(1);
+                match next() % 5 {
+                    0 => d[at] ^= 1 << (next() % 8),
+                    1 => d[at] = next() as u8,
+                    2 => {
+                        // A length or count field: a big-endian number, huge or zero.
+                        let v = if next() % 2 == 0 {
+                            u64::MAX >> (next() % 40)
+                        } else {
+                            0
+                        };
+                        for (i, b) in v.to_be_bytes().iter().enumerate() {
+                            if let Some(x) = d.get_mut(at + i) {
+                                *x = *b;
+                            }
+                        }
+                    }
+                    3 => d.truncate(at.max(1)),
+                    _ => {
+                        let n = (next() % 64) as usize;
+                        d.splice(at..at, (0..n).map(|_| next() as u8));
+                    }
+                }
+            }
+            let p = tmp.path().join(name);
+            std::fs::write(&p, &d).unwrap();
+            let t0 = std::time::Instant::now();
+            let outcome = std::panic::catch_unwind(|| {
+                if let Ok(m) = Mdx::open(&p) {
+                    let mut keys = vec![];
+                    if m.keys(|k| keys.push(k)).is_ok() {
+                        for (k, end) in with_ends(&m, keys).into_iter().take(64) {
+                            if let Ok(r) = m.record(k.offset, end) {
+                                let cap = if m.is_mdd { MAX_RESOURCE } else { MAX_ENTRY };
+                                assert!(r.len() as u64 <= cap, "a record past its cap");
+                            }
+                        }
+                    }
+                }
+            });
+            assert!(
+                outcome.is_ok(),
+                "a panic on a mutation of {name} (case {cases})"
+            );
+            let ms = t0.elapsed().as_millis();
+            slowest = slowest.max(ms);
+            assert!(ms < 1000, "{ms} ms on a mutation of {name}");
+            cases += 1;
+        }
+        println!("fuzz: {cases} cases in {secs} s, slowest {slowest} ms");
     }
 
     #[test]

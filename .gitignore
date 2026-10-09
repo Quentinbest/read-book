@@ -39,3 +39,9 @@ CLAUDE.md
 
 # Translation exports (scripts/i18n/export.mjs)
 i18n-out/
+
+# cargo-fuzz (Reading Lens §6.1)
+src-tauri/fuzz/target
+src-tauri/fuzz/corpus
+src-tauri/fuzz/artifacts
+src-tauri/fuzz/Cargo.lock

@@ -1,0 +1,27 @@
+[package]
+name = "linen-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Reading Lens §6.1: the MDX/MDD reader under cargo-fuzz (nightly).
+#   cargo +nightly fuzz run mdx -- -max_total_time=1800
+# Seeds: src-tauri/tests/fixtures/mdx (copy them into fuzz/corpus/mdx first).
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+linen = { path = ".." }
+
+[[bin]]
+name = "mdx"
+path = "fuzz_targets/mdx.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

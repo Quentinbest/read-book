@@ -8,7 +8,7 @@ import type { LookupResult } from './result'
 export interface LookupProvider {
   /** Stable within a peek: `mac`, or `<extension>/<lookup>@<language>`. */
   key: string
-  kind: 'mac' | 'extension'
+  kind: 'mac' | 'extension' | 'dict'
   /** The menu's words: “Explain”, “This Mac’s dictionaries”. */
   title: string
   extId?: string
@@ -17,6 +17,8 @@ export interface LookupProvider {
   name?: string
   /** BCP 47: the language the extension answers in (LK11: each language the reader uses). */
   language?: string
+  /** Stage 2b: one of the reader's MDX dictionaries with an entry (DX11). */
+  dict?: { id: string; generation: string; headword: string; forWord: string | null }
 }
 
 /** A language's own name: 简体中文, English, Español. */
@@ -34,10 +36,23 @@ export function readerLanguages(uiLocale: string): string[] {
   return uiLocale === 'en' || uiLocale === 'en-XA' ? ['en'] : [uiLocale, 'en']
 }
 
-/** The extension lookups, one per language the reader uses, then this Mac's dictionaries. */
+/**
+ * The extension lookups, one per language the reader uses, then the reader's own
+ * dictionaries that have an entry, in their order (DX11), then this Mac's dictionaries.
+ */
 export function lookupProviders(
   lookups: { extId: string; id: string; title: string; name: string }[],
-  options: { languages: string[]; mac: boolean },
+  options: {
+    languages: string[]
+    mac: boolean
+    dicts?: {
+      id: string
+      title: string
+      generation: string
+      headword: string
+      forWord: string | null
+    }[]
+  },
 ): LookupProvider[] {
   const out: LookupProvider[] = []
   for (const l of lookups)
@@ -51,6 +66,14 @@ export function lookupProviders(
         name: l.name,
         language,
       })
+  for (const d of options.dicts ?? [])
+    out.push({
+      key: `dict:${d.id}`,
+      kind: 'dict',
+      title: d.title,
+      name: d.title,
+      dict: { id: d.id, generation: d.generation, headword: d.headword, forWord: d.forWord },
+    })
   if (options.mac) out.push({ key: 'mac', kind: 'mac', title: t.lens.macDictionaries })
   return out
 }
@@ -78,7 +101,8 @@ export function providerMenu(providers: LookupProvider[], current: string) {
  * dictionaries say where they are. Never “verified”, “source” or a provider's own words.
  */
 export function sourceLabel(result: Pick<LookupResult, 'source'> | null, provider: LookupProvider) {
-  if (provider.kind === 'mac') return t.lens.labelMacDictionary
+  // The reader's own dictionaries are on this Mac too (EQ1).
+  if (provider.kind === 'mac' || provider.kind === 'dict') return t.lens.labelMacDictionary
   if (!result) return ''
   const s = result.source
   return s.kind === 'ai' ? t.lens.labelAi(s.model ?? s.name) : t.lens.labelDictionary(s.name)

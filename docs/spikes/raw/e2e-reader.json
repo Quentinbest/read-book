@@ -896,6 +896,78 @@
       "evidence": "ok"
     },
     {
+      "id": "DX1-import",
+      "description": "AC14: Add dictionary… imports an MDX 2.0 (Encrypted=2) with its MDD; Look Up shows the entry with its CSS and image on the light card; a refused file keeps the old dictionary",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I-dictionary-frame",
+      "description": "Spike I: a linen-dict:// frame with no scripts renders the entry, follows an entry:// link inside the peek, and Back returns",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX6-hostile-entry",
+      "description": "AC15: hostile entries (scripts, handlers, remote images, url(), escapes, @import, base, refresh, prefetch, frames, SVG) run nothing and request nothing (canary)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX5-redirects",
+      "description": "AC17: a redirect cycle stops; “caches” shows “cache”; “invalidates” shows “invalidate” with its label",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX4-headword-variants",
+      "description": "Curly and straight apostrophes, full-width letters and NFC/NFD forms find the same entry; no suffix rule invents “news”, “bus” or “data”",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX3-encodings",
+      "description": "UTF-8, UTF-16LE, GBK, GB18030 and Big5 dictionaries show the same entry; registration, LZO and an unknown encoding are refused with their reason",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX13-caps",
+      "description": "An entry over 4 MB and a block that would inflate past 16 MB are refused as data errors and never shown; the entry beside them still reads; impossible counts are refused at import",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX1-duplicate",
+      "description": "Adding the same file again says it is installed; a newer file with the same name replaces it through a new generation",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX2-swap-while-open",
+      "description": "Replacing a dictionary while its entry is open keeps that generation until the peek closes; the next look-up uses the new one",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX9-never-sent",
+      "description": "AC18: with a dictionary entry open and Explain chosen after it, no dictionary text reaches an extension message or a request",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX10-budgets",
+      "description": "AC19: a warm look-up in a 60,000-entry dictionary (with two more installed) is within 20 ms at p95",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX7-night-card",
+      "description": "At Night the entry sits on the light card and keeps its own contrast",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "D1-no-uncaught-errors",
       "description": "No uncaught error or unhandled rejection in the whole run (read from the crash log)",
       "verdict": "pass",
@@ -908,7 +980,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791550937,
+    "time": 1791561717,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

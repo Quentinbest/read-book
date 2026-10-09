@@ -40,6 +40,7 @@
     type LookupProvider,
   } from '../lib/lookup/providers'
   import { validateResult } from '../lib/lookup/result'
+  import type { DictHit } from '../app/ipc'
   import { lookupCommands } from '../lib/lookup/commands'
   import { primaryLang, type WhenContext } from '../lib/extensions/when'
   import { locale } from '../lib/strings'
@@ -972,6 +973,8 @@
     current: string
     state: PeekState
     invocation: { extId: string; n: number } | null
+    /** DX2: the dictionary generations this peek uses, released when it closes. */
+    generations: string[]
   }
   let lookup = $state.raw<Lookup | null>(null)
   let lookupPeek: ReturnType<typeof LookUpPeek> | undefined = $state()
@@ -1012,9 +1015,9 @@
     return selection ? selectionTarget(selection) : null
   }
   /** LK1, LK11: the providers that apply to a text; lookups are off in fixed-layout books (O13). */
-  function providersFor(text: string): LookupProvider[] {
+  function providersFor(text: string, dicts: DictHit[] = []): LookupProvider[] {
     const lookups = fixedBook ? [] : extensions.lookups(whenContextFor(text))
-    return lookupProviders(lookups, { languages: readerLanguages(locale), mac: true })
+    return lookupProviders(lookups, { languages: readerLanguages(locale), mac: true, dicts })
   }
   /** Lookups offered in the bar's “⋯” (LK1, LK14). */
   const barLookups = $derived.by(() => {
@@ -1066,13 +1069,27 @@
       current: providers.some((p) => p.key === providerKey) ? providerKey : providers[0].key,
       state: { kind: 'pending' },
       invocation: null,
+      generations: [],
     }
     dispatch({ type: 'openFloating', kind: 'lookup' })
     engine?.setLookupMark(target.cfi, {
       tint: theme.search.activeTint,
       outline: theme.search.activeOutline,
     })
-    ask()
+    // DX11: the reader's dictionaries with an entry join the menu; Look Up opens on the
+    // first of them. Local and quick; nothing is asked of an extension meanwhile.
+    const serial = lookupSerial
+    void ipc
+      .dictLookup(word)
+      .catch(() => [] as DictHit[])
+      .then((hits) => {
+        if (lookup?.serial !== serial) return void ipc.dictRelease(hits.map((h) => h.generation))
+        const providers = providersFor(target.text, hits)
+        const first = providers.find((p) => p.kind === 'dict')
+        const current = providerKey === 'mac' && first ? first.key : lookup.current
+        lookup = { ...lookup, providers, current, generations: hits.map((h) => h.generation) }
+        ask()
+      })
   }
   function lookUpSelection() {
     const target = currentTarget()
@@ -1098,13 +1115,28 @@
     if (!p) return
     const { serial } = l
     const stale = () => lookup?.serial !== serial || lookup.current !== p.key
+    if (p.kind === 'dict' && p.dict) {
+      const audio = encodeURIComponent(t.lens.audioUnavailable)
+      lookup = {
+        ...l,
+        state: {
+          kind: 'dict',
+          url: `linen-dict://${p.dict.generation}/_entry?q=${encodeURIComponent(l.word)}&audio=${audio}`,
+          title: p.title,
+        },
+      }
+      return
+    }
     if (p.kind === 'mac') {
       lookup = { ...l, state: { kind: 'mac', definition: undefined } }
       void ipc
         .lookUp(l.word)
         .catch(() => null)
         .then((definition) => {
-          if (!stale() && lookup) lookup = { ...lookup, state: { kind: 'mac', definition } }
+          // DX14: with dictionaries of the reader's own, none of which has the word.
+          const noEntry = definition === null && dictionaryCount > 0
+          if (!stale() && lookup)
+            lookup = { ...lookup, state: { kind: 'mac', definition, noEntry } }
         })
       return
     }
@@ -1171,6 +1203,8 @@
     untrack(() => {
       cancelLookupRequest()
       engine?.setLookupMark(null)
+      const used = lookup?.generations ?? []
+      if (used.length) void ipc.dictRelease(used).catch(() => {})
       lookup = null
     })
   })
@@ -1209,6 +1243,20 @@
       if (lookup && lanes.floating?.kind === 'lookup') engine?.setLookupMark(lookup.cfi, colors)
     })
   })
+  /** DX14: how many dictionaries the reader added (for the no-entry wording). */
+  let dictionaryCount = $state(0)
+  const countDictionaries = () =>
+    void ipc
+      .dictList()
+      .then((d) => (dictionaryCount = d.length))
+      .catch(() => {})
+  countDictionaries()
+  onMount(() => {
+    const off = listen('dictionaries-changed', countDictionaries)
+    return () => void off.then((f) => f())
+  })
+  /** Canvas 11: “Explain in context” switches to the first extension lookup. */
+  const explainKey = $derived(lookup?.providers.find((p) => p.kind === 'extension')?.key ?? null)
   function openInDictionary() {
     const word = lookup?.word
     dispatch({ type: 'closeFloating' })
@@ -2386,6 +2434,7 @@
         }}
         onretry={() => ask()}
         oncontinue={() => ask(true)}
+        onexplain={explainKey ? () => explainKey && chooseProvider(explainKey) : undefined}
         onnotnow={() => dispatch({ type: 'closeFloating' })}
         onrestart={() => {
           const extId =
