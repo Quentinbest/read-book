@@ -1,19 +1,19 @@
 # Reading Lens status
 
-The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading-lens`. Open questions are items 58–74 in `docs/pending-approvals.md`.
+The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading-lens`. Its open questions, items 58–76 in `docs/pending-approvals.md`, were approved on 2026-10-09 (`docs/decisions.md`).
 
 | Stage | State | Why |
 |---|---|---|
-| 1 Stuck-point diary | Not started (owner) | No code; needs the gate thresholds first (item 59, O1) |
+| 1 Stuck-point diary | Not started (owner) | No code; needs the gate threshold values (item 59, approved in principle) |
 | 2a Lookup peek and selection context | Built; see below | — |
-| 2b Local dictionaries | Not started | Needs a licence for Linen (item 60, O2), then O3, O4, O8, O14, O16 |
+| 2b Local dictionaries | Not started | Licence chosen (MIT, item 60); O8, O14 and O16 approved; O3 and O4 (the Dictionaries pane, the light card) are still to be decided |
 | 2d Secrets, optional hosts, options pages | Not started | Needs Gate 0 (Stage 1) and Spike J |
 | 3–5 | Not started | After 2d, and private (Explain) |
 
 ## Stage 2a — lookup peek and selection context
 
 - **Last updated:** 2026-10-09
-- **Before starting:** Spike H, below. O9–O13 and O15 are built to the plan's recommendations, marked (prov.), and parked as items 63–68. Strings are drafted for approval (item 74).
+- **Before starting:** Spike H, below. O9–O13 and O15 were built to the plan's recommendations and approved on 2026-10-09 (items 63–68). The English strings are approved; the four translations wait for the native reviewers (item 74).
 
 ### What was built
 

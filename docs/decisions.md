@@ -232,3 +232,29 @@ The owner settled Stage 0 of the Reading Lens assessment: in-place explanations 
 | Provider switching | A menu above the answer names the provider and language and switches between Explain languages and installed dictionaries. It replaces the proposed tabs. |
 | Speak buttons | Not included for now. |
 | Surfaces | Solid only: no see-through, blurred or vibrant panels, menus or bars. Compared against see-through versions on the design canvas and dropped. |
+
+## Approved 2026-10-09 (Reading Lens, items 58–76)
+
+The owner approved items 58–76 as recommended (`docs/pending-approvals.md`) and chose the MIT licence for item 60. The Stage 2a rules built to these recommendations (LK12–LK15, O9–O13, O15) are no longer provisional.
+
+| # | Approved |
+|---|---|
+| Order (58) | Stage 2a first; Stage 1 starts once the gate thresholds are set. |
+| Gate thresholds (59, O1) | Set before Stage 1 starts and before any data is seen. The values themselves are still to be given. |
+| Licence (60, O2) | **MIT**, in `LICENSE`. Stage 2b may take a permissively licensed parser or port BSD-3 code (DX12). |
+| Look Up and ⌃⌘D (61, O5) | The 1.1 Look Up peek becomes the lookup peek; this Mac's dictionaries are its first provider; ⌃⌘D stays. |
+| No entry (62, O8, DX14) | “No entry for ‘…’ in your dictionaries”, plus “Explain in context” when Explain is installed (Stage 2b). |
+| Highlights (63, O9, LK14) | A clicked highlight offers Look Up and lookups; Delete keeps its place. |
+| No room (64, O10, LK13) | The side with more room, that room minus 16 px; the answer scrolls. |
+| Closing (65, O11, LK12) | Scrolling, a resize, a text-size or Aa change, the Navigator, any jump and leaving the book close the peek and cancel; a theme change keeps it. |
+| No language (66, O12, LK9) | `book.lang` is `""` for a missing language or `und`; Explain's condition accepts `""` and `en`. |
+| Fixed layout (67, O13) | Extension lookups are off in fixed-layout books; this Mac's Look Up stays. Revisit with fixed-layout zoom (E2, I17). |
+| One provider (68, O15, LK15) | The label is plain text, without a menu. |
+| Links in entries (69, O14, DX15) | Inert text (Stage 2b). |
+| MDX encodings (70, O16, DX3) | UTF-8, UTF-16LE, GBK, GB18030 and Big5 through a reviewed crate, `encoding_rs` the candidate (Stage 2b). |
+| Local-model wording (71, O17) | As the plan drafts it, in Explain's own repository (Stage 3). |
+| Oxford data (72, O6) | The owner's call; nothing in this repository depends on it. |
+| Selection bar ring (73, O7) | A bar-specific ring colour, as a separate fix. |
+| Peek strings (74) | The English is approved; the zh-Hans, zh-Hant, ja and es drafts go to the native reviewers (L-6) before Stage 2a ships. |
+| Peek baselines (75) | Captured in the next session and compared with Canvas 2–9. |
+| First-request notice (76, EX8) | A `notice` status is added to LK2 (title, text, host; the core draws Continue and Not now) before Stage 3. |

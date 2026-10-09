@@ -6244,7 +6244,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
 
   lensCheck(
     'LK1-fixed-layout',
-    'O13 (provisional): a fixed-layout book offers no extension lookups',
+    'O13 (approved 2026-10-09): a fixed-layout book offers no extension lookups',
     async (problems) => {
       await lens.install()
       await backToLibrary()

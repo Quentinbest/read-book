@@ -514,7 +514,7 @@ export const en = {
     searchBook: 'Search the book',
     contextMenu: (word: string) => `Look Up “${word.length > 24 ? word.slice(0, 23) + '…' : word}”`,
   },
-  // Reading Lens lookup peek (docs/reading-lens-plan.md; Canvas 1–11; PROVISIONAL)
+  // Reading Lens lookup peek (docs/reading-lens-plan.md; Canvas 1–11; approved 2026-10-09, item 74)
   lens: {
     macDictionaries: 'This Mac’s dictionaries',
     // EQ1: the closed set of labels above an answer.
