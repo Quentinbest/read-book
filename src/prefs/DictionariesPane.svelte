@@ -1,6 +1,6 @@
 <script lang="ts">
-  // Settings › Dictionaries (Reading Lens DX1–DX3, DX11; Canvas 14; O3, item 78,
-  // provisional). The reader's MDX dictionaries in the order the peek tries them,
+  // Settings › Dictionaries (Reading Lens DX1–DX3, DX11; Canvas 14; O3, approved
+  // 2026-10-10, item 78). The reader's MDX dictionaries in the order the peek tries them,
   // each with its switch, Move up and down (the canvas's drag handle, by keyboard
   // too) and Remove. Add dictionary… picks an .mdx; its MDD files come with it. An
   // import builds a new generation, so the previous version stays in use until it

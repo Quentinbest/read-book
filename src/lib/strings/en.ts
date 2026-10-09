@@ -556,7 +556,7 @@ export const en = {
     tryAgain: 'Try again',
     restart: (name: string) => `Restart ${name}`,
   },
-  // Reading Lens Stage 2b: Settings › Dictionaries (Canvas 14; O3, item 78, PROVISIONAL)
+  // Reading Lens Stage 2b: Settings › Dictionaries (Canvas 14; O3, approved 2026-10-10, items 78, 81)
   dictSettings: {
     intro:
       'Dictionaries you add are copied into your library and stay on this Mac. Linen shows their entries when you look up a word and never sends them anywhere.',

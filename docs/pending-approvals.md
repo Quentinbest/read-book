@@ -8,6 +8,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 56, on 2026-10-07, and item 57, on 2026-10-08 (UI localisation).
 - items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence. Item 59 still needs the threshold values.
+- items 77–81, on 2026-10-10 (Reading Lens follow-ups and Stage 2b).
 
 Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
@@ -180,17 +181,20 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     Two approved screens change on purpose: `11-settings-extensions` (the sample Dictionary is 0.5.0 and adds “Free Dictionary” in the lookup peek) and `12-extension-failure` (the stuck Dictionary's lookup joins its action in “⋯”, with one Restart for both; the focus ring is the bar's ink, item 73).
     `03-more-menu`, `04-navigator-contents`, `05-navigator-search`, `16-command-palette` and `17-goto` also differ from their baselines (0.1–1.1% of pixels: a visible scroll bar, shortcut glyph edges, search snippets). This branch does not change them; their baselines were taken on Desktop 2 on 2026-10-08. Not verified against a capture from `main`.
     *Recommendation:* approve the 14 peek captures and the two changed screens as baselines (`docs/visual/APPROVAL.md`).
-
+    **Approved 2026-10-10.**
 
 78. **A Dictionaries section in Settings (O3, Stage 2b).** Settings gains Dictionaries (Canvas 14): Add dictionary…, the ordered list with on/off and Remove, and each dictionary's entries count and status. It amends G2's list of sections. Built as drawn (provisional) while Stage 2b proceeds.
     *Recommendation:* approve as drawn on Canvas 14.
+    **Approved 2026-10-10.**
 
 79. **Dictionary entries on a light card in every theme (O4, DX7, Stage 2b).** Dictionary CSS assumes a light page; at Night an entry would lose its own colours. The entry sits on a light card inside the dark peek. Built so (provisional).
     *Recommendation:* approve.
+    **Approved 2026-10-10.**
 
 80. **A nightly Rust toolchain for the parser fuzz target (§6.1).** `cargo fuzz` needs nightly and `cargo-fuzz`, which this Mac doesn't have; installing them changes your toolchains, so it was not done. Meanwhile a mutation fuzzer on stable (`fuzz_mutations` in `src-tauri/src/dictionaries/mdx.rs`) ran for 30 minutes (see `docs/reading-lens-status.md`). The cargo-fuzz target is ready in `src-tauri/fuzz/`.
     *Recommendation:* run `rustup toolchain install nightly && cargo install cargo-fuzz`, then `cd src-tauri/fuzz && cargo +nightly fuzz run mdx -- -max_total_time=1800`, before Stage 2b ships.
+    **Approved 2026-10-10.**
 
 81. **Dictionary baselines and strings (Canvas 11, 14).** Captures `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` in `docs/visual/app/`. Differences from the canvas: reordering is by Move up and Move down buttons rather than a drag handle (keyboard and VoiceOver can use them); the row shows “MDX with MDD · N entries” without the file size; the entry frame has a fixed height and its own scroll bar (Spike I's fallback); Back returns to the first entry. The Settings › Dictionaries strings (`dictSettings`) and the new peek strings have machine drafts in the four languages.
     *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with item 74's.
-
+    **Approved 2026-10-10.**

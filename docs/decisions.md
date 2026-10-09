@@ -258,3 +258,16 @@ The owner approved items 58–76 as recommended (`docs/pending-approvals.md`) an
 | Peek strings (74) | The English is approved; the zh-Hans, zh-Hant, ja and es drafts go to the native reviewers (L-6) before Stage 2a ships. |
 | Peek baselines (75) | Captured in the next session and compared with Canvas 2–9. |
 | First-request notice (76, EX8) | A `notice` status is added to LK2 (title, text, host; the core draws Continue and Not now) before Stage 3. |
+
+## Approved 2026-10-10 (Reading Lens, items 77–81)
+
+The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). The screens below are baselines now, and the Stage 2b designs built to O3 and O4 are no longer provisional.
+
+| # | Approved |
+|---|---|
+| Peek baselines (77) | The 14 lookup peek captures (`rl-02` to `rl-11`, Paper, Night and Sepia), and the changed `11-settings-extensions` and `12-extension-failure`, are baselines (`docs/visual/APPROVAL.md`). |
+| Settings › Dictionaries (78, O3) | As built after Canvas 14: add, order (Move up and down), On, Remove; amends G2's sections. |
+| The light card (79, O4, DX7) | Dictionary entries sit on a light card in every theme. |
+| Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
+| Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
+

@@ -1,6 +1,7 @@
 dist
 pnpm-lock.yaml
 src-tauri/target
+src-tauri/fuzz/target
 src-tauri/gen
 # Design sources and their generated export are not ours to reformat.
 docs

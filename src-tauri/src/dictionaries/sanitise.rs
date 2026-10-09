@@ -376,7 +376,7 @@ pub fn entry_document(
     )
 }
 
-/// DX7: the light card the entry sits on in every theme (O4, provisional).
+/// DX7: the light card the entry sits on in every theme (O4, approved 2026-10-10, item 79).
 pub const CARD_CSS: &str =
     "html{color-scheme:light}body{margin:0;padding:10px 12px;background:#fffdf9;\
 color:#22201c;font:15px/1.5 -apple-system,system-ui,sans-serif;overflow-wrap:anywhere}\

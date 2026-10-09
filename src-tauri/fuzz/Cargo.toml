@@ -14,7 +14,12 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 tempfile = "3"
-linen = { path = ".." }
+# The reader's own dependencies: the target compiles src/dictionaries/mdx.rs itself,
+# because the app crate (Tauri, a cdylib) does not link under the sanitizer.
+flate2 = "1"
+ripemd = "0.1"
+encoding_rs = "0.8"
+thiserror = "2"
 
 [[bin]]
 name = "mdx"

@@ -3,7 +3,10 @@
 //! Every outcome is Ok or an error; no panic, no hang, no record past its cap.
 
 use libfuzzer_sys::fuzz_target;
-use linen_lib::dictionaries::mdx::{with_ends, Mdx, MAX_ENTRY, MAX_RESOURCE};
+#[path = "../../src/dictionaries/mdx.rs"]
+#[allow(dead_code)]
+mod mdx;
+use mdx::{with_ends, Mdx, MAX_ENTRY, MAX_RESOURCE};
 
 fuzz_target!(|data: &[u8]| {
     let Some((&kind, bytes)) = data.split_first() else { return };
