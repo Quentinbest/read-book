@@ -110,6 +110,23 @@ pub const MIGRATIONS: &[&str] = &[
     ALTER TABLE books ADD COLUMN removed_at INTEGER;
     ALTER TABLE positions ADD COLUMN chapter_label TEXT;
     "#,
+    // 4: Reading Lens Stage 2b (DX1, DX2, DX11): the reader's own MDX dictionaries, in order.
+    // Each row names its active generation, a folder in the library's Dictionaries folder.
+    r#"
+    CREATE TABLE dictionaries (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        title TEXT NOT NULL,
+        source_hash TEXT NOT NULL,
+        generation TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        entries INTEGER NOT NULL,
+        resources INTEGER NOT NULL DEFAULT 0,
+        added_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -167,6 +184,22 @@ pub struct BookRow {
     pub fraction: Option<f64>,
     /// E6: the chapter at the saved position, for Continue reading.
     pub chapter_label: Option<String>,
+}
+
+/// A dictionary the reader added (Reading Lens DX1, DX11).
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct DictionaryRow {
+    pub id: String,
+    pub name: String,
+    pub title: String,
+    pub source_hash: String,
+    pub generation: String,
+    pub position: i64,
+    pub enabled: bool,
+    pub entries: i64,
+    pub resources: i64,
+    pub added_at: i64,
+    pub updated_at: i64,
 }
 
 pub fn now_ms() -> i64 {
@@ -447,6 +480,120 @@ impl Store {
              ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
+        Ok(())
+    }
+}
+
+// ---- Reading Lens dictionaries (DX1, DX2, DX11)
+impl Store {
+    pub fn dictionaries(&self) -> Result<Vec<DictionaryRow>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, name, title, source_hash, generation, position, enabled, entries, resources,
+                    added_at, updated_at FROM dictionaries ORDER BY position, added_at",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(DictionaryRow {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                title: r.get(2)?,
+                source_hash: r.get(3)?,
+                generation: r.get(4)?,
+                position: r.get(5)?,
+                enabled: r.get::<_, i64>(6)? != 0,
+                entries: r.get(7)?,
+                resources: r.get(8)?,
+                added_at: r.get(9)?,
+                updated_at: r.get(10)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<_, _>>()?)
+    }
+
+    /// DX1, DX2: a new dictionary, or a new generation of one with the same name.
+    /// Returns the row and the generation it replaced, if any.
+    pub fn dictionary_activate(
+        &mut self,
+        name: &str,
+        title: &str,
+        source_hash: &str,
+        generation: &str,
+        entries: i64,
+        resources: i64,
+    ) -> Result<(DictionaryRow, Option<String>)> {
+        let tx = self.conn.transaction()?;
+        let now = now_ms();
+        let existing: Option<(String, String)> = tx
+            .query_row(
+                "SELECT id, generation FROM dictionaries WHERE name = ?1",
+                [name],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (id, replaced) = match existing {
+            Some((id, old)) => {
+                tx.execute(
+                    "UPDATE dictionaries SET title = ?2, source_hash = ?3, generation = ?4, entries = ?5,
+                     resources = ?6, updated_at = ?7 WHERE id = ?1",
+                    params![id, title, source_hash, generation, entries, resources, now],
+                )?;
+                (id, Some(old))
+            }
+            None => {
+                let id = uuid::Uuid::new_v4().to_string();
+                let position: i64 = tx.query_row(
+                    "SELECT COALESCE(MAX(position) + 1, 0) FROM dictionaries",
+                    [],
+                    |r| r.get(0),
+                )?;
+                tx.execute(
+                    "INSERT INTO dictionaries (id, name, title, source_hash, generation, position, enabled,
+                     entries, resources, added_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1, ?7, ?8, ?9, ?9)",
+                    params![id, name, title, source_hash, generation, position, entries, resources, now],
+                )?;
+                (id, None)
+            }
+        };
+        tx.commit()?;
+        let row = self
+            .dictionaries()?
+            .into_iter()
+            .find(|d| d.id == id)
+            .expect("the row just written");
+        Ok((row, replaced))
+    }
+
+    pub fn dictionary_remove(&mut self, id: &str) -> Result<Option<String>> {
+        let tx = self.conn.transaction()?;
+        let generation: Option<String> = tx
+            .query_row(
+                "SELECT generation FROM dictionaries WHERE id = ?1",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        tx.execute("DELETE FROM dictionaries WHERE id = ?1", [id])?;
+        tx.commit()?;
+        Ok(generation)
+    }
+
+    pub fn dictionary_set_enabled(&mut self, id: &str, enabled: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE dictionaries SET enabled = ?2 WHERE id = ?1",
+            params![id, enabled as i64],
+        )?;
+        Ok(())
+    }
+
+    /// DX11: the order the peek tries them in.
+    pub fn dictionary_reorder(&mut self, ids: &[String]) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        for (i, id) in ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE dictionaries SET position = ?2 WHERE id = ?1",
+                params![id, i as i64],
+            )?;
+        }
+        tx.commit()?;
         Ok(())
     }
 }

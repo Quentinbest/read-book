@@ -181,3 +181,9 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     `03-more-menu`, `04-navigator-contents`, `05-navigator-search`, `16-command-palette` and `17-goto` also differ from their baselines (0.1–1.1% of pixels: a visible scroll bar, shortcut glyph edges, search snippets). This branch does not change them; their baselines were taken on Desktop 2 on 2026-10-08. Not verified against a capture from `main`.
     *Recommendation:* approve the 14 peek captures and the two changed screens as baselines (`docs/visual/APPROVAL.md`).
 
+
+78. **A Dictionaries section in Settings (O3, Stage 2b).** Settings gains Dictionaries (Canvas 14): Add dictionary…, the ordered list with on/off and Remove, and each dictionary's entries count and status. It amends G2's list of sections. Built as drawn (provisional) while Stage 2b proceeds.
+    *Recommendation:* approve as drawn on Canvas 14.
+
+79. **Dictionary entries on a light card in every theme (O4, DX7, Stage 2b).** Dictionary CSS assumes a light page; at Night an entry would lose its own colours. The entry sits on a light card inside the dark peek. Built so (provisional).
+    *Recommendation:* approve.

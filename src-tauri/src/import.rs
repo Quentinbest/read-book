@@ -58,6 +58,8 @@ pub struct Library {
     pub covers_dir: PathBuf,
     /// Installed extension packages, one folder per extension id (§7.2).
     pub extensions_dir: PathBuf,
+    /// Reading Lens DX1: the reader's dictionaries, one folder per generation.
+    pub dictionaries_dir: PathBuf,
 }
 
 impl Library {
@@ -66,10 +68,12 @@ impl Library {
             books_dir: root.join("Books"),
             covers_dir: root.join("Covers"),
             extensions_dir: root.join("Extensions"),
+            dictionaries_dir: root.join("Dictionaries"),
         };
         std::fs::create_dir_all(&lib.books_dir)?;
         std::fs::create_dir_all(&lib.covers_dir)?;
         std::fs::create_dir_all(&lib.extensions_dir)?;
+        std::fs::create_dir_all(&lib.dictionaries_dir)?;
         Ok(lib)
     }
 

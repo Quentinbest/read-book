@@ -1,5 +1,6 @@
 pub mod commands;
 pub mod crashlog;
+pub mod dictionaries;
 pub mod dictionary;
 pub mod epub;
 pub mod ext_commands;
@@ -43,6 +44,33 @@ pub fn run() {
                 std::thread::spawn(move || {
                     let state = app.state::<commands::AppState>();
                     responder.respond(extensions::serve(&state.library.extensions_dir, &id, &path));
+                });
+            },
+        )
+        // Reading Lens DX6: the reader's dictionaries, each generation on its own origin.
+        .register_asynchronous_uri_scheme_protocol(
+            dictionaries::serve::DICT_SCHEME,
+            |ctx, request, responder| {
+                use tauri::Manager;
+                let app = ctx.app_handle().clone();
+                let generation = request.uri().host().unwrap_or_default().to_string();
+                let path = request.uri().path().to_string();
+                let query = request.uri().query().unwrap_or_default().to_string();
+                std::thread::spawn(move || {
+                    let state = app.state::<commands::AppState>();
+                    let dicts = app.state::<dictionaries::state::DictState>();
+                    // Only an active generation, or one an open peek still uses (DX2).
+                    let active = state
+                        .store
+                        .lock()
+                        .unwrap()
+                        .dictionaries()
+                        .map(|d| d.iter().any(|d| d.generation == generation))
+                        .unwrap_or(false);
+                    let opened = (active || dicts.pinned(&generation))
+                        .then(|| dicts.open(&generation))
+                        .flatten();
+                    responder.respond(dictionaries::serve::serve(opened.as_deref(), &path, &query));
                 });
             },
         )
@@ -115,6 +143,14 @@ pub fn run() {
                 updater::open_release_page,
                 dictionary::look_up,
                 dictionary::open_dictionary,
+                dictionaries::commands::dict_list,
+                dictionaries::commands::dict_import,
+                dictionaries::commands::dict_cancel_import,
+                dictionaries::commands::dict_remove,
+                dictionaries::commands::dict_enable,
+                dictionaries::commands::dict_reorder,
+                dictionaries::commands::dict_lookup,
+                dictionaries::commands::dict_release,
                 $($extra),*
             ]
         };
@@ -171,6 +207,10 @@ pub fn run() {
             ) {
                 log::error!("built-in extensions: {e}");
             }
+            // DX2: interrupted imports and replaced generations go at launch.
+            let dicts = dictionaries::state::DictState::new(state.library.dictionaries_dir.clone());
+            dictionaries::commands::recover(&state, &dicts);
+            app.manage(dicts);
             app.manage(state);
             app.manage(ext_commands::SafeMode(std::sync::atomic::AtomicBool::new(
                 safe,
