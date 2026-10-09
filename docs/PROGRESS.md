@@ -23,7 +23,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 
 | Work | State | Plan and status |
 |---|---|---|
-| UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Stages 0–6 done: four languages signed off and registered 2026-10-08; the release is next (L-9) | `docs/i18n-plan.md` (stage table at its end) |
+| UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Done: four languages signed off and registered 2026-10-08; released as 0.3.0 on 2026-10-09 | `docs/i18n-plan.md` (stage table at its end) |
 
 ## How the work is checked
 
