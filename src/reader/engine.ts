@@ -757,6 +757,40 @@ export class ReaderEngine {
     }
   }
 
+  /**
+   * LK1 (Reading Lens): the looked-up range keeps the active search mark while the
+   * peek is open; null takes it away. Anything that lays the page out again closes the
+   * peek (LK12), so the mark is drawn once.
+   */
+  setLookupMark(cfi: string | null, colors?: { tint: string; outline: string }) {
+    for (const view of this.#views())
+      for (const c of view.renderer?.getContents() ?? []) {
+        const layer = c.overlayer as unknown as
+          { add: (...a: unknown[]) => void; remove: (k: string) => void } | undefined
+        if (!layer || !c.doc) continue
+        layer.remove('linen-lookup')
+        if (!cfi || !colors) continue
+        const range = this.#cfiRange(view, cfi, c.doc, c.index)
+        if (range)
+          layer.add('linen-lookup', range, drawMark, {
+            fill: colors.tint,
+            stroke: colors.outline,
+            width: 2,
+          })
+      }
+  }
+
+  /** LK14: a highlight's range on the page shown (to look it up), or null. */
+  rangeOf(cfi: string): Range | null {
+    const view = this.#current
+    for (const c of view.renderer?.getContents() ?? []) {
+      if (!c.doc) continue
+      const range = this.#cfiRange(view, cfi, c.doc, c.index)
+      if (range) return range
+    }
+    return null
+  }
+
   /** A1: report the selection in `doc` (or its end). */
   #reportSelection(view: View, doc: Document, index: number) {
     if (view !== this.#current) return

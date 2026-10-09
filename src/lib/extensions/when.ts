@@ -7,6 +7,10 @@ export interface WhenContext {
   'selection.language': string
   'book.language': string
   'book.fixedLayout': boolean
+  /** LK9: the book's primary language subtag, lowercase; "" when it has none or `und`. */
+  'book.lang': string
+  /** LK9: sentences in the selection (Intl.Segmenter). */
+  'selection.sentences': number
 }
 
 type Value = number | string | boolean
@@ -22,7 +26,15 @@ const VARIABLES = new Set<string>([
   'selection.language',
   'book.language',
   'book.fixedLayout',
+  'book.lang',
+  'selection.sentences',
 ])
+
+/** LK9 (prov., O12): `en-GB` → `en`, `EN-us` → `en`; a missing language or `und` → "". */
+export function primaryLang(tag: string | null | undefined): string {
+  const primary = (tag ?? '').trim().split(/[-_]/)[0].toLowerCase()
+  return primary === 'und' ? '' : primary
+}
 
 function tokens(s: string): Token[] {
   const out: Token[] = []

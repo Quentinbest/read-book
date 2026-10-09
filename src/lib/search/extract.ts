@@ -54,7 +54,8 @@ export interface ExtractedText {
   segments: Segment[]
 }
 
-export function extractText(root: Node): ExtractedText {
+/** `skip` leaves out elements and their text (LK5: footnote markers and notes). */
+export function extractText(root: Node, skip?: (el: Element) => boolean): ExtractedText {
   let text = ''
   const segments: Segment[] = []
   const breakLine = () => {
@@ -72,6 +73,7 @@ export function extractText(root: Node): ExtractedText {
     if (node.nodeType !== 1 && node.nodeType !== 9 && node.nodeType !== 11) return
     const name = node.nodeType === 1 ? (node as Element).localName.toLowerCase() : ''
     if (SKIP.has(name)) return
+    if (skip && node.nodeType === 1 && skip(node as Element)) return
     const block = BLOCK.has(name)
     if (block) breakLine()
     for (let child = node.firstChild; child; child = child.nextSibling) walk(child)

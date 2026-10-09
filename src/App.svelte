@@ -23,6 +23,7 @@
   import { OVERRIDES_SETTING, parseOverrides } from './lib/commands/remap'
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings'
+  import { lookupCommands } from './lib/lookup/commands'
   import { ExtensionHost } from './extensions/host.svelte'
   import WebKitTooOld from './app/WebKitTooOld.svelte'
   import { readerEngineSupported } from './lib/reader/webkit'
@@ -78,6 +79,21 @@
       registry.handle(id, { run: () => void runExtensionCommand(c.extId, c.id, c.name) })
       return () => registry.undefine(id)
     })
+    // Reading Lens LK1: “Look Up with …” for each lookup; the open reader handles them.
+    for (const x of extensions.active)
+      for (const l of x.manifest.contributes.lookups ?? []) {
+        const id = registry.defineExtension(x.manifest.id, {
+          id: `lookup.${l.id}`,
+          title: t.lens.lookUpWithCommand(l.title),
+          extensionName: x.manifest.name,
+        })
+        const key = `${x.manifest.id}/${l.id}`
+        registry.handle(id, {
+          run: () => lookupCommands.run?.(key),
+          enabled: () => lookupCommands.enabled?.(key) ?? false,
+        })
+        extensionCommands.push(() => registry.undefine(id))
+      }
   }
   /** P6: a failure shows one quiet line with Restart; reading carries on. */
   async function runExtensionCommand(extId: string, command: string, name: string) {

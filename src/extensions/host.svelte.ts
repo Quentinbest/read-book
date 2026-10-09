@@ -58,6 +58,18 @@ interface Running {
 }
 
 export class ExtensionError extends Error {}
+/** LK4: a lookup the reader closed; nothing is reported, nothing counts as a failure. */
+export class LookupCancelled extends ExtensionError {}
+
+/** What a lookup provider is handed (LK1, LK5): the selection and the text around it. */
+export interface LookupRequest {
+  text: string
+  context: import('../lib/lookup/context').SelectionContext
+  /** LK9: the book's primary language, or "". */
+  bookLang: string
+  /** LK11: the language to answer in (BCP 47). */
+  language: string
+}
 
 export class ExtensionHost {
   /** Installed extensions as the core lists them. */
@@ -76,11 +88,17 @@ export class ExtensionHost {
   #nextCall = 1
   /** book.selection is readable only while the reader is using the extension (P3). */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
-  #selection = new Map<string, { text: string; cfi: string }>()
+  #selection = new Map<
+    string,
+    { text: string; cfi: string; context?: import('../lib/lookup/context').SelectionContext }
+  >()
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #subscribed = new Set<string>()
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #frames = new Map<Window, string>()
+  /** LK4: lookups cancelled before they reached their Worker. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
+  #cancelled = new Set<number>()
 
   constructor() {
     addEventListener('message', (e) => this.#onMessage(e))
@@ -142,6 +160,21 @@ export class ExtensionHost {
           command: a.command,
           title:
             x.manifest.contributes.commands.find((c) => c.id === a.command)?.title ?? a.command,
+        })),
+    )
+  }
+
+  /** LK1: the lookups whose `when` holds, in install order (a stuck one is marked, P6). */
+  lookups(ctx: WhenContext) {
+    return this.slotted.flatMap((x) =>
+      (x.manifest.contributes.lookups ?? [])
+        .filter((l) => when(l.when, ctx))
+        .map((l) => ({
+          extId: x.manifest.id,
+          name: x.manifest.name,
+          id: l.id,
+          title: l.title,
+          status: this.status[x.manifest.id] ?? 'idle',
         })),
     )
   }
@@ -210,6 +243,58 @@ export class ExtensionHost {
     } finally {
       this.#selection.delete(extId)
     }
+  }
+
+  /**
+   * LK1, LK4: ask an extension's lookup. The invocation's number is known at once, so
+   * the peek can cancel it; book.selection (with its context) is readable meanwhile.
+   * The 10 s work budget applies (LK10). Rejects with LookupCancelled when cancelled.
+   */
+  lookup(
+    extId: string,
+    lookupId: string,
+    request: LookupRequest,
+    selection: { text: string; cfi: string },
+  ): { invocation: number; result: Promise<unknown> } {
+    const invocation = this.#nextCall++
+    const result = (async () => {
+      const x = this.active.find((e) => e.manifest.id === extId)
+      if (!x) throw new ExtensionError(`${extId} is not running`)
+      if (!(x.manifest.contributes.lookups ?? []).some((l) => l.id === lookupId))
+        throw new ExtensionError(`${extId} has no lookup ${lookupId}`)
+      if (this.#cancelled.delete(invocation)) throw new LookupCancelled('cancelled')
+      const run = await this.activate(extId)
+      if (this.#cancelled.delete(invocation)) throw new LookupCancelled('cancelled')
+      this.#selection.set(extId, { ...selection, context: request.context })
+      if (testHooks) (testHooks.lookupRequests ??= []).push({ extId, lookupId, request })
+      try {
+        return await this.#call(
+          extId,
+          run,
+          { lookup: invocation, id: lookupId, request },
+          WORK_TIMEOUT_MS,
+        )
+      } finally {
+        this.#selection.delete(extId)
+      }
+    })()
+    return { invocation, result }
+  }
+
+  /** LK4: closing the peek cancels its request; the Worker hears `cancel`, a late answer is dropped. */
+  cancelLookup(extId: string, invocation: number) {
+    const run = this.#running.get(extId)
+    const call = run?.calls.get(invocation)
+    if (!run || !call) {
+      // Not sent yet (the extension is still starting): it will not be.
+      this.#cancelled.add(invocation)
+      return
+    }
+    run.calls.delete(invocation)
+    clearTimeout(call.timer)
+    this.#selection.delete(extId)
+    run.frame.contentWindow?.postMessage({ cancel: invocation }, '*')
+    call.reject(new LookupCancelled('cancelled'))
   }
 
   /** Start an extension if it is not running (lazy activation, P4). */
@@ -360,17 +445,20 @@ export class ExtensionHost {
   #call(
     extId: string,
     run: Running,
-    message: { invoke: number; command: string; context: unknown },
+    message:
+      | { invoke: number; command: string; context: unknown }
+      | { lookup: number; id: string; request: LookupRequest },
     limit: number,
   ) {
+    const id = 'invoke' in message ? message.invoke : message.lookup
     return new Promise<unknown>((resolve, reject) => {
       const timer = window.setTimeout(() => {
-        run.calls.delete(message.invoke)
+        run.calls.delete(id)
         this.status[extId] = 'not-responding'
         reject(new ExtensionError(`${extId} did not answer within ${limit / 1000} s`))
         void this.#failure(extId, 'timeout')
       }, limit)
-      run.calls.set(message.invoke, { resolve, reject, timer })
+      run.calls.set(id, { resolve, reject, timer })
       this.#touch(extId, run)
       run.frame.contentWindow?.postMessage(message, '*')
     })
@@ -464,6 +552,11 @@ export class ExtensionHost {
       return this.bridge
     }
     switch (method) {
+      case 'lookups.register': {
+        if (!(x.manifest.contributes.lookups ?? []).some((l) => l.id === params.id))
+          throw new ExtensionError(`lookup ${String(params.id)} is not in the manifest`)
+        return true
+      }
       case 'commands.register': {
         if (!x.manifest.contributes.commands.some((c) => c.id === params.id))
           throw new ExtensionError(`command ${String(params.id)} is not in the manifest`)
@@ -508,6 +601,8 @@ export class ExtensionHost {
         }))
       case 'net.fetch': {
         const url = String(params.url ?? '')
+        // EP1, DX9: the harness's witness of every request an extension asks for.
+        if (testHooks) (testHooks.netFetches ??= []).push({ extId, url, body: params.body ?? null })
         // The core checks the host against the granted permissions again.
         return invoke('extension_net_fetch', {
           id: extId,

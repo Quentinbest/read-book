@@ -51,6 +51,10 @@ export interface TestHooks {
   coverGrows?: number
   /** D7-WebKit: act as if this WebKit were older than Safari 16.4. */
   webkitTooOld?: boolean
+  /** EP1, DX9 (Reading Lens): every net.fetch an extension asked for, with its body. */
+  netFetches?: { extId: string; url: string; body: unknown }[]
+  /** LK5, EP3: every request handed to a lookup provider. */
+  lookupRequests?: { extId: string; lookupId: string; request: unknown }[]
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

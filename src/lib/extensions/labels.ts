@@ -33,6 +33,7 @@ export function contributionLabels(m: ExtensionManifest): string[] {
     const title = c.commands.find((x) => x.id === a.command)?.title ?? a.command
     out.push(t.extSettings.inSelectionMenu(title))
   }
+  for (const l of c.lookups ?? []) out.push(t.extSettings.inLookupMenu(l.title))
   if (c.navigatorTabs.length) out.push(t.extSettings.navigatorTab)
   if (c.themes.length) out.push(t.extSettings.themesAdded(c.themes.length))
   if (c.exporters.length) out.push(t.extSettings.exportInNotes)

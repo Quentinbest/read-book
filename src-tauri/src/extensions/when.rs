@@ -10,6 +10,9 @@ pub const VARIABLES: &[&str] = &[
     "selection.language",
     "book.language",
     "book.fixedLayout",
+    // Reading Lens LK9.
+    "book.lang",
+    "selection.sentences",
 ];
 
 #[derive(Debug, PartialEq)]
@@ -170,6 +173,8 @@ mod tests {
             "selection.words <= 3",
             "selection.words <= 3 && selection.language == \"en\"",
             "!book.fixedLayout || (selection.chars > 0 && selection.chars < 500)",
+            // LK9: Explain's condition.
+            "(book.lang == \"en\" || book.lang == \"\") && selection.sentences <= 1",
         ] {
             assert!(parse(ok).is_ok(), "{ok}");
         }

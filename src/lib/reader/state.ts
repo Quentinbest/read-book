@@ -158,6 +158,8 @@ export function reduce(state: ReaderState, event: ReaderEvent): Transition {
       // Chrome and Navigator alternate (S3): opening it hides the bars.
       // A bar the pointer revealed is not restored: the pointer has left it.
       const before = s.chromePeek ? 'immersive' : s.chrome
+      // Reading Lens LK12: opening the Navigator closes the lookup peek, docked or not.
+      if (s.floating?.kind === 'lookup') s = closeFloating(s, effects)
       if (isWide(s)) {
         s = { ...s, docked: event.tab }
       } else {

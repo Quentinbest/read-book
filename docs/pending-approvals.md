@@ -98,3 +98,48 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 57. **Chinese and Japanese typography in the UI (Stage 4, L-8).** In Chinese and Japanese, interface text that English sets in Literata (the damaged-book and old-Safari titles) uses the system font (PingFang or Hiragino); lines break between phrases (after 、。， and at spaces) rather than between any two characters; small-capital labels lose their letter-spacing. Book text keeps Literata and the book's own language. To see it: `LINEN_LOCALE=ja scripts/e2e.sh v` (or `zh-Hans`, `zh-Hant`), captures in `i18n-out/visual/<tag>/`; `docs/i18n-plan.md`, Stage 4.
     *Recommendation:* approve, so these screens stop being provisional; the native reviewers (L-6) may still adjust wording that breaks badly.
+
+## Reading Lens (2026-10-09)
+
+The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what this branch (`reading-lens`) does meanwhile. Stage 2a is built against the plan's recommended defaults, marked (prov.) in its rules; the stages that wait are said so.
+
+58. **What this run builds.** Stage 1 (the stuck-point diary) is yours and the readers'; it has no code. Stage 2b waits on a licence for Linen (item 60, O2); Stage 2d waits on Gate 0, which Stage 1 decides. So this branch builds Stage 2a only: the lookup peek, selection context and the Host API 1.1 additions it needs.
+    *Recommendation:* approve the order; start Stage 1 when the thresholds (item 59) are set.
+
+59. **Gate thresholds (O1).** X and Y for G0, the severe-error bound for G2, the margins for G3. Not set; nothing in Stage 2a depends on them.
+    *Recommendation:* set them before Stage 1 starts and before any data is seen, as the spec says.
+
+60. **A licence for Linen (O2).** The repository has none. Stage 2b needs one before taking an MDX parser dependency or porting BSD-3 code (DX12).
+    *Recommendation:* choose one before Stage 2b; a permissive licence (MIT or Apache-2.0) keeps both DX12 sources open.
+
+61. **The plan predates 1.1's Look Up.** The plan was drafted against 0.1.1. Since 0.2.0, Linen has a Look Up peek from the dictionaries on this Mac (item 35), bound to ⌃⌘D. Stage 2a therefore turns that peek into the lookup peek: “This Mac's dictionaries” is the first core provider, Linen's MDX dictionaries join it in Stage 2b, and extension lookups (Explain, the test provider) join through `lookups`. Open in Dictionary and Search the book stay in its footer.
+    *Recommendation:* approve. O5 (“no shortcut; avoid ⌃⌘D”) is overtaken: ⌃⌘D was approved for Look Up on 2026-10-01 and stays.
+
+62. **No entry in any dictionary (O8, DX14, Stage 2b).** *Recommendation:* “No entry for ‘…’ in your dictionaries”, plus “Explain in context” when Explain is installed. Today's Mac peek already says the first part.
+
+63. **A clicked highlight offers Look Up and lookups (O9, LK14).** Built as recommended: the highlight's bar gets the same lookup items; Delete keeps its place. *Recommendation:* approve.
+
+64. **Placement when neither side has room (O10, LK13).** Built as recommended: the side with more room, that room minus 16 px, and the answer scrolls; the selected line is never covered. *Recommendation:* approve.
+
+65. **What closes the peek (O11, LK12).** Built as recommended: besides Esc, a click outside, a page turn and a new selection, also scrolling, a resize, a text-size or Aa change, opening the Navigator, any jump and leaving the book; each cancels the request. A theme change keeps it open. *Recommendation:* approve.
+
+66. **Books with no language (O12, LK9).** Built as recommended: `book.lang` is `""` for a missing language or `und`. *Recommendation:* approve; Explain's condition should accept `""` as well as `en`.
+
+67. **Look Up in fixed-layout books (O13).** The plan recommends no lookups in fixed-layout books for v1. 1.1's Mac Look Up already works there, so taking it away would be a regression. Built: extension lookups are off in fixed-layout books; the core Mac dictionary keeps working there.
+    *Recommendation:* approve this split; revisit extension lookups with fixed-layout zoom (E2, I17).
+
+68. **The provider label with one provider (O15, LK15).** Built as recommended: plain text, no chevron. *Recommendation:* approve.
+
+69. **Web links in dictionary entries (O14, DX15, Stage 2b).** *Recommendation:* inert text, as the plan says.
+
+70. **MDX encodings (O16, DX3, Stage 2b).** *Recommendation:* UTF-8, UTF-16LE, GBK, GB18030 and Big5 through a reviewed crate (`encoding_rs`, MIT or Apache-2.0), checked at review.
+
+71. **Local-model failure wording (O17, Stage 3).** Explain's own wording, in its private repository. *Recommendation:* as the plan drafts it.
+
+72. **Oxford data (O6).** Your call; nothing in this repository depends on it.
+
+73. **The selection bar's focus ring (O7).** 2.24:1 on Paper and 1.90:1 on Night, under 3:1. Not changed on this branch, because it changes today's bar and its baselines.
+    *Recommendation:* a bar-specific ring colour, as a separate fix.
+
+74. **Peek strings in four languages.** The new lookup strings (`lens` in `src/lib/strings/en.ts`, PROVISIONAL, worded from the canvas) have machine drafts in zh-Hans, zh-Hant, ja and es so the shipped catalogues stay complete.
+    *Recommendation:* approve the English; send the four drafts to the native reviewers (L-6) before Stage 2a ships.

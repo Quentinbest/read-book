@@ -215,3 +215,20 @@ The owner reported that the native reviewers finished and that all four catalogu
 | Traditional Chinese, Taiwan usage (`zh-Hant`) | As drafted (`src/lib/strings/zh-Hant.ts`) |
 | Japanese (`ja`) | As drafted (`src/lib/strings/ja.ts`), 読字障害 and ゴシック for the font choices included |
 | Spanish (`es`) | As drafted (`src/lib/strings/es.ts`), following macOS's `es` wording where regions differ |
+
+## Decided 2026-10-09 (Reading Lens, Stage 0)
+
+The owner settled Stage 0 of the Reading Lens assessment: in-place explanations and dictionary look-ups for readers of English technical books. The assessment and draft spec are kept outside this repository. Nothing below is built yet.
+
+| Question | Decided |
+|---|---|
+| Host | Linen hosts the Reading Lens work. |
+| AI | An exception to “Not planned: AI” (plan §1.3, P§20) for an **installable extension only** (Explain). Linen's core and built-in extensions stay without AI, and nothing AI is bundled. |
+| Providers | Explain may offer presets for DeepSeek, Qwen (international, Singapore), a local Ollama on the reader's Mac, and OpenAI, Anthropic and Gemini. Every host still needs the reader's own grant, which names the host. |
+| Distribution | Personal use until the pilot passes (gate G3). Explain stays out of this public repository until then. The Host API additions it needs, and the dictionary support below, may ship. |
+| MDX/MDD | Linen reads MDX/MDD dictionaries in the core and shows their entries in the 1.1 lookup peek. Display only: entries never reach extensions or a model. Linen ships no dictionary data; readers add their own. |
+| Peek placement | The lookup peek opens below the selection, with a pointer at it, as the footnote peek does (Screen 17). |
+| Peek layout | After the macOS Books Translate popover, in Linen's tokens: the source word, a hairline, the answer, and a footer of actions. |
+| Provider switching | A menu above the answer names the provider and language and switches between Explain languages and installed dictionaries. It replaces the proposed tabs. |
+| Speak buttons | Not included for now. |
+| Surfaces | Solid only: no see-through, blurred or vibrant panels, menus or bars. Compared against see-through versions on the design canvas and dropped. |

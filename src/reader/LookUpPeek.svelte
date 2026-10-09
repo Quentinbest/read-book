@@ -1,167 +1,694 @@
+<script lang="ts" module>
+  import type { LookupResult } from '../lib/lookup/result'
+
+  /** What the peek shows (Canvas 2–11). */
+  export type PeekState =
+    | { kind: 'pending' }
+    /** 1.1's Mac dictionaries: undefined while looking up, null when none has the word. */
+    | { kind: 'mac'; definition: string | null | undefined }
+    | { kind: 'answer'; result: LookupResult }
+    | {
+        kind: 'error'
+        /** LK10: a provider's report, or what the core saw (timeout, a stopped or suspended one, an answer it refused). */
+        error:
+          | 'offline'
+          | 'unauthorized'
+          | 'rate_limited'
+          | 'unavailable'
+          | 'timeout'
+          | 'stopped'
+          | 'bad'
+      }
+</script>
+
 <script lang="ts">
-  // Dictionary peek (1.1, approved 2026-10-01; plan §1.3 “dictionary peek providers”).
-  // The definition comes from the dictionaries installed on this Mac, so nothing
-  // leaves it. It sits below the selection, or above it near the page foot, like
-  // the footnote peek (N9), and never navigates. Esc closes it.
+  // The lookup peek (Reading Lens LK1–LK3, LK10–LK15, EA1–EA3; Canvas 2–11). One
+  // layer at a time (S2) on the popover surface, solid (Decision 10-09). It opens
+  // below the selection's last line with a pointer at it, or above its first line
+  // near the page foot, and never covers the selected lines (EQ5). Its height is at
+  // most half the window; when neither side has room it takes the side with more,
+  // minus 16 px, and the answer scrolls (LK13).
   import { t } from '../lib/strings'
+  import type { SelectionContext } from '../lib/lookup/context'
+  import { providerMenu, sourceLabel, type LookupProvider } from '../lib/lookup/providers'
 
   let {
     word,
-    definition,
-    rect,
-    onopen,
+    wordLang,
+    sourceLanguage,
+    context,
+    first,
+    last,
+    providers,
+    current,
+    shown,
+    onprovider,
+    oncopy,
     onsearch,
+    onopen,
+    onretry,
+    onrestart,
   }: {
     word: string
-    /** Undefined while looking up; null when no dictionary knows the word. */
-    definition: string | null | undefined
-    rect: DOMRect
-    onopen: () => void
+    /** The book's language, for the word and the quoted sentence (EA2). */
+    wordLang: string | undefined
+    /** The book's language, named in the UI's (“English”). */
+    sourceLanguage: string
+    context: SelectionContext | null
+    first: DOMRect
+    last: DOMRect
+    providers: LookupProvider[]
+    current: string
+    shown: PeekState
+    onprovider: (key: string) => void
+    oncopy: (text: string) => void
     onsearch: () => void
+    /** The Mac's dictionaries: Open in Dictionary. */
+    onopen: () => void
+    onretry: () => void
+    onrestart: () => void
   } = $props()
 
-  let peek: HTMLElement | undefined = $state()
-  let height = $state(0)
-  const WIDTH = 440
   const GAP = 12
-  const width = $derived(Math.min(WIDTH, innerWidth - 32))
-  const left = $derived(Math.min(innerWidth - width - 16, Math.max(16, rect.left - 20)))
-  const above = $derived(rect.bottom + GAP + height > innerHeight - 24)
+  const EDGE = 16
+  const POINTER = 7
 
+  let peek: HTMLElement | undefined = $state()
+  let answer: HTMLElement | undefined = $state()
+  let natural = $state(0)
+  let view = $state<'main' | 'more' | 'sent'>('main')
+  let menuOpen = $state(false)
+  let winW = $state(innerWidth)
+  let winH = $state(innerHeight)
+
+  const provider = $derived(providers.find((p) => p.key === current) ?? providers[0])
+  const menu = $derived(providerMenu(providers, current))
+  const currentLabel = $derived(menu.items.find((i) => i.checked)?.label ?? provider?.title ?? '')
+  const name = $derived(provider?.name ?? provider?.title ?? '')
+  const result = $derived(shown.kind === 'answer' ? shown.result : null)
+  const label = $derived(provider ? sourceLabel(result, provider) : '')
+  /** EA2: an explanation carries the language it is written in. */
+  const answerLang = $derived(provider?.kind === 'extension' ? provider.language : wordLang)
+
+  // ---- Placement (LK1, LK13)
+  const width = $derived(Math.min(440, winW - 2 * EDGE))
+  const cap = $derived(Math.round(winH * 0.5))
+  const roomBelow = $derived(winH - (last.bottom + GAP + POINTER) - EDGE)
+  const roomAbove = $derived(first.top - GAP - POINTER - EDGE)
+  const want = $derived(Math.min(natural || 160, cap))
+  const below = $derived(roomBelow >= want || (roomAbove < want && roomBelow >= roomAbove))
+  const maxHeight = $derived(
+    Math.max(
+      80,
+      Math.min(
+        cap,
+        (below ? roomBelow : roomAbove) - (roomBelow >= want || roomAbove >= want ? 0 : 16),
+      ),
+    ),
+  )
+  const anchorX = $derived(below ? last.left : first.left)
+  const left = $derived(Math.max(EDGE, Math.min(winW - width - EDGE, anchorX - 20)))
+  const pointerX = $derived(Math.max(14, Math.min(width - 26, anchorX - left + 4)))
+
+  /** The peek's height with its answer unscrolled, measured after each change. */
+  function measure() {
+    if (!peek || !answer) return
+    natural = peek.offsetHeight - answer.clientHeight + answer.scrollHeight
+  }
+  $effect(() => {
+    void shown
+    void view
+    void width
+    requestAnimationFrame(measure)
+  })
+  $effect(() => {
+    // A new answer starts on its first layer.
+    void current
+    view = 'main'
+    menuOpen = false
+  })
+
+  /** EA1: Tab from the selection enters the peek. */
+  export function focusFirst() {
+    peek?.querySelector<HTMLElement>('button, [tabindex="0"]')?.focus()
+  }
+
+  export function contains(node: Node | null): boolean {
+    return !!node && !!peek?.contains(node)
+  }
+
+  // ---- Text
   /** The system's plain text runs senses together; numbered senses start their own line. */
   const paragraphs = $derived(
-    (definition ?? '')
-      .replace(/\s+(?=\d{1,2} (?=[a-z(]))/g, '\n')
-      .split('\n')
-      .map((p) => p.trim())
-      .filter(Boolean),
+    shown.kind === 'mac'
+      ? (shown.definition ?? '')
+          .replace(/\s+(?=\d{1,2} (?=[a-z(]))/g, '\n')
+          .split('\n')
+          .map((p) => p.trim())
+          .filter(Boolean)
+      : [],
+  )
+  const copyText = $derived(
+    result
+      ? [
+          result.term,
+          result.meaning,
+          result.qualifier,
+          ...(view === 'more' ? (result.details ?? []).map((d) => `${d.label}: ${d.text}`) : []),
+        ]
+          .filter(Boolean)
+          .join('\n')
+      : '',
+  )
+  const errorText = $derived.by((): [string, string] => {
+    if (shown.kind !== 'error') return ['', '']
+    switch (shown.error) {
+      case 'offline':
+        return [t.lens.offline, t.lens.offlineDetail(name)]
+      case 'timeout':
+        return [t.lens.timeout(name), '']
+      case 'unauthorized':
+        return [t.lens.unauthorized(name), t.lens.unauthorizedDetail]
+      case 'rate_limited':
+        return [t.lens.rateLimited(name), t.lens.rateLimitedDetail]
+      case 'unavailable':
+        return [t.lens.unavailable(name), '']
+      case 'bad':
+        return [t.lens.badAnswer(name), '']
+      case 'stopped':
+        return [t.lens.stopped(name), t.lens.stoppedDetail]
+    }
+  })
+  const dialogLabel = $derived(
+    provider?.kind === 'extension' && result?.source.kind !== 'dictionary'
+      ? t.lens.explanationOf(word)
+      : t.lens.lookUpWord(word),
   )
 
-  export function focusFirst() {
-    peek?.querySelector<HTMLElement>('button')?.focus()
+  function menuKey(e: KeyboardEvent) {
+    const items = Array.from(
+      peek?.querySelectorAll<HTMLElement>('.menu [role="menuitemradio"]') ?? [],
+    )
+    const i = items.indexOf(document.activeElement as HTMLElement)
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const n = items.length
+      items[(i + (e.key === 'ArrowDown' ? 1 : n - 1) + n) % n]?.focus()
+    } else if (e.key === 'Escape') {
+      // Esc closes the menu first, then the peek (S4: one level at a time).
+      e.preventDefault()
+      e.stopPropagation()
+      menuOpen = false
+      peek?.querySelector<HTMLElement>('.provider')?.focus()
+    }
   }
 </script>
 
+<svelte:window bind:innerWidth={winW} bind:innerHeight={winH} />
+
 <div
   class="peek"
+  class:above={!below}
   bind:this={peek}
-  bind:clientHeight={height}
   role="dialog"
-  aria-label={t.lookUp.label(word)}
+  aria-label={dialogLabel}
   data-lookup
+  data-provider={current}
+  data-state={shown.kind}
   style:width="{width}px"
   style:left="{left}px"
-  style:top={above ? undefined : `${rect.bottom + GAP}px`}
-  style:bottom={above ? `${innerHeight - rect.top + GAP}px` : undefined}
+  style:max-height="{maxHeight}px"
+  style:top={below ? `${last.bottom + GAP + POINTER}px` : undefined}
+  style:bottom={below ? undefined : `${winH - first.top + GAP + POINTER}px`}
+  style:--pointer="{pointerX}px"
 >
-  <div class="head">
-    <span class="title">{t.lookUp.title}</span>
-    <span class="hint">{t.lookUp.hint}</span>
+  <div class="source">
+    <span class="meta">{sourceLanguage}</span>
+    <span class="word" lang={wordLang}>{word}</span>
   </div>
-  {#if definition === undefined}
-    <p class="missing" aria-live="polite">{t.lookUp.looking}</p>
-  {:else if definition === null}
-    <p class="missing" aria-live="polite">{t.lookUp.none(word)}</p>
-  {:else}
+  <div class="hairline" aria-hidden="true"></div>
+
+  <div class="answer" bind:this={answer} tabindex="-1">
+    <div class="row">
+      {#if menu.plain}
+        <span class="provider plain" data-provider-label>{currentLabel}</span>
+      {:else}
+        <button
+          type="button"
+          class="provider"
+          aria-haspopup="menu"
+          aria-expanded={menuOpen}
+          data-provider-label
+          onclick={() => {
+            menuOpen = !menuOpen
+            if (menuOpen)
+              requestAnimationFrame(() =>
+                peek?.querySelector<HTMLElement>('.menu [aria-checked="true"]')?.focus(),
+              )
+          }}
+          >{currentLabel}<svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"
+            ><path d="M6 9l6 6 6-6" /></svg
+          ></button
+        >
+      {/if}
+      {#if label && shown.kind !== 'pending' && shown.kind !== 'error'}
+        <span class="meta label" data-source-label>{label}</span>
+      {/if}
+    </div>
+
+    {#if menuOpen}
+      <div
+        class="menu"
+        role="menu"
+        aria-label={t.lens.lookUpWith}
+        tabindex="-1"
+        onkeydown={menuKey}
+      >
+        {#each menu.items as item, i (item.key)}
+          {#if i > 0 && menu.items[i - 1].group !== item.group}
+            <span class="sep" aria-hidden="true"></span>
+          {/if}
+          <button
+            type="button"
+            role="menuitemradio"
+            aria-checked={item.checked}
+            tabindex="-1"
+            onclick={() => {
+              menuOpen = false
+              if (!item.checked) onprovider(item.key)
+            }}
+          >
+            <svg class="check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"
+              >{#if item.checked}<path d="M5 12.5l4.5 4.5L19 7.5" />{/if}</svg
+            >{item.label}
+          </button>
+        {/each}
+      </div>
+    {/if}
+
     <div class="body" aria-live="polite">
-      {#each paragraphs as p, i (i)}<p>{p}</p>{/each}
+      {#if shown.kind === 'pending'}
+        {#if context}
+          <p class="quote" lang={wordLang}>
+            {context.sentence.slice(0, context.selection.start)}<span class="selected"
+              >{context.sentence.slice(context.selection.start, context.selection.end)}</span
+            >{context.sentence.slice(context.selection.end)}
+          </p>
+        {/if}
+        <p class="asking"><span class="progress" aria-hidden="true"></span>{t.lens.asking(name)}</p>
+      {:else if shown.kind === 'mac'}
+        {#if shown.definition === undefined}
+          <p class="missing">{t.lookUp.looking}</p>
+        {:else if shown.definition === null}
+          <p class="missing">{t.lookUp.none(word)}</p>
+        {:else}
+          <div class="definition" lang={wordLang}>
+            {#each paragraphs as p, i (i)}<p>{p}</p>{/each}
+          </div>
+        {/if}
+      {:else if shown.kind === 'error'}
+        <p class="error"><strong>{errorText[0]}</strong> {errorText[1]}</p>
+      {:else if result && view === 'sent'}
+        <p class="meta">{t.lens.sentBy(name)}</p>
+        <pre class="sent" lang={wordLang}>{result.sent}</pre>
+      {:else if result}
+        <div lang={answerLang}>
+          {#if result.status === 'needs_context'}
+            {#if result.term}<p class="term">{result.term}</p>{/if}
+            <p class="qualifier" data-missing>{result.missing}</p>
+            {#if result.meaning}<p class="meaning">{result.meaning}</p>{/if}
+          {:else}
+            {#if result.term}<p class="term">{result.term}</p>{/if}
+            <p class="meaning">{result.meaning}</p>
+            {#if result.qualifier}<p class="qualifier" data-qualifier>{result.qualifier}</p>{/if}
+            {#if view === 'more' && result.details?.length}
+              <dl class="details">
+                {#each result.details as d, i (i)}
+                  <dt>{d.label}</dt>
+                  <dd>{d.text}</dd>
+                {/each}
+              </dl>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+    </div>
+  </div>
+
+  {#if shown.kind !== 'pending'}
+    <div class="footer">
+      {#if shown.kind === 'mac'}
+        <button type="button" onclick={onopen}>{t.lookUp.openDictionary}</button>
+        <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
+      {:else if shown.kind === 'error'}
+        {#if shown.error === 'stopped'}
+          <button type="button" onclick={onrestart}>{t.lens.restart(name)}</button>
+        {:else if shown.error !== 'unauthorized'}
+          <button type="button" onclick={onretry}>{t.lens.tryAgain}</button>
+        {/if}
+      {:else if result && view === 'sent'}
+        <button type="button" onclick={() => (view = 'main')}>{t.lens.back}</button>
+      {:else if result?.status === 'needs_context'}
+        <button type="button" onclick={onsearch}>{t.lens.searchInBook}</button>
+      {:else if result}
+        <button type="button" onclick={() => oncopy(copyText)}>{t.lens.copyExplanation}</button>
+        {#if result.details?.length}
+          <button
+            type="button"
+            aria-expanded={view === 'more'}
+            onclick={() => (view = view === 'more' ? 'main' : 'more')}
+            >{view === 'more' ? t.lens.less : t.lens.more}</button
+          >
+        {/if}
+        {#if result.sent}
+          <button type="button" class="link sent-link" onclick={() => (view = 'sent')}
+            >{t.lens.whatWasSent}</button
+          >
+        {/if}
+      {/if}
     </div>
   {/if}
-  <div class="actions">
-    <button type="button" class="open" onclick={onopen}>{t.lookUp.openDictionary}</button>
-    <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
-  </div>
+  <span class="pointer" aria-hidden="true"></span>
 </div>
 
 <style>
-  /* As the footnote peek (Screen 17): 440 px on the popover surface. */
+  /* Canvas 2–11 in Linen's tokens: solid popover surface, no blur (Decision 10-09). */
   .peek {
     position: fixed;
     z-index: 30;
     box-sizing: border-box;
-    padding: 16px 18px 14px;
+    display: flex;
+    flex-direction: column;
     border-radius: 10px;
     background: var(--popover);
     border: 1px solid var(--popover-border);
     box-shadow: 0 12px 32px rgb(40 30 20 / 14%);
     color: var(--ink);
-    font-family: var(--font-ui);
+    font: 400 13px/1.45 var(--font-ui);
     animation: pop-in var(--motion-popover, 140ms) ease-out;
+  }
+  :global([data-theme='night']) .peek {
+    box-shadow: 0 12px 32px rgb(0 0 0 / 50%);
   }
   @keyframes pop-in {
     from {
       opacity: 0;
-      transform: scale(0.98);
     }
   }
-  .head {
+  .pointer {
+    position: absolute;
+    left: var(--pointer);
+    top: -7px;
+    width: 12px;
+    height: 12px;
+    background: var(--popover);
+    border-left: 1px solid var(--popover-border);
+    border-top: 1px solid var(--popover-border);
+    transform: rotate(45deg);
+  }
+  .above .pointer {
+    top: auto;
+    bottom: -7px;
+    transform: rotate(225deg);
+  }
+  .source {
+    display: flex;
+    flex-direction: column;
+    padding: 12px 16px;
+    flex: none;
+  }
+  .meta {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--ink-secondary);
+  }
+  .word {
+    margin-top: 2px;
+    font: 600 19px/1.35 var(--font-reading, Literata, Georgia, serif);
+    overflow-wrap: anywhere;
+  }
+  .hairline {
+    flex: none;
+    height: 1px;
+    margin: 0 16px;
+    background: var(--hairline);
+  }
+  .answer {
+    position: relative;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 10px 16px 14px;
+    outline: none;
+  }
+  .row {
     display: flex;
     justify-content: space-between;
+    align-items: center;
     gap: 12px;
-    font-size: 12px;
+  }
+  .provider {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 24px;
+    padding: 0 6px;
+    margin-left: -6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
     color: var(--ink-secondary);
+    font: 500 12px var(--font-ui);
   }
-  .title {
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+  .provider.plain {
+    padding: 0;
+    margin: 0;
   }
-  .hint {
-    font-weight: 500;
-  }
-  .body {
-    max-height: 40vh;
-    overflow-y: auto;
-    margin: 10px 0 12px;
-    font: 16px/1.5 var(--font-reading, Literata, Georgia, serif);
-  }
-  .body p {
-    margin: 0 0 0.4em;
-  }
-  .body p:first-child {
-    font-weight: 600;
-  }
-  .body p:last-child {
-    margin-bottom: 0;
-  }
-  .missing {
-    margin: 10px 0 12px;
-    font-size: 14px;
-    color: var(--ink-secondary);
-  }
-  .actions {
-    display: flex;
-    gap: 10px;
-  }
-  button {
-    height: 36px;
-    padding: 0 14px;
-    border-radius: 8px;
-    font: 500 13px var(--font-ui);
-    cursor: default;
-  }
-  .open {
-    border: 1px solid var(--popover-border);
-    background: var(--raised);
+  button.provider:hover,
+  button.provider[aria-expanded='true'] {
+    background: var(--hover-wash);
     color: var(--ink);
   }
-  .link {
-    border: 1px solid transparent;
+  .provider svg,
+  .check {
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  .label {
+    text-align: right;
+  }
+  .menu {
+    position: absolute;
+    left: 10px;
+    top: 36px;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    min-width: 250px;
+    padding: 5px;
+    border-radius: 10px;
+    background: var(--popover);
+    border: 1px solid var(--popover-border);
+    box-shadow:
+      0 8px 28px rgb(0 0 0 / 14%),
+      0 1px 3px rgb(0 0 0 / 10%);
+    font: 500 13px var(--font-ui);
+  }
+  .menu button {
+    min-height: 30px;
+    padding: 0 10px 0 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--ink);
+    font: inherit;
+    text-align: left;
+  }
+  .menu button:hover,
+  .menu button:focus-visible {
+    background: var(--hover-wash);
+    outline: none;
+  }
+  .sep {
+    height: 1px;
+    margin: 5px 6px;
+    background: var(--hairline);
+  }
+  .body p {
+    margin: 0;
+  }
+  .quote {
+    margin-top: 6px !important;
+    font: 400 16px/1.55 var(--font-reading, Literata, Georgia, serif);
+    color: var(--ink-secondary);
+  }
+  .selected {
+    color: var(--ink);
+    text-decoration: underline;
+    text-decoration-color: var(--accent);
+    text-decoration-thickness: 2px;
+    text-underline-offset: 3px;
+  }
+  .asking {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px !important;
+    color: var(--ink-secondary);
+  }
+  .progress {
+    position: relative;
+    overflow: hidden;
+    width: 64px;
+    height: 2px;
+    border-radius: 1px;
+    background: var(--control-track);
+  }
+  .progress::after {
+    content: '';
+    position: absolute;
+    inset: 0 60% 0 0;
+    background: var(--accent);
+    animation: travel 1.2s ease-in-out infinite alternate;
+  }
+  @keyframes travel {
+    to {
+      transform: translateX(150%);
+    }
+  }
+  .term {
+    margin-top: 4px !important;
+    font: 600 19px/1.35 var(--font-reading, Literata, Georgia, serif);
+  }
+  .meaning,
+  .definition {
+    margin-top: 4px !important;
+    font: 400 16px/1.6 var(--font-reading, Literata, Georgia, serif);
+  }
+  .definition p {
+    margin: 0 0 0.4em;
+  }
+  .definition p:first-child {
+    font-weight: 600;
+  }
+  .qualifier {
+    margin-top: 8px !important;
+    padding-left: 10px;
+    border-left: 2px solid var(--accent);
+    font: 400 15px/1.55 var(--font-reading, Literata, Georgia, serif);
+  }
+  .details {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 12px 0 0;
+    padding-top: 11px;
+    border-top: 1px solid var(--hairline);
+  }
+  .details dt {
+    margin-top: 7px;
+    font: 600 11px var(--font-ui);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-secondary);
+  }
+  .details dt:first-child {
+    margin-top: 0;
+  }
+  .details dd {
+    margin: 0;
+    font: 400 15px/1.55 var(--font-reading, Literata, Georgia, serif);
+  }
+  .missing,
+  .error {
+    margin-top: 6px !important;
+    font-size: 14px;
+  }
+  .missing {
+    color: var(--ink-secondary);
+  }
+  .error strong {
+    font-weight: 600;
+  }
+  .sent {
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    border-radius: 6px;
+    background: var(--control-track);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font:
+      400 12.5px/1.55 ui-monospace,
+      'SF Mono',
+      Menlo,
+      monospace;
+  }
+  .footer {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--hairline);
+  }
+  .footer button {
+    height: 28px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--control-track);
+    color: var(--ink);
+    font: 500 12px var(--font-ui);
+  }
+  .footer button:hover {
+    background: var(--hover-wash);
+  }
+  .footer .link {
     background: none;
     color: var(--accent);
     font-weight: 600;
   }
-  .open:hover,
-  .link:hover {
-    background: var(--hover-wash);
+  .footer .sent-link {
+    margin-left: auto;
+    color: var(--ink-secondary);
+    font-weight: 500;
+    text-decoration: underline;
+    text-underline-offset: 2px;
   }
   button:focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
+  /* EA3: under reduced motion the pending line stands still and nothing fades in. */
   @media (prefers-reduced-motion: reduce) {
     .peek {
       animation: none;
+    }
+    .progress::after {
+      animation: none;
+    }
+  }
+  /* X7: Increase Contrast and forced colours keep the border, pointer and rings. */
+  @media (prefers-contrast: more) {
+    .peek,
+    .pointer {
+      border-color: var(--ink);
+    }
+  }
+  @media (forced-colors: active) {
+    .peek {
+      border: 1px solid CanvasText;
+    }
+    .pointer {
+      border-color: CanvasText;
+    }
+    .selected {
+      text-decoration-color: Highlight;
     }
   }
 </style>

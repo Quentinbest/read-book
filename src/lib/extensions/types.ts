@@ -21,6 +21,8 @@ export interface ExtensionManifest {
       tokens: Record<string, string>
     }[]
     exporters: { id: string; title: string; command: string }[]
+    /** API 1.1, experimental (Reading Lens LK1). Older manifests from the core may lack it. */
+    lookups?: { id: string; title: string; when?: string | null }[]
   }
   permissions: string[]
 }

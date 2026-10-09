@@ -26,7 +26,18 @@
   import Navigator from './Navigator.svelte'
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
-  import LookUpPeek from './LookUpPeek.svelte'
+  import LookUpPeek, { type PeekState } from './LookUpPeek.svelte'
+  import { selectionContext, sentenceCount, type SelectionContext } from '../lib/lookup/context'
+  import {
+    languageName,
+    lookupProviders,
+    readerLanguages,
+    type LookupProvider,
+  } from '../lib/lookup/providers'
+  import { validateResult } from '../lib/lookup/result'
+  import { lookupCommands } from '../lib/lookup/commands'
+  import { primaryLang, type WhenContext } from '../lib/extensions/when'
+  import { locale } from '../lib/strings'
   import { ReadingSessions } from './sessions'
   import MoreMenu from './MoreMenu.svelte'
   import SearchPanel from './SearchPanel.svelte'
@@ -44,7 +55,12 @@
   import { popUpMenu, type MenuEntry } from '../app/nativeMenu'
   import { MOTION, multipliedTint, parseColor } from '../lib/theme/tokens'
   import AaPopover from './AaPopover.svelte'
-  import type { ExtensionHost, ReaderBridge } from '../extensions/host.svelte'
+  import {
+    LookupCancelled,
+    type ExtensionHost,
+    type LookupRequest,
+    type ReaderBridge,
+  } from '../extensions/host.svelte'
   import ExtensionTab from './ExtensionTab.svelte'
   import type { NavigatorTab } from '../lib/reader/state'
   import { toW3C } from '../lib/annotations/model'
@@ -337,7 +353,14 @@
   /** Floating popovers close on a click outside them (S2). */
   function onReaderPointerDown(e: PointerEvent) {
     const kind = lanes.floating?.kind
-    if (kind !== 'goto' && kind !== 'peek' && kind !== 'more' && kind !== 'aa' && kind !== 'note')
+    if (
+      kind !== 'goto' &&
+      kind !== 'peek' &&
+      kind !== 'lookup' &&
+      kind !== 'more' &&
+      kind !== 'aa' &&
+      kind !== 'note'
+    )
       return
     const inside = (e.target as Element | null)?.closest?.(
       '.goto, .goto-label, .nav-goto, .peek, .more, .more-button, .aa, .aa-button, .note',
@@ -742,7 +765,12 @@
         ? { label: t.annotations.delete, run: () => deleteAnnotation(existing.id) }
         : { label: t.annotations.search, run: () => searchFor(sel?.text ?? '') },
       ...(sel && !existing
-        ? [{ label: t.lookUp.contextMenu(sel.text.trim()), run: () => lookUp(sel.text, sel.last) }]
+        ? [
+            {
+              label: t.lookUp.contextMenu(sel.text.trim()),
+              run: () => openLookup(selectionTarget(sel), 'mac'),
+            },
+          ]
         : []),
     ]
     await popUpMenu(entries)
@@ -805,16 +833,22 @@
       if (!now.has(id)) extensions.emitAnnotationEvent('deleted', { id: `urn:uuid:${id}` })
   })
 
+  /** P10, LK9: what `when` clauses see of a selected text. */
+  function whenContextFor(text: string): WhenContext {
+    return {
+      'selection.words': text.trim().split(/\s+/).filter(Boolean).length,
+      'selection.chars': text.length,
+      'selection.language': book.language ?? '',
+      'book.language': book.language ?? '',
+      'book.fixedLayout': fixedBook,
+      'book.lang': primaryLang(book.language),
+      'selection.sentences': sentenceCount(text, book.language ?? ''),
+    }
+  }
   /** P10: extension actions for the selection, whose `when` holds. */
   const selectionExtensionActions = $derived(
     bar?.mode === 'new' && selection
-      ? extensions.selectionActions({
-          'selection.words': selection.text.trim().split(/\s+/).filter(Boolean).length,
-          'selection.chars': selection.text.length,
-          'selection.language': book.language ?? '',
-          'book.language': book.language ?? '',
-          'book.fixedLayout': fixedBook,
-        })
+      ? extensions.selectionActions(whenContextFor(selection.text))
       : [],
   )
   /** Run an extension's selection action; its Navigator tab (if any) shows the result. */
@@ -904,27 +938,266 @@
     if (!note?.note) return
     void ipc.copyText(noteText(note.note)).then(() => announce(t.peek.copied))
   }
-  // ---- Dictionary peek (1.1, approved 2026-10-01): this Mac's dictionaries, nothing sent anywhere.
-  let lookup = $state<{ word: string; rect: DOMRect; definition?: string | null } | null>(null)
+  // ---- The lookup peek: 1.1's dictionary peek (approved 2026-10-01), grown into
+  // Reading Lens's (LK1–LK15). This Mac's dictionaries send nothing anywhere; an
+  // extension's lookup sees the selection only when the reader chooses it (EP1).
+  interface LookupTarget {
+    text: string
+    cfi: string | null
+    range: Range | null
+    index: number
+    first: DOMRect
+    last: DOMRect
+  }
+  interface Lookup {
+    /** LK4: this peek's identity; an answer for another is dropped. */
+    serial: number
+    word: string
+    text: string
+    cfi: string | null
+    /** Where the reader was when it opened: moving on closes it (LK12). */
+    at: string | null
+    first: DOMRect
+    last: DOMRect
+    context: SelectionContext | null
+    providers: LookupProvider[]
+    current: string
+    state: PeekState
+    invocation: { extId: string; n: number } | null
+  }
+  let lookup = $state.raw<Lookup | null>(null)
+  let lookupPeek: ReturnType<typeof LookUpPeek> | undefined = $state()
   let lookupOpen = $derived(lanes.floating?.kind === 'lookup' && lookup !== null)
+  let lookupSerial = 0
   /** The longest text looked up: a phrase, not a passage. */
   const LOOKUP_MAX = 80
-  function lookUp(text: string, rect: DOMRect) {
-    const word = text.replace(/\s+/g, ' ').trim().slice(0, LOOKUP_MAX)
+  const bookLanguageName = $derived(
+    book.language && primaryLang(book.language) ? languageName(book.language, locale) : '',
+  )
+
+  function selectionTarget(sel: SelectionEvent): LookupTarget {
+    return {
+      text: sel.text,
+      cfi: sel.cfi,
+      range: sel.range,
+      index: sel.index,
+      first: sel.first,
+      last: sel.last,
+    }
+  }
+  /** The selection, or the clicked highlight (LK14). */
+  function currentTarget(): LookupTarget | null {
+    if (bar?.mode === 'existing' && bar.id) {
+      const a = annotations.get(bar.id)
+      if (!a) return null
+      return {
+        text: a.quote.exact,
+        cfi: a.cfi,
+        range: engine?.rangeOf(a.cfi) ?? null,
+        index: engine?.cfiIndex(a.cfi) ?? -1,
+        first: bar.first,
+        last: bar.last,
+      }
+    }
+    return selection ? selectionTarget(selection) : null
+  }
+  /** LK1, LK11: the providers that apply to a text; lookups are off in fixed-layout books (O13). */
+  function providersFor(text: string): LookupProvider[] {
+    const lookups = fixedBook ? [] : extensions.lookups(whenContextFor(text))
+    return lookupProviders(lookups, { languages: readerLanguages(locale), mac: true })
+  }
+  /** Lookups offered in the bar's “⋯” (LK1, LK14). */
+  const barLookups = $derived.by(() => {
+    if (!bar || bar.mode === 'attach') return []
+    const text =
+      bar.mode === 'existing'
+        ? bar.id
+          ? annotations.get(bar.id)?.quote.exact
+          : ''
+        : selection?.text
+    if (!text) return []
+    const providers = providersFor(text).filter((p) => p.kind === 'extension')
+    // One item per lookup: its first language; the peek's menu offers the others.
+    return providers
+      .filter(
+        (p, i) =>
+          providers.findIndex((x) => x.lookupId === p.lookupId && x.extId === p.extId) === i,
+      )
+      .map((p) => ({
+        key: p.key,
+        title: p.title,
+        extId: p.extId!,
+        name: p.name ?? p.title,
+        status: extensions.status[p.extId!] ?? 'idle',
+      }))
+  })
+
+  function openLookup(target: LookupTarget, providerKey = 'mac') {
+    const word = target.text.replace(/\s+/g, ' ').trim().slice(0, LOOKUP_MAX)
     if (!word) return
-    const request = { word, rect }
-    lookup = request
+    cancelLookupRequest()
+    const providers = providersFor(target.text)
+    const context = target.range
+      ? selectionContext(target.range, {
+          lang: book.language ?? '',
+          chapter: chapterLabelFor(target.index),
+        })
+      : null
+    lookup = {
+      serial: ++lookupSerial,
+      word,
+      text: target.text,
+      cfi: target.cfi,
+      at: location?.cfi ?? null,
+      first: target.first,
+      last: target.last,
+      context,
+      providers,
+      current: providers.some((p) => p.key === providerKey) ? providerKey : providers[0].key,
+      state: { kind: 'pending' },
+      invocation: null,
+    }
     dispatch({ type: 'openFloating', kind: 'lookup' })
-    void ipc
-      .lookUp(word)
-      .catch(() => null)
-      .then((definition) => {
-        if (lookup?.word === word && lookup.rect === rect) lookup = { ...request, definition }
-      })
+    engine?.setLookupMark(target.cfi, {
+      tint: theme.search.activeTint,
+      outline: theme.search.activeOutline,
+    })
+    ask()
   }
   function lookUpSelection() {
-    if (selection) lookUp(selection.text, selection.last)
+    const target = currentTarget()
+    if (target) openLookup(target, 'mac')
   }
+  function lookUpWith(key: string) {
+    const target = currentTarget()
+    if (target) openLookup(target, key)
+  }
+  /** LK4: the request in flight is cancelled; its Worker hears `cancel`. */
+  function cancelLookupRequest() {
+    const inv = lookup?.invocation
+    if (!inv || !lookup) return
+    extensions.cancelLookup(inv.extId, inv.n)
+    lookup = { ...lookup, invocation: null }
+  }
+  /** Ask the current provider; only the reader's choice sends anything (EP1, LK11). */
+  function ask() {
+    const l = lookup
+    if (!l) return
+    cancelLookupRequest()
+    const p = l.providers.find((x) => x.key === l.current)
+    if (!p) return
+    const { serial } = l
+    const stale = () => lookup?.serial !== serial || lookup.current !== p.key
+    if (p.kind === 'mac') {
+      lookup = { ...l, state: { kind: 'mac', definition: undefined } }
+      void ipc
+        .lookUp(l.word)
+        .catch(() => null)
+        .then((definition) => {
+          if (!stale() && lookup) lookup = { ...lookup, state: { kind: 'mac', definition } }
+        })
+      return
+    }
+    const extId = p.extId!
+    if (extensions.status[extId] === 'suspended') {
+      lookup = { ...l, state: { kind: 'error', error: 'stopped' } }
+      return
+    }
+    const request: LookupRequest = {
+      text: l.word,
+      context: l.context ?? {
+        before: '',
+        sentence: l.word,
+        after: '',
+        paragraph: l.word,
+        chapter: '',
+        selection: { start: 0, end: l.word.length },
+      },
+      bookLang: primaryLang(book.language),
+      language: p.language ?? 'en',
+    }
+    const { invocation, result } = extensions.lookup(extId, p.lookupId!, request, {
+      text: l.text,
+      cfi: l.cfi ?? '',
+    })
+    lookup = { ...l, state: { kind: 'pending' }, invocation: { extId, n: invocation } }
+    const mine = () => !stale() && lookup?.invocation?.n === invocation
+    result.then(
+      (raw) => {
+        if (!mine() || !lookup) return
+        const v = validateResult(raw)
+        // EP5: the reason names a field, never the text.
+        if (!v.ok) console.warn(`lookup ${extId}: answer refused (${v.why})`)
+        const state: PeekState = !v.ok
+          ? { kind: 'error', error: 'bad' }
+          : v.result.status === 'error'
+            ? { kind: 'error', error: v.result.error ?? 'unavailable' }
+            : { kind: 'answer', result: v.result }
+        lookup = { ...lookup, state, invocation: null }
+      },
+      (e: unknown) => {
+        if (e instanceof LookupCancelled || !mine() || !lookup) return
+        const timedOut = e instanceof Error && /did not answer/.test(e.message)
+        lookup = {
+          ...lookup,
+          state: { kind: 'error', error: timedOut ? 'timeout' : 'stopped' },
+          invocation: null,
+        }
+      },
+    )
+  }
+  function chooseProvider(key: string) {
+    if (!lookup || lookup.current === key) return
+    lookup = { ...lookup, current: key }
+    ask()
+  }
+  function closeLookup() {
+    if (lanes.floating?.kind === 'lookup') dispatch({ type: 'closeFloating' })
+  }
+  // Closing the peek, whatever closed it, cancels its request and takes the mark away (LK4).
+  $effect(() => {
+    if (lanes.floating?.kind === 'lookup' || !lookup) return
+    untrack(() => {
+      cancelLookupRequest()
+      engine?.setLookupMark(null)
+      lookup = null
+    })
+  })
+  // LK12: scrolling, a jump or anything else that moves the reader closes it.
+  $effect(() => {
+    const at = location?.cfi ?? null
+    untrack(() => {
+      if (lookup && lanes.floating?.kind === 'lookup' && at !== lookup.at) closeLookup()
+    })
+  })
+  // LK1: ⌘K's “Look Up with …”, answered by the reader being read (S14).
+  $effect(() => {
+    if (!active) return
+    const providerFor = (key: string) => {
+      const target = currentTarget()
+      return target ? providersFor(target.text).find((p) => p.key.startsWith(`${key}@`)) : undefined
+    }
+    lookupCommands.run = (key) => {
+      const p = providerFor(key)
+      if (p) lookUpWith(p.key)
+    }
+    lookupCommands.enabled = (key) => providerFor(key) !== undefined
+    return () => {
+      lookupCommands.run = null
+      lookupCommands.enabled = null
+    }
+  })
+  // LK12: leaving the book closes it (S14: a warm book takes nothing, and extensions see nothing).
+  $effect(() => {
+    if (!active) untrack(closeLookup)
+  })
+  // A theme change keeps it open and re-themes the mark (LK12).
+  $effect(() => {
+    const colors = { tint: theme.search.activeTint, outline: theme.search.activeOutline }
+    untrack(() => {
+      if (lookup && lanes.floating?.kind === 'lookup') engine?.setLookupMark(lookup.cfi, colors)
+    })
+  })
   function openInDictionary() {
     const word = lookup?.word
     dispatch({ type: 'closeFloating' })
@@ -1042,7 +1315,7 @@
     applyTheme(choice, themePacks.find((p) => p.value === choice)?.theme)
     await changeSetting('theme', choice)
     theme = await resolveTheme()
-    relayout()
+    relayout('theme')
   }
   let edges = { topStart: 0, dockBottom: false }
   let announceTurns = true
@@ -1130,7 +1403,9 @@
       })),
   )
 
-  function relayout() {
+  function relayout(reason?: 'theme') {
+    // LK12: a resize, a text-size or Aa change, or the Navigator docking closes the peek.
+    if (reason !== 'theme') closeLookup()
     height = window.innerHeight
     layout = computeLayout({
       width: window.innerWidth,
@@ -1279,6 +1554,17 @@
     if (fromBook && peekOpen && e.key === 'Tab' && !e.shiftKey) {
       e.preventDefault()
       peek?.focusFirst()
+      return
+    }
+    // EA1: Tab from the selection moves into the lookup peek; Esc brings focus back.
+    if (
+      lookupOpen &&
+      e.key === 'Tab' &&
+      !e.shiftKey &&
+      !lookupPeek?.contains(document.activeElement)
+    ) {
+      e.preventDefault()
+      lookupPeek?.focusFirst()
       return
     }
     // Keys inside the book document never reach the app's command handler: route them here,
@@ -1563,6 +1849,7 @@
               return
             if (
               kind === 'peek' ||
+              kind === 'lookup' ||
               kind === 'note' ||
               (kind === 'selection' && bar?.mode === 'existing')
             )
@@ -2066,14 +2353,30 @@
     {/if}
     {#if lookupOpen && lookup}
       <LookUpPeek
+        bind:this={lookupPeek}
         word={lookup.word}
-        definition={lookup.definition}
-        rect={lookup.rect}
+        wordLang={book.language ?? undefined}
+        sourceLanguage={bookLanguageName}
+        context={lookup.context}
+        first={lookup.first}
+        last={lookup.last}
+        providers={lookup.providers}
+        current={lookup.current}
+        shown={lookup.state}
+        onprovider={chooseProvider}
+        oncopy={(text) => void ipc.copyText(text).then(() => announce(t.lens.copied))}
         onopen={openInDictionary}
         onsearch={() => {
           const word = lookup?.word ?? ''
           dispatch({ type: 'closeFloating' })
           searchFor(word)
+        }}
+        onretry={ask}
+        onrestart={() => {
+          const extId =
+            lookup?.invocation?.extId ??
+            lookup?.providers.find((p) => p.key === lookup?.current)?.extId
+          if (extId) void extensions.restart(extId).then(ask)
         }}
       />
     {/if}
@@ -2143,6 +2446,8 @@
         }}
         onsearch={() => searchFor(selection?.text ?? '')}
         onlookup={lookUpSelection}
+        lookups={barLookups}
+        onlookupwith={lookUpWith}
         ondelete={() => bar?.id && deleteAnnotation(bar.id)}
         onescape={() => engine?.focusPage()}
         onattach={attachSelection}
