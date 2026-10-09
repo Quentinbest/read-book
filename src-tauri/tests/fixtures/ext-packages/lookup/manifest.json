@@ -1,0 +1,21 @@
+{
+  "id": "test.lookup",
+  "version": "1.0.0",
+  "name": "Test Lookup",
+  "description": "Reading Lens checks: a lookup provider with scripted answers, delays and failures.",
+  "engines": {
+    "linen": "^1.1"
+  },
+  "main": "main.js",
+  "activation": ["onLookup:explain"],
+  "contributes": {
+    "lookups": [
+      {
+        "id": "explain",
+        "title": "Explain",
+        "when": "(book.lang == \"en\" || book.lang == \"\") && selection.words <= 40"
+      }
+    ]
+  },
+  "permissions": ["book.selection", "network:127.0.0.1:8765"]
+}

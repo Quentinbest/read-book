@@ -56,6 +56,11 @@ export function sentences(text: string, from: number, to: number, lang = ''): Sp
     const a = from + seg.index
     const b = a + seg.segment.length
     const prev = out[out.length - 1]
+    // Whitespace between blocks (indented markup) is not a sentence of its own.
+    if (!seg.segment.trim()) {
+      if (prev) prev[1] = b
+      continue
+    }
     // A break after an abbreviation or an initial, inside one line, is not a sentence end.
     if (
       prev &&
@@ -175,6 +180,25 @@ const notReadingText = (el: Element): boolean =>
 
 const extracted = new WeakMap<Document, ExtractedText>()
 
+/** The chapter's text without markers and notes, extracted once per document. */
+function extraction(doc: Document): ExtractedText {
+  let x = extracted.get(doc)
+  if (!x) {
+    x = extractText(doc.body ?? doc.documentElement, notReadingText)
+    extracted.set(doc, x)
+  }
+  return x
+}
+
+/**
+ * Spike H: a selection's chapter is read and the segmenter made in idle time, so
+ * choosing a lookup finds them ready (≤ 10 ms per selection).
+ */
+export function warmContext(doc: Document, lang = ''): void {
+  extraction(doc)
+  segmenter(lang)
+}
+
 /** LK5: the context of a selection's range, in its own chapter's document. */
 export function selectionContext(
   range: Range,
@@ -182,11 +206,7 @@ export function selectionContext(
 ): SelectionContext | null {
   const doc = range.startContainer.ownerDocument
   if (!doc) return null
-  let x = extracted.get(doc)
-  if (!x) {
-    x = extractText(doc.body ?? doc.documentElement, notReadingText)
-    extracted.set(doc, x)
-  }
+  const x = extraction(doc)
   const start = offsetAt(x, range.startContainer, range.startOffset)
   const end = offsetAt(x, range.endContainer, range.endOffset)
   if (start === null || end === null || end <= start) return null

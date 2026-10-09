@@ -113,6 +113,9 @@ export class ExtensionHost {
   async load() {
     this.safeMode = await invoke<boolean>('app_safe_mode').catch(() => false)
     this.extensions = await invoke<InstalledExtension[]>('extensions_list').catch(() => [])
+    // A removed extension's state goes with it: installed again, it starts fresh.
+    for (const id of Object.keys(this.status))
+      if (!this.extensions.some((x) => x.manifest.id === id)) delete this.status[id]
     for (const x of this.extensions)
       this.status[x.manifest.id] = x.suspended
         ? 'suspended'

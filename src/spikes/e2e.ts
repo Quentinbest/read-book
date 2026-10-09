@@ -5469,6 +5469,966 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   })
 
+  // ---------------------------------------------------------------- Reading Lens, Stage 2a
+  // docs/reading-lens-plan.md §6.2 and §6.6. Each check installs the test lookup provider
+  // (src-tauri/tests/fixtures/ext-packages/lookup) and removes it afterwards (§6.10), so
+  // it passes alone and in the full suite. No check talks to a model or a real dictionary.
+  const LENS = 'test.lookup'
+  const EXPLAIN = 'test.lookup/explain@en'
+  const lens = {
+    async install() {
+      if (!ext().get(LENS)) {
+        await withSettings((root) => installViaSettings(root, 'lookup'))
+        await waitFor('the test lookup installed', () => ext().get(LENS), 5000)
+      }
+      await lens.script({})
+      await invoke('extension_storage_set', { id: LENS, key: 'asked', value: '0' })
+      await invoke('extension_storage_set', { id: LENS, key: 'cancelled', value: '0' })
+    },
+    async remove() {
+      if (!ext().get(LENS)) return
+      await invoke('extension_remove', { id: LENS, deleteData: true })
+      await emit('extensions-changed')
+      await waitFor('the test lookup removed', () => !ext().get(LENS), 5000)
+    },
+    script: (s: Record<string, unknown>) =>
+      invoke('extension_storage_set', { id: LENS, key: 'script', value: JSON.stringify(s) }),
+    count: async (k: string) =>
+      Number((await invoke<string | null>('extension_storage_get', { id: LENS, key: k })) ?? 0),
+  }
+  const lensPeek = () => document.querySelector<HTMLElement>('[data-lookup]')
+  const peekState = () => lensPeek()?.getAttribute('data-state') ?? null
+  /** Open the bar's “⋯” and choose a lookup (LK1). */
+  const chooseLookup = async (key = EXPLAIN) => {
+    await waitFor('bar', selBar)
+    const more = barButton(/more actions from extensions/i)
+    if (!more) throw new Error('no ⋯ in the bar')
+    more.click()
+    await settled(150)
+    const item = selBar()?.querySelector<HTMLButtonElement>(`[data-lookup-item="${key}"]`)
+    if (!item) throw new Error(`no ${key} in ⋯`)
+    item.click()
+    return waitFor('the lookup peek', lensPeek, 2000)
+  }
+  const answered = (ms = 5000) =>
+    waitFor('an answer', () => peekState() && peekState() !== 'pending', ms)
+  const closePeek = async () => {
+    key('Escape', { code: 'Escape' })
+    await settled(200)
+  }
+  /** The selected lines in window coordinates. */
+  const lineRects = (range: Range) => {
+    const frame =
+      range.startContainer.ownerDocument!.defaultView!.frameElement!.getBoundingClientRect()
+    return Array.from(range.getClientRects())
+      .filter((r) => r.width > 0 && r.height > 0)
+      .map((r) => new DOMRect(r.left + frame.left, r.top + frame.top, r.width, r.height))
+  }
+  const overlaps = (a: DOMRect, b: DOMRect) =>
+    a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom
+  /** EQ5: the peek never covers a selected line. */
+  const covers = (range: Range) => {
+    const p = lensPeek()?.getBoundingClientRect()
+    return !!p && lineRects(range).some((r) => overlaps(p, r))
+  }
+  /** Select the `n`th occurrence of a word in the chapter shown. */
+  const selectNth = async (word: string, n: number) => {
+    const { extractText } = await import('../lib/search/extract')
+    const { doc } = pageDoc()
+    const text = extractText(doc.body).text
+    let at = -1
+    for (let i = 0; i <= n; i++) at = text.indexOf(word, at + 1)
+    if (at < 0) throw new Error(`no ${word} #${n}`)
+    return selectPhrase(text.slice(0, at + word.length), { from: at })
+  }
+  const lensWithBook = async () => {
+    if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+    await toLoomings()
+    await lens.install()
+  }
+  const lensCheck = (id: string, description: string, run: (problems: string[]) => Promise<void>) =>
+    checks.push({
+      id,
+      description,
+      run: async () => {
+        const problems: string[] = []
+        try {
+          await run(problems)
+        } finally {
+          if (lensPeek()) await closePeek()
+          await lens.remove()
+        }
+        return problems.length ? problems.join('; ') : 'ok'
+      },
+    })
+
+  checks.push({
+    id: 'H-selection-context',
+    description:
+      'Spike H: WebKit’s Intl.Segmenter gives usable sentences over foliate ranges (inline markup, an abbreviation, footnote markers, CJK), within 10 ms per selection',
+    run: async () => {
+      const problems: string[] = []
+      const { selectionContext, contextOf } = await import('../lib/lookup/context')
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      await toLoomings()
+      const times: number[] = []
+      for (const phrase of ['drizzly', 'Manhattoes', 'Ishmael', 'water']) {
+        const range = await selectPhrase(phrase)
+        const t0 = performance.now()
+        const c = selectionContext(range, { lang: 'en' })
+        times.push(performance.now() - t0)
+        if (!c || !c.sentence.includes(phrase))
+          problems.push(`${phrase}: “${c?.sentence.slice(0, 50)}”`)
+        else if (c.sentence.slice(c.selection.start, c.selection.end) !== phrase)
+          problems.push(
+            `${phrase}: selection offsets point at “${c.sentence.slice(c.selection.start, c.selection.end)}”`,
+          )
+      }
+      key('Escape', { code: 'Escape' })
+      // The same rules as the unit set, on this WebKit's ICU.
+      const cases: [string, number, number, string, string][] = [
+        [
+          'Dr. Smith uses a mutex, e.g. here. Done.',
+          17,
+          22,
+          'en',
+          'Dr. Smith uses a mutex, e.g. here.',
+        ],
+        [
+          'He said “the stack grows down.” Then he left.',
+          13,
+          18,
+          'en',
+          'He said “the stack grows down.”',
+        ],
+        ['第一句。这是缓存的例子。第三句！', 6, 8, 'zh', '这是缓存的例子。'],
+        ['漢字を読む。次の文。', 0, 2, 'ja', '漢字を読む。'],
+      ]
+      for (const [text, a, b, lang, want] of cases) {
+        // As warmContext does for the book's language when the reader selects.
+        contextOf(text, a, b, { lang })
+        const t0 = performance.now()
+        const got = contextOf(text, a, b, { lang }).sentence
+        times.push(performance.now() - t0)
+        if (got !== want) problems.push(`${lang}: “${got}” for “${want}”`)
+      }
+      const worst = Math.max(...times)
+      log(`Spike H: ${times.map((x) => x.toFixed(1)).join(', ')} ms; worst ${worst.toFixed(2)} ms`)
+      if (worst > 10) problems.push(`a context took ${worst.toFixed(1)} ms`)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  lensCheck(
+    'EP1-no-request-on-select',
+    'AC1: selecting, highlighting, copying and searching make no request; only choosing Explain does (net.fetch and the canary)',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ answer: 'fetch' })
+      await invoke('spike_canary_clear')
+      const fetches = () => (hooks.netFetches ?? []).filter((f) => f.extId === LENS).length
+      const before = fetches()
+      await selectPhrase('drizzly')
+      await pressBar(/Copy/)
+      await selectPhrase('drizzly')
+      hooks.run?.('selection.highlight')
+      await settled(300)
+      hooks.run?.('edit.undo')
+      await selectPhrase('drizzly')
+      await pressBar(/Search/)
+      await settled(600)
+      await hideControls()
+      if (fetches() !== before) problems.push(`${fetches() - before} requests before Explain`)
+      if ((await lens.count('asked')) !== 0) problems.push('the provider was asked before Explain')
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      if (fetches() !== before + 1)
+        problems.push(`Explain made ${fetches() - before} requests, not 1`)
+      const canary = await invoke<{ http: string[] }>('spike_canary_log')
+      if (canary.http.filter((h) => h.includes('/canary/lookup')).length !== 1)
+        problems.push(`canary: ${canary.http.join(', ')}`)
+    },
+  )
+
+  lensCheck(
+    'LK1-menu-items',
+    'AC2: Explain appears in “⋯” and ⌘K only when its when-clause holds; none in safe mode; Look Up stays in the bar',
+    async (problems) => {
+      await lensWithBook()
+      await selectPhrase('drizzly')
+      await waitFor('bar', selBar)
+      if (!barButton(/Look Up/)) problems.push('no Look Up in the bar')
+      const cmd = 'extension:test.lookup:lookup.explain'
+      const inPalette = () => hooks.registry!.available().find((c) => c.id === cmd)
+      if (!inPalette() || inPalette()!.enabled?.() === false)
+        problems.push('⌘K has no enabled “Look Up with Explain”')
+      await chooseLookup()
+      await closePeek()
+      // 41 words: the clause says at most 40.
+      const { extractText } = await import('../lib/search/extract')
+      const text = extractText(pageDoc().doc.body).text
+      const start = text.indexOf('Call me Ishmael')
+      const words = text.slice(start).split(/(\s+)/)
+      const long = words.slice(0, 81).join('')
+      await selectPhrase(text.slice(0, start + long.length), { from: start })
+      await waitFor('bar', selBar)
+      barButton(/more actions from extensions/i)?.click()
+      await settled(150)
+      if (selBar()?.querySelector(`[data-lookup-item="${EXPLAIN}"]`))
+        problems.push('Explain offered for 41 words')
+      if (inPalette()?.enabled?.() !== false) problems.push('⌘K offers Explain for 41 words')
+      key('Escape', { code: 'Escape' })
+      ext().safeMode = true
+      try {
+        await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        if (
+          selBar()?.querySelector(`[data-lookup-item]`) ||
+          barButton(/more actions from extensions/i)
+        )
+          problems.push('lookups offered in safe mode')
+      } finally {
+        ext().safeMode = false
+      }
+      key('Escape', { code: 'Escape' })
+    },
+  )
+
+  lensCheck(
+    'LK1-peek-placement',
+    'AC3: the peek is up within 100 ms, below the selection with a pointer, never over a selected line; near the page foot it opens above; Pages and Scroll',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 400 })
+      for (const mode of ['pages', 'scroll'] as const) {
+        hooks.run?.(`layout.${mode}`)
+        await settled(900)
+        await toLoomings()
+        const range = await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        barButton(/more actions from extensions/i)!.click()
+        await settled(150)
+        const t0 = performance.now()
+        selBar()!.querySelector<HTMLButtonElement>(`[data-lookup-item="${EXPLAIN}"]`)!.click()
+        await new Promise((r) => requestAnimationFrame(() => r(null)))
+        const ms = performance.now() - t0
+        if (!lensPeek()) problems.push(`${mode}: no peek in the next frame`)
+        else if (ms > 100) problems.push(`${mode}: peek after ${Math.round(ms)} ms`)
+        if (peekState() !== 'pending') problems.push(`${mode}: not pending first (${peekState()})`)
+        await answered()
+        const p = lensPeek()!.getBoundingClientRect()
+        const last = lineRects(range).at(-1)!
+        if (covers(range)) problems.push(`${mode}: covers the selection`)
+        if (p.top < last.bottom) problems.push(`${mode}: not below the selection`)
+        if (p.height > innerHeight * 0.5 + 1) problems.push(`${mode}: taller than half the window`)
+        if (p.width > Math.min(440, innerWidth - 32) + 1)
+          problems.push(`${mode}: ${p.width} px wide`)
+        await closePeek()
+      }
+      hooks.run?.('layout.pages')
+      await settled(900)
+      // The page foot: the last words on the page.
+      const visible = reader()!.engine.view.lastLocation!.range
+      const end = visible.endContainer as Text
+      const doc = end.ownerDocument!
+      const r = doc.createRange()
+      const to = end.nodeType === 3 ? visible.endOffset : 0
+      const node = end.nodeType === 3 ? end : null
+      if (node && to > 8) {
+        r.setStart(node, to - 8)
+        r.setEnd(node, to - 1)
+        doc.getSelection()!.removeAllRanges()
+        doc.getSelection()!.addRange(r)
+        doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+        await settled(300)
+        await pressBar(/Look Up/)
+        await waitFor('peek', lensPeek)
+        await settled(200)
+        const p = lensPeek()!.getBoundingClientRect()
+        if (covers(r)) problems.push('page foot: covers the selection')
+        if (p.bottom > lineRects(r)[0].top) problems.push('page foot: did not open above')
+        await closePeek()
+      } else log('LK1-peek-placement: no text node at the page end; foot case skipped')
+    },
+  )
+
+  lensCheck(
+    'LK5-repeated-string',
+    'AC4: a word three times in a chapter sends the sentence of the occurrence selected, each time',
+    async (problems) => {
+      await lensWithBook()
+      const { extractText } = await import('../lib/search/extract')
+      const text = extractText(pageDoc().doc.body).text
+      const sentences = new Set<string>()
+      for (let n = 0; n < 3; n++) {
+        hooks.lookupRequests = []
+        await selectNth('water', n)
+        await chooseLookup()
+        await answered()
+        const req = hooks.lookupRequests[0]?.request as
+          { context: { sentence: string } } | undefined
+        let at = -1
+        for (let i = 0; i <= n; i++) at = text.indexOf('water', at + 1)
+        const around = text.slice(Math.max(0, at - 12), at + 5).replace(/\s+/g, ' ')
+        if (!req) problems.push(`#${n}: nothing sent`)
+        else if (!req.context.sentence.replace(/\s+/g, ' ').includes(around.trim()))
+          problems.push(`#${n}: sent “${req.context.sentence.slice(0, 60)}”`)
+        if (req) sentences.add(req.context.sentence)
+        await closePeek()
+      }
+      if (sentences.size !== 3)
+        problems.push(`${sentences.size} distinct sentences for 3 occurrences`)
+    },
+  )
+
+  lensCheck(
+    'LK5-context-bounds',
+    'AC5: the context is ≤ 1,200 characters, from this chapter only, and What was sent shows it',
+    async (problems) => {
+      await lensWithBook()
+      const { contextLength } = await import('../lib/lookup/context')
+      const { extractText } = await import('../lib/search/extract')
+      const chapter = extractText(pageDoc().doc.body).text.replace(/\s+/g, ' ')
+      hooks.lookupRequests = []
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      const req = hooks.lookupRequests[0]?.request as
+        { context: import('../lib/lookup/context').SelectionContext } | undefined
+      if (!req) return void problems.push('nothing sent')
+      const c = req.context
+      if (contextLength(c) > 1200) problems.push(`${contextLength(c)} characters`)
+      for (const part of [c.before, c.sentence, c.after, c.paragraph])
+        if (part && !chapter.includes(part.replace(/\s+/g, ' ').slice(0, 60)))
+          problems.push(`not from this chapter: “${part.slice(0, 40)}”`)
+      if (!/Loomings/i.test(c.chapter)) problems.push(`chapter “${c.chapter}”`)
+      Array.from(lensPeek()!.querySelectorAll('button'))
+        .find((b) => /What was sent/.test(b.textContent ?? ''))
+        ?.click()
+      await settled(200)
+      const shown = lensPeek()?.querySelector('.sent')?.textContent ?? ''
+      if (!shown.includes(c.sentence.slice(0, 40)))
+        problems.push('What was sent does not show the sentence')
+    },
+  )
+
+  lensCheck(
+    'LK4-cancel-stale',
+    'AC6: with 3 s latency, Esc at 1 s closes the peek, returns focus to the text and drops the late answer, 20 of 20',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 3000 })
+      for (let i = 0; i < 20; i++) {
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await sleep(1000)
+        await closePeek()
+        if (lensPeek()) problems.push(`run ${i}: the peek stayed`)
+        const active = document.activeElement
+        if (
+          !active ||
+          (active.tagName !== 'IFRAME' && active !== document.body && !active.closest('.reader'))
+        )
+          problems.push(`run ${i}: focus on ${active?.tagName}`)
+      }
+      await sleep(3200)
+      if (lensPeek()) problems.push('a late answer opened the peek')
+      const cancelled = await lens.count('cancelled')
+      if (cancelled < 20) problems.push(`the provider heard ${cancelled} of 20 cancellations`)
+    },
+  )
+
+  lensCheck(
+    'LK4-position-integrity',
+    'AC7: the reading place is the same before and after a lookup, and a page turn while pending closes it without moving elsewhere, 20 runs',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 1500 })
+      for (let i = 0; i < 20; i++) {
+        await toLoomings()
+        await selectPhrase('drizzly')
+        const before = loc()!.cfi
+        await chooseLookup()
+        if (i % 2) {
+          await answered()
+          await closePeek()
+          if (loc()!.cfi !== before) problems.push(`run ${i}: moved to ${loc()!.cfi}`)
+        } else {
+          key('ArrowRight', { code: 'ArrowRight' })
+          await settled(400)
+          if (lensPeek()) problems.push(`run ${i}: a page turn left the peek open`)
+          key('ArrowLeft', { code: 'ArrowLeft' })
+          await settled(400)
+          if (loc()!.cfi !== before) problems.push(`run ${i}: back at ${loc()!.cfi}, not the start`)
+        }
+      }
+    },
+  )
+
+  lensCheck(
+    'EQ1-labels',
+    'AC8: every answer carries its label from Linen’s set, never a percentage; a provider’s own label or score is refused',
+    async (problems) => {
+      await lensWithBook()
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      const label = lensPeek()?.querySelector('[data-source-label]')?.textContent
+      if (label !== 'AI explanation · test-model') problems.push(`label “${label}”`)
+      if (/%/.test(lensPeek()?.textContent ?? '')) problems.push('a % in the peek')
+      if (!lensPeek()?.querySelector('[data-qualifier]'))
+        problems.push('the qualifier is not in the first layer')
+      await closePeek()
+      await lens.script({ answer: 'bad' })
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      if (!/can’t show/.test(lensPeek()?.textContent ?? ''))
+        problems.push('a scored answer was shown')
+      if (/97/.test(lensPeek()?.textContent ?? '')) problems.push('the score reached the peek')
+    },
+  )
+
+  lensCheck(
+    'LK10-failure-states',
+    'AC10: offline, timeout, 401, 429, a refused answer and a suspended provider each show their state and action',
+    async (problems) => {
+      await lensWithBook()
+      const cases: [Record<string, unknown>, RegExp, RegExp | null][] = [
+        [{ answer: 'offline' }, /You’re offline/, /Try again/],
+        [{ answer: 'unauthorized' }, /didn’t accept the key/, null],
+        [{ answer: 'rate_limited' }, /limiting requests/, /Try again/],
+        [{ answer: 'bad' }, /can’t show/, /Try again/],
+        [{ answer: 'needs_context' }, /does not define it/, /Search in book/],
+      ]
+      for (const [script, text, action] of cases) {
+        await lens.script(script)
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await answered(12_000).catch(() => {})
+        const body = lensPeek()?.textContent ?? ''
+        if (!text.test(body)) problems.push(`${JSON.stringify(script)}: “${body.slice(0, 80)}”`)
+        const buttons = Array.from(lensPeek()?.querySelectorAll('.footer button') ?? []).map(
+          (b) => b.textContent ?? '',
+        )
+        if (action && !buttons.some((b) => action.test(b)))
+          problems.push(`${JSON.stringify(script)}: actions ${buttons.join(', ')}`)
+        await closePeek()
+      }
+      // Retry after a failure asks again.
+      await lens.script({ answer: 'offline' })
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      await lens.script({})
+      Array.from(lensPeek()!.querySelectorAll('button'))
+        .find((b) => /Try again/.test(b.textContent ?? ''))
+        ?.click()
+      await settled(100)
+      await answered()
+      if (peekState() !== 'answer') problems.push(`Try again: ${peekState()}`)
+      await closePeek()
+      // A timeout: its state, then the watchdog marks the provider (P6) with Restart in ⋯.
+      await lens.script({ delayMs: 10_500 })
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered(12_000).catch(() => {})
+      if (!/didn’t answer within 10 seconds/.test(lensPeek()?.textContent ?? ''))
+        problems.push(`timeout: “${(lensPeek()?.textContent ?? '').slice(0, 80)}”`)
+      await closePeek()
+      await selectPhrase('drizzly')
+      barButton(/more actions from extensions/i)?.click()
+      await settled(150)
+      if (!selBar()?.querySelector(`[data-lookup-item="${EXPLAIN}"][disabled]`))
+        problems.push('a stuck lookup is not marked in ⋯')
+      const restart = Array.from(
+        selBar()?.querySelectorAll<HTMLButtonElement>('.ext-menu button') ?? [],
+      ).find((b) => /Restart/.test(b.textContent ?? ''))
+      if (!restart) problems.push('no Restart for a stuck lookup')
+      key('Escape', { code: 'Escape' })
+      await ext().restart(LENS)
+      if (ext().status[LENS] === 'not-responding') problems.push('Restart left it not responding')
+    },
+  )
+
+  lensCheck(
+    'EA1-focus-and-announce',
+    'AC11: the peek is a labelled dialog whose answer is announced politely; Tab enters it, Esc returns to the text; axe passes; 7:1 in Paper, Sepia and Night',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ details: true })
+      for (const theme of ['paper', 'sepia', 'night'] as const) {
+        await emit('settings-changed', { key: 'theme', value: theme, source: 'harness' })
+        await settled(600)
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await answered()
+        const peek = lensPeek()!
+        if (
+          peek.getAttribute('role') !== 'dialog' ||
+          peek.getAttribute('aria-label') !== 'Explanation of “drizzly”'
+        )
+          problems.push(
+            `${theme}: ${peek.getAttribute('role')} “${peek.getAttribute('aria-label')}”`,
+          )
+        if (!peek.querySelector('[aria-live="polite"]'))
+          problems.push(`${theme}: no polite live region`)
+        const meaning = peek.querySelector<HTMLElement>('.meaning')!
+        const { contrast } = await import('../lib/theme/tokens')
+        const ratio = contrast(
+          getComputedStyle(meaning).color,
+          getComputedStyle(peek).backgroundColor,
+        )
+        if (ratio < 7) problems.push(`${theme}: meaning ${ratio.toFixed(2)}:1`)
+        if (theme === 'paper') {
+          key('Tab', { code: 'Tab' })
+          await settled(150)
+          if (!peek.contains(document.activeElement)) problems.push('Tab did not enter the peek')
+          problems.push(...(await axeRun('lookup peek')))
+          keyOnApp('Escape', { code: 'Escape' })
+          await settled(250)
+          if (lensPeek()) problems.push('Esc from inside did not close it')
+          if (peek.contains(document.activeElement))
+            problems.push('focus stayed in the closed peek')
+        } else await closePeek()
+      }
+      await emit('settings-changed', { key: 'theme', value: 'paper', source: 'harness' })
+      await settled(400)
+    },
+  )
+
+  lensCheck(
+    'EB1-budgets-pending',
+    'AC12: with a request pending, the peek is up within 100 ms and a page turn still renders within the turn budget (16 ms)',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 5000 })
+      const turns: number[] = []
+      for (let i = 0; i < 10; i++) {
+        await toLoomings()
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        const engine = reader()!.engine
+        let last = 0
+        const off = engine.onRelocate(() => (last = performance.now()))
+        const t0 = performance.now()
+        await engine.turn('next')
+        off()
+        if (last) turns.push(last - t0)
+        await settled(150)
+        if (lensPeek()) problems.push(`turn ${i}: the peek stayed`)
+      }
+      turns.sort((a, b) => a - b)
+      const p95 = turns[Math.min(turns.length - 1, Math.round((turns.length - 1) * 0.95))]
+      log(`EB1: page turns with a lookup pending, p95 ${p95?.toFixed(1)} ms (n=${turns.length})`)
+      if (!(p95 < 16)) problems.push(`turn p95 ${p95?.toFixed(1)} ms`)
+    },
+  )
+
+  lensCheck(
+    'LK14-highlight-lookup',
+    'A clicked highlight offers Look Up and lookups; Delete still stands where Search stands for a new selection',
+    async (problems) => {
+      await lensWithBook()
+      const range = await selectPhrase('drizzly')
+      hooks.run?.('selection.highlight')
+      await settled(400)
+      clickOn(range)
+      await settled(400)
+      const labels = Array.from(selBar()?.querySelectorAll('button.action') ?? []).map(
+        (b) => b.getAttribute('aria-label') ?? b.textContent?.trim(),
+      )
+      const del = labels.findIndex((l) => /Delete/.test(l ?? ''))
+      const copy = labels.findIndex((l) => /Copy/.test(l ?? ''))
+      if (del < 0 || del !== copy + 1) problems.push(`bar: ${labels.join(', ')}`)
+      if (!barButton(/Look Up/)) problems.push('no Look Up for a highlight')
+      hooks.lookupRequests = []
+      await chooseLookup()
+      await answered()
+      const sent = (hooks.lookupRequests[0]?.request as { text?: string } | undefined)?.text
+      if (sent !== 'drizzly') problems.push(`looked up “${sent}”`)
+      await closePeek()
+      hooks.run?.('edit.undo')
+      await settled(300)
+    },
+  )
+
+  lensCheck(
+    'LK13-no-room',
+    'In a short window, when neither side fits, the peek takes the side with more room, never covers the selection, and its answer scrolls',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ details: true })
+      const w = getCurrentWindow()
+      const factor = await w.scaleFactor()
+      const size = await w.innerSize()
+      try {
+        await w.setSize(new LogicalSize(760, 480))
+        await settled(1200)
+        await toLoomings()
+        const range = await selectPhrase('drizzly')
+        await chooseLookup()
+        await answered()
+        Array.from(lensPeek()!.querySelectorAll('button'))
+          .find((b) => /More/.test(b.textContent ?? ''))
+          ?.click()
+        await settled(300)
+        const p = lensPeek()!.getBoundingClientRect()
+        if (covers(range)) problems.push('covers the selection')
+        if (p.top < 0 || p.bottom > innerHeight)
+          problems.push(`outside the window: ${p.top}–${p.bottom}`)
+        const answer = lensPeek()!.querySelector<HTMLElement>('.answer')!
+        if (
+          answer.scrollHeight > answer.clientHeight + 1 &&
+          getComputedStyle(answer).overflowY !== 'auto'
+        )
+          problems.push('the answer does not scroll')
+        log(
+          `LK13: peek ${Math.round(p.height)} px in ${innerHeight}; answer ${answer.clientHeight}/${answer.scrollHeight}`,
+        )
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1200)
+      }
+    },
+  )
+
+  lensCheck(
+    'LK12-close-triggers',
+    'A resize, ⌘+, opening the Navigator, Back, a Contents jump, ⌘L and a page turn close the peek and cancel its request; a theme change keeps it',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 4000 })
+      const triggers: [string, () => Promise<void>][] = [
+        ['resize', async () => void dispatchEvent(new Event('resize'))],
+        ['⌘+', async () => void hooks.run?.('text.larger')],
+        ['Navigator', async () => void hooks.run?.('navigator.contents')],
+        ['page turn', async () => key('ArrowRight', { code: 'ArrowRight' })],
+        ['a jump', async () => void reader()!.engine.goTo(5)],
+        ['⌘L', async () => void hooks.run?.('library.show')],
+      ]
+      for (const [name, act] of triggers) {
+        await invoke('extension_storage_set', { id: LENS, key: 'cancelled', value: '0' })
+        if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+        await toLoomings()
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await settled(200)
+        await act()
+        await settled(700)
+        if (lensPeek()) problems.push(`${name}: the peek stayed`)
+        await sleep(300)
+        if ((await lens.count('cancelled')) !== 1) problems.push(`${name}: not cancelled`)
+        if (name === '⌘+') hooks.run?.('text.smaller')
+        if (name === 'Navigator') key('Escape', { code: 'Escape' })
+        await settled(600)
+      }
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      await toLoomings()
+      await lens.script({})
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await answered()
+      await emit('settings-changed', { key: 'theme', value: 'night', source: 'harness' })
+      await settled(800)
+      if (!lensPeek()) problems.push('a theme change closed the peek')
+      await emit('settings-changed', { key: 'theme', value: 'paper', source: 'harness' })
+      await settled(500)
+    },
+  )
+
+  lensCheck(
+    'EP3-context-excludes',
+    'Selections at a chapter’s first and last sentence, and next to a highlight with a note, send nothing from other chapters, highlights or notes',
+    async (problems) => {
+      await lensWithBook()
+      const { extractText } = await import('../lib/search/extract')
+      const chapter = extractText(pageDoc().doc.body).text.replace(/\s+/g, ' ')
+      // A highlight with a note on the sentence after the one looked up.
+      const NOTE = 'A private note about Manhattoes.'
+      await selectPhrase(MANHATTOES)
+      hooks.run?.('selection.note')
+      await waitFor('note card', noteCard)
+      typeNote(NOTE)
+      key('Escape', { code: 'Escape' })
+      await settled(500)
+      const sent = async (phrase: string, from?: number) => {
+        hooks.lookupRequests = []
+        await selectPhrase(phrase, from === undefined ? {} : { from })
+        await chooseLookup()
+        await answered()
+        await closePeek()
+        return JSON.stringify(hooks.lookupRequests[0]?.request ?? null)
+      }
+      const near = await sent('Call me Ishmael')
+      if (near.includes(NOTE)) problems.push('a note was sent')
+      const words = chapter.trim().split(' ')
+      const lastWords = words.slice(-3).join(' ')
+      const text = extractText(pageDoc().doc.body).text
+      const at = text.lastIndexOf(lastWords.split(' ')[0])
+      const last = await sent(text.slice(0, at + lastWords.split(' ')[0].length), at)
+      const req = JSON.parse(last) as { context?: Record<string, string> } | null
+      // The chapter's label is its Contents entry, not text from it.
+      for (const [name, part] of Object.entries(req?.context ?? {}))
+        if (name !== 'chapter')
+          if (
+            typeof part === 'string' &&
+            part &&
+            !chapter.includes(part.replace(/\s+/g, ' ').slice(0, 40))
+          )
+            problems.push(`from elsewhere: “${part.slice(0, 40)}”`)
+      if (last.includes(NOTE)) problems.push('a note was sent')
+      hooks.run?.('edit.undo')
+      await settled(300)
+    },
+  )
+
+  lensCheck(
+    'N5-quit-pending',
+    'Quitting while a lookup is pending quits at once and leaves no error in the crash log',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 3000 })
+      const before = (await invoke<string>('spike_crash_log')).length
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await settled(200)
+      hooks.quitRequested = false
+      const t0 = performance.now()
+      await emit('app-quitting')
+      await waitFor('quit handled', () => hooks.quitRequested, 3000).catch(() =>
+        problems.push('the quit was not handled within 3 s'),
+      )
+      const ms = performance.now() - t0
+      if (ms > 1500) problems.push(`quit took ${Math.round(ms)} ms`)
+      await sleep(3200)
+      const after = await invoke<string>('spike_crash_log')
+      if (after.length !== before)
+        problems.push(`the crash log grew: ${after.slice(before, before + 200)}`)
+      hooks.quitRequested = false
+    },
+  )
+
+  lensCheck(
+    'LK15-single-provider',
+    'With one provider the label above the answer is plain text, with no menu; with two it is a menu that switches and asks only then',
+    async (problems) => {
+      if (!reader()) await openFromLibrary(/Moby Dick(?!;)/)
+      await toLoomings()
+      await lens.remove()
+      // The sample Dictionary's lookup holds for three words at most: four leave this Mac's only.
+      await selectPhrase('damp, drizzly November in')
+      await pressBar(/Look Up/)
+      await waitFor('peek', lensPeek)
+      if (lensPeek()?.querySelector('button.provider')) problems.push('one provider shows a menu')
+      if (!lensPeek()?.querySelector('[data-provider-label]')) problems.push('no provider label')
+      await closePeek()
+      await lens.install()
+      await selectPhrase('drizzly')
+      await pressBar(/Look Up/)
+      await waitFor('peek', lensPeek)
+      if ((await lens.count('asked')) !== 0) problems.push('Explain asked before it was chosen')
+      const menu = lensPeek()?.querySelector<HTMLButtonElement>('button.provider')
+      if (!menu) return void problems.push('two providers but no menu')
+      menu.click()
+      await settled(150)
+      const explain = Array.from(
+        lensPeek()!.querySelectorAll<HTMLButtonElement>('[role="menuitemradio"]'),
+      ).find((b) => /Explain/.test(b.textContent ?? ''))
+      explain?.click()
+      await waitFor('Explain’s answer', () => peekState() === 'answer', 5000).catch(() => {})
+      if ((await lens.count('asked')) !== 1) problems.push('choosing Explain did not ask it once')
+    },
+  )
+
+  lensCheck(
+    'LK1-fixed-layout',
+    'O13 (provisional): a fixed-layout book offers no extension lookups',
+    async (problems) => {
+      await lens.install()
+      await backToLibrary()
+      await openFromLibrary(/blanche/i)
+      if (!reader()!.engine.fixedLayout) return void problems.push('not fixed layout')
+      const doc = reader()!
+        .engine.view.renderer.getContents()
+        .map((x) => x.doc)
+        .find((d) => d?.body?.textContent?.trim())
+      if (!doc) return void log('LK1-fixed-layout: no text document; checked nothing')
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+      let node = walker.nextNode() as Text | null
+      while (node && node.data.trim().length < 4) node = walker.nextNode() as Text | null
+      if (!node)
+        return void log('LK1-fixed-layout: no text to select; checked the provider list only')
+      const r = doc.createRange()
+      const lead = node.data.length - node.data.trimStart().length
+      r.setStart(node, lead)
+      r.setEnd(node, lead + 3)
+      doc.getSelection()!.removeAllRanges()
+      doc.getSelection()!.addRange(r)
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      if (selBar()?.querySelector('[data-lookup-item]'))
+        problems.push('a lookup offered in a fixed-layout book')
+      key('Escape', { code: 'Escape' })
+      await backToLibrary()
+    },
+  )
+
+  lensCheck(
+    'LK5-chunk-boundary',
+    'In a chapter laid out in chunks (L16), the first sentence of a chunk gets the previous sentence from the previous chunk',
+    async (problems) => {
+      await lens.install()
+      await backToLibrary()
+      await openFromLibrary(/one file/i)
+      const { computeChunks } = await import('../reader/chunks')
+      const { doc } = pageDoc()
+      const chunks = computeChunks(doc)
+      if (chunks.starts.length < 3) return void problems.push('the chapter is not chunked')
+      const block = chunks.blocks[chunks.starts[1]]
+      const prev = chunks.blocks[chunks.starts[1] - 1]
+      const word = (block.textContent ?? '').trim().split(/\s+/).slice(0, 2).join(' ')
+      const { extractText } = await import('../lib/search/extract')
+      const text = extractText(doc.body).text
+      const at = text.indexOf((block.textContent ?? '').trim().slice(0, 40))
+      if (at < 0) return void problems.push('the chunk’s first block is not in the text')
+      const range = await selectPhrase(text.slice(0, at + word.length), { from: at })
+      hooks.lookupRequests = []
+      await chooseLookup()
+      await answered()
+      const sent = (
+        hooks.lookupRequests[0]?.request as
+          { context?: import('../lib/lookup/context').SelectionContext } | undefined
+      )?.context
+      // The cap may leave a long neighbour out (Melville's sentences run long): without it,
+      // the sentence before must come from the previous chunk.
+      const { selectionContext, contextLength } = await import('../lib/lookup/context')
+      const c = selectionContext(range, { lang: 'en', max: 100_000 })
+      const tail = (prev.textContent ?? '').trim().slice(-20)
+      if (!c?.before || !c.before.replace(/\s+/g, ' ').includes(tail.replace(/\s+/g, ' ')))
+        problems.push(`before: “${c?.before.slice(-40)}”, previous block ends “${tail}”`)
+      if (sent && contextLength(sent) > 1200)
+        problems.push(`sent ${contextLength(sent)} characters`)
+      if (sent && !sent.before && c && c.sentence.length + c.before.length <= 1200)
+        problems.push('the cap left out a sentence that fits')
+      await closePeek()
+      await backToLibrary()
+    },
+  )
+
+  lensCheck(
+    'LK5-context-cleanup',
+    'Footnote markers are absent from the context; note bodies are not sent (EP3)',
+    async (problems) => {
+      await lens.install()
+      await backToLibrary()
+      await openFromLibrary(/Notes and images/)
+      const engine = reader()!.engine
+      // The first chapter with a note reference.
+      for (let i = 0; i < (engine.book?.sections.length ?? 0); i++) {
+        await engine.goTo(i)
+        await settled(600)
+        if (pageDoc().doc.querySelector('[role="doc-noteref"], a[epub\\:type~="noteref"]')) break
+      }
+      const { doc } = pageDoc()
+      const ref = doc.querySelector<HTMLElement>('[role="doc-noteref"], a[epub\\:type~="noteref"]')
+      if (!ref) return void problems.push('no note reference found')
+      const p = ref.closest('p') ?? ref.parentElement!
+      const words = (p.textContent ?? '')
+        .replace(ref.textContent ?? '', '')
+        .trim()
+        .split(/\s+/)
+      const { extractText } = await import('../lib/search/extract')
+      const text = extractText(doc.body).text
+      const at = text.indexOf((p.textContent ?? '').trim().slice(0, 30))
+      await selectPhrase(text.slice(0, at + words[0].length), { from: at })
+      hooks.lookupRequests = []
+      await chooseLookup()
+      await answered()
+      const c = (
+        hooks.lookupRequests[0]?.request as
+          { context?: import('../lib/lookup/context').SelectionContext } | undefined
+      )?.context
+      const marker = (ref.textContent ?? '').trim()
+      if (!c) return void problems.push('nothing sent')
+      const sentenceWithMarker = (p.textContent ?? '').includes(`${words.at(-1)}${marker}`)
+      if (sentenceWithMarker && c.paragraph.includes(`${words.at(-1)}${marker}`))
+        problems.push(`the marker “${marker}” was sent`)
+      const id = decodeURIComponent((ref.getAttribute('href') ?? '').replace(/^#/, ''))
+      const note = id ? doc.getElementById(id) : null
+      const noteText = (note?.textContent ?? '').trim().slice(0, 30)
+      if (noteText && JSON.stringify(c).includes(noteText)) problems.push('the note body was sent')
+      await closePeek()
+      await backToLibrary()
+    },
+  )
+
+  lensCheck(
+    'LK4-rapid',
+    'A second lookup while one is pending shows only the latest answer; the earlier one is dropped',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 1200 })
+      hooks.lookupRequests = []
+      await selectPhrase('drizzly')
+      await chooseLookup()
+      await sleep(300)
+      await selectPhrase('November')
+      await chooseLookup()
+      await answered()
+      await sleep(1500)
+      const word = lensPeek()?.querySelector('.word')?.textContent
+      if (word !== 'November') problems.push(`shows “${word}”`)
+      if (!/November/.test(lensPeek()?.querySelector('.meaning')?.textContent ?? ''))
+        problems.push('the answer is not for the latest lookup')
+    },
+  )
+
+  lensCheck(
+    'S14-warm-cancel',
+    '⌘L while a request is pending cancels it and hides the book from extensions; returning shows no peek',
+    async (problems) => {
+      await lensWithBook()
+      await lens.script({ delayMs: 3000 })
+      const warm = hooks.noWarm
+      hooks.noWarm = false
+      try {
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await settled(300)
+        hooks.run?.('library.show')
+        await settled(800)
+        if (ext().bridge) problems.push('extensions still see the book')
+        await sleep(3000)
+        if ((await lens.count('cancelled')) !== 1) problems.push('not cancelled')
+        await openFromLibrary(/Moby Dick(?!;)/)
+        await settled(600)
+        if (lensPeek()) problems.push('a peek on return')
+      } finally {
+        hooks.noWarm = warm
+      }
+    },
+  )
+
+  lensCheck(
+    'EP5-crashlog-clean',
+    'After provider errors, a refused answer and a crashed provider, the crash log holds no selected or context text',
+    async (problems) => {
+      await lensWithBook()
+      for (const answer of ['bad', 'crash', 'offline']) {
+        await lens.script({ answer })
+        await selectPhrase('drizzly')
+        await chooseLookup()
+        await answered().catch(() => {})
+        await closePeek()
+      }
+      const log = await invoke<string>('spike_crash_log')
+      for (const needle of ['drizzly', 'November in my soul'])
+        if (log.includes(needle)) problems.push(`the crash log holds “${needle}”`)
+    },
+  )
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',

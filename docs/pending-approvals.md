@@ -143,3 +143,9 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
 
 74. **Peek strings in four languages.** The new lookup strings (`lens` in `src/lib/strings/en.ts`, PROVISIONAL, worded from the canvas) have machine drafts in zh-Hans, zh-Hant, ja and es so the shipped catalogues stay complete.
     *Recommendation:* approve the English; send the four drafts to the native reviewers (L-6) before Stage 2a ships.
+
+75. **Visual baselines for the lookup peek (Stage 2a Done-when).** Not captured yet. The peek states (pending, answer, More, What was sent, needs context, errors, the provider menu) in Paper and Night, built from the test provider, are to be captured with `scripts/e2e.sh v` and compared with Canvas 2–9 by eye.
+    *Recommendation:* capture them in the next session and approve, or say which states differ from the canvas.
+
+76. **The first-request notice has no shape in LK2 (Canvas 8, EX8).** Explain shows its own notice before the first request to a host (“Explain sends text to DeepSeek · Continue · Not now”), but LK2's fields cannot carry it, so the core renders nothing for it.
+    *Recommendation:* add a `notice` status to LK2 (title, text, the host, Continue and Not now; the core draws the buttons), before Stage 3.

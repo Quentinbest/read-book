@@ -27,7 +27,12 @@
   import GoTo, { type GoToTarget } from './GoTo.svelte'
   import FootnotePeek from './FootnotePeek.svelte'
   import LookUpPeek, { type PeekState } from './LookUpPeek.svelte'
-  import { selectionContext, sentenceCount, type SelectionContext } from '../lib/lookup/context'
+  import {
+    selectionContext,
+    sentenceCount,
+    warmContext,
+    type SelectionContext,
+  } from '../lib/lookup/context'
   import {
     languageName,
     lookupProviders,
@@ -552,6 +557,9 @@
         dispatch({ type: 'closeFloating' })
       return
     }
+    // Spike H: the chapter's context is ready before a lookup is chosen.
+    const doc = e.range.startContainer.ownerDocument
+    if (doc) setTimeout(() => warmContext(doc, book.language ?? ''), 0)
     // S7: a new selection dismisses popovers and peeks; the bar takes the floating lane.
     dispatch({ type: 'selectionStart' })
     bar = { mode: reattaching ? 'attach' : 'new', first: e.first, last: e.last }
@@ -2171,6 +2179,8 @@
     window.addEventListener('keydown', onKeydown)
     return () => {
       unmounted = true
+      // LK4, LK12: leaving the book cold cancels a lookup still pending.
+      cancelLookupRequest()
       window.removeEventListener('resize', debouncedResize)
       window.removeEventListener('blur', onBlur)
       window.removeEventListener('keydown', onKeydown)

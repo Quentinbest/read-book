@@ -7,6 +7,48 @@ export interface Selection {
   text: string
   /** Where it is: an EPUB CFI. */
   cfi: string
+  /** 1.1, during a lookup: the text around the selection (see LookupRequest). */
+  context?: SelectionContext
+}
+
+/** 1.1, experimental: whole sentences around a selection, in its own chapter, 1,200 characters at most. */
+export interface SelectionContext {
+  before: string
+  sentence: string
+  after: string
+  paragraph: string
+  /** The chapter's label in the book's Contents. */
+  chapter: string
+  /** Where the selection sits in `sentence`. */
+  selection: { start: number; end: number }
+}
+
+/** 1.1, experimental: what a lookup is asked. */
+export interface LookupRequest {
+  text: string
+  context: SelectionContext
+  /** The book's primary language subtag, or "". */
+  bookLang: string
+  /** The language to answer in (BCP 47). */
+  language: string
+}
+
+/** 1.1, experimental: plain text in fixed fields; Linen renders it and writes the label. */
+export interface LookupAnswer {
+  status: 'ok' | 'needs_context' | 'error'
+  headword: string
+  term?: string
+  meaning: string
+  /** A qualifier that changes the meaning: shown with it, never only under More. */
+  qualifier?: string
+  /** Shown under More. */
+  details?: { label: string; text: string }[]
+  source: { kind: 'ai' | 'dictionary'; name: string; model?: string }
+  /** What was sent, as sent. */
+  sent?: string
+  /** needs_context: what the passage lacks. */
+  missing?: string
+  error?: 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
 }
 
 /** A W3C Web Annotation (A9), with Linen's colour and the chapter it is in. */
@@ -41,7 +83,14 @@ export interface ReadingSession {
 }
 
 export interface Linen {
-  apiVersion: '1.0.0'
+  apiVersion: '1.1.0'
+  /** 1.1, experimental: answer a lookup declared in `contributes.lookups`. Needs `book.selection`. */
+  lookups: {
+    register(
+      id: string,
+      handler: (request: LookupRequest, options: { signal: AbortSignal }) => LookupAnswer | null | Promise<LookupAnswer | null>,
+    ): Promise<true>
+  }
   commands: {
     /** Handle a command declared in the manifest. The context says how it was invoked. */
     register(id: string, handler: (context: { source?: 'selection'; export?: { book: string } }) => unknown): Promise<true>

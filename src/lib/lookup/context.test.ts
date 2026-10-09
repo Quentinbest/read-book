@@ -156,6 +156,14 @@ describe('LK5 selection context', () => {
     ).toBe('漢字を読む。')
   })
 
+  it('skips the whitespace of indented markup between blocks', () => {
+    const c = ctx(
+      '<p>A bitter cold morning.</p>\n\t\t\t\n<p>Seeing the window, he went.</p>',
+      'Seeing',
+    )
+    expect(c.before).toBe('A bitter cold morning.')
+  })
+
   it('counts the sentences in a selection (LK9)', () => {
     expect(sentenceCount('One word')).toBe(1)
     expect(sentenceCount('One. Two.')).toBe(2)
