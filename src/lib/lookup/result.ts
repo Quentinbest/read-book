@@ -6,8 +6,12 @@
 /** `notice` (item 76, EX8): before the first request to a host, the provider says what it will send. */
 export type LookupStatus = 'ok' | 'needs_context' | 'error' | 'notice'
 
-/** LK10: failures a provider reports; the core words them and offers the action. */
-export type LookupErrorKind = 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
+/**
+ * LK10: failures a provider reports; the core words them and offers the action.
+ * `not_configured` (Stage 3): the provider needs setting up first (Open options).
+ */
+export type LookupErrorKind =
+  'offline' | 'unauthorized' | 'rate_limited' | 'unavailable' | 'not_configured'
 
 export interface LookupResult {
   status: LookupStatus
@@ -63,7 +67,13 @@ const TOP = new Set([
   'notice',
 ])
 const SOURCE = new Set(['kind', 'name', 'model'])
-const ERRORS = new Set<LookupErrorKind>(['offline', 'unauthorized', 'rate_limited', 'unavailable'])
+const ERRORS = new Set<LookupErrorKind>([
+  'offline',
+  'unauthorized',
+  'rate_limited',
+  'unavailable',
+  'not_configured',
+])
 /** EQ2: no percentages and no confidence or probability talk. */
 const SCORE = /\d\s*%|\bpercent\b|\bconfiden(?:ce|t)\b|\bprobabilit/i
 /** Plain text only: markup is never rendered, so it is refused rather than shown as tags. */
@@ -142,7 +152,9 @@ export function validateResult(raw: unknown): Validated {
     else if (r.missing !== undefined) throw new Error('missing belongs to needs_context')
     if (status === 'error') {
       if (!ERRORS.has(r.error as LookupErrorKind))
-        throw new Error('error must be offline, unauthorized, rate_limited or unavailable')
+        throw new Error(
+          'error must be offline, unauthorized, rate_limited, unavailable or not_configured',
+        )
       result.error = r.error as LookupErrorKind
     } else if (r.error !== undefined) throw new Error('error belongs to status error')
     if (status === 'notice') {

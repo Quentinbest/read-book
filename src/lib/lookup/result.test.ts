@@ -69,6 +69,8 @@ describe('LK2 result validator', () => {
       validateResult({ ...base, status: 'needs_context', missing: 'Defined in chapter 3.' }).ok,
     ).toBe(true)
     expect(validateResult({ ...base, status: 'error', error: 'offline' }).ok).toBe(true)
+    // Stage 3: a provider that needs setting up first.
+    expect(validateResult({ ...base, status: 'error', error: 'not_configured' }).ok).toBe(true)
     expect(validateResult({ ...base, status: 'error', error: 'kaboom' })).toMatchObject({
       ok: false,
     })

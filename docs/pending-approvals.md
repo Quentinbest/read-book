@@ -207,3 +207,7 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     The new strings (`extAccess`) have machine drafts in the four languages.
     *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with items 74 and 81.
     **Approved 2026-10-10.**
+
+83. **“Not set up” and “‹name› options…” in the peek (Stage 3, LK10, LK11).** The spec's error list has a “Not set up” state with one action, and LK11's menu lists “Explain options…”; Host API 1.1 had neither. A lookup may now answer `error: "not_configured"`, shown as “‹name› isn't set up yet. Finish setting it up in its options.” with Open options; and the provider menu ends with “‹name› options…” for an extension with an options page. Both are experimental Host API 1.1 additions. The strings have machine drafts in the four languages. No capture yet: they will be taken with Explain's own screens.
+    *Recommendation:* approve the behaviour and the English; send the drafts to the native reviewers with item 82's.
+

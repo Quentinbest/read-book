@@ -500,6 +500,8 @@ export const ja: Messages = {
     timeout: (name: string) => `${name} から 10 秒以内に回答がありませんでした。`,
     unauthorized: (name: string) => `${name} がキーを受け付けませんでした。`,
     unauthorizedDetail: 'キーが期限切れか、取り消された可能性があります。',
+    notConfigured: (name: string) => `${name} はまだ設定されていません。`,
+    notConfiguredDetail: 'オプションで設定を完了してください。',
     rateLimited: (name: string) => `${name} がリクエストを制限しています。`,
     rateLimitedDetail: '1 分後にもう一度お試しください。',
     unavailable: (name: string) => `${name} は現在利用できません。`,
@@ -570,6 +572,7 @@ export const ja: Messages = {
     keyUnavailable: (name: string) => `${name} のキーを読み取れませんでした。`,
     keyUnavailableDetail:
       'キーチェーンがロックされているか、アクセスが拒否されました。何も送信していません。',
+    optionsItem: (name: string) => `${name} のオプション…`,
     openOptions: 'オプションを開く',
   },
   image: {

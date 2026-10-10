@@ -3,7 +3,7 @@
 // does what the harness's script names and writes what happened to storage
 // ('report'), so a check can read it. It never sees a key: it only names one.
 //
-// script: { step: 'grant' | 'key' | 'send' | 'probe' | 'slow' }
+// script: { step: 'grant' | 'key' | 'send' | 'probe' | 'slow' | 'unset' }
 'use strict'
 
 const HOST = '127.0.0.1:8765'
@@ -64,6 +64,9 @@ linen.lookups.register('keyed', async (request, { signal }) => {
       if (signal.aborted) return null
       await linen.net.fetch(`http://${HOST}/canary/slow`)
       break
+    case 'unset':
+      // Stage 3: not set up yet (Open options).
+      return { status: 'error', headword, error: 'not_configured', source }
     case 'probe':
       // The peek's refused-key state, with Open options (LK8).
       if (!(await linen.secrets.has('token')))

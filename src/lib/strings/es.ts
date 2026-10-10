@@ -513,6 +513,8 @@ export const es: Messages = {
     timeout: (name: string) => `${name} no respondió en 10 segundos.`,
     unauthorized: (name: string) => `${name} no aceptó la clave.`,
     unauthorizedDetail: 'Puede haber caducado o haberse revocado.',
+    notConfigured: (name: string) => `${name} aún no está configurado.`,
+    notConfiguredDetail: 'Termina de configurarlo en sus opciones.',
     rateLimited: (name: string) => `${name} está limitando las solicitudes.`,
     rateLimitedDetail: 'Vuelve a intentarlo en un minuto.',
     unavailable: (name: string) => `${name} no está disponible ahora.`,
@@ -584,6 +586,7 @@ export const es: Messages = {
     keyUnavailable: (name: string) => `Linen no pudo leer la clave de ${name}.`,
     keyUnavailableDetail:
       'Puede que el llavero esté bloqueado o que se haya denegado el acceso. No se envió nada.',
+    optionsItem: (name: string) => `Opciones de ${name}…`,
     openOptions: 'Abrir opciones',
   },
   image: {

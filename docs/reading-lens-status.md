@@ -8,7 +8,8 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
 | 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
-| 3–5 | Not started | After 2d, and private (Explain) |
+| 3 Explain and the offline check | In progress | Explain is built in the private repository `Quentinbest/linen-explain` (owner, 2026-10-11; DeepSeek first). Host additions below. The offline run needs Stage 1's stuck points and two bilingual reviewers |
+| 4–5 | Not started | After G2 |
 
 ## Stage 2a — lookup peek and selection context
 
@@ -163,3 +164,16 @@ Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop, 2026-10-10.
 - **In-app, full suite:** **170/170**, the last, `D1-no-uncaught-errors`, included. `LK6-deny-revoke` then gained the pending-request case; with it, the Stage 2d checks, `EP1-no-request-on-select` and both D1 checks passed again (8/8).
 - **Visual:** `scripts/e2e.sh v` captured the four Stage 2d screens. Against `docs/visual/baselines/`, ten older screens differ by 0.1–1.2% (the selection colour of an active window against the inactive Desktop 2 baselines, and glyph edges; item 77 describes the same). Stage 2d does not touch them, and their captures were not committed.
 - **Found and fixed while writing the checks:** removing an extension showed “stopped responding” in the peek instead of cancelling, and its host sheet stayed open.
+
+## Stage 3 — host additions for Explain
+
+- **Last updated:** 2026-10-11
+- **Where Explain lives:** a private repository, `Quentinbest/linen-explain` (plan §1.2: no Explain code here before Gate 3). This repository gains only the Host API pieces Explain needs, and the test provider that imitates them.
+
+| Rule | What | Where |
+|---|---|---|
+| LK10 (spec 4.4, “Not set up”) | A lookup may answer `error: "not_configured"`: the peek says “‹name› isn't set up yet. Finish setting it up in its options.” with Open options, and no Try again | `lib/lookup/result.ts`, `LookUpPeek.svelte`, strings |
+| LK11 | The provider menu ends with “‹name› options…” for each extension in it that has an options page; it opens Settings on that page | `LookUpPeek.svelte` (`menuOptions`), `Reader.svelte` |
+
+Checks: `LK8-options-page` covers both (the test provider's `unset` step), and the validator's unit test accepts `not_configured`. The lens checks pass (25 of 25, with `EP1`, `EX8` and both D1 checks).
+
