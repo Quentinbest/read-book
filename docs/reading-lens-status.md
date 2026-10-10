@@ -175,5 +175,30 @@ Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop, 2026-10-10.
 | LK10 (spec 4.4, “Not set up”) | A lookup may answer `error: "not_configured"`: the peek says “‹name› isn't set up yet. Finish setting it up in its options.” with Open options, and no Try again | `lib/lookup/result.ts`, `LookUpPeek.svelte`, strings |
 | LK11 | The provider menu ends with “‹name› options…” for each extension in it that has an options page; it opens Settings on that page | `LookUpPeek.svelte` (`menuOptions`), `Reader.svelte` |
 
-Checks: `LK8-options-page` covers both (the test provider's `unset` step), and the validator's unit test accepts `not_configured`. The lens checks pass (25 of 25, with `EP1`, `EX8` and both D1 checks).
+| LK2 | A provider's headword and What was sent are the reader's own text: Linen no longer refuses them for tag-like code (`Vec<T>`) or a percentage in the book (“50% of”). They were always shown as text | `lib/lookup/result.ts` |
+
+Checks: `LK8-options-page` covers the first two (the test provider's `unset` step); the validator's unit tests cover `not_configured`, code and a percentage in the selection. The lens checks pass (25 of 25, with `EP1`, `EX8` and both D1 checks).
+
+## Stage 3 — Explain (private repository)
+
+- **Last updated:** 2026-10-11
+- **Where:** `Quentinbest/linen-explain` (private), version 0.1.0. Its README and `docs/providers.md` hold the details; nothing of it is in this repository.
+
+| Part | State | Evidence |
+|---|---|---|
+| EX1–EX10 | Built | The lookup and its `when` (EX1); `book.selection`, `book.metadata`, `files.export`, with the six hosts optional (EX2); one request per explanation through an adapter per preset (EX3); the prompt and lengths (EX4, EX5); What was sent, the exact request without the key (EX6); Copy is Linen's (EX7); a notice per host before the first request (EX8); a session cache (EX9); the opt-in study log, exported with ⌘K (EX10) |
+| The six presets | Built | DeepSeek, Qwen (international), OpenAI, Anthropic, Gemini, Ollama, with models and endpoints checked 2026-10-11. DeepSeek's thinking mode is on by default and is turned off, to stay within the 10 s budget |
+| Provider contract tests (§6.9) | **Pass** (107, CI green) | Recorded responses for each preset replayed through a fake `net.fetch`; 401, 403, 404, 429 with and without Retry-After, 500, non-JSON, partial and empty answers, a captive portal, DNS, TLS, a timeout, Ollama not running; every answer checked with a port of Linen's validator. The recordings follow each provider's documented shape: none is a live capture yet |
+| Installs in Linen | **Pass** | The package installed through Linen's own validation (`registry::install`, a temporary test, not committed): manifest, `when`, options page, six optional hosts |
+| End to end on this Mac | **Pass**, without any provider | `scripts/fake-ollama.mjs` stands in for Ollama on localhost: the real request, real HTTP, the answer read and validated. Not yet clicked through in the app |
+| Live check (DeepSeek) | **Waiting** (item 84) | Needs your DeepSeek key: one fixed sentence, never book text |
+| EX8 notice wording | **Waiting** (item 84) | Each notice says only what the provider's own policy page says; what couldn't be confirmed is left out and listed |
+| The offline run and G2 | **Blocked** (item 85) | Needs at least 60 items from Stage 1's real stuck points, and two bilingual reviewers. Gate 0 was waived, so no diary data exists |
+
+### Known limits of Explain 0.1
+
+- **The answer's language** follows the peek's language menu, which offers only Linen's UI language and English (`readerLanguages`). With Linen in English there is no “Explain · 简体中文” (item 86).
+- **No Test connection** in its options: an options page can't make requests through Linen.
+- **The study log** sees only what reaches the extension (answered, needs context, cancelled, errors); expanded, copied and “Helped / Wrong” stay in the peek.
+- **Retry-After** isn't exposed by `net.fetch`.
 
