@@ -24,6 +24,8 @@
   import { MessageQueue } from './lib/reader/messages'
   import { t } from './lib/strings'
   import { lookupCommands } from './lib/lookup/commands'
+  import HostSheet from './components/HostSheet.svelte'
+  import type { HostRequest } from './lib/extensions/access'
   import { ExtensionHost } from './extensions/host.svelte'
   import WebKitTooOld from './app/WebKitTooOld.svelte'
   import { readerEngineSupported } from './lib/reader/webkit'
@@ -47,6 +49,13 @@
   const registry = new CommandRegistry()
   // Phase 7: extensions, run by the host in this window (P2, P4).
   const extensions = new ExtensionHost()
+  // Reading Lens LK6: the host sheet an extension's request opens in this window.
+  let hostRequest = $state<(HostRequest & { resolve: (allowed: boolean) => void }) | null>(null)
+  extensions.ask = (r) =>
+    new Promise<boolean>((resolve) => {
+      hostRequest?.resolve(false)
+      hostRequest = { ...r, resolve }
+    })
   if (testHooks) {
     testHooks.run = (id) => registry.run(id)
     testHooks.registry = registry
@@ -108,6 +117,12 @@
   }
   async function reloadExtensions() {
     await extensions.load()
+    // LK6: a sheet for an extension that was removed or turned off answers itself.
+    if (hostRequest && !extensions.active.some((x) => x.manifest.id === hostRequest?.extId)) {
+      const r = hostRequest
+      hostRequest = null
+      r.resolve(false)
+    }
     syncExtensionCommands()
     applyChoice(themeChoice)
   }
@@ -416,6 +431,14 @@
   />
 {/if}
 <CommandPalette open={paletteOpen} {registry} {messages} onclose={() => (paletteOpen = false)} />
+<HostSheet
+  request={hostRequest}
+  onanswer={(allowed) => {
+    const r = hostRequest
+    hostRequest = null
+    r?.resolve(allowed)
+  }}
+/>
 <CheatSheet open={cheatSheetOpen} {registry} onclose={() => (cheatSheetOpen = false)} />
 <WebKitTooOld open={webkitTooOld} onclose={() => (webkitTooOld = false)} />
 <MessageBar queue={messages} />

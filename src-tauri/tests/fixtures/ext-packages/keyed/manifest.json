@@ -1,0 +1,23 @@
+{
+  "id": "test.keyed",
+  "version": "1.0.0",
+  "name": "Test Keyed",
+  "description": "Reading Lens checks: an optional host, a saved key and an options page (LK6–LK8).",
+  "engines": {
+    "linen": "^1.1"
+  },
+  "main": "main.js",
+  "activation": ["onLookup:keyed"],
+  "contributes": {
+    "lookups": [
+      {
+        "id": "keyed",
+        "title": "Keyed",
+        "when": "selection.words <= 40"
+      }
+    ],
+    "options": { "page": "options.html" }
+  },
+  "permissions": ["book.selection"],
+  "optionalPermissions": ["network:127.0.0.1:8765", "network:localhost:8765"]
+}

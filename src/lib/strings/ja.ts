@@ -546,6 +546,32 @@ export const ja: Messages = {
     failed: '辞書を追加できませんでした。以前のバージョンを引き続き使用します。',
     none: '辞書はまだありません。',
   },
+  // Reading Lens（PROVISIONAL、機械翻訳の下書き、レビュー待ち）
+  extAccess: {
+    hostTitle: (name: string, host: string) => `「${name}」に ${host} への接続を許可しますか？`,
+    hostBody: (name: string) =>
+      `${name} は、送信するよう選んだ内容をこのアドレスに送ります。使うまでは何も送信されません。`,
+    hostPurpose: (name: string) => `${name} からの説明：`,
+    hostNote: 'この許可は「設定 › 機能拡張」で削除できます。',
+    allow: '許可',
+    dontAllow: '許可しない',
+    keyTitle: (host: string) => `${host} のキー`,
+    keyMessage: (name: string, host: string) =>
+      `この Mac のキーチェーンに保存されます。${name} はこれを読めません。Linen は ${host} へのリクエストにだけ付けます。`,
+    save: '保存',
+    cancel: 'キャンセル',
+    sendsTo: '送信先',
+    sendsWhat: '送信するよう選んだ内容',
+    removeHost: (host: string) => `${host} を削除`,
+    remove: '削除',
+    options: 'オプション…',
+    optionsTitle: (name: string) => `${name} のオプション`,
+    done: '完了',
+    keyUnavailable: (name: string) => `${name} のキーを読み取れませんでした。`,
+    keyUnavailableDetail:
+      'キーチェーンがロックされているか、アクセスが拒否されました。何も送信していません。',
+    openOptions: 'オプションを開く',
+  },
   image: {
     label: '画像',
     close: '画像を閉じる',

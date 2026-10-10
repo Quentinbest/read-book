@@ -533,6 +533,31 @@ export const zhHans: Messages = {
     failed: '无法添加这本词典。仍在使用之前的版本。',
     none: '还没有词典。',
   },
+  // Reading Lens（PROVISIONAL，机器草稿，待审）
+  extAccess: {
+    hostTitle: (name: string, host: string) => `允许“${name}”连接到 ${host}？`,
+    hostBody: (name: string) =>
+      `${name} 会把你选择发送的内容发到这个地址。在你使用它之前不会发送任何内容。`,
+    hostPurpose: (name: string) => `${name} 说明：`,
+    hostNote: '你可以在“设置 › 扩展”中移除此权限。',
+    allow: '允许',
+    dontAllow: '不允许',
+    keyTitle: (host: string) => `${host} 的密钥`,
+    keyMessage: (name: string, host: string) =>
+      `保存在这台 Mac 的钥匙串中。${name} 无法读取它；Linen 只会把它加到发往 ${host} 的请求中。`,
+    save: '存储',
+    cancel: '取消',
+    sendsTo: '发送到',
+    sendsWhat: '你选择发送的内容',
+    removeHost: (host: string) => `移除 ${host}`,
+    remove: '移除',
+    options: '选项…',
+    optionsTitle: (name: string) => `${name} 选项`,
+    done: '完成',
+    keyUnavailable: (name: string) => `Linen 无法读取 ${name} 的密钥。`,
+    keyUnavailableDetail: '钥匙串可能已锁定，或访问被拒绝。未发送任何内容。',
+    openOptions: '打开选项',
+  },
   image: {
     label: '图像',
     close: '关闭图像',

@@ -2040,6 +2040,7 @@ dependencies = [
  "quick-xml",
  "ripemd",
  "rusqlite",
+ "security-framework",
  "semver",
  "serde",
  "serde_json",

@@ -169,14 +169,34 @@ fn start_canary_server<R: Runtime>(app: AppHandle<R>) {
             let mut line = String::new();
             let mut reader = BufReader::new(&stream);
             let _ = reader.read_line(&mut line);
-            let line = line.trim().to_string();
+            let mut line = line.trim().to_string();
+            // Reading Lens LK7: note whether a key header came with it (never its value).
+            loop {
+                let mut h = String::new();
+                if reader.read_line(&mut h).unwrap_or(0) == 0 || h.trim().is_empty() {
+                    break;
+                }
+                let name = h
+                    .split(':')
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_ascii_lowercase();
+                if name == "authorization" || name == "x-api-key" || name == "x-goog-api-key" {
+                    line.push_str(&format!(" [key:{name}]"));
+                }
+            }
+            let redirect = line.contains("/redirect");
             if !line.is_empty() {
                 app.state::<SpikeState>().0.lock().unwrap().http.push(line);
             }
             let mut s = &stream;
-            let _ = s.write_all(
-                b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-            );
+            let _ = s.write_all(if redirect {
+                // LK7: a redirect to another host, which must not be followed.
+                &b"HTTP/1.1 302 Found\r\nLocation: http://localhost:8765/after-redirect\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"[..]
+            } else {
+                &b"HTTP/1.1 200 OK\r\nAccess-Control-Allow-Origin: *\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"[..]
+            });
         }
     });
 }
@@ -880,4 +900,39 @@ pub fn spike_dict_generations(
         .unwrap_or_default();
     out.sort();
     out
+}
+
+/// Reading Lens LK6-remove-extension: whether the vault still holds a key's value.
+#[tauri::command]
+pub fn spike_vault_has(
+    vault: tauri::State<crate::ext_commands::Vaults>,
+    id: String,
+    name: String,
+) -> Result<bool, String> {
+    let denied = crate::ext_commands::VAULT_DENIED.swap(false, std::sync::atomic::Ordering::SeqCst);
+    let has = vault.0.get(&id, &name).map(|v| v.is_some());
+    crate::ext_commands::VAULT_DENIED.store(denied, std::sync::atomic::Ordering::SeqCst);
+    has
+}
+
+/// Reading Lens LK7-keychain-denied: the test vault refuses to read, as a locked Keychain would.
+#[tauri::command]
+pub fn spike_vault_deny(on: bool) {
+    crate::ext_commands::VAULT_DENIED.store(on, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// Reading Lens LK7: save a key as the native dialog would (the harness can't type into
+/// a modal NSAlert). Test builds keep keys in memory (`Vaults::for_app`).
+#[tauri::command]
+pub fn spike_secret_save(
+    state: tauri::State<crate::commands::AppState>,
+    vault: tauri::State<crate::ext_commands::Vaults>,
+    id: String,
+    name: String,
+    host: String,
+    value: String,
+) -> Result<(), String> {
+    vault.0.set(&id, &name, &value)?;
+    crate::extensions::registry::secret_record(&state.store.lock().unwrap(), &id, &name, &host, "")
+        .map_err(|e| e.to_string())
 }

@@ -37,8 +37,9 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 | `engines.linen` | The Host API versions it works with, as a semver range. Linen supports the current major and the previous one (P5); an extension outside them is turned off, with the reason. |
 | `main` | The Worker script. Theme packs have none. |
 | `activation` | When it starts: `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onLookup:<id>` (API 1.1), `onAnnotations`, `onReadingSessions` (1.1). It starts lazily and is unloaded after a minute unused. |
-| `contributes` | `commands`, `selectionActions` (with an optional `when`), `navigatorTabs`, `themes`, `exporters`, and `lookups` (API 1.1, experimental; see below). Up to 32 in all. |
+| `contributes` | `commands`, `selectionActions` (with an optional `when`), `navigatorTabs`, `themes`, `exporters`, `lookups` and `options` (API 1.1, experimental; see below). Up to 32 in all. |
 | `permissions` | See below. Anything not declared is refused. |
+| `optionalPermissions` | API 1.1, experimental: exact `network:<host>[:port]` entries (no wildcards) the extension asks for only when it needs them. See “Optional hosts and keys”. |
 
 ## Permissions (P3)
 
@@ -82,6 +83,17 @@ A lookup answers in the lookup peek, under the selection (Reading Lens, `docs/re
   - Linen writes the label above the answer itself: “AI explanation · ‹model›” or “Dictionary · ‹name›”.
   - An answer with an unknown field, a label of its own, markup, or a percentage or confidence score is refused, and the peek says the answer can't be shown.
 - **Closing the peek cancels the request.** `signal` aborts; whatever the handler returns afterwards is dropped. The 10 s work budget and the watchdog apply as for commands.
+
+## Optional hosts and keys (Host API 1.1, experimental)
+
+An extension that talks to a service the reader chooses, with the reader's own key (Reading Lens LK6–LK8). Experimental until Host API 1.2.
+
+- **Optional hosts (LK6).** List the host in `optionalPermissions`, not `permissions`. Nothing is granted at install. `linen.permissions.request(host, { purpose })` shows Linen's own sheet, which names the extension and the host and quotes `purpose` as the extension's words; it resolves `true` when the reader allows it. `linen.permissions.has(host)` tells whether it is allowed now. The reader sees each allowed host under “Sends to” in Settings › Extensions and can remove it there; what the extension was doing with it is then cancelled. An update keeps the hosts it still lists.
+- **Keys (LK7).** `linen.secrets.request(name, { host, label })` asks the reader for a key in Linen's native dialog, for a host the extension is allowed. The key goes to the macOS Keychain; the extension never sees it, and may only ask `linen.secrets.has(name)`. Removing the extension deletes its keys. In builds without a Developer ID signature, the Keychain protects keys at the level of the macOS account only (`docs/spikes/j-keychain.md`).
+- **Using a key.** `linen.net.fetch(url, { auth: { secret: name, scheme } })`, with `scheme` `bearer`, `x-api-key` or `x-goog-api-key`. Linen adds the key only when the URL's host and port equal the host it was saved for, over `https` (or `http` to `localhost` and `127.0.0.1`); otherwise the request is refused and nothing is sent. Redirects are never followed.
+- **Headers.** `net.fetch` takes `headers` of the extension's own, at most 20 and 8 KB, single-line. Linen refuses `Authorization`, `Cookie`, `Host`, `x-api-key`, `x-goog-api-key`, `Content-Length`, `Connection`, `Transfer-Encoding`, `TE`, `Upgrade`, `Proxy-*` and `Sec-*`.
+- **When the Keychain refuses.** If a saved key can't be read (a locked Keychain, denied access), nothing is sent and the peek says so, with Open options.
+- **Options page (LK8).** `contributes.options: { "page": "options.html" }` adds Options… to the extension in Settings › Extensions, and Open options to the peek when a key was refused. The page runs in a Linen dialog, in a frame on the extension's own origin with the style kit. It asks Linen for things with `linenUi.call(method, params)`: `storage.get/set/delete/keys`, `permissions.has/request` and `secrets.has/request`, with the same parameters as in the Worker.
 
 ## Selection `when` clauses
 

@@ -535,6 +535,31 @@ export const zhHant: Messages = {
     failed: '無法加入這本辭典。仍在使用先前的版本。',
     none: '還沒有辭典。',
   },
+  // Reading Lens（PROVISIONAL，機器草稿，待審）
+  extAccess: {
+    hostTitle: (name: string, host: string) => `允許「${name}」連線到 ${host}？`,
+    hostBody: (name: string) =>
+      `${name} 會把你選擇傳送的內容傳到這個位址。在你使用它之前不會傳送任何內容。`,
+    hostPurpose: (name: string) => `${name} 說明：`,
+    hostNote: '你可以在「設定 › 延伸功能」中移除此權限。',
+    allow: '允許',
+    dontAllow: '不允許',
+    keyTitle: (host: string) => `${host} 的密鑰`,
+    keyMessage: (name: string, host: string) =>
+      `儲存在這台 Mac 的鑰匙圈中。${name} 無法讀取它；Linen 只會把它加到傳往 ${host} 的請求中。`,
+    save: '儲存',
+    cancel: '取消',
+    sendsTo: '傳送到',
+    sendsWhat: '你選擇傳送的內容',
+    removeHost: (host: string) => `移除 ${host}`,
+    remove: '移除',
+    options: '選項…',
+    optionsTitle: (name: string) => `${name} 選項`,
+    done: '完成',
+    keyUnavailable: (name: string) => `Linen 無法讀取 ${name} 的密鑰。`,
+    keyUnavailableDetail: '鑰匙圈可能已鎖定，或存取遭拒。未傳送任何內容。',
+    openOptions: '打開選項',
+  },
   image: {
     label: '影像',
     close: '關閉影像',

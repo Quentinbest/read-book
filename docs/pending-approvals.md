@@ -198,3 +198,11 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
 81. **Dictionary baselines and strings (Canvas 11, 14).** Captures `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` in `docs/visual/app/`. Differences from the canvas: reordering is by Move up and Move down buttons rather than a drag handle (keyboard and VoiceOver can use them); the row shows “MDX with MDD · N entries” without the file size; the entry frame has a fixed height and its own scroll bar (Spike I's fallback); Back returns to the first entry. The Settings › Dictionaries strings (`dictSettings`) and the new peek strings have machine drafts in the four languages.
     *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with item 74's.
     **Approved 2026-10-10.**
+
+82. **Stage 2d screens and strings (Canvas 12, 13).** Captures in `docs/visual/app/`: `rl-13-host-sheet`, `rl-12-settings-sends-to`, `rl-12-options-dialog` and `rl-09-error-keychain-paper` (a key the Keychain refused, with Open options). Differences from the canvas:
+    - The key is typed into a native macOS dialog with a secure field, not the canvas's HTML sheet, so the value never enters the WebView (LK7). Same title and wording.
+    - The host sheet quotes the extension's purpose as its words, and “Sends to” reads “what you choose to send”, because Linen can't know what an arbitrary extension sends; Explain's own page can say more (Stage 3).
+    - The options dialog is the extension's frame and Done; the canvas's rows and Test connection belong to Explain's page.
+
+    The new strings (`extAccess`) have machine drafts in the four languages.
+    *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with items 74 and 81.

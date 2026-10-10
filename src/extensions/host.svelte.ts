@@ -17,6 +17,13 @@ import { contributionLabels } from '../lib/extensions/labels'
 import { packProblems, themeFromPack } from '../lib/extensions/themes'
 import type { InstalledExtension } from '../lib/extensions/types'
 import { when, type WhenContext } from '../lib/extensions/when'
+import {
+  hasHost,
+  hasSecret,
+  requestHost,
+  requestSecret,
+  type AskHost,
+} from '../lib/extensions/access'
 import type { Theme } from '../lib/theme/tokens'
 import { sessionForExtensions } from '../reader/sessions'
 
@@ -61,6 +68,9 @@ export class ExtensionError extends Error {}
 /** LK4: a lookup the reader closed; nothing is reported, nothing counts as a failure. */
 export class LookupCancelled extends ExtensionError {}
 
+/** LK7-keychain-denied: the lookup needed a saved key Linen couldn't read; nothing was sent. */
+export class KeyUnavailable extends ExtensionError {}
+
 /** What a lookup provider is handed (LK1, LK5): the selection and the text around it. */
 export interface LookupRequest {
   text: string
@@ -81,6 +91,8 @@ export class ExtensionHost {
   /** P7: this launch runs without extensions. */
   safeMode = $state(false)
   bridge: ReaderBridge | null = null
+  /** LK6: shows Linen's host sheet in this window (set by App). */
+  ask: AskHost | null = null
   /** Extensions whose Navigator tab is showing: kept loaded while it shows. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   visibleTabs = new Set<string>()
@@ -101,6 +113,9 @@ export class ExtensionHost {
   /** LK4: lookups cancelled before they reached their Worker. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #cancelled = new Set<number>()
+  /** LK7: extensions whose running lookup met a key that couldn't be read. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
+  #keyUnavailable = new Set<string>()
 
   constructor() {
     addEventListener('message', (e) => this.#onMessage(e))
@@ -114,7 +129,15 @@ export class ExtensionHost {
 
   async load() {
     this.safeMode = await invoke<boolean>('app_safe_mode').catch(() => false)
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- a local comparison, nothing renders from it
+    const before = new Map(this.extensions.map((x) => [x.manifest.id, x.granted]))
     this.extensions = await invoke<InstalledExtension[]>('extensions_list').catch(() => [])
+    // LK6: a host the reader removed stops what the extension was doing with it.
+    for (const x of this.extensions) {
+      const was = before.get(x.manifest.id) ?? []
+      if (was.some((p) => p.startsWith('network:') && !x.granted.includes(p)))
+        this.unload(x.manifest.id, true)
+    }
     // A removed extension's state goes with it: installed again, it starts fresh.
     for (const id of Object.keys(this.status))
       if (!this.extensions.some((x) => x.manifest.id === id)) delete this.status[id]
@@ -127,7 +150,8 @@ export class ExtensionHost {
     for (const [id, run] of [...this.#running]) {
       const x = this.active.find((e) => e.manifest.id === id)
       if (x && x.manifest.version === run.version) continue
-      this.unload(id)
+      // LK6-remove-extension: removed or turned off, what it was doing is cancelled.
+      this.unload(id, !x)
       if (x && this.visibleTabs.has(id)) void this.activate(id).catch(() => {})
     }
   }
@@ -272,13 +296,20 @@ export class ExtensionHost {
       if (this.#cancelled.delete(invocation)) throw new LookupCancelled('cancelled')
       this.#selection.set(extId, { ...selection, context: request.context })
       if (testHooks) (testHooks.lookupRequests ??= []).push({ extId, lookupId, request })
+      this.#keyUnavailable.delete(extId)
       try {
-        return await this.#call(
+        const answer = await this.#call(
           extId,
           run,
           { lookup: invocation, id: lookupId, request },
           WORK_TIMEOUT_MS,
         )
+        if (this.#keyUnavailable.delete(extId)) throw new KeyUnavailable('key unavailable')
+        return answer
+      } catch (e) {
+        if (!(e instanceof LookupCancelled) && this.#keyUnavailable.delete(extId))
+          throw new KeyUnavailable('key unavailable')
+        throw e
       } finally {
         this.#selection.delete(extId)
       }
@@ -353,7 +384,8 @@ export class ExtensionHost {
     )
   }
 
-  unload(extId: string) {
+  /** `cancelled`: its calls end as cancelled, not as failures (LK4, LK6). */
+  unload(extId: string, cancelled = false) {
     const run = this.#running.get(extId)
     if (!run) return
     this.#running.delete(extId)
@@ -361,7 +393,9 @@ export class ExtensionHost {
     clearInterval(run.heartbeat)
     for (const c of run.calls.values()) {
       clearTimeout(c.timer)
-      c.reject(new ExtensionError(`${extId} stopped`))
+      c.reject(
+        cancelled ? new LookupCancelled('cancelled') : new ExtensionError(`${extId} stopped`),
+      )
     }
     if (run.frame.contentWindow) this.#frames.delete(run.frame.contentWindow)
     run.frame.remove()
@@ -608,14 +642,41 @@ export class ExtensionHost {
         const url = String(params.url ?? '')
         // EP1, DX9: the harness's witness of every request an extension asks for.
         if (testHooks) (testHooks.netFetches ??= []).push({ extId, url, body: params.body ?? null })
-        // The core checks the host against the granted permissions again.
+        const headers =
+          params.headers && typeof params.headers === 'object'
+            ? Object.entries(params.headers as Record<string, unknown>).map(([k, v]) => [
+                k,
+                String(v),
+              ])
+            : null
+        const auth = params.auth as { secret?: unknown; scheme?: unknown } | null
+        // The core checks the host against the granted permissions again, and adds a key
+        // only for the host it was saved for (LK7). A key it couldn't read marks the
+        // running lookup, whatever the extension makes of the refusal.
         return invoke('extension_net_fetch', {
           id: extId,
           url,
           method: String(params.method ?? 'GET'),
           body: params.body == null ? null : String(params.body),
+          headers,
+          auth: auth
+            ? { secret: String(auth.secret ?? ''), scheme: String(auth.scheme ?? 'bearer') }
+            : null,
+        }).catch((e: unknown) => {
+          const message = (e as { message?: unknown } | null)?.message
+          if (typeof message === 'string' && message.startsWith('key-unavailable'))
+            this.#keyUnavailable.add(extId)
+          throw e
         })
       }
+      case 'permissions.has':
+        return hasHost(x, String(params.host ?? ''))
+      case 'permissions.request':
+        return requestHost(x, String(params.host ?? ''), params.purpose, this.ask)
+      case 'secrets.has':
+        return hasSecret(extId, String(params.name ?? ''))
+      case 'secrets.request':
+        return requestSecret(x, String(params.name ?? ''), String(params.host ?? ''), params.label)
       case 'files.save': {
         need('files.export')
         // Each use goes through the OS dialog (P3).

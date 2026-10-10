@@ -151,6 +151,12 @@ pub fn run() {
                 dictionaries::commands::dict_reorder,
                 dictionaries::commands::dict_lookup,
                 dictionaries::commands::dict_release,
+                ext_commands::extension_grant,
+                ext_commands::extension_revoke,
+                ext_commands::extension_secrets,
+                ext_commands::extension_secret_has,
+                ext_commands::extension_secret_delete,
+                ext_commands::extension_secret_request,
                 $($extra),*
             ]
         };
@@ -182,6 +188,9 @@ pub fn run() {
         spikes::spike_crash_log,
         spikes::spike_capture_png,
         spikes::spike_dict_generations,
+        spikes::spike_secret_save,
+        spikes::spike_vault_deny,
+        spikes::spike_vault_has,
         spikes::spike_bundle_languages,
         spikes::spike_exit
     ));
@@ -213,6 +222,7 @@ pub fn run() {
             let dicts = dictionaries::state::DictState::new(state.library.dictionaries_dir.clone());
             dictionaries::commands::recover(&state, &dicts);
             app.manage(dicts);
+            app.manage(ext_commands::Vaults::for_app());
             app.manage(state);
             app.manage(ext_commands::SafeMode(std::sync::atomic::AtomicBool::new(
                 safe,

@@ -20,6 +20,8 @@
           | 'timeout'
           | 'stopped'
           | 'bad'
+          /** LK7: a saved key Linen couldn't read (a locked Keychain, denied access). */
+          | 'keychain'
       }
 </script>
 
@@ -54,6 +56,7 @@
     onnotnow,
     onexplain,
     explainTitle,
+    onoptions,
   }: {
     word: string
     /** The book's language, for the word and the quoted sentence (EA2). */
@@ -80,6 +83,8 @@
     onexplain?: () => void
     /** The lookup “… in context” opens (its own title, so a dictionary lookup isn't called Explain). */
     explainTitle?: string
+    /** LK8: a key the provider refused; the extension's options page, when it has one. */
+    onoptions?: () => void
   } = $props()
 
   const GAP = 12
@@ -187,6 +192,8 @@
         return [t.lens.timeout(name), '']
       case 'unauthorized':
         return [t.lens.unauthorized(name), t.lens.unauthorizedDetail]
+      case 'keychain':
+        return [t.extAccess.keyUnavailable(name), t.extAccess.keyUnavailableDetail]
       case 'rate_limited':
         return [t.lens.rateLimited(name), t.lens.rateLimitedDetail]
       case 'unavailable':
@@ -382,8 +389,12 @@
       {:else if shown.kind === 'error'}
         {#if shown.error === 'stopped'}
           <button type="button" onclick={onrestart}>{t.lens.restart(name)}</button>
-        {:else if shown.error !== 'unauthorized'}
+        {:else if shown.error !== 'unauthorized' && shown.error !== 'keychain'}
           <button type="button" onclick={onretry}>{t.lens.tryAgain}</button>
+        {:else if onoptions}
+          <button type="button" data-open-options onclick={onoptions}
+            >{t.extAccess.openOptions}</button
+          >
         {/if}
       {:else if result && view === 'sent'}
         <button type="button" onclick={() => (view = 'main')}>{t.lens.back}</button>

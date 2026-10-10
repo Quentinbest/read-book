@@ -105,12 +105,27 @@
     }),
     library: Object.freeze({ list: () => call('library.list') }),
     net: Object.freeze({
+      // 1.1 (LK7): headers of the extension's own, and a saved key by name
+      // (`auth: { secret, scheme }`), which Linen adds only for the key's host.
       fetch: (url, init) =>
         call('net.fetch', {
           url: String(url),
           method: (init && init.method) || 'GET',
           body: (init && init.body) || null,
+          headers: (init && init.headers) || null,
+          auth: (init && init.auth) || null,
         }),
+    }),
+    // 1.1, experimental (LK6): a host from optionalPermissions, asked for in Linen's sheet.
+    permissions: Object.freeze({
+      request: (host, options) => call('permissions.request', { host, ...(options || {}) }),
+      has: (host) => call('permissions.has', { host }),
+    }),
+    // 1.1, experimental (LK7): keys in the Keychain, typed into Linen's own dialog.
+    // The extension can ask for one and ask whether one exists; it never reads one.
+    secrets: Object.freeze({
+      request: (name, options) => call('secrets.request', { name, ...(options || {}) }),
+      has: (name) => call('secrets.has', { name }),
     }),
     files: Object.freeze({ save: (options) => call('files.save', options) }),
     storage: Object.freeze({

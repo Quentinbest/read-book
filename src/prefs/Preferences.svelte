@@ -2,6 +2,7 @@
   // Settings (G2, provisional; Screen 11 draws the Extensions pane): a sidebar of
   // sections and one pane. Changes save at once and reach the reader (settingsSync).
   import { onMount } from 'svelte'
+  import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
   import { getVersion } from '@tauri-apps/api/app'
   import { emit } from '@tauri-apps/api/event'
   import { open } from '@tauri-apps/plugin-dialog'
@@ -35,6 +36,14 @@
 
   let section = $state<Section>('general')
   let theme = $state<ThemeChoice>('auto')
+  // Reading Lens LK8: the peek's “Open options” opens Settings on an extension's options.
+  let extensionsPane: ReturnType<typeof ExtensionsPane> | undefined = $state()
+  async function showOptions(id: string) {
+    section = 'extensions'
+    for (let i = 0; i < 40 && !extensionsPane; i++) await new Promise((r) => setTimeout(r, 50))
+    await new Promise((r) => setTimeout(r, 200))
+    extensionsPane?.openOptions(id)
+  }
   let atLaunch = $state<'library' | 'book'>('library')
   /** L-4: the `language` setting (the page's own language until it loads), and the
    * language “System” stands for. */
@@ -150,7 +159,13 @@
       version = await getVersion().catch(() => '')
       crashLog = await ipc.crashLogExists().catch(() => false)
       loaded = true
+      const options = /^#options=(.+)$/.exec(location.hash)?.[1]
+      if (options) void showOptions(decodeURIComponent(options))
     })()
+    const offOptions = getCurrentWebviewWindow().listen<string>(
+      'open-extension-options',
+      (e) => void showOptions(e.payload),
+    )
     // The reader's Aa popover may change the same settings.
     const off = onSettingChanged(({ key, value }) => {
       if (key === 'theme') theme = value as ThemeChoice
@@ -159,7 +174,10 @@
       if (key === TYPE_SETTING.font) font = parseFont(value)
       if (key === TYPE_SETTING.width) width = parsePageWidth(value)
     }, source)
-    return () => void off.then((f) => f())
+    return () => {
+      void off.then((f) => f())
+      void offOptions.then((f) => f())
+    }
   })
 </script>
 
@@ -283,7 +301,7 @@
     {:else if section === 'dictionaries'}
       <DictionariesPane />
     {:else if section === 'extensions'}
-      <ExtensionsPane />
+      <ExtensionsPane bind:this={extensionsPane} />
     {:else if section === 'shortcuts'}
       <Switch
         label={t.prefs.singleKeys}

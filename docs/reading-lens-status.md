@@ -7,7 +7,7 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | 1 Stuck-point diary | Ready to start (owner) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
-| 2d Secrets, optional hosts, options pages | In progress | Gate 0 waived by the owner 2026-10-10; Spike J first |
+| 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines wait on item 82 |
 | 3–5 | Not started | After 2d, and private (Explain) |
 
 ## Stage 2a — lookup peek and selection context
@@ -118,3 +118,48 @@ Machine: Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop. The suite's l
 - **Fuzzing (stable):** `LINEN_FUZZ_SECS=1800 cargo test --release fuzz_mutations -- --ignored`: 12,863,236 mutated files in 30 minutes, no panic, no record past its cap, slowest 53 ms.
 - **In-app:** the 13 Stage 2b checks pass alone and in the full suite: **165/165** on 2026-10-10 (with `EA1-keyboard-path`, `LK1-layouts` and `DX14-no-entry`) (Stage 2a and 2b checks with everything else; the last, `D1-no-uncaught-errors`, included). Two checks first failed in the full suite because of earlier checks (a book left open, links recorded on purpose); they now open their own book and count only their own links.
 
+## Stage 2d — secrets, optional hosts and options pages
+
+- **Last updated:** 2026-10-10
+- **Before starting:** Gate 0 was waived by the owner on 2026-10-10, not passed (`docs/decisions.md`). Spike J ran first: `docs/spikes/j-keychain.md`. Ad-hoc-signed builds read each other's Keychain items silently, so updates and reinstalls keep keys, and the Keychain protects them at the level of the account only. LK7 keeps the Keychain and claims no more than that.
+
+### What was built
+
+| Rule | Where |
+|---|---|
+| LK6 `optionalPermissions` (exact network hosts, no wildcards, not also required); `linen.permissions.request/has`; Linen's host sheet (Canvas 13); grants kept across updates while still listed; Remove in Settings › Extensions cancels what the extension was doing | `extensions/manifest.rs`, `extensions/registry.rs` (`grant_optional`, `revoke_optional`, `install`), `ext_commands.rs` (`extension_grant`, `extension_revoke`), `worker.js`, `lib/extensions/access.ts`, `components/HostSheet.svelte`, `host.svelte.ts` (`load`, `unload`) |
+| LK7 keys: typed into a native macOS dialog (an `NSAlert` with a secure field), so the value never enters the WebView; kept in the Keychain (`security-framework`), service `app.linen.extension-key`; SQLite keeps only names, hosts and labels (migration 5, `extension_secrets`); `linen.secrets.request/has`, nothing returns a value | `extensions/secrets.rs`, `native.rs` (`ask_secret`), `ext_commands.rs` (`extension_secret_request`, `Vaults`), `store.rs` |
+| LK7 `net.fetch` `headers` and `auth`: the key only when host and port equal the key's host, over https (http only to localhost and 127.0.0.1); redirects never followed; Authorization, Cookie, Host, the key headers, Content-Length, Connection, Transfer-Encoding, TE, Upgrade, Proxy-* and Sec-* refused | `extensions/secrets.rs` (`may_send`, `checked_headers`), `extensions/registry.rs` (`net_fetch`) |
+| LK7-keychain-denied: a key that can't be read is one refusal the host recognises; the peek says so, with Open options, and nothing is sent | `ext_commands.rs` (`KEY_UNAVAILABLE`), `host.svelte.ts` (`KeyUnavailable`), `LookUpPeek.svelte`, `Reader.svelte` |
+| LK8 `contributes.options`: Options… in the extension's row, the page in a Linen dialog on the extension's own origin with the style kit; `linenUi.call` reaches storage, permissions and secrets through the frame only; Open options in the peek for a refused key | `prefs/OptionsDialog.svelte`, `prefs/ExtensionsPane.svelte`, `prefs/Preferences.svelte`, `app/settingsWindow.ts`, `ui.js` |
+| EP2 requests only to granted hosts, enforced by the core; EP4 “Sends to ‹host›” with Remove | `registry.rs` (`net_fetch`), `ExtensionsPane.svelte` |
+| Removing an extension deletes its keys (Keychain and rows) and cancels its pending request; its host sheet answers itself | `ext_commands.rs` (`extension_remove`), `host.svelte.ts`, `App.svelte`, `Reader.svelte` |
+| Host API 1.1 docs | `docs/extensions/README.md` (“Optional hosts and keys”), `docs/extensions/linen.d.ts` |
+| Test provider | `src-tauri/tests/fixtures/ext-packages/keyed` (an optional host, a key, an options page, a slow request) |
+
+Test builds with a throwaway `LINEN_DATA_DIR` keep keys in memory, so the in-app checks never touch the person's Keychain. The harness can't type into a modal `NSAlert`, so it hands over the key the dialog would return (`hooks.secretFor`, `spike_secret_save`), and `spike_vault_deny` makes the memory vault refuse as a locked Keychain would.
+
+### Deviations from the plan
+
+- **The key is typed into a native dialog, not an HTML sheet.** Canvas 13 draws the key sheet in the page. A field in the WebView would put the value in the WebView, which LK7 rules out, so Linen asks with an `NSAlert` and a secure field, with the canvas's title and wording. It has no capture (the harness can't capture a modal alert).
+- **The host sheet quotes the extension's purpose** (“‹name› says: …”) under Linen's own wording, because Linen can't know what an arbitrary extension sends. For the same reason, “Sends to” reads “what you choose to send”, where Canvas 12 says “the text you explain” for Explain.
+- **The options dialog is a frame and Done.** Canvas 12's provider, model, language, key and study-log rows, and Test connection, are Explain's own page (Stage 3); Linen draws only the dialog around it.
+- **Revoking a host** cancels the extension's running work (its pending lookup ends and the peek closes) instead of stopping it as a failure.
+
+### Done-when (plan §5, Stage 2d)
+
+| Done-when | State | Evidence |
+|---|---|---|
+| AC9, with a redirect and a different-host attempt | **Pass** | `LK7-secrets`: the key reaches its own host (canary saw `[key:authorization]`), a 302 is returned and not followed, a request with the key to another allowed host is refused before it is sent |
+| A test extension can't read a secret, send one to another host, or set Authorization, Cookie or Host | **Pass** | `LK7-secrets` (`linen.secrets` has only `has` and `request`; the key's value is in no storage, request record, page, row or crash log); `secrets.rs` and `registry.rs` unit tests |
+| The Stage 2d checks in §6.6 | **Pass** | `LK6-deny-revoke` (deny, allow, remove while a request is pending, Remove in Settings); `LK6-remove-extension`; `LK7-keychain-denied`; `LK8-options-page`. “An update asking for a new host asks again”: unit test `optional_hosts_are_granted_revoked_and_kept_across_updates` |
+| Canvas 12 and 13 baselines approved | **Waiting** (item 82) | `docs/visual/app/rl-13-host-sheet.png`, `rl-12-settings-sends-to.png`, `rl-12-options-dialog.png`, `rl-09-error-keychain-paper.png` |
+
+### Runs (Stage 2d)
+
+Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop, 2026-10-10.
+
+- **Unit tests:** `cargo test` 97 passed (3 ignored opt-in) plus the 2 migration tests (schema v5 fixture); new tests in `secrets.rs`, `manifest.rs` (`optional_hosts_and_options_pages_are_checked`) and `registry.rs` (`optional_hosts_are_granted_revoked_and_kept_across_updates`, `the_sample_and_test_packages_install`). `pnpm test` 395 passed (6 skipped drafts). `pnpm check`, `pnpm lint`, `pnpm format:check`, `cargo clippy -D warnings` (with and without `spikes`) and `cargo fmt --check` clean.
+- **In-app, full suite:** **170/170**, the last, `D1-no-uncaught-errors`, included. `LK6-deny-revoke` then gained the pending-request case; with it, the Stage 2d checks, `EP1-no-request-on-select` and both D1 checks passed again (8/8).
+- **Visual:** `scripts/e2e.sh v` captured the four Stage 2d screens. Against `docs/visual/baselines/`, ten older screens differ by 0.1–1.2% (the selection colour of an active window against the inactive Desktop 2 baselines, and glyph edges; item 77 describes the same). Stage 2d does not touch them, and their captures were not committed.
+- **Found and fixed while writing the checks:** removing an extension showed “stopped responding” in the peek instead of cancelling, and its host sheet stayed open.
