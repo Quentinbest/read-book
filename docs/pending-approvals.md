@@ -7,6 +7,8 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 56, on 2026-10-07, and item 57, on 2026-10-08 (UI localisation).
+- items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence. Item 59 still needs the threshold values.
+- items 77–81, on 2026-10-10 (Reading Lens follow-ups and Stage 2b).
 
 Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
@@ -98,3 +100,101 @@ The owner asked for the recommended next steps except TTS, sync and Developer ID
 
 57. **Chinese and Japanese typography in the UI (Stage 4, L-8).** In Chinese and Japanese, interface text that English sets in Literata (the damaged-book and old-Safari titles) uses the system font (PingFang or Hiragino); lines break between phrases (after 、。， and at spaces) rather than between any two characters; small-capital labels lose their letter-spacing. Book text keeps Literata and the book's own language. To see it: `LINEN_LOCALE=ja scripts/e2e.sh v` (or `zh-Hans`, `zh-Hant`), captures in `i18n-out/visual/<tag>/`; `docs/i18n-plan.md`, Stage 4.
     *Recommendation:* approve, so these screens stop being provisional; the native reviewers (L-6) may still adjust wording that breaks badly.
+
+## Reading Lens (2026-10-09)
+
+The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what this branch (`reading-lens`) does meanwhile. Stage 2a is built against the plan's recommended defaults, marked (prov.) in its rules; the stages that wait are said so.
+
+58. **What this run builds.** Stage 1 (the stuck-point diary) is yours and the readers'; it has no code. Stage 2b waits on a licence for Linen (item 60, O2); Stage 2d waits on Gate 0, which Stage 1 decides. So this branch builds Stage 2a only: the lookup peek, selection context and the Host API 1.1 additions it needs.
+    *Recommendation:* approve the order; start Stage 1 when the thresholds (item 59) are set.
+    **Approved 2026-10-09.**
+
+59. **Gate thresholds (O1).** X and Y for G0, the severe-error bound for G2, the margins for G3. Not set; nothing in Stage 2a depends on them.
+    *Recommendation:* set them before Stage 1 starts and before any data is seen, as the spec says.
+    **Approved 2026-10-09.** The values are still to be given.
+
+60. **A licence for Linen (O2).** The repository has none. Stage 2b needs one before taking an MDX parser dependency or porting BSD-3 code (DX12).
+    *Recommendation:* choose one before Stage 2b; a permissive licence (MIT or Apache-2.0) keeps both DX12 sources open.
+    **Approved 2026-10-09.** The owner chose MIT (`LICENSE`).
+
+61. **The plan predates 1.1's Look Up.** The plan was drafted against 0.1.1. Since 0.2.0, Linen has a Look Up peek from the dictionaries on this Mac (item 35), bound to ⌃⌘D. Stage 2a therefore turns that peek into the lookup peek: “This Mac's dictionaries” is the first core provider, Linen's MDX dictionaries join it in Stage 2b, and extension lookups (Explain, the test provider) join through `lookups`. Open in Dictionary and Search the book stay in its footer.
+    *Recommendation:* approve. O5 (“no shortcut; avoid ⌃⌘D”) is overtaken: ⌃⌘D was approved for Look Up on 2026-10-01 and stays.
+    **Approved 2026-10-09.**
+
+62. **No entry in any dictionary (O8, DX14, Stage 2b).** *Recommendation:* “No entry for ‘…’ in your dictionaries”, plus “Explain in context” when Explain is installed. Today's Mac peek already says the first part.
+    **Approved 2026-10-09.**
+
+63. **A clicked highlight offers Look Up and lookups (O9, LK14).** Built as recommended: the highlight's bar gets the same lookup items; Delete keeps its place. *Recommendation:* approve.
+    **Approved 2026-10-09.**
+
+64. **Placement when neither side has room (O10, LK13).** Built as recommended: the side with more room, that room minus 16 px, and the answer scrolls; the selected line is never covered. *Recommendation:* approve.
+    **Approved 2026-10-09.**
+
+65. **What closes the peek (O11, LK12).** Built as recommended: besides Esc, a click outside, a page turn and a new selection, also scrolling, a resize, a text-size or Aa change, opening the Navigator, any jump and leaving the book; each cancels the request. A theme change keeps it open. *Recommendation:* approve.
+    **Approved 2026-10-09.**
+
+66. **Books with no language (O12, LK9).** Built as recommended: `book.lang` is `""` for a missing language or `und`. *Recommendation:* approve; Explain's condition should accept `""` as well as `en`.
+    **Approved 2026-10-09.**
+
+67. **Look Up in fixed-layout books (O13).** The plan recommends no lookups in fixed-layout books for v1. 1.1's Mac Look Up already works there, so taking it away would be a regression. Built: extension lookups are off in fixed-layout books; the core Mac dictionary keeps working there.
+    *Recommendation:* approve this split; revisit extension lookups with fixed-layout zoom (E2, I17).
+    **Approved 2026-10-09.**
+
+68. **The provider label with one provider (O15, LK15).** Built as recommended: plain text, no chevron. *Recommendation:* approve.
+    **Approved 2026-10-09.**
+
+69. **Web links in dictionary entries (O14, DX15, Stage 2b).** *Recommendation:* inert text, as the plan says.
+    **Approved 2026-10-09.**
+
+70. **MDX encodings (O16, DX3, Stage 2b).** *Recommendation:* UTF-8, UTF-16LE, GBK, GB18030 and Big5 through a reviewed crate (`encoding_rs`, MIT or Apache-2.0), checked at review.
+    **Approved 2026-10-09.**
+
+71. **Local-model failure wording (O17, Stage 3).** Explain's own wording, in its private repository. *Recommendation:* as the plan drafts it.
+    **Approved 2026-10-09.**
+
+72. **Oxford data (O6).** Your call; nothing in this repository depends on it.
+    **Approved 2026-10-09.**
+
+73. **The selection bar's focus ring (O7).** 2.24:1 on Paper and 1.90:1 on Night, under 3:1. Not changed on this branch, because it changes today's bar and its baselines.
+    *Recommendation:* a bar-specific ring colour, as a separate fix.
+    **Approved 2026-10-09.**
+
+74. **Peek strings in four languages.** The new lookup strings (`lens` in `src/lib/strings/en.ts`, PROVISIONAL, worded from the canvas) have machine drafts in zh-Hans, zh-Hant, ja and es so the shipped catalogues stay complete.
+    *Recommendation:* approve the English; send the four drafts to the native reviewers (L-6) before Stage 2a ships.
+    **Approved 2026-10-09.**
+
+75. **Visual baselines for the lookup peek (Stage 2a Done-when).** Not captured yet. The peek states (pending, answer, More, What was sent, needs context, errors, the provider menu) in Paper and Night, built from the test provider, are to be captured with `scripts/e2e.sh v` and compared with Canvas 2–9 by eye.
+    *Recommendation:* capture them in the next session and approve, or say which states differ from the canvas.
+    **Approved 2026-10-09.**
+
+76. **The first-request notice has no shape in LK2 (Canvas 8, EX8).** Explain shows its own notice before the first request to a host (“Explain sends text to DeepSeek · Continue · Not now”), but LK2's fields cannot carry it, so the core renders nothing for it.
+    *Recommendation:* add a `notice` status to LK2 (title, text, the host, Continue and Not now; the core draws the buttons), before Stage 3.
+    **Approved 2026-10-09.**
+
+## Reading Lens follow-ups (2026-10-09)
+
+77. **Lookup peek baselines (item 75).** Captured with `scripts/e2e.sh v` on the current desktop (active window), in `docs/visual/app/`:
+    - Paper: `rl-02-pending`, `rl-03-answer`, `rl-04-more`, `rl-05-menu`, `rl-06-sent`, `rl-07-needs-context`, `rl-08-notice`, `rl-09-error-offline`, `rl-09-error-key`, `rl-11-mac-dictionary`;
+    - Night: `rl-03-answer`, `rl-05-menu`, `rl-11-mac-dictionary`; Sepia: `rl-03-answer`.
+
+    They follow Canvas 2–11 in layout and wording, with the test provider's text. Two differences from the canvas: the pending line names the extension (“Asking Test Lookup…”), where the canvas names the model's provider (“Asking DeepSeek…”), because Explain's name is the extension's; and errors have no “Open options” or “Change key” until Stage 2d.
+    Two approved screens change on purpose: `11-settings-extensions` (the sample Dictionary is 0.5.0 and adds “Free Dictionary” in the lookup peek) and `12-extension-failure` (the stuck Dictionary's lookup joins its action in “⋯”, with one Restart for both; the focus ring is the bar's ink, item 73).
+    `03-more-menu`, `04-navigator-contents`, `05-navigator-search`, `16-command-palette` and `17-goto` also differ from their baselines (0.1–1.1% of pixels: a visible scroll bar, shortcut glyph edges, search snippets). This branch does not change them; their baselines were taken on Desktop 2 on 2026-10-08. Not verified against a capture from `main`.
+    *Recommendation:* approve the 14 peek captures and the two changed screens as baselines (`docs/visual/APPROVAL.md`).
+    **Approved 2026-10-10.**
+
+78. **A Dictionaries section in Settings (O3, Stage 2b).** Settings gains Dictionaries (Canvas 14): Add dictionary…, the ordered list with on/off and Remove, and each dictionary's entries count and status. It amends G2's list of sections. Built as drawn (provisional) while Stage 2b proceeds.
+    *Recommendation:* approve as drawn on Canvas 14.
+    **Approved 2026-10-10.**
+
+79. **Dictionary entries on a light card in every theme (O4, DX7, Stage 2b).** Dictionary CSS assumes a light page; at Night an entry would lose its own colours. The entry sits on a light card inside the dark peek. Built so (provisional).
+    *Recommendation:* approve.
+    **Approved 2026-10-10.**
+
+80. **A nightly Rust toolchain for the parser fuzz target (§6.1).** `cargo fuzz` needs nightly and `cargo-fuzz`, which this Mac doesn't have; installing them changes your toolchains, so it was not done. Meanwhile a mutation fuzzer on stable (`fuzz_mutations` in `src-tauri/src/dictionaries/mdx.rs`) ran for 30 minutes (see `docs/reading-lens-status.md`). The cargo-fuzz target is ready in `src-tauri/fuzz/`.
+    *Recommendation:* run `rustup toolchain install nightly && cargo install cargo-fuzz`, then `cd src-tauri/fuzz && cargo +nightly fuzz run mdx -- -max_total_time=1800`, before Stage 2b ships.
+    **Approved 2026-10-10.**
+
+81. **Dictionary baselines and strings (Canvas 11, 14).** Captures `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` in `docs/visual/app/`. Differences from the canvas: reordering is by Move up and Move down buttons rather than a drag handle (keyboard and VoiceOver can use them); the row shows “MDX with MDD · N entries” without the file size; the entry frame has a fixed height and its own scroll bar (Spike I's fallback); Back returns to the first entry. The Settings › Dictionaries strings (`dictSettings`) and the new peek strings have machine drafts in the four languages.
+    *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with item 74's.
+    **Approved 2026-10-10.**

@@ -467,6 +467,10 @@ def main() -> int:
     edited_books(chapters)
     library_500(chapters)
     extension_packages()
+    # Reading Lens Stage 2b: generated dictionaries (scripts/corpus/mdx.py; DX12).
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import mdx
+    mdx.corpus(OUT)
     for p in sorted(OUT.iterdir()):
         if p.is_file():
             print(f"{p.stat().st_size:>12,}  {p.name}")

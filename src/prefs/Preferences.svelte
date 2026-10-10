@@ -23,6 +23,7 @@
   } from '../reader/typography'
   import { exportAllAnnotations } from './exportAll'
   import ExtensionsPane from './ExtensionsPane.svelte'
+  import DictionariesPane from './DictionariesPane.svelte'
   import ShortcutsPane from './ShortcutsPane.svelte'
 
   /** This page's own changes are not applied back to it. */
@@ -279,6 +280,8 @@
         {#if status}<p class="status" role="status">{status}</p>{/if}
       </div>
       <p class="help">{t.prefs.uninstall}</p>
+    {:else if section === 'dictionaries'}
+      <DictionariesPane />
     {:else if section === 'extensions'}
       <ExtensionsPane />
     {:else if section === 'shortcuts'}

@@ -1,0 +1,32 @@
+[package]
+name = "linen-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+# Reading Lens §6.1: the MDX/MDD reader under cargo-fuzz (nightly).
+#   cargo +nightly fuzz run mdx -- -max_total_time=1800
+# Seeds: src-tauri/tests/fixtures/mdx (copy them into fuzz/corpus/mdx first).
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+tempfile = "3"
+# The reader's own dependencies: the target compiles src/dictionaries/mdx.rs itself,
+# because the app crate (Tauri, a cdylib) does not link under the sanitizer.
+flate2 = "1"
+ripemd = "0.1"
+encoding_rs = "0.8"
+thiserror = "2"
+
+[[bin]]
+name = "mdx"
+path = "fuzz_targets/mdx.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

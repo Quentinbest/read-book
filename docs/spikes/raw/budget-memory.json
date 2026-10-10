@@ -5,41 +5,41 @@
       "id": "budget-memory",
       "description": "A 100 MB book after reading 50 pages uses < 400 MB (RSS and footprint) across the app and its WebKit processes (§6.4, M1)",
       "verdict": "pass",
-      "evidence": "after opening 320 MB; after 50 pages RSS 346 MB = linen 79 MB + com.apple.WebKit.WebContent 197 MB + com.apple.WebKit.Networking 17 MB + com.apple.WebKit.GPU 51 MB; footprint 344 MB = linen 29 MB + com.apple.WebKit.WebContent 205 MB + com.apple.WebKit.Networking 10 MB + com.apple.WebKit.GPU 99 MB"
+      "evidence": "after opening 254 MB; after 50 pages RSS 348 MB = linen 76 MB + com.apple.WebKit.WebContent 194 MB + com.apple.WebKit.Networking 17 MB + com.apple.WebKit.GPU 59 MB; footprint 343 MB = linen 31 MB + com.apple.WebKit.WebContent 203 MB + com.apple.WebKit.Networking 10 MB + com.apple.WebKit.GPU 98 MB"
     }
   ],
   "raw": {
     "before": {
-      "footprint_mb": 310,
+      "footprint_mb": 300,
       "footprints": [
-        "linen 32 MB",
-        "com.apple.WebKit.WebContent 169 MB",
+        "linen 33 MB",
+        "com.apple.WebKit.WebContent 160 MB",
         "com.apple.WebKit.Networking 10 MB",
-        "com.apple.WebKit.GPU 99 MB"
+        "com.apple.WebKit.GPU 96 MB"
       ],
       "processes": [
-        "linen 88 MB",
-        "com.apple.WebKit.WebContent 180 MB",
-        "com.apple.WebKit.Networking 18 MB",
-        "com.apple.WebKit.GPU 33 MB"
+        "linen 80 MB",
+        "com.apple.WebKit.WebContent 128 MB",
+        "com.apple.WebKit.Networking 17 MB",
+        "com.apple.WebKit.GPU 28 MB"
       ],
-      "total_mb": 320
+      "total_mb": 254
     },
     "after": {
-      "footprint_mb": 344,
+      "footprint_mb": 343,
       "footprints": [
-        "linen 29 MB",
-        "com.apple.WebKit.WebContent 205 MB",
+        "linen 31 MB",
+        "com.apple.WebKit.WebContent 203 MB",
         "com.apple.WebKit.Networking 10 MB",
-        "com.apple.WebKit.GPU 99 MB"
+        "com.apple.WebKit.GPU 98 MB"
       ],
       "processes": [
-        "linen 79 MB",
-        "com.apple.WebKit.WebContent 197 MB",
+        "linen 76 MB",
+        "com.apple.WebKit.WebContent 194 MB",
         "com.apple.WebKit.Networking 17 MB",
-        "com.apple.WebKit.GPU 51 MB"
+        "com.apple.WebKit.GPU 59 MB"
       ],
-      "total_mb": 346
+      "total_mb": 348
     }
   },
   "info": {
@@ -47,7 +47,7 @@
     "memory_bytes": "8589934592",
     "only": null,
     "os": "14.6.1",
-    "time": 1790390268,
+    "time": 1791591846,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

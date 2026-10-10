@@ -2,14 +2,16 @@
 # §6.4 memory budget, measured as the plan says (decision M1): N fresh launches
 # (default 20) of the memory check, each with a throwaway data folder; the
 # median and p95 of RSS and physical footprint must be under 400 MB.
-# Usage: scripts/perf-memory.sh [runs]   (build first: LINEN_SPIKES=1 pnpm tauri build
+# Usage: scripts/perf-memory.sh [runs] [dictionaries]   (build first: LINEN_SPIKES=1 pnpm tauri build
 #        --no-bundle --features spikes --config src-tauri/tauri.spikes.conf.json)
 # Results: docs/spikes/raw/budget-memory-runs.json
 set -e
 cd "$(dirname "$0")/.."
 RUNS="${1:-20}"
 APP=./src-tauri/target/release/linen
-RAW=docs/spikes/raw/budget-memory.json
+# `dictionaries`: the same budget with three dictionaries installed (Reading Lens DX10).
+if [ "${2:-}" = dictionaries ]; then SPIKE=md; NAME=budget-memory-dictionaries; else SPIKE=m; NAME=budget-memory; fi
+RAW=docs/spikes/raw/$NAME.json
 
 # Preflight. D7 (docs/decisions.md): the reader needs Safari 16.4 or later (WebKit
 # parses foliate-js only from there), so on older WebKit there is nothing to measure.
@@ -34,7 +36,7 @@ while [ "$i" -le "$RUNS" ]; do
   DATA=$(mktemp -d)
   rm -f "$RAW"
   # On the current desktop unless LINEN_SPACE names one; the display kept awake (see scripts/e2e.sh).
-  LINEN_SPACE="${LINEN_SPACE:-}" LINEN_DATA_DIR="$DATA" LINEN_SPIKE=m LINEN_SPIKE_TIMEOUT=900 \
+  LINEN_SPACE="${LINEN_SPACE:-}" LINEN_DATA_DIR="$DATA" LINEN_SPIKE=$SPIKE LINEN_SPIKE_TIMEOUT=900 \
     caffeinate -di "$APP" >"$OUT/run-$i.log" 2>&1 || true
   if [ ! -f "$RAW" ]; then
     echo "Run $i produced no result. The end of its log ($OUT/run-$i.log):" >&2
@@ -46,9 +48,9 @@ while [ "$i" -le "$RUNS" ]; do
   echo "run $i/$RUNS: $(python3 -c "import json;a=json.load(open('$OUT/run-$i.json'))['raw']['after'];print(a['total_mb'],'MB RSS,',a.get('footprint_mb'),'MB footprint')")"
   i=$((i + 1))
 done
-python3 - "$OUT" "$RUNS" <<'PY'
+python3 - "$OUT" "$RUNS" "$NAME" <<'PY'
 import json, math, sys, statistics, datetime
-out, runs = sys.argv[1], int(sys.argv[2])
+out, runs, name = sys.argv[1], int(sys.argv[2]), sys.argv[3]
 rows = [json.load(open(f"{out}/run-{i}.json"))["raw"]["after"] for i in range(1, runs + 1)]
 def stats(key):
     v = sorted(r[key] for r in rows)
@@ -57,7 +59,7 @@ def stats(key):
 rss, fp = stats("total_mb"), stats("footprint_mb")
 ok = rss["p95"] < 400 and fp["p95"] < 400
 result = {
-    "spike": "budget-memory-runs",
+    "spike": f"{name}-runs",
     "date": datetime.date.today().isoformat(),
     "runs": runs,
     "budget_mb": 400,
@@ -65,6 +67,6 @@ result = {
     "footprint_mb": fp,
     "verdict": "pass" if ok else "fail",
 }
-json.dump(result, open("docs/spikes/raw/budget-memory-runs.json", "w"), indent=2)
+json.dump(result, open(f"docs/spikes/raw/{name}-runs.json", "w"), indent=2)
 print(f"RSS median {rss['median']} MB, p95 {rss['p95']} MB; footprint median {fp['median']} MB, p95 {fp['p95']} MB: {result['verdict'].upper()}")
 PY

@@ -24,6 +24,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 | Work | State | Plan and status |
 |---|---|---|
 | UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Done: four languages signed off and registered 2026-10-08; released as 0.3.0 on 2026-10-09 | `docs/i18n-plan.md` (stage table at its end) |
+| Reading Lens (2026-10-09; branch `reading-lens`) | Stages 2a and 2b built and checked in the app; items 58–76 approved; baselines and items 77–81 wait on the owner; Stage 1 (owner) and 2d (Gate 0) not started | `docs/reading-lens-plan.md`, `docs/reading-lens-status.md` |
 
 ## How the work is checked
 

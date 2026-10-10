@@ -1,0 +1,54 @@
+{
+  "spike": "budget-memory-dictionaries",
+  "criteria": [
+    {
+      "id": "budget-memory-dictionaries",
+      "description": "With three dictionaries installed and an entry open, a 100 MB book after 50 pages stays under 400 MB (DX10, §6.4)",
+      "verdict": "pass",
+      "evidence": "after opening 228 MB; after 50 pages RSS 263 MB = linen 61 MB + com.apple.WebKit.WebContent 130 MB + com.apple.WebKit.Networking 13 MB + com.apple.WebKit.GPU 57 MB; footprint 364 MB = linen 39 MB + com.apple.WebKit.WebContent 214 MB + com.apple.WebKit.Networking 10 MB + com.apple.WebKit.GPU 100 MB"
+    }
+  ],
+  "raw": {
+    "before": {
+      "footprint_mb": 313,
+      "footprints": [
+        "linen 36 MB",
+        "com.apple.WebKit.WebContent 172 MB",
+        "com.apple.WebKit.Networking 10 MB",
+        "com.apple.WebKit.GPU 94 MB"
+      ],
+      "processes": [
+        "linen 73 MB",
+        "com.apple.WebKit.WebContent 114 MB",
+        "com.apple.WebKit.Networking 14 MB",
+        "com.apple.WebKit.GPU 25 MB"
+      ],
+      "total_mb": 228
+    },
+    "after": {
+      "footprint_mb": 364,
+      "footprints": [
+        "linen 39 MB",
+        "com.apple.WebKit.WebContent 214 MB",
+        "com.apple.WebKit.Networking 10 MB",
+        "com.apple.WebKit.GPU 100 MB"
+      ],
+      "processes": [
+        "linen 61 MB",
+        "com.apple.WebKit.WebContent 130 MB",
+        "com.apple.WebKit.Networking 13 MB",
+        "com.apple.WebKit.GPU 57 MB"
+      ],
+      "total_mb": 263
+    }
+  },
+  "info": {
+    "cpu": "Apple M2",
+    "memory_bytes": "8589934592",
+    "only": null,
+    "os": "14.6.1",
+    "time": 1791591628,
+    "webkit": "19618.3.11.11.5"
+  },
+  "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
+}

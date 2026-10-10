@@ -10,6 +10,9 @@
   let next = 1
   const pending = new Map()
   const commands = new Map()
+  // API 1.1 (Reading Lens LK1, LK4): lookups, and the requests in flight, which Linen may cancel.
+  const lookups = new Map()
+  const inFlight = new Map()
   const listeners = new Map()
   const call = (method, params) =>
     new Promise((resolve, reject) => {
@@ -33,6 +36,24 @@
       } catch (err) {
         postMessage({ done: m.invoke, error: String((err && err.message) || err) })
       }
+    } else if (m.lookup) {
+      const controller = new AbortController()
+      inFlight.set(m.lookup, controller)
+      try {
+        const fn = lookups.get(m.id)
+        if (!fn) throw new Error(`no handler for lookup ${m.id}`)
+        const result = await fn(m.request || {}, { signal: controller.signal })
+        if (!controller.signal.aborted)
+          postMessage({ done: m.lookup, result: result === undefined ? null : result })
+      } catch (err) {
+        if (!controller.signal.aborted)
+          postMessage({ done: m.lookup, error: String((err && err.message) || err) })
+      } finally {
+        inFlight.delete(m.lookup)
+      }
+    } else if (m.cancel) {
+      const controller = inFlight.get(m.cancel)
+      if (controller) controller.abort()
     } else if (m.event) {
       for (const fn of listeners.get(m.event) || []) {
         try {
@@ -46,11 +67,18 @@
     }
   }
   self.linen = Object.freeze({
-    apiVersion: '1.0.0',
+    apiVersion: '1.1.0',
     commands: Object.freeze({
       register(id, handler) {
         commands.set(id, handler)
         return call('commands.register', { id })
+      },
+    }),
+    // 1.1, experimental: answer a lookup in the peek with the LK2 fields.
+    lookups: Object.freeze({
+      register(id, handler) {
+        lookups.set(id, handler)
+        return call('lookups.register', { id })
       },
     }),
     book: Object.freeze({

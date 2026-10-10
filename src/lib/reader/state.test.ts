@@ -312,3 +312,21 @@ describe('S10 chrome hiding', () => {
     expect(free.s.chrome).toBe('immersive')
   })
 })
+
+describe('LK12 the lookup peek gives way to the Navigator', () => {
+  it('opening the Navigator, docked or floating, closes it', () => {
+    const wide = run(
+      initialState(WIDE),
+      { type: 'openFloating', kind: 'lookup' },
+      { type: 'openNavigator', tab: 'contents' },
+    )
+    expect(wide.s.floating).toBeNull()
+    expect(wide.s.docked).toBe('contents')
+    const peek = run(
+      initialState(WIDE),
+      { type: 'openFloating', kind: 'peek' },
+      { type: 'openNavigator', tab: 'contents' },
+    )
+    expect(peek.s.floating?.kind).toBe('peek')
+  })
+})

@@ -36,8 +36,8 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 | `version` | A semantic version. |
 | `engines.linen` | The Host API versions it works with, as a semver range. Linen supports the current major and the previous one (P5); an extension outside them is turned off, with the reason. |
 | `main` | The Worker script. Theme packs have none. |
-| `activation` | When it starts: `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`, `onReadingSessions` (1.1). It starts lazily and is unloaded after a minute unused. |
-| `contributes` | `commands`, `selectionActions` (with an optional `when`), `navigatorTabs`, `themes`, `exporters`. Up to 32 in all. |
+| `activation` | When it starts: `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onLookup:<id>` (API 1.1), `onAnnotations`, `onReadingSessions` (1.1). It starts lazily and is unloaded after a minute unused. |
+| `contributes` | `commands`, `selectionActions` (with an optional `when`), `navigatorTabs`, `themes`, `exporters`, and `lookups` (API 1.1, experimental; see below). Up to 32 in all. |
 | `permissions` | See below. Anything not declared is refused. |
 
 ## Permissions (P3)
@@ -66,10 +66,27 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
   - Three failures in ten minutes suspend the extension. Its slots then show “… stopped responding · Restart”, and reading is never affected.
 - **Safe mode (P7).** Holding ⇧ while Linen opens, or Settings › Extensions › Restart without extensions, starts Linen with every extension off.
 
+## Lookups (Host API 1.1, experimental)
+
+A lookup answers in the lookup peek, under the selection (Reading Lens, `docs/reading-lens-plan.md`, LK1–LK15). It is experimental until Host API 1.2 and may change.
+
+- **Declare it** in `contributes.lookups`: `{ "id": "explain", "title": "Explain", "when": "…" }`, with `onLookup:<id>` in `activation`. A lookup needs `book.selection`; `engines.linen` must allow 1.1 (`"^1.1"`).
+- **Where it shows.** In the selection's “⋯” menu, for a new selection and for a clicked highlight; in ⌘K as “Look Up with …”; and in the peek's menu above the answer, once in each language the reader uses. Not in fixed-layout books, and not in safe mode.
+- **Nothing is sent before the reader chooses it.** Selecting, highlighting, copying and searching never call a lookup.
+- **Answer it** with `linen.lookups.register(id, handler)`. The handler gets the request (`text`, `context`, `bookLang`, `language`) and `{ signal }`; it returns the fields below. `book.selection()` gives the same selection, with its context, while the lookup runs.
+- **The context** is `{ before, sentence, after, paragraph, chapter }`: whole sentences around the selection in its own chapter, 1,200 characters at most in all. It never includes other chapters, front matter, highlights or notes; footnote markers and soft hyphens are taken out.
+- **The answer** is plain text in fixed fields, which Linen renders:
+  `{ status: "ok" | "needs_context" | "error" | "notice", headword, term?, meaning, qualifier?, details?: [{ label, text }], source: { kind: "ai" | "dictionary", name, model? }, sent?, missing?, error?, notice? }`.
+  - `qualifier` is shown with the meaning, never only under More; `missing` (for `needs_context`) says what the passage lacks; `error` is `offline`, `unauthorized`, `rate_limited` or `unavailable`.
+  - `notice` (`{ title, text, host }`) says, before the first request to a host, what will be sent and where. Linen shows it with Continue and Not now; Continue asks again with `acknowledged: true` in the request, and Not now closes the peek. Send nothing until then.
+  - Linen writes the label above the answer itself: “AI explanation · ‹model›” or “Dictionary · ‹name›”.
+  - An answer with an unknown field, a label of its own, markup, or a percentage or confidence score is refused, and the peek says the answer can't be shown.
+- **Closing the peek cancels the request.** `signal` aborts; whatever the handler returns afterwards is dropped. The 10 s work budget and the watchdog apply as for commands.
+
 ## Selection `when` clauses
 
 A small closed language:
-- **Variables:** `selection.words`, `selection.chars`, `selection.language`, `book.language`, `book.fixedLayout`.
+- **Variables:** `selection.words`, `selection.chars`, `selection.sentences` (1.1), `selection.language`, `book.language`, `book.lang` (1.1: the primary subtag, lowercase, `""` when the book has none or `und`), `book.fixedLayout`.
 - **Values and operators:** numbers, `"strings"`, `true`/`false`, `== != < <= > >=`, `&& || !` and parentheses.
 
 For example: `selection.words <= 3 && book.language == "en"`.

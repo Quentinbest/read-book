@@ -50,3 +50,40 @@ linen.commands.register('define', async () => {
     return show({ word, error: `Couldn’t reach the dictionary (${err.message}).` })
   }
 })
+
+// API 1.1 (Reading Lens): the same look-up as an answer in the lookup peek, in the
+// fixed fields Linen renders (LK2). Nothing is sent until the reader chooses it.
+linen.lookups.register('define', async (request, { signal }) => {
+  const word = request.text
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\s'-]/gu, '')
+  const source = { kind: 'dictionary', name: 'Free Dictionary' }
+  if (!word) return { status: 'error', headword: request.text, error: 'unavailable', source }
+  let r
+  try {
+    r = await linen.net.fetch(
+      `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`,
+    )
+  } catch {
+    return { status: 'error', headword: word, error: 'offline', source }
+  }
+  if (signal.aborted) return null
+  if (r.status === 429) return { status: 'error', headword: word, error: 'rate_limited', source }
+  if (r.status !== 200) return { status: 'error', headword: word, error: 'unavailable', source }
+  const entries = JSON.parse(r.body)
+  const senses = entries.flatMap((e) =>
+    e.meanings.flatMap((m) =>
+      m.definitions.slice(0, 2).map((d) => `${m.partOfSpeech}: ${d.definition}`),
+    ),
+  )
+  return {
+    status: 'ok',
+    headword: word,
+    meaning: senses[0] || '',
+    details: senses
+      .slice(1, 6)
+      .map((text, i) => ({ label: `Sense ${i + 2}`, text: text.slice(0, 2000) })),
+    source,
+  }
+})

@@ -10,7 +10,8 @@ use std::collections::HashSet;
 
 /// The Host API this build provides. The core supports this major version and the
 /// previous one (P5); with API 1 there is no previous one yet.
-pub const API_VERSION: &str = "1.0.0";
+/// 1.1 adds `lookups` (Reading Lens LK1) and the selection's context (LK5).
+pub const API_VERSION: &str = "1.1.0";
 pub const SUPPORTED_MAJORS: &[u64] = &[1];
 
 /// Limits that keep manifests small and slots tidy.
@@ -31,8 +32,8 @@ pub struct Manifest {
     /// The Worker script. Theme packs have none.
     #[serde(default)]
     pub main: Option<String>,
-    /// `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onAnnotations`,
-    /// `onReadingSessions` (1.1).
+    /// `onCommand:<id>`, `onNavigatorTab:<id>`, `onExport:<id>`, `onLookup:<id>` (API 1.1),
+    /// `onAnnotations`, `onReadingSessions` (1.1).
     #[serde(default)]
     pub activation: Vec<String>,
     #[serde(default)]
@@ -64,6 +65,9 @@ pub struct Contributes {
     pub themes: Vec<ThemePack>,
     #[serde(default)]
     pub exporters: Vec<Exporter>,
+    /// API 1.1, experimental (Reading Lens LK1): providers for the lookup peek.
+    #[serde(default)]
+    pub lookups: Vec<Lookup>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -109,6 +113,17 @@ pub struct Exporter {
     pub title: String,
     /// The command that performs the export.
     pub command: String,
+}
+
+/// LK1: a lookup the selection's “⋯” menu and ⌘K offer; its answer shows in the peek.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lookup {
+    pub id: String,
+    pub title: String,
+    /// e.g. "book.lang == \"en\" && selection.words <= 40" (see `when` in the host).
+    #[serde(default)]
+    pub when: Option<String>,
 }
 
 /// How a permission is consented to (P3), for the install sheet.
@@ -329,7 +344,8 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
         + c.selection_actions.len()
         + c.navigator_tabs.len()
         + c.themes.len()
-        + c.exporters.len();
+        + c.exporters.len()
+        + c.lookups.len();
     if count > MAX_CONTRIBUTIONS {
         errors.push(format!("more than {MAX_CONTRIBUTIONS} contributions"));
     }
@@ -368,6 +384,23 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
             errors.push(format!("exporter uses undeclared command “{}”", x.command));
         }
     }
+    let mut lookup_ids = HashSet::new();
+    for x in &c.lookups {
+        local_id("lookup id", &x.id, &mut errors);
+        text("lookup title", &x.title, &mut errors);
+        if !lookup_ids.insert(x.id.as_str()) {
+            errors.push(format!("lookup “{}” is listed twice", x.id));
+        }
+        if let Some(w) = &x.when {
+            if let Err(e) = super::when::parse(w) {
+                errors.push(format!("when “{w}”: {e}"));
+            }
+        }
+    }
+    // A lookup is handed the selection, so it needs the permission that reads it (P3).
+    if !c.lookups.is_empty() && !m.permissions.iter().any(|p| p == "book.selection") {
+        errors.push("lookups need the book.selection permission".into());
+    }
     for t in &c.themes {
         local_id("theme id", &t.id, &mut errors);
         text("theme title", &t.title, &mut errors);
@@ -387,13 +420,15 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
             }
         }
     }
-    let has_code =
-        !c.commands.is_empty() || !c.navigator_tabs.is_empty() || !m.activation.is_empty();
+    let has_code = !c.commands.is_empty()
+        || !c.navigator_tabs.is_empty()
+        || !c.lookups.is_empty()
+        || !m.activation.is_empty();
     match &m.main {
         Some(main) if !plain_path(main) || !main.ends_with(".js") => {
             errors.push(format!("main “{main}” must be a .js file in the package"))
         }
-        None if has_code => errors.push("commands and tabs need a main script".into()),
+        None if has_code => errors.push("commands, tabs and lookups need a main script".into()),
         _ => {}
     }
     for a in &m.activation {
@@ -401,6 +436,7 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
             Some(("onCommand", id)) => commands.contains(id),
             Some(("onNavigatorTab", id)) => c.navigator_tabs.iter().any(|t| t.id == id),
             Some(("onExport", id)) => c.exporters.iter().any(|t| t.id == id),
+            Some(("onLookup", id)) => c.lookups.iter().any(|t| t.id == id),
             None => a == "onAnnotations" || a == "onReadingSessions",
             _ => false,
         };
@@ -426,7 +462,8 @@ fn a_theme_pack_with_permissions(m: &Manifest) -> bool {
         && c.commands.is_empty()
         && c.navigator_tabs.is_empty()
         && c.exporters.is_empty()
-        && c.selection_actions.is_empty();
+        && c.selection_actions.is_empty()
+        && c.lookups.is_empty();
     only_themes && (!m.permissions.is_empty() || m.main.is_some())
 }
 
@@ -547,6 +584,33 @@ mod tests {
         assert!(
             incompatibility(&parse(&DICTIONARY.replace("^1.0", ">=1.0, <3")).unwrap()).is_none()
         );
+    }
+
+    #[test]
+    fn lookups_are_checked_like_selection_actions() {
+        let explain = r#"{ "id": "org.test.explain", "version": "1.0.0", "name": "Explain",
+            "engines": { "linen": "^1.1" }, "main": "main.js",
+            "activation": ["onLookup:explain"],
+            "contributes": { "lookups": [{ "id": "explain", "title": "Explain",
+                "when": "(book.lang == \"en\" || book.lang == \"\") && selection.words <= 40" }] },
+            "permissions": ["book.selection"] }"#;
+        let m = parse(explain).unwrap();
+        assert_eq!(m.contributes.lookups[0].title, "Explain");
+        assert_eq!(incompatibility(&m), None, "API 1.1 is this build's");
+        let errors =
+            parse(&explain.replace("\"book.selection\"", "\"book.metadata\"")).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("book.selection")),
+            "{errors:?}"
+        );
+        assert!(parse(&explain.replace("selection.words <= 40", "selection.words = 40")).is_err());
+        assert!(parse(&explain.replace("onLookup:explain", "onLookup:nope")).is_err());
+        assert!(parse(&explain.replace("\"main\": \"main.js\",", "")).is_err());
+        assert!(parse(&explain.replace(
+            "\"title\": \"Explain\",",
+            "\"title\": \"Explain\", \"label\": \"Verified\","
+        ))
+        .is_err());
     }
 
     #[test]

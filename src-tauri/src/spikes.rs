@@ -839,3 +839,45 @@ mod capture {
         }
     }
 }
+
+/// Reading Lens Spike I: a capture's PNG (base64), so a check can look at what a
+/// cross-origin dictionary frame drew without reaching into it.
+#[tauri::command]
+pub fn spike_capture_png(name: String) -> Result<String, String> {
+    if !valid_name(&name) {
+        return Err(format!("invalid name: {name}"));
+    }
+    let bytes = std::fs::read(output_dir("docs/visual/app").join(format!("{name}.png")))
+        .map_err(|e| e.to_string())?;
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len() * 4 / 3 + 4);
+    for c in bytes.chunks(3) {
+        let n = (c[0] as u32) << 16
+            | (*c.get(1).unwrap_or(&0) as u32) << 8
+            | *c.get(2).unwrap_or(&0) as u32;
+        for i in 0..4 {
+            if i <= c.len() {
+                out.push(A[(n >> (18 - 6 * i) & 63) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Reading Lens DX2: the generation folders in the library's Dictionaries folder.
+#[tauri::command]
+pub fn spike_dict_generations(
+    dicts: tauri::State<crate::dictionaries::state::DictState>,
+) -> Vec<String> {
+    let mut out: Vec<String> = std::fs::read_dir(&dicts.dir)
+        .map(|r| {
+            r.flatten()
+                .map(|e| e.file_name().to_string_lossy().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    out.sort();
+    out
+}

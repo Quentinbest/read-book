@@ -524,6 +524,12 @@
       "evidence": "ok"
     },
     {
+      "id": "L4-language-setting",
+      "description": "Settings › General › Language lists System and every shipped language; a choice is saved and asks for a restart, without restarting (L-4, L-5)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "P5-install-consent",
       "description": "Install from file shows what an extension can access and adds (G1), then installs it; an extension for an unsupported API major is refused with a reason",
       "verdict": "pass",
@@ -544,8 +550,8 @@
     {
       "id": "P2-hostile-extension",
       "description": "A hostile extension reaches no undeclared host, no Tauri command, no book text or selection without permission, no other extension’s storage, and no more than 10 MB",
-      "verdict": "fail",
-      "evidence": "canary: "
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "P6-watchdog",
@@ -724,8 +730,8 @@
     {
       "id": "S9-edge-reveal-modes",
       "description": "Real pointer moves: the top and bottom edges reveal both bars in Pages and in Scroll alike; they hide when the pointer goes, and their buttons work",
-      "verdict": "fail",
-      "evidence": "pages: bars true,true over the text"
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "L8-minimum-size",
@@ -736,6 +742,228 @@
     {
       "id": "S3-title-and-message",
       "description": "At the smallest window: the top bar’s title stays centred and clear of the buttons, ending in “…” when too long; a message sits above the bottom bar while it shows (M1); the library’s narrow header clears the window buttons",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "H-selection-context",
+      "description": "Spike H: WebKit’s Intl.Segmenter gives usable sentences over foliate ranges (inline markup, an abbreviation, footnote markers, CJK), within 10 ms per selection",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EP1-no-request-on-select",
+      "description": "AC1: selecting, highlighting, copying and searching make no request; only choosing Explain does (net.fetch and the canary)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK1-menu-items",
+      "description": "AC2: Explain appears in “⋯” and ⌘K only when its when-clause holds; none in safe mode; Look Up stays in the bar",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK1-peek-placement",
+      "description": "AC3: the peek is up within 100 ms, below the selection with a pointer, never over a selected line; near the page foot it opens above; Pages and Scroll",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK5-repeated-string",
+      "description": "AC4: a word three times in a chapter sends the sentence of the occurrence selected, each time",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK5-context-bounds",
+      "description": "AC5: the context is ≤ 1,200 characters, from this chapter only, and What was sent shows it",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK4-cancel-stale",
+      "description": "AC6: with 3 s latency, Esc at 1 s closes the peek, returns focus to the text and drops the late answer, 20 of 20",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK4-position-integrity",
+      "description": "AC7: the reading place is the same before and after a lookup, and a page turn while pending closes it without moving elsewhere, 20 runs",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EQ1-labels",
+      "description": "AC8: every answer carries its label from Linen’s set, never a percentage; a provider’s own label or score is refused",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK10-failure-states",
+      "description": "AC10: offline, timeout, 401, 429, a refused answer and a suspended provider each show their state and action",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EA1-focus-and-announce",
+      "description": "AC11: the peek is a labelled dialog whose answer is announced politely; Tab enters it, Esc returns to the text; axe passes; 7:1 in Paper, Sepia and Night",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EB1-budgets-pending",
+      "description": "AC12: with a request pending, the peek is up within 100 ms and a page turn still renders within the turn budget (16 ms)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK14-highlight-lookup",
+      "description": "A clicked highlight offers Look Up and lookups; Delete still stands where Search stands for a new selection",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK13-no-room",
+      "description": "In a short window, when neither side fits, the peek takes the side with more room, never covers the selection, and its answer scrolls",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK12-close-triggers",
+      "description": "A resize, ⌘+, opening the Navigator, Back, a Contents jump, ⌘L and a page turn close the peek and cancel its request; a theme change keeps it",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EP3-context-excludes",
+      "description": "Selections at a chapter’s first and last sentence, and next to a highlight with a note, send nothing from other chapters, highlights or notes",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "N5-quit-pending",
+      "description": "Quitting while a lookup is pending quits at once and leaves no error in the crash log",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EX8-notice",
+      "description": "Item 76: a provider’s first-request notice shows with Continue and Not now; nothing is sent until Continue, which asks again acknowledged",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK15-single-provider",
+      "description": "With one provider the label above the answer is plain text, with no menu; with two it is a menu that switches and asks only then",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK1-fixed-layout",
+      "description": "O13 (approved 2026-10-09): a fixed-layout book offers no extension lookups",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK5-chunk-boundary",
+      "description": "In a chapter laid out in chunks (L16), the first sentence of a chunk gets the previous sentence from the previous chunk",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK5-context-cleanup",
+      "description": "Footnote markers are absent from the context; note bodies are not sent (EP3)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "LK4-rapid",
+      "description": "A second lookup while one is pending shows only the latest answer; the earlier one is dropped",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "S14-warm-cancel",
+      "description": "⌘L while a request is pending cancels it and hides the book from extensions; returning shows no peek",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "EP5-crashlog-clean",
+      "description": "After provider errors, a refused answer and a crashed provider, the crash log holds no selected or context text",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX1-import",
+      "description": "AC14: Add dictionary… imports an MDX 2.0 (Encrypted=2) with its MDD; Look Up shows the entry with its CSS and image on the light card; a refused file keeps the old dictionary",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "I-dictionary-frame",
+      "description": "Spike I: a linen-dict:// frame with no scripts renders the entry, follows an entry:// link inside the peek, and Back returns",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX6-hostile-entry",
+      "description": "AC15: hostile entries (scripts, handlers, remote images, url(), escapes, @import, base, refresh, prefetch, frames, SVG) run nothing and request nothing (canary)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX5-redirects",
+      "description": "AC17: a redirect cycle stops; “caches” shows “cache”; “invalidates” shows “invalidate” with its label",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX4-headword-variants",
+      "description": "Curly and straight apostrophes, full-width letters and NFC/NFD forms find the same entry; no suffix rule invents “news”, “bus” or “data”",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX3-encodings",
+      "description": "UTF-8, UTF-16LE, GBK, GB18030 and Big5 dictionaries show the same entry; registration, LZO and an unknown encoding are refused with their reason",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX13-caps",
+      "description": "An entry over 4 MB and a block that would inflate past 16 MB are refused as data errors and never shown; the entry beside them still reads; impossible counts are refused at import",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX1-duplicate",
+      "description": "Adding the same file again says it is installed; a newer file with the same name replaces it through a new generation",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX2-swap-while-open",
+      "description": "Replacing a dictionary while its entry is open keeps that generation until the peek closes; the next look-up uses the new one",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX9-never-sent",
+      "description": "AC18: with a dictionary entry open and Explain chosen after it, no dictionary text reaches an extension message or a request",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX10-budgets",
+      "description": "AC19: a warm look-up in a 60,000-entry dictionary (with two more installed) is within 20 ms at p95",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "DX7-night-card",
+      "description": "At Night the entry sits on the light card and keeps its own contrast",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -752,7 +980,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791300160,
+    "time": 1791561717,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

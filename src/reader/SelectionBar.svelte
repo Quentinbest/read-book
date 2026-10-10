@@ -5,6 +5,8 @@
   // F6 moves focus in, arrows move between actions, Esc returns to the text.
   // Extension actions (P10; G7) sit behind “⋯”, after the core actions, which
   // render at once; a stuck one is marked “Not responding” with Restart (Screen 12).
+  // Reading Lens: lookups (LK1) lead that menu, for a new selection and for a clicked
+  // highlight alike (LK14), where Look Up follows Delete, which keeps its place.
   import { fade } from 'svelte/transition'
   import Icon from '../components/Icon.svelte'
   import { t } from '../lib/strings'
@@ -23,6 +25,8 @@
     oncopy,
     onsearch,
     onlookup,
+    lookups = [],
+    onlookupwith,
     ondelete,
     onescape,
     onattach,
@@ -46,6 +50,9 @@
     onsearch: () => void
     /** 1.1: the dictionary peek. */
     onlookup?: () => void
+    /** LK1: extension lookups whose `when` holds. */
+    lookups?: { key: string; title: string; extId: string; name: string; status: string }[]
+    onlookupwith?: (key: string) => void
     ondelete: () => void
     onescape: () => void
     onattach?: () => void
@@ -64,6 +71,16 @@
 
   let menuOpen = $state(false)
   const stuck = (status: string) => status === 'not-responding' || status === 'suspended'
+  /** Extension actions are for a new selection only. */
+  const menuActions = $derived(mode === 'new' ? extensionActions : [])
+  /** One Restart per stuck extension, after its last item (a lookup and an action may share one). */
+  const restartAfter = $derived.by(() => {
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity -- local to the derivation
+    const last = new Map<string, string>()
+    for (const l of lookups) if (stuck(l.status)) last.set(l.extId, `l:${l.key}`)
+    for (const a of menuActions) if (stuck(a.status)) last.set(a.extId, `a:${a.extId}/${a.command}`)
+    return new Set(last.values())
+  })
 
   const GAP = 12
   const FLIP_BELOW = 56
@@ -163,73 +180,103 @@
       <button type="button" class="action" tabindex="-1" onclick={onsearch}>
         <Icon name="search" size={16} />{t.annotations.search}
       </button>
-      {#if onlookup}
-        <button type="button" class="action" tabindex="-1" onclick={onlookup}>
-          <Icon name="dictionary" size={16} />{t.lookUp.action}
-        </button>
-      {/if}
-      {#if extensionActions.length}
-        <span class="divider" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="action more"
-          tabindex="-1"
-          aria-label={t.extensions.more}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          onclick={() => {
-            menuOpen = !menuOpen
-            if (menuOpen)
-              requestAnimationFrame(() =>
-                bar?.querySelector<HTMLButtonElement>('.ext-menu button:not(:disabled)')?.focus(),
-              )
-          }}><Icon name="more" size={18} /></button
-        >
-        {#if menuOpen}
-          <div class="ext-menu" class:up={below} role="menu" aria-label={t.extensions.more}>
-            {#each extensionActions as a (a.extId + a.command)}
-              <button
-                type="button"
-                role="menuitem"
-                class="item"
-                disabled={stuck(a.status)}
-                onclick={() => {
-                  menuOpen = false
-                  onextension?.(a)
-                }}
-                ><span>{a.title}</span>{#if stuck(a.status)}<span class="stuck"
-                    >{t.extensions.notResponding}</span
-                  >{/if}</button
-              >
-              {#if stuck(a.status)}
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="item restart"
-                  onclick={() => {
-                    menuOpen = false
-                    onrestart?.(a.extId)
-                  }}>{t.extensions.restartNamed(a.name)}</button
-                >
-              {/if}
-            {/each}
-            <span class="sep" aria-hidden="true"></span>
-            <button
-              type="button"
-              role="menuitem"
-              class="item"
-              onclick={() => {
-                menuOpen = false
-                onmanage?.()
-              }}>{t.extensions.manage}</button
-            >
-          </div>
-        {/if}
-      {/if}
     {:else}
       <button type="button" class="action" tabindex="-1" onclick={ondelete}>
         <Icon name="trash" size={16} />{t.annotations.delete}
       </button>
+    {/if}
+    {#if onlookup}
+      <button type="button" class="action" tabindex="-1" onclick={onlookup}>
+        <Icon name="dictionary" size={16} />{t.lookUp.action}
+      </button>
+    {/if}
+    {#if lookups.length || menuActions.length}
+      <span class="divider" aria-hidden="true"></span>
+      <button
+        type="button"
+        class="action more"
+        tabindex="-1"
+        aria-label={t.extensions.more}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        onclick={() => {
+          menuOpen = !menuOpen
+          if (menuOpen)
+            requestAnimationFrame(() =>
+              bar?.querySelector<HTMLButtonElement>('.ext-menu button:not(:disabled)')?.focus(),
+            )
+        }}><Icon name="more" size={18} /></button
+      >
+      {#if menuOpen}
+        <div class="ext-menu" class:up={below} role="menu" aria-label={t.extensions.more}>
+          {#each lookups as l (l.key)}
+            <button
+              type="button"
+              role="menuitem"
+              class="item"
+              data-lookup-item={l.key}
+              disabled={stuck(l.status)}
+              onclick={() => {
+                menuOpen = false
+                onlookupwith?.(l.key)
+              }}
+              ><span>{l.title}</span>{#if stuck(l.status)}<span class="stuck"
+                  >{t.extensions.notResponding}</span
+                >{/if}</button
+            >
+            {#if restartAfter.has(`l:${l.key}`)}
+              <button
+                type="button"
+                role="menuitem"
+                class="item restart"
+                onclick={() => {
+                  menuOpen = false
+                  onrestart?.(l.extId)
+                }}>{t.extensions.restartNamed(l.name)}</button
+              >
+            {/if}
+          {/each}
+          {#if lookups.length && menuActions.length}
+            <span class="sep" aria-hidden="true"></span>
+          {/if}
+          {#each menuActions as a (a.extId + a.command)}
+            <button
+              type="button"
+              role="menuitem"
+              class="item"
+              disabled={stuck(a.status)}
+              onclick={() => {
+                menuOpen = false
+                onextension?.(a)
+              }}
+              ><span>{a.title}</span>{#if stuck(a.status)}<span class="stuck"
+                  >{t.extensions.notResponding}</span
+                >{/if}</button
+            >
+            {#if restartAfter.has(`a:${a.extId}/${a.command}`)}
+              <button
+                type="button"
+                role="menuitem"
+                class="item restart"
+                onclick={() => {
+                  menuOpen = false
+                  onrestart?.(a.extId)
+                }}>{t.extensions.restartNamed(a.name)}</button
+              >
+            {/if}
+          {/each}
+          <span class="sep" aria-hidden="true"></span>
+          <button
+            type="button"
+            role="menuitem"
+            class="item"
+            onclick={() => {
+              menuOpen = false
+              onmanage?.()
+            }}>{t.extensions.manage}</button
+          >
+        </div>
+      {/if}
     {/if}
   {/if}
 </div>
@@ -287,8 +334,10 @@
   .action:hover {
     background: var(--selbar-hover);
   }
+  /* Item 73 (O7, approved 2026-10-09): the accent ring was 2.24:1 on Paper's bar and 1.90:1 at
+     Night, under 3:1; the bar's own ink holds 7:1 or more in every theme. */
   .action:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--selbar-ink);
     outline-offset: 1px;
   }
   .strong {
@@ -347,7 +396,7 @@
     opacity: 0.7;
   }
   .item:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--selbar-ink);
     outline-offset: -2px;
   }
   .stuck {

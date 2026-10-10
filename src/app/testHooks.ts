@@ -37,6 +37,8 @@ export interface TestHooks {
   contextMenu?: { labels: string[]; run: (label: string) => void }
   /** Phase 7: the path the install dialog would return (the harness cannot drive it). */
   pickExtensionFile?: () => Promise<string | null>
+  /** Reading Lens DX1: the .mdx the open dialog would return. */
+  pickDictionaryFile?: () => Promise<string | null>
   /** Phase 7: where the save dialog would save (files.save). */
   pickSavePath?: (suggested: string) => Promise<string | null>
   /** Phase 7: the extension host. */
@@ -51,6 +53,10 @@ export interface TestHooks {
   coverGrows?: number
   /** D7-WebKit: act as if this WebKit were older than Safari 16.4. */
   webkitTooOld?: boolean
+  /** EP1, DX9 (Reading Lens): every net.fetch an extension asked for, with its body. */
+  netFetches?: { extId: string; url: string; body: unknown }[]
+  /** LK5, EP3: every request handed to a lookup provider. */
+  lookupRequests?: { extId: string; lookupId: string; request: unknown }[]
   /** Delay before the reader opens its book, to exercise the slow-open line (G8). */
   openDelayMs?: number
 }

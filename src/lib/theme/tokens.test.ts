@@ -159,6 +159,9 @@ describe('Selection bar (A1, V2; Screens 06 and 14)', () => {
         contrast(over(th.selectionBar.ring, th.selectionBar.ground), th.selectionBar.ground),
       ).toBeGreaterThanOrEqual(3)
     })
+    it(`${n}: the bar's focus ring (its ink) is ≥ 3:1 against the bar (item 73)`, () => {
+      expect(contrast(th.selectionBar.ink, th.selectionBar.ground)).toBeGreaterThanOrEqual(3)
+    })
   }
   it('Night inverts to a light surface, 13.6:1 against the page (Screen 14)', () => {
     const n = THEMES.night
