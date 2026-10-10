@@ -4,7 +4,7 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 
 | Stage | State | Why |
 |---|---|---|
-| 1 Stuck-point diary | Not started (owner) | No code; needs the gate threshold values (item 59, approved in principle) |
+| 1 Stuck-point diary | Ready to start (owner) | No code; thresholds set 2026-10-10 (G0: local ≥ 40%, tool failed ≥ 30%, at least 30 local items from 3 readers) |
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
 | 2d Secrets, optional hosts, options pages | Not started | Needs Gate 0 (Stage 1) and Spike J |

@@ -271,3 +271,13 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-10 (Reading Lens gate thresholds, item 59, O1)
+
+The owner set the thresholds as recommended, before any Stage 1 data exists. A gate that fails stops the stages after it; the work before it stands.
+
+| Gate | Passes when |
+|---|---|
+| G0 (after the Stage 1 diary) | Local stuck points (L2 technical sense of a known word, L3 term mapping, L4 multiword or idiom, S1 compressed noun phrase, S2 clause, negation or reference) are **at least 40%** of all stuck points, **and** the reader's current tool failed on **at least 30%** of those local stuck points. Floors: at least **30** local stuck points in all, from at least **3** readers. “Failed” means the reader's note says the tool did not settle it, or they gave up on it. Coded with Report 1's types, noticed or not, before the counts are looked at. |
+| G2 (Stage 3 offline check, at least 60 items) | The severe-misleading rate's **upper 95% bound (Clopper–Pearson) is at most 5%**, reported with the observed rate: with 60 items that means no severe error; with 120, one. Reviewer agreement α ≥ .67 before any score is used. |
+| G3 (Stage 4 pilot, 6–8 readers, three arms) | Explain is **ahead for at least 5 of 6 (or 6 of 8) readers**, where ahead means more items understood correctly than **each** other arm, or equal correctness and at least 20% less time; any other tie counts against Explain. **No more wrong answers adopted:** Explain's pooled count of wrong answers the readers took up is no higher than the best other arm's. |
+
