@@ -7,7 +7,7 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | 1 Stuck-point diary | Ready to start (owner) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
-| 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines wait on item 82 |
+| 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
 | 3–5 | Not started | After 2d, and private (Explain) |
 
 ## Stage 2a — lookup peek and selection context
@@ -153,7 +153,7 @@ Test builds with a throwaway `LINEN_DATA_DIR` keep keys in memory, so the in-app
 | AC9, with a redirect and a different-host attempt | **Pass** | `LK7-secrets`: the key reaches its own host (canary saw `[key:authorization]`), a 302 is returned and not followed, a request with the key to another allowed host is refused before it is sent |
 | A test extension can't read a secret, send one to another host, or set Authorization, Cookie or Host | **Pass** | `LK7-secrets` (`linen.secrets` has only `has` and `request`; the key's value is in no storage, request record, page, row or crash log); `secrets.rs` and `registry.rs` unit tests |
 | The Stage 2d checks in §6.6 | **Pass** | `LK6-deny-revoke` (deny, allow, remove while a request is pending, Remove in Settings); `LK6-remove-extension`; `LK7-keychain-denied`; `LK8-options-page`. “An update asking for a new host asks again”: unit test `optional_hosts_are_granted_revoked_and_kept_across_updates` |
-| Canvas 12 and 13 baselines approved | **Waiting** (item 82) | `docs/visual/app/rl-13-host-sheet.png`, `rl-12-settings-sends-to.png`, `rl-12-options-dialog.png`, `rl-09-error-keychain-paper.png` |
+| Canvas 12 and 13 baselines approved | **Approved 2026-10-10 (item 82)** | `docs/visual/app/rl-13-host-sheet.png`, `rl-12-settings-sends-to.png`, `rl-12-options-dialog.png`, `rl-09-error-keychain-paper.png` |
 
 ### Runs (Stage 2d)
 

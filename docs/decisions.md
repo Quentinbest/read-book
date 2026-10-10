@@ -271,6 +271,14 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-10 (Reading Lens Stage 2d, item 82)
+
+The owner approved item 82 as recommended (`docs/pending-approvals.md`).
+
+| # | Approved |
+|---|---|
+| Stage 2d screens and strings (82) | `rl-13-host-sheet`, `rl-12-settings-sends-to`, `rl-12-options-dialog` and `rl-09-error-keychain-paper` are baselines (`docs/visual/APPROVAL.md`). The key is typed into a native dialog, not an HTML sheet; the host sheet quotes the extension's purpose; “Sends to” reads “what you choose to send”; the options dialog is the extension's frame and Done. The English `extAccess` strings are approved; the four translations go to the native reviewers with items 74 and 81. |
+
 ## Decided 2026-10-10 (Reading Lens gate thresholds, item 59, O1)
 
 The owner set the thresholds as recommended, before any Stage 1 data exists. A gate that fails stops the stages after it; the work before it stands.

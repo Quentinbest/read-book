@@ -206,3 +206,4 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
 
     The new strings (`extAccess`) have machine drafts in the four languages.
     *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with items 74 and 81.
+    **Approved 2026-10-10.**
