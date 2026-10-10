@@ -7,7 +7,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 9, 10 and 21–30, on 2026-09-26. Item 28 as the owner settled it: builds need only meet what GitHub requires until there is a Developer ID. Item 29 by making `read-book` public.
 - items 31, 33–41, on 2026-10-01 (release 1.1). Item 32 was built as recommended the same day.
 - item 56, on 2026-10-07, and item 57, on 2026-10-08 (UI localisation).
-- items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence. Item 59 still needs the threshold values.
+- items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence; item 59's values on 2026-10-10.
 - items 77–81, on 2026-10-10 (Reading Lens follow-ups and Stage 2b).
 
 Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
@@ -111,7 +111,7 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
 
 59. **Gate thresholds (O1).** X and Y for G0, the severe-error bound for G2, the margins for G3. Not set; nothing in Stage 2a depends on them.
     *Recommendation:* set them before Stage 1 starts and before any data is seen, as the spec says.
-    **Approved 2026-10-09.** The values are still to be given.
+    **Approved 2026-10-09.** Values set 2026-10-10 as recommended: G0 X 40%, Y 30% (with floors of 30 local stuck points from 3 readers); G2 upper 95% bound ≤ 5%; G3 per reader, strictly better (`docs/decisions.md`).
 
 60. **A licence for Linen (O2).** The repository has none. Stage 2b needs one before taking an MDX parser dependency or porting BSD-3 code (DX12).
     *Recommendation:* choose one before Stage 2b; a permissive licence (MIT or Apache-2.0) keeps both DX12 sources open.
