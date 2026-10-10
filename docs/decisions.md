@@ -281,3 +281,7 @@ The owner set the thresholds as recommended, before any Stage 1 data exists. A g
 | G2 (Stage 3 offline check, at least 60 items) | The severe-misleading rate's **upper 95% bound (Clopper–Pearson) is at most 5%**, reported with the observed rate: with 60 items that means no severe error; with 120, one. Reviewer agreement α ≥ .67 before any score is used. |
 | G3 (Stage 4 pilot, 6–8 readers, three arms) | Explain is **ahead for at least 5 of 6 (or 6 of 8) readers**, where ahead means more items understood correctly than **each** other arm, or equal correctness and at least 20% less time; any other tie counts against Explain. **No more wrong answers adopted:** Explain's pooled count of wrong answers the readers took up is no higher than the best other arm's. |
 
+## Decided 2026-10-10 (Reading Lens Gate 0, waived by the owner)
+
+The owner approved Gate 0 and asked to proceed (“Approve Gate 0 and proceed”) **without the Stage 1 diary**. It is recorded as a waiver, not a pass: no stuck-point data exists, so the thresholds set the same day were not applied. Stages 2d onward go ahead. The diary (`docs/reading-lens-stage1.md`) can still run, and its counts would then be recorded beside this; Gates 2 and 3 are unchanged and still need their data.
+

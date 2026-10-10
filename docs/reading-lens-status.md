@@ -7,7 +7,7 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | 1 Stuck-point diary | Ready to start (owner) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
-| 2d Secrets, optional hosts, options pages | Not started | Needs Gate 0 (Stage 1) and Spike J |
+| 2d Secrets, optional hosts, options pages | In progress | Gate 0 waived by the owner 2026-10-10; Spike J first |
 | 3–5 | Not started | After 2d, and private (Explain) |
 
 ## Stage 2a — lookup peek and selection context
