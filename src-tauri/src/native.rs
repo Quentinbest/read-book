@@ -342,3 +342,36 @@ pub fn shift_held() -> bool {
 pub fn shift_held() -> bool {
     false
 }
+
+/// Reading Lens LK7: a native dialog with a secure field, so a key never passes through
+/// a web page. Runs on the main thread; returns the key, or None when cancelled or empty.
+#[cfg(target_os = "macos")]
+pub fn ask_secret(d: &crate::ext_commands::KeyDialog) -> Option<String> {
+    use objc2::MainThreadMarker;
+    use objc2_app_kit::{NSAlert, NSAlertFirstButtonReturn, NSSecureTextField};
+    use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
+    let mtm = MainThreadMarker::new()?;
+    let alert = NSAlert::new(mtm);
+    alert.setMessageText(&NSString::from_str(&d.title));
+    alert.setInformativeText(&NSString::from_str(&d.message));
+    alert.addButtonWithTitle(&NSString::from_str(&d.save));
+    alert.addButtonWithTitle(&NSString::from_str(&d.cancel));
+    let field = NSSecureTextField::initWithFrame(
+        mtm.alloc(),
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(300.0, 24.0)),
+    );
+    alert.setAccessoryView(Some(&field));
+    alert.window().setInitialFirstResponder(Some(&field));
+    let answer = alert.runModal();
+    if answer != NSAlertFirstButtonReturn {
+        return None;
+    }
+    let value = field.stringValue().to_string();
+    let value = value.trim().to_string();
+    (!value.is_empty()).then_some(value)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn ask_secret(_d: &crate::ext_commands::KeyDialog) -> Option<String> {
+    None
+}

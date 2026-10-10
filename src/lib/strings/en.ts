@@ -588,6 +588,31 @@ export const en = {
     failed: 'The dictionary couldn’t be added. The previous version is still in use.',
     none: 'No dictionaries yet.',
   },
+  // Reading Lens Stage 2d: extension hosts, keys and options (Canvas 12, 13; PROVISIONAL)
+  extAccess: {
+    hostTitle: (name: string, host: string) => `Allow “${name}” to connect to ${host}?`,
+    hostBody: (name: string) =>
+      `${name} will send what you choose to send to this address. Nothing is sent until you use it.`,
+    hostPurpose: (name: string) => `${name} says:`,
+    hostNote: 'You can remove this permission in Settings › Extensions.',
+    allow: 'Allow',
+    dontAllow: 'Don’t allow',
+    keyTitle: (host: string) => `Key for ${host}`,
+    keyMessage: (name: string, host: string) =>
+      `Saved in your Mac’s Keychain. ${name} can’t read it; Linen adds it only to requests to ${host}.`,
+    save: 'Save',
+    cancel: 'Cancel',
+    sendsTo: 'Sends to',
+    sendsWhat: 'what you choose to send',
+    removeHost: (host: string) => `Remove ${host}`,
+    remove: 'Remove',
+    options: 'Options…',
+    optionsTitle: (name: string) => `${name} options`,
+    done: 'Done',
+    keyUnavailable: (name: string) => `Linen couldn’t read the key for ${name}.`,
+    keyUnavailableDetail: 'The Keychain may be locked, or access was refused. Nothing was sent.',
+    openOptions: 'Open options',
+  },
   image: {
     label: 'Image',
     close: 'Close image',

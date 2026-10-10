@@ -43,6 +43,7 @@
   import type { DictHit } from '../app/ipc'
   import { lookupCommands } from '../lib/lookup/commands'
   import { primaryLang, type WhenContext } from '../lib/extensions/when'
+  import { openSettingsWindow } from '../app/settingsWindow'
   import { locale } from '../lib/strings'
   import { ReadingSessions } from './sessions'
   import MoreMenu from './MoreMenu.svelte'
@@ -63,6 +64,7 @@
   import AaPopover from './AaPopover.svelte'
   import {
     LookupCancelled,
+    KeyUnavailable,
     type ExtensionHost,
     type LookupRequest,
     type ReaderBridge,
@@ -978,6 +980,13 @@
   }
   let lookup = $state.raw<Lookup | null>(null)
   let lookupPeek: ReturnType<typeof LookUpPeek> | undefined = $state()
+  /** LK8: the current lookup's extension, when it has an options page (for a refused key). */
+  const optionsExt = $derived.by(() => {
+    const extId =
+      lookup?.invocation?.extId ?? lookup?.providers.find((p) => p.key === lookup?.current)?.extId
+    const x = extId ? extensions.extensions.find((e) => e.manifest.id === extId) : undefined
+    return x?.manifest.contributes.options ? x.manifest.id : null
+  })
   let lookupOpen = $derived(lanes.floating?.kind === 'lookup' && lookup !== null)
   let lookupSerial = 0
   /** The longest text looked up: a phrase, not a passage. */
@@ -1179,11 +1188,20 @@
         lookup = { ...lookup, state, invocation: null }
       },
       (e: unknown) => {
-        if (e instanceof LookupCancelled || !mine() || !lookup) return
+        if (!mine() || !lookup) return
+        // LK6: Linen cancelled it (the extension was removed or lost the host); the
+        // reader didn't, so the peek closes rather than waiting.
+        if (e instanceof LookupCancelled) {
+          dispatch({ type: 'closeFloating' })
+          return
+        }
         const timedOut = e instanceof Error && /did not answer/.test(e.message)
         lookup = {
           ...lookup,
-          state: { kind: 'error', error: timedOut ? 'timeout' : 'stopped' },
+          state: {
+            kind: 'error',
+            error: e instanceof KeyUnavailable ? 'keychain' : timedOut ? 'timeout' : 'stopped',
+          },
           invocation: null,
         }
       },
@@ -2437,6 +2455,7 @@
         onexplain={explainKey ? () => explainKey && chooseProvider(explainKey) : undefined}
         explainTitle={lookup.providers.find((p) => p.key === explainKey)?.title}
         onnotnow={() => dispatch({ type: 'closeFloating' })}
+        onoptions={optionsExt ? () => void openSettingsWindow(optionsExt) : undefined}
         onrestart={() => {
           const extId =
             lookup?.invocation?.extId ??

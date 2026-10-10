@@ -560,6 +560,32 @@ export const es: Messages = {
     failed: 'No se pudo añadir el diccionario. Se sigue usando la versión anterior.',
     none: 'Todavía no hay diccionarios.',
   },
+  // Reading Lens (PROVISIONAL; borrador automático, pendiente de revisión)
+  extAccess: {
+    hostTitle: (name: string, host: string) => `¿Permitir que “${name}” se conecte a ${host}?`,
+    hostBody: (name: string) =>
+      `${name} enviará a esta dirección lo que elijas enviar. No se envía nada hasta que lo uses.`,
+    hostPurpose: (name: string) => `${name} explica:`,
+    hostNote: 'Puedes quitar este permiso en Ajustes › Extensiones.',
+    allow: 'Permitir',
+    dontAllow: 'No permitir',
+    keyTitle: (host: string) => `Clave para ${host}`,
+    keyMessage: (name: string, host: string) =>
+      `Se guarda en el llavero de tu Mac. ${name} no puede leerla; Linen solo la añade a las solicitudes a ${host}.`,
+    save: 'Guardar',
+    cancel: 'Cancelar',
+    sendsTo: 'Envía a',
+    sendsWhat: 'lo que elijas enviar',
+    removeHost: (host: string) => `Quitar ${host}`,
+    remove: 'Quitar',
+    options: 'Opciones…',
+    optionsTitle: (name: string) => `Opciones de ${name}`,
+    done: 'Aceptar',
+    keyUnavailable: (name: string) => `Linen no pudo leer la clave de ${name}.`,
+    keyUnavailableDetail:
+      'Puede que el llavero esté bloqueado o que se haya denegado el acceso. No se envió nada.',
+    openOptions: 'Abrir opciones',
+  },
   image: {
     label: 'Imagen',
     close: 'Cerrar la imagen',

@@ -5,7 +5,7 @@
       "id": "visual-captured",
       "description": "Baseline candidates captured",
       "verdict": "manual",
-      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions, 11-settings-reading, 11-settings-shortcuts, 12-extension-failure, rl-02-pending-paper, rl-03-answer-paper, rl-04-more-paper, rl-05-menu-paper, rl-06-sent-paper, rl-07-needs-context-paper, rl-08-notice-paper, rl-09-error-offline-paper, rl-09-error-key-paper, rl-11-mac-dictionary-paper, rl-03-answer-night, rl-05-menu-night, rl-11-mac-dictionary-night, rl-03-answer-sepia, rl-11-dictionary-entry-paper, rl-11-dictionary-entry-night, rl-14-settings-dictionaries"
+      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions, 11-settings-reading, 11-settings-shortcuts, 12-extension-failure, rl-02-pending-paper, rl-03-answer-paper, rl-04-more-paper, rl-05-menu-paper, rl-06-sent-paper, rl-07-needs-context-paper, rl-08-notice-paper, rl-09-error-offline-paper, rl-09-error-key-paper, rl-11-mac-dictionary-paper, rl-03-answer-night, rl-05-menu-night, rl-11-mac-dictionary-night, rl-03-answer-sepia, rl-11-dictionary-entry-paper, rl-11-dictionary-entry-night, rl-14-settings-dictionaries, rl-13-host-sheet, rl-09-error-keychain-paper, rl-12-settings-sends-to, rl-12-options-dialog"
     },
     {
       "id": "visual-overflow",
@@ -65,7 +65,11 @@
       "rl-03-answer-sepia": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-03-answer-sepia.png",
       "rl-11-dictionary-entry-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-11-dictionary-entry-paper.png",
       "rl-11-dictionary-entry-night": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-11-dictionary-entry-night.png",
-      "rl-14-settings-dictionaries": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-14-settings-dictionaries.png"
+      "rl-14-settings-dictionaries": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-14-settings-dictionaries.png",
+      "rl-13-host-sheet": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-13-host-sheet.png",
+      "rl-09-error-keychain-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-09-error-keychain-paper.png",
+      "rl-12-settings-sends-to": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-12-settings-sends-to.png",
+      "rl-12-options-dialog": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-12-options-dialog.png"
     },
     "overflow": {
       "02-reader-immersive-paper": [],
@@ -119,7 +123,11 @@
       "rl-03-answer-sepia": [],
       "rl-11-dictionary-entry-paper": [],
       "rl-11-dictionary-entry-night": [],
-      "rl-14-settings-dictionaries": []
+      "rl-14-settings-dictionaries": [],
+      "rl-13-host-sheet": [],
+      "rl-09-error-keychain-paper": [],
+      "rl-12-settings-sends-to": [],
+      "rl-12-options-dialog": []
     },
     "english": {},
     "missingKeys": []
@@ -129,7 +137,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791559156,
+    "time": 1791642522,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

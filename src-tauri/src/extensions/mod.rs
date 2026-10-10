@@ -9,6 +9,7 @@
 
 pub mod manifest;
 pub mod registry;
+pub mod secrets;
 pub mod when;
 
 use std::path::{Component, Path, PathBuf};

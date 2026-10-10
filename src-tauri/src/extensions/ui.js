@@ -5,9 +5,18 @@
 'use strict'
 ;(() => {
   const channel = new BroadcastChannel('linen')
+  let next = 1
+  const pending = new Map()
   addEventListener('message', (e) => {
     if (e.source !== parent) return
     const m = e.data || {}
+    if (m.linenReply) {
+      const p = pending.get(m.linenReply)
+      pending.delete(m.linenReply)
+      if (p && m.error) p.reject(new Error(m.error))
+      else if (p) p.resolve(m.result)
+      return
+    }
     if (m.theme) {
       for (const [k, v] of Object.entries(m.theme)) document.documentElement.style.setProperty(k, v)
       document.documentElement.style.colorScheme = m.scheme || 'light'
@@ -21,6 +30,17 @@
     /** A message to the extension's Worker. */
     post(data) {
       channel.postMessage(data)
+    },
+    /**
+     * 1.1, experimental (LK8): on an options page, Linen does these for the page:
+     * storage.get/set/delete/keys, permissions.request/has, secrets.request/has.
+     */
+    call(method, params) {
+      return new Promise((resolve, reject) => {
+        const id = next++
+        pending.set(id, { resolve, reject })
+        parent.postMessage({ linenCall: id, method, params: params || {} }, '*')
+      })
     },
   })
 })()

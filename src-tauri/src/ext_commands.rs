@@ -80,13 +80,212 @@ pub fn extension_set_enabled(state: State<AppState>, id: String, enabled: bool) 
 }
 
 #[tauri::command]
-pub fn extension_remove(state: State<AppState>, id: String, delete_data: bool) -> CmdResult<()> {
+pub fn extension_remove(
+    state: State<AppState>,
+    vault: State<Vaults>,
+    id: String,
+    delete_data: bool,
+) -> CmdResult<()> {
+    // LK6, LK7: an extension's keys go with it, whatever happens to its other data.
+    let store = state.store.lock().unwrap();
+    for s in registry::secrets_of(&store, &id)? {
+        if let Err(e) = vault.0.delete(&id, &s.name) {
+            log::warn!("extension {id}: a key could not be deleted: {e}");
+        }
+        registry::secret_forget(&store, &id, &s.name)?;
+    }
     Ok(registry::remove(
-        &state.store.lock().unwrap(),
+        &store,
         &state.library.extensions_dir,
         &id,
         delete_data,
     )?)
+}
+
+// ---------------------------------------------------------------- Reading Lens Stage 2d
+
+/// The start of the refusal when a saved key can't be read (src/extensions/host.svelte.ts).
+const KEY_UNAVAILABLE: &str = "key-unavailable";
+
+/// Where extension keys live: the Keychain, or memory in a test build's throwaway library.
+pub struct Vaults(pub Box<dyn crate::extensions::secrets::Vault>);
+
+impl Vaults {
+    pub fn for_app() -> Self {
+        #[cfg(feature = "spikes")]
+        if std::env::var_os("LINEN_DATA_DIR").is_some() {
+            return Vaults(Box::new(MemoryVault::default()));
+        }
+        Vaults(Box::new(crate::extensions::secrets::Keychain))
+    }
+}
+
+/// Test builds: keys in memory, so the in-app checks never touch the person's Keychain.
+#[cfg(feature = "spikes")]
+#[derive(Default)]
+pub struct MemoryVault(std::sync::Mutex<std::collections::HashMap<String, String>>);
+
+/// Test builds: the memory vault refuses to read, as a locked Keychain would.
+#[cfg(feature = "spikes")]
+pub static VAULT_DENIED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(feature = "spikes")]
+impl crate::extensions::secrets::Vault for MemoryVault {
+    fn get(&self, ext: &str, name: &str) -> Result<Option<String>, String> {
+        if VAULT_DENIED.load(std::sync::atomic::Ordering::SeqCst) {
+            return Err("the Keychain is locked (test)".into());
+        }
+        Ok(self
+            .0
+            .lock()
+            .unwrap()
+            .get(&format!("{ext}/{name}"))
+            .cloned())
+    }
+    fn set(&self, ext: &str, name: &str, value: &str) -> Result<(), String> {
+        self.0
+            .lock()
+            .unwrap()
+            .insert(format!("{ext}/{name}"), value.into());
+        Ok(())
+    }
+    fn delete(&self, ext: &str, name: &str) -> Result<(), String> {
+        self.0.lock().unwrap().remove(&format!("{ext}/{name}"));
+        Ok(())
+    }
+}
+
+/// LK6: the reader allowed a host in Linen's sheet.
+#[tauri::command]
+pub fn extension_grant(state: State<AppState>, id: String, host: String) -> CmdResult<()> {
+    Ok(registry::grant_optional(
+        &state.store.lock().unwrap(),
+        &state.library.extensions_dir,
+        &id,
+        &host,
+    )?)
+}
+
+/// LK6: Settings › Extensions › Remove beside an allowed host.
+#[tauri::command]
+pub fn extension_revoke(state: State<AppState>, id: String, host: String) -> CmdResult<()> {
+    Ok(registry::revoke_optional(
+        &state.store.lock().unwrap(),
+        &state.library.extensions_dir,
+        &id,
+        &host,
+    )?)
+}
+
+/// LK7: an extension's keys, by name and host (EP4); never their values.
+#[tauri::command]
+pub fn extension_secrets(
+    state: State<AppState>,
+    id: String,
+) -> CmdResult<Vec<registry::SecretRow>> {
+    Ok(registry::secrets_of(&state.store.lock().unwrap(), &id)?)
+}
+
+/// LK7: whether a key with this name is saved (the only thing an extension may learn).
+#[tauri::command]
+pub fn extension_secret_has(
+    state: State<AppState>,
+    vault: State<Vaults>,
+    id: String,
+    name: String,
+) -> CmdResult<bool> {
+    let known = registry::secrets_of(&state.store.lock().unwrap(), &id)?
+        .iter()
+        .any(|s| s.name == name);
+    Ok(known
+        && vault
+            .0
+            .get(&id, &name)
+            .map_err(|message| CommandError::Failed { message })?
+            .is_some())
+}
+
+#[tauri::command]
+pub fn extension_secret_delete(
+    state: State<AppState>,
+    vault: State<Vaults>,
+    id: String,
+    name: String,
+) -> CmdResult<()> {
+    vault
+        .0
+        .delete(&id, &name)
+        .map_err(|message| CommandError::Failed { message })?;
+    Ok(registry::secret_forget(
+        &state.store.lock().unwrap(),
+        &id,
+        &name,
+    )?)
+}
+
+/// What the key dialog says (from the page, in the reader's language).
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct KeyDialog {
+    pub title: String,
+    pub message: String,
+    pub save: String,
+    pub cancel: String,
+}
+
+/// LK7: Linen's own native dialog with a secure field. The key goes from it to the
+/// Keychain without passing through any web page. True when a key was saved.
+#[tauri::command]
+pub async fn extension_secret_request(
+    app: tauri::AppHandle,
+    id: String,
+    name: String,
+    host: String,
+    label: String,
+    dialog: KeyDialog,
+) -> CmdResult<bool> {
+    use tauri::Manager;
+    if !crate::extensions::secrets::valid_name(&name) {
+        return Err(CommandError::Failed {
+            message: format!("“{name}” is not a key name"),
+        });
+    }
+    let state = app.state::<AppState>();
+    {
+        // The host must be one the reader allowed (LK6) or the manifest required.
+        let store = state.store.lock().unwrap();
+        let granted = registry::list(&store, &state.library.extensions_dir)?
+            .into_iter()
+            .find(|e| e.manifest.id == id)
+            .map(|e| e.granted)
+            .unwrap_or_default();
+        if !granted.contains(&format!("network:{host}")) {
+            return Err(CommandError::Failed {
+                message: format!("{host} is not allowed for this extension"),
+            });
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.run_on_main_thread(move || {
+        let _ = tx.send(crate::native::ask_secret(&dialog));
+    })
+    .map_err(|e| CommandError::Failed {
+        message: e.to_string(),
+    })?;
+    let Some(value) = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| CommandError::Failed {
+            message: e.to_string(),
+        })?
+    else {
+        return Ok(false);
+    };
+    let vault = app.state::<Vaults>();
+    vault
+        .0
+        .set(&id, &name, &value)
+        .map_err(|message| CommandError::Failed { message })?;
+    registry::secret_record(&state.store.lock().unwrap(), &id, &name, &host, &label)?;
+    Ok(true)
 }
 
 /// P6: the host reports a crash or a timeout; true when the extension is now suspended.
@@ -141,14 +340,26 @@ pub fn extension_storage_keys(state: State<AppState>, id: String) -> CmdResult<V
     Ok(registry::storage_keys(&state.store.lock().unwrap(), &id)?)
 }
 
+/// LK7: which saved key goes into a request, and how.
+#[derive(Debug, Clone, serde::Deserialize)]
+pub struct FetchAuth {
+    pub secret: String,
+    pub scheme: crate::extensions::secrets::Scheme,
+}
+
 /// §7.2: fetch for an extension, only to the hosts it was granted (read here, from the store).
 #[tauri::command]
+// Each field of the page's request is its own argument (as Tauri passes them).
+#[allow(clippy::too_many_arguments)]
 pub async fn extension_net_fetch(
     state: State<'_, AppState>,
+    vault: State<'_, Vaults>,
     id: String,
     url: String,
     method: String,
     body: Option<String>,
+    headers: Option<Vec<(String, String)>>,
+    auth: Option<FetchAuth>,
 ) -> CmdResult<FetchResponse> {
     let granted = registry::list(&state.store.lock().unwrap(), &state.library.extensions_dir)?
         .into_iter()
@@ -157,8 +368,36 @@ pub async fn extension_net_fetch(
         .ok_or(CommandError::Failed {
             message: format!("{id} is not running"),
         })?;
+    // LK7: the key named, from the Keychain, with the host it was saved for.
+    let key = match auth {
+        None => None,
+        Some(a) => {
+            let row = registry::secrets_of(&state.store.lock().unwrap(), &id)?
+                .into_iter()
+                .find(|s| s.name == a.secret)
+                .ok_or(CommandError::Failed {
+                    message: format!("no key named {}", a.secret),
+                })?;
+            // LK7-keychain-denied: a locked Keychain, denied access or an item gone
+            // (Spike J) is one refusal the host recognises; nothing is sent.
+            let value = vault
+                .0
+                .get(&id, &a.secret)
+                .ok()
+                .flatten()
+                .ok_or(CommandError::Failed {
+                    message: format!("{KEY_UNAVAILABLE}: {}", a.secret),
+                })?;
+            Some(registry::RequestKey {
+                scheme: a.scheme,
+                host: row.host,
+                value,
+            })
+        }
+    };
+    let headers = headers.unwrap_or_default();
     tauri::async_runtime::spawn_blocking(move || {
-        registry::net_fetch(&granted, &url, &method, body.as_deref())
+        registry::net_fetch(&granted, &url, &method, body.as_deref(), &headers, key)
     })
     .await
     .map_err(|e| CommandError::Failed {

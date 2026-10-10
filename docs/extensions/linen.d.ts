@@ -128,8 +128,33 @@ export interface Linen {
     list(): Promise<{ title: string; authors: string[]; language: string | null; progress: number | null }[]>
   }
   net: {
-    /** Needs `network:<host>` for the URL's host (and port). Redirects are not followed. */
-    fetch(url: string, init?: { method?: 'GET' | 'POST'; body?: string }): Promise<{ status: number; content_type: string | null; body: string }>
+    /**
+     * Needs `network:<host>` for the URL's host (and port), required or allowed on request.
+     * Redirects are not followed. 1.1, experimental: `headers` of the extension's own
+     * (Authorization, Cookie, Host, key headers, Proxy-* and Sec-* are refused), and `auth`,
+     * a saved key Linen adds only for the host it was saved for.
+     */
+    fetch(
+      url: string,
+      init?: {
+        method?: 'GET' | 'POST'
+        body?: string
+        headers?: Record<string, string>
+        auth?: { secret: string; scheme: 'bearer' | 'x-api-key' | 'x-goog-api-key' }
+      },
+    ): Promise<{ status: number; content_type: string | null; body: string }>
+  }
+  /** 1.1, experimental: a host from `optionalPermissions`, asked for in Linen's sheet. */
+  permissions: {
+    /** Resolves true when the reader allows it (at once if already allowed). */
+    request(host: string, options?: { purpose?: string }): Promise<boolean>
+    has(host: string): Promise<boolean>
+  }
+  /** 1.1, experimental: keys the reader types into Linen's dialog, kept in the Keychain. Never readable. */
+  secrets: {
+    /** `host` must be allowed. Resolves true when the reader saved a key. */
+    request(name: string, options: { host: string; label?: string }): Promise<boolean>
+    has(name: string): Promise<boolean>
   }
   files: {
     /** Needs `files.export`. The reader picks the place in the system's save dialog, each time. */
@@ -146,9 +171,14 @@ export interface Linen {
 
 declare global {
   const linen: Linen
-  /** In extension pages (Navigator tabs), after <script src="_ui.js">. */
+  /** In extension pages (Navigator tabs, options pages), after <script src="_ui.js">. */
   const linenUi: {
     onMessage(handler: (data: unknown) => void): void
     post(data: unknown): void
+    /**
+     * 1.1, experimental, options pages only: `storage.get/set/delete/keys`,
+     * `permissions.has/request` and `secrets.has/request`, as in the Worker.
+     */
+    call(method: string, params?: Record<string, unknown>): Promise<unknown>
   }
 }

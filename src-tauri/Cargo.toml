@@ -36,6 +36,7 @@ ripemd = "0.1"
 encoding_rs = "0.8"
 unicode-normalization = "0.1"
 ammonia = "4"
+security-framework = "3"
 
 [features]
 # Phase 0 spike harness (docs/spikes/). Never enabled in product builds.
@@ -45,7 +46,7 @@ spikes = []
 tempfile = "3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSWorkspace", "NSPasteboard", "NSAccessibility", "NSEvent", "NSApplication", "NSResponder", "NSWindow", "NSGraphics", "NSButton", "NSControl", "NSView"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSWorkspace", "NSPasteboard", "NSAccessibility", "NSEvent", "NSApplication", "NSResponder", "NSWindow", "NSGraphics", "NSButton", "NSControl", "NSView", "NSAlert", "NSTextField", "NSSecureTextField", "NSRunningApplication"] }
 block2 = "0.6"
 objc2 = "0.6"
 libc = "0.2"

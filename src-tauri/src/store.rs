@@ -127,6 +127,18 @@ pub const MIGRATIONS: &[&str] = &[
         updated_at INTEGER NOT NULL
     );
     "#,
+    // 5: Reading Lens Stage 2d (LK7): the names and hosts of extensions' keys. The keys
+    // themselves are in the macOS Keychain, never here.
+    r#"
+    CREATE TABLE extension_secrets (
+        ext_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        host TEXT NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        saved_at INTEGER NOT NULL,
+        PRIMARY KEY (ext_id, name)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

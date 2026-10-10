@@ -16,6 +16,7 @@ const TABLES: &[&str] = &[
     "extension_storage",
     "search_text",
     "dictionaries",
+    "extension_secrets",
 ];
 
 fn dump(conn: &Connection, table: &str) -> Vec<Vec<String>> {

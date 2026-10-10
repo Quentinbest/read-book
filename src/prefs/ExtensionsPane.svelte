@@ -14,6 +14,8 @@
   import { testHooks } from '../app/testHooks'
   import { contributionLabels, permissionLabel } from '../lib/extensions/labels'
   import type { Inspection, InstalledExtension } from '../lib/extensions/types'
+  import OptionsDialog from './OptionsDialog.svelte'
+  import { THEMES, type Theme } from '../lib/theme/tokens'
 
   let list = $state<InstalledExtension[]>([])
   let safeMode = $state(false)
@@ -22,6 +24,23 @@
   let error = $state<{ name: string; reason: string } | null>(null)
   let removing = $state<InstalledExtension | null>(null)
   let status = $state('')
+  /** LK8: the extension whose options page is open. */
+  let optionsFor = $state<InstalledExtension | null>(null)
+  /** The style kit's colours for an options page: the reader's theme. */
+  let theme = $state<Theme>(THEMES.paper)
+  const optional = (x: InstalledExtension) =>
+    x.granted.filter(
+      (p) => p.startsWith('network:') && (x.manifest.optionalPermissions ?? []).includes(p),
+    )
+  async function revoke(x: InstalledExtension, host: string) {
+    await invoke('extension_revoke', { id: x.manifest.id, host })
+    await changed()
+  }
+  /** Opened from the peek's “Open options” (settings.html#options=<id>, or an event). */
+  export function openOptions(id: string) {
+    const x = list.find((e) => e.manifest.id === id)
+    if (x?.manifest.contributes.options) optionsFor = x
+  }
 
   async function reload() {
     list = await invoke<InstalledExtension[]>('extensions_list')
@@ -99,6 +118,17 @@
     x.crashes.filter((c) => Date.now() - c < 24 * 3600 * 1000).length
 
   onMount(() => {
+    void ipc.settingGet('theme').then((v) => {
+      const dark = matchMedia('(prefers-color-scheme: dark)').matches
+      theme =
+        v === 'night'
+          ? THEMES.night
+          : v === 'sepia'
+            ? THEMES.sepia
+            : v === 'paper' || !dark
+              ? THEMES.paper
+              : THEMES.night
+    })
     void reload()
     void invoke<boolean>('app_safe_mode').then((v) => (safeMode = v))
     void ipc.settingGet('pinnedExtensions').then((v) => (pinned = JSON.parse(v ?? '[]')))
@@ -159,6 +189,23 @@
               <span class="plain">{t.extSettings.noAccess}</span>
             {/each}
           </p>
+          {#if optional(x).length}
+            <!-- EP4, LK6 (Canvas 12): each host the reader allowed, with Remove. -->
+            <p class="chips" data-sends-to>
+              <span class="label">{t.extAccess.sendsTo}</span>
+              {#each optional(x) as p (p)}
+                {@const host = p.slice('network:'.length)}
+                <span class="chip warn"><Icon name="globe" size={12} />{host}</span>
+                <span class="plain">{t.extAccess.sendsWhat} ·</span>
+                <button
+                  type="button"
+                  class="link"
+                  aria-label={t.extAccess.removeHost(host)}
+                  onclick={() => void revoke(x, host)}>{t.extAccess.remove}</button
+                >
+              {/each}
+            </p>
+          {/if}
           {#if contributionLabels(m).length}
             <p class="chips">
               <span class="label">{t.extSettings.adds}</span>
@@ -186,7 +233,7 @@
             >
           </div>
         {/if}
-        {#if !x.builtin || m.contributes.commands.length}
+        {#if !x.builtin || m.contributes.commands.length || m.contributes.options}
           <p class="actions">
             {#if m.contributes.commands.length}
               <label class="pin"
@@ -195,6 +242,14 @@
                   checked={pinned.includes(m.id)}
                   onchange={() => void togglePin(x)}
                 />{t.extSettings.pin}</label
+              >
+            {/if}
+            {#if m.contributes.options && x.enabled && !x.incompatible}
+              <button
+                type="button"
+                class="link"
+                data-options-button
+                onclick={() => (optionsFor = x)}>{t.extAccess.options}</button
               >
             {/if}
             {#if !x.builtin}
@@ -208,6 +263,18 @@
     </li>
   {/each}
 </ul>
+
+{#if optionsFor}
+  <OptionsDialog
+    extension={optionsFor}
+    {theme}
+    onclose={() => (optionsFor = null)}
+    onchanged={async () => {
+      await changed()
+      return list.find((e) => e.manifest.id === optionsFor?.manifest.id)
+    }}
+  />
+{/if}
 
 <div class="foot">
   <button type="button" class="btn" onclick={() => void invoke('app_restart_safe')}

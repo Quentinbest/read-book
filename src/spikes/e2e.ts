@@ -6916,6 +6916,302 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   )
 
+  // ---------------------------------------------------------------- Reading Lens, Stage 2d
+  // docs/reading-lens-plan.md §6.2 and §6.6: optional hosts, keys and options pages
+  // (LK6–LK8), with the test provider in src-tauri/tests/fixtures/ext-packages/keyed.
+  // Test builds keep keys in memory (Vaults::for_app); the harness types the key the
+  // native dialog would ask for (hooks.secretFor). Each check removes the extension.
+  const KEYED = 'test.keyed'
+  const KEYED_LOOKUP = 'test.keyed/keyed@en'
+  const KEY = 'sekret-lk7-0042'
+  const keyed = {
+    async install() {
+      if (!ext().get(KEYED)) {
+        await withSettings((root) => installViaSettings(root, 'keyed'))
+        await waitFor('the keyed provider installed', () => ext().get(KEYED), 5000)
+      }
+    },
+    async remove() {
+      hooks.secretFor = undefined
+      await invoke('spike_vault_deny', { on: false })
+      if (!ext().get(KEYED)) return
+      await invoke('extension_remove', { id: KEYED, deleteData: true })
+      await emit('extensions-changed')
+      await waitFor('the keyed provider removed', () => !ext().get(KEYED), 5000)
+    },
+    /** Start a lookup that does `step`; the peek opens at once. */
+    async start(step: string) {
+      await invoke('extension_storage_set', { id: KEYED, key: 'report', value: '{}' })
+      await invoke('extension_storage_set', {
+        id: KEYED,
+        key: 'script',
+        value: JSON.stringify({ step }),
+      })
+      await selectPhrase('drizzly')
+      await chooseLookup(KEYED_LOOKUP)
+    },
+    async run(step: string) {
+      await keyed.start(step)
+      await answered(8000)
+    },
+    report: async () =>
+      JSON.parse(
+        (await invoke<string | null>('extension_storage_get', { id: KEYED, key: 'report' })) ??
+          '{}',
+      ) as Record<string, unknown>,
+    granted: () => ext().get(KEYED)?.granted ?? [],
+  }
+  const hostSheet = () => document.querySelector<HTMLElement>('[data-host-sheet]')
+  /** Answer Linen's host sheet (Canvas 13) as a reader would. */
+  const answerSheet = async (allow: boolean) => {
+    const sheet = await waitFor('the host sheet', hostSheet, 5000)
+    const buttons = Array.from(sheet.querySelectorAll<HTMLButtonElement>('button'))
+    buttons.at(allow ? -1 : 0)!.click()
+    await settled(300)
+  }
+  /** Allow 127.0.0.1:8765 and save the key, as the reader would. */
+  const keyedReady = async () => {
+    await mobyOpen()
+    await toLoomings()
+    await keyed.install()
+    await keyed.start('grant')
+    await answerSheet(true)
+    await answered()
+    await closePeek()
+    hooks.secretFor = (id, name) => (id === KEYED && name === 'token' ? KEY : null)
+    await keyed.run('key')
+    await closePeek()
+  }
+  const keyedCheck = (
+    id: string,
+    description: string,
+    run: (problems: string[]) => Promise<void>,
+  ) =>
+    checks.push({
+      id,
+      description,
+      run: async () => {
+        const problems: string[] = []
+        try {
+          await run(problems)
+        } finally {
+          if (hostSheet()) await answerSheet(false).catch(() => {})
+          if (lensPeek()) await closePeek()
+          await keyed.remove()
+        }
+        return problems.length ? problems.join('; ') : 'ok'
+      },
+    })
+
+  keyedCheck(
+    'LK6-deny-revoke',
+    'An optional host is asked for in Linen’s sheet: Don’t allow grants nothing; Allow grants it and Settings shows it under “Sends to”; Remove there revokes it and requests to it are refused',
+    async (problems) => {
+      await mobyOpen()
+      await toLoomings()
+      await keyed.install()
+      if (keyed.granted().some((p) => p.startsWith('network:')))
+        problems.push(`granted at install: ${keyed.granted().join(', ')}`)
+      // Don't allow.
+      await keyed.start('grant')
+      const sheet = await waitFor('the host sheet', hostSheet, 5000)
+      if (!/127\.0\.0\.1:8765/.test(sheet.textContent ?? ''))
+        problems.push(`the sheet doesn't name the host: ${sheet.textContent}`)
+      if (!/To test keys\./.test(sheet.textContent ?? ''))
+        problems.push('the sheet doesn’t quote the purpose')
+      await answerSheet(false)
+      await answered()
+      if ((await keyed.report()).granted !== false) problems.push('Don’t allow did not refuse')
+      if (keyed.granted().includes('network:127.0.0.1:8765'))
+        problems.push('granted after Don’t allow')
+      await closePeek()
+      // Allow.
+      await keyed.start('grant')
+      await answerSheet(true)
+      await answered()
+      if ((await keyed.report()).granted !== true) problems.push('Allow did not grant')
+      await waitFor('the grant', () => keyed.granted().includes('network:127.0.0.1:8765'), 3000)
+      await closePeek()
+      // Removing the host while a request is pending cancels it: the peek closes and
+      // nothing goes out.
+      await invoke('spike_canary_clear')
+      await keyed.start('slow')
+      await settled(500)
+      await invoke('extension_revoke', { id: KEYED, host: '127.0.0.1:8765' })
+      await emit('extensions-changed')
+      await waitFor('the peek closed', () => !lensPeek(), 3000).catch(() =>
+        problems.push(`the pending request’s peek stayed open (${peekState()})`),
+      )
+      await settled(4500)
+      if ((await invoke<{ http: string[] }>('spike_canary_log')).http.length)
+        problems.push('the pending request went out after its host was removed')
+      await keyed.start('grant')
+      await answerSheet(true)
+      await answered()
+      await closePeek()
+      // Settings › Extensions: “Sends to” with Remove.
+      await withSettings(async (root) => {
+        const row = await waitFor('Sends to', () =>
+          Array.from(root.querySelectorAll<HTMLElement>('[data-sends-to]')).find((r) =>
+            r.textContent?.includes('127.0.0.1:8765'),
+          ),
+        )
+        const remove = Array.from(row.querySelectorAll<HTMLButtonElement>('button')).find((b) =>
+          /127\.0\.0\.1:8765/.test(b.getAttribute('aria-label') ?? ''),
+        )
+        if (!remove) throw new Error('no Remove beside the host')
+        remove.click()
+        await settled(600)
+      })
+      await waitFor('the revoke', () => !keyed.granted().includes('network:127.0.0.1:8765'), 3000)
+      await invoke('spike_canary_clear')
+      await keyed.run('send')
+      const r = (await keyed.report()) as { match?: { ok: boolean } }
+      if (r.match?.ok !== false) problems.push('a request went out after Remove')
+      const canary = await invoke<{ http: string[] }>('spike_canary_log')
+      if (canary.http.length) problems.push(`canary: ${canary.http.join(', ')}`)
+    },
+  )
+
+  keyedCheck(
+    'LK7-secrets',
+    'AC9: a key is typed into Linen’s dialog and kept out of the WebView; it goes only to its own host, a redirect is not followed, and an extension can’t set Authorization, Cookie or Host or read the key back',
+    async (problems) => {
+      await keyedReady()
+      const r0 = await keyed.report()
+      if (r0.saved !== true || r0.has !== true) problems.push(`saving: ${JSON.stringify(r0)}`)
+      // Another host the extension may reach, so a refusal there is about the key.
+      await invoke('extension_grant', { id: KEYED, host: 'localhost:8765' })
+      await emit('extensions-changed')
+      await settled(300)
+      await invoke('spike_canary_clear')
+      await keyed.run('send')
+      type Attempt = { ok: boolean; status?: number; error?: string }
+      const r = (await keyed.report()) as Record<string, Attempt> & { readable?: string[] }
+      if (!r.match?.ok || r.match.status !== 200)
+        problems.push(`own host: ${JSON.stringify(r.match)}`)
+      if (r.redirect?.status !== 302) problems.push(`redirect: ${JSON.stringify(r.redirect)}`)
+      if (r.other?.ok !== false) problems.push('the key went to another host')
+      for (const k of ['authorization', 'cookie', 'host'])
+        if (r[k]?.ok !== false) problems.push(`the extension set ${k}`)
+      if (JSON.stringify(r.readable) !== JSON.stringify(['has', 'request']))
+        problems.push(`linen.secrets has ${r.readable?.join(', ')}`)
+      const canary = await invoke<{ http: string[] }>('spike_canary_log')
+      const lines = canary.http
+      const line = (path: string) => lines.filter((l) => l.includes(path))
+      if (
+        line('/canary/keyed').length !== 1 ||
+        !line('/canary/keyed')[0].includes('[key:authorization]')
+      )
+        problems.push(`own host without the key: ${lines.join(', ')}`)
+      if (line('/after-redirect').length) problems.push('the redirect was followed')
+      if (line('/canary/other').length || line('/canary/own').length)
+        problems.push(`refused requests went out: ${lines.join(', ')}`)
+      // The key's value is nowhere the WebView or the extension can see.
+      const keys = await invoke<string[]>('extension_storage_keys', { id: KEYED })
+      for (const k of keys) {
+        const v = await invoke<string | null>('extension_storage_get', { id: KEYED, key: k })
+        if (v?.includes(KEY)) problems.push(`storage “${k}” holds the key`)
+      }
+      if (JSON.stringify(hooks.netFetches ?? []).includes(KEY))
+        problems.push('a request record holds the key')
+      if (document.documentElement.outerHTML.includes(KEY)) problems.push('the page holds the key')
+      const rows = await invoke<{ name: string; host: string }[]>('extension_secrets', {
+        id: KEYED,
+      })
+      if (JSON.stringify(rows).includes(KEY)) problems.push('the key’s row holds its value')
+      if (rows.length !== 1 || rows[0].host !== '127.0.0.1:8765')
+        problems.push(`rows: ${JSON.stringify(rows)}`)
+      if ((await invoke<string>('spike_crash_log')).includes(KEY))
+        problems.push('the crash log holds the key')
+    },
+  )
+
+  keyedCheck(
+    'LK6-remove-extension',
+    'Removing an extension while its request is pending cancels it (the peek and the sheet close) and deletes its keys',
+    async (problems) => {
+      await keyedReady()
+      // A request waiting on the reader: its sheet is open.
+      await invoke('extension_revoke', { id: KEYED, host: '127.0.0.1:8765' })
+      await emit('extensions-changed')
+      await settled(300)
+      await keyed.start('grant')
+      await waitFor('the host sheet', hostSheet, 5000)
+      await invoke('extension_remove', { id: KEYED, deleteData: true })
+      await emit('extensions-changed')
+      await waitFor('removed', () => !ext().get(KEYED), 5000)
+      await settled(500)
+      if (hostSheet()) problems.push('the sheet stayed open')
+      if (lensPeek()) problems.push(`the peek stayed open (${peekState()})`)
+      if ((await invoke<unknown[]>('extension_secrets', { id: KEYED })).length)
+        problems.push('the key’s row is still there')
+      // The value itself, in the vault (the Keychain in a release build).
+      if (await invoke<boolean>('spike_vault_has', { id: KEYED, name: 'token' }))
+        problems.push('the key is still in the vault')
+    },
+  )
+
+  keyedCheck(
+    'LK7-keychain-denied',
+    'A locked Keychain or denied access shows a clear state with “Open options”, and nothing is sent',
+    async (problems) => {
+      await keyedReady()
+      await invoke('spike_vault_deny', { on: true })
+      await invoke('spike_canary_clear')
+      await keyed.run('send')
+      if (peekState() !== 'error') problems.push(`the peek is ${peekState()}`)
+      const text = lensPeek()?.textContent ?? ''
+      if (!/couldn’t read the key/.test(text))
+        problems.push(`the peek says “${text.slice(0, 120)}”`)
+      if (!lensPeek()?.querySelector('[data-open-options]')) problems.push('no Open options')
+      const canary = await invoke<{ http: string[] }>('spike_canary_log')
+      if (canary.http.some((l) => l.includes('[key:')))
+        problems.push(`a key went out: ${canary.http.join(', ')}`)
+      if (canary.http.some((l) => l.includes('/canary/keyed')))
+        problems.push('the keyed request went out without its key')
+    },
+  )
+
+  keyedCheck(
+    'LK8-options-page',
+    'Options… opens the extension’s page in a Linen dialog on its own origin; the page reaches Linen only through its frame (it learns whether a key is saved, never the key)',
+    async (problems) => {
+      await keyedReady()
+      await invoke('extension_storage_delete', { id: KEYED, key: 'options-saw' })
+      await withSettings(async (root) => {
+        const button = await waitFor('Options…', () =>
+          root.querySelector<HTMLButtonElement>('[data-options-button]'),
+        )
+        button.click()
+        const dialog = await waitFor('the options dialog', () =>
+          document.querySelector<HTMLElement>(`[data-options="${KEYED}"]`),
+        )
+        const frame = dialog.querySelector('iframe')
+        if (!frame?.src.startsWith(`linen-ext://${KEYED}/`))
+          problems.push(`frame src ${frame?.src}`)
+        if (frame?.getAttribute('sandbox')?.includes('allow-top-navigation'))
+          problems.push('the frame may navigate the window')
+        let saw: string | null = null
+        for (let i = 0; i < 50 && saw === null; i++) {
+          await settled(100)
+          saw = await invoke<string | null>('extension_storage_get', {
+            id: KEYED,
+            key: 'options-saw',
+          })
+        }
+        if (saw !== 'true') problems.push(`the page saw a saved key as ${saw}`)
+        Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).at(-1)?.click()
+        await settled(300)
+      })
+      // A refused key in the peek offers the same page.
+      await invoke('extension_secret_delete', { id: KEYED, name: 'token' })
+      await keyed.run('probe')
+      if (!lensPeek()?.querySelector('[data-open-options]'))
+        problems.push('a refused key offers no Open options')
+    },
+  )
+
   // ---------------------------------------------------------------- Reading Lens gaps (§6.6)
   /** Select `n` characters at the start of the first visible text on the page. */
   const selectVisible = async (n = 4) => {
@@ -7806,6 +8102,83 @@ export async function spikeVisual(): Promise<SpikeResult> {
     await settled(600)
     await capture('rl-14-settings-dictionaries')
     host.remove()
+  }
+  // Reading Lens Stage 2d: Linen's host sheet (Canvas 13), a key the Keychain refused,
+  // and Settings › Extensions with “Sends to” and the options page (Canvas 12). Paper.
+  {
+    const KEYED = 'test.keyed'
+    await invoke('spike_install_unchecked', {
+      path: await invoke<string>('spike_corpus_path', { name: 'keyed.linenext' }),
+    })
+    await hooks.extensions!.load()
+    await emit('extensions-changed')
+    await settled(400)
+    const keyedStep = async (step: string, wait: (state: string | null) => boolean) => {
+      await invoke('extension_storage_set', {
+        id: KEYED,
+        key: 'script',
+        value: JSON.stringify({ step }),
+      })
+      await selectPhrase('spleen')
+      await waitFor('bar', selBar)
+      barButton(startsWith(t.extensions.more))?.click()
+      await settled(150)
+      selBar()!.querySelector<HTMLButtonElement>(`[data-lookup-item="${KEYED}/keyed@en"]`)!.click()
+      await waitFor(
+        'the peek',
+        () => peekShown() && wait(peekShown()!.getAttribute('data-state')),
+        5000,
+      )
+    }
+    await openIn('paper')
+    await hideControls()
+    clearMessage()
+    await keyedStep('grant', () => true)
+    const sheet = await waitFor('the host sheet', () =>
+      document.querySelector<HTMLElement>('[data-host-sheet]'),
+    )
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await settled(300)
+    await capture('rl-13-host-sheet')
+    Array.from(sheet.querySelectorAll<HTMLButtonElement>('button')).at(-1)!.click()
+    await settled(400)
+    await closeLens()
+    hooks.secretFor = () => 'visual-key'
+    await keyedStep('key', (s) => s !== 'pending')
+    await closeLens()
+    await invoke('spike_vault_deny', { on: true })
+    await keyedStep('send', (s) => s === 'error')
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await capture('rl-09-error-keychain-paper')
+    await invoke('spike_vault_deny', { on: false })
+    await closeLens()
+    hooks.secretFor = undefined
+    pageDoc().doc.getSelection()?.removeAllRanges()
+    const { default: Preferences } = await import('../prefs/Preferences.svelte')
+    const host = document.createElement('div')
+    host.style.cssText = 'position:fixed;inset:0;z-index:100;background:var(--ground);overflow:auto'
+    document.body.append(host)
+    mount(Preferences, { target: host })
+    await settled(600)
+    host.querySelector<HTMLButtonElement>('#prefs-extensions')!.click()
+    const sendsTo = await waitFor('Sends to', () =>
+      host.querySelector<HTMLElement>('[data-sends-to]'),
+    )
+    sendsTo.scrollIntoView({ block: 'center' })
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await settled(300)
+    await capture('rl-12-settings-sends-to')
+    host.querySelector<HTMLButtonElement>('[data-options-button]')?.click()
+    await waitFor('the options dialog', () => document.querySelector(`[data-options="${KEYED}"]`))
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    await settled(900)
+    await capture('rl-12-options-dialog')
+    key('Escape', { code: 'Escape' })
+    await settled(300)
+    host.remove()
+    await invoke('extension_remove', { id: KEYED, deleteData: true })
+    await emit('extensions-changed')
+    await settled(300)
   }
   await invoke('setting_set', { key: 'theme', value: 'auto' })
   const crowded = Object.entries(overflow).filter(([, v]) => v.length)

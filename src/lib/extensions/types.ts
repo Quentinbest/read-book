@@ -23,8 +23,12 @@ export interface ExtensionManifest {
     exporters: { id: string; title: string; command: string }[]
     /** API 1.1, experimental (Reading Lens LK1). Older manifests from the core may lack it. */
     lookups?: { id: string; title: string; when?: string | null }[]
+    /** API 1.1, experimental (LK8): an options page, opened from Settings. */
+    options?: { page: string } | null
   }
   permissions: string[]
+  /** API 1.1, experimental (LK6): hosts asked for later, one at a time. */
+  optionalPermissions?: string[]
 }
 
 export interface InstalledExtension {

@@ -40,6 +40,10 @@ pub struct Manifest {
     pub contributes: Contributes,
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// API 1.1, experimental (Reading Lens LK6): hosts the extension may ask for later,
+    /// one at a time, when the reader chooses something that needs it (`network:<host>`).
+    #[serde(default)]
+    pub optional_permissions: Vec<String>,
     /// Reserved (D4): localisation is English only in the MVP.
     #[serde(default)]
     pub locales: Option<serde_json::Value>,
@@ -68,6 +72,16 @@ pub struct Contributes {
     /// API 1.1, experimental (Reading Lens LK1): providers for the lookup peek.
     #[serde(default)]
     pub lookups: Vec<Lookup>,
+    /// API 1.1, experimental (Reading Lens LK8): an options page, opened from Settings.
+    #[serde(default)]
+    pub options: Option<OptionsPage>,
+}
+
+/// LK8: an extension's options page, in the package.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OptionsPage {
+    pub page: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -397,6 +411,30 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
             }
         }
     }
+    // LK6: optional permissions are exact network hosts, asked for one at a time.
+    let mut optional_seen = HashSet::new();
+    for p in &m.optional_permissions {
+        match p.strip_prefix("network:") {
+            Some(host) if valid_host(host) && !host.starts_with("*.") => {}
+            _ => errors.push(format!(
+                "optional permission “{p}” must be network:<host>, without a wildcard"
+            )),
+        }
+        if m.permissions.contains(p) {
+            errors.push(format!("“{p}” is both required and optional"));
+        }
+        if !optional_seen.insert(p) {
+            errors.push(format!("optional permission “{p}” is listed twice"));
+        }
+    }
+    if let Some(o) = &c.options {
+        if !plain_path(&o.page) || !o.page.ends_with(".html") {
+            errors.push(format!(
+                "options page “{}” must be an .html file in the package",
+                o.page
+            ));
+        }
+    }
     // A lookup is handed the selection, so it needs the permission that reads it (P3).
     if !c.lookups.is_empty() && !m.permissions.iter().any(|p| p == "book.selection") {
         errors.push("lookups need the book.selection permission".into());
@@ -611,6 +649,29 @@ mod tests {
             "\"title\": \"Explain\", \"label\": \"Verified\","
         ))
         .is_err());
+    }
+
+    #[test]
+    fn optional_hosts_and_options_pages_are_checked() {
+        let base = r#"{ "id": "org.test.explain", "version": "1.0.0", "name": "Explain",
+            "engines": { "linen": "^1.1" }, "main": "main.js",
+            "contributes": { "options": { "page": "options.html" } },
+            "permissions": ["book.selection"],
+            "optionalPermissions": ["network:api.deepseek.com", "network:localhost:11434"] }"#;
+        let m = parse(base).unwrap();
+        assert_eq!(m.optional_permissions.len(), 2);
+        assert_eq!(m.contributes.options.unwrap().page, "options.html");
+        for bad in [
+            base.replace("network:api.deepseek.com", "network:*.deepseek.com"),
+            base.replace("network:api.deepseek.com", "book.text"),
+            base.replace("options.html", "../options.html"),
+            base.replace(
+                "\"book.selection\"",
+                "\"book.selection\", \"network:api.deepseek.com\"",
+            ),
+        ] {
+            assert!(parse(&bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

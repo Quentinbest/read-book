@@ -256,14 +256,132 @@ pub fn install(
         ));
     }
     unpack(&mut zip, dir, &m.id)?;
+    // LK6: hosts granted on request stay granted through an update, while the new
+    // version still lists them; a host it newly asks for is asked for again.
+    let previous: Vec<String> = store
+        .conn()
+        .query_row(
+            "SELECT granted_permissions FROM extensions WHERE id = ?1",
+            [&m.id],
+            |r| r.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|g| serde_json::from_str(&g).ok())
+        .unwrap_or_default();
+    let mut all: Vec<String> = granted.to_vec();
+    for p in previous {
+        if m.optional_permissions.contains(&p) && !all.contains(&p) {
+            all.push(p);
+        }
+    }
     store.conn().execute(
         "INSERT INTO extensions (id, version, enabled, granted_permissions, installed_at, crash_log)
          VALUES (?1, ?2, 1, ?3, ?4, '{}')
          ON CONFLICT(id) DO UPDATE SET version = excluded.version, enabled = 1,
            granted_permissions = excluded.granted_permissions, crash_log = '{}'",
-        params![m.id, m.version, serde_json::to_string(granted).unwrap(), now_ms()],
+        params![m.id, m.version, serde_json::to_string(&all).unwrap(), now_ms()],
     )?;
     Ok(m)
+}
+
+fn granted_of(store: &Store, id: &str) -> Result<Vec<String>, ExtError> {
+    let g: String = store.conn().query_row(
+        "SELECT granted_permissions FROM extensions WHERE id = ?1",
+        [id],
+        |r| r.get(0),
+    )?;
+    Ok(serde_json::from_str(&g).unwrap_or_default())
+}
+
+/// LK6: the reader allowed a host the extension lists in `optionalPermissions`.
+pub fn grant_optional(store: &Store, dir: &Path, id: &str, host: &str) -> Result<(), ExtError> {
+    let m = read_manifest(dir, id)
+        .ok_or_else(|| ExtError::Invalid(format!("{id} is not installed")))?;
+    let p = format!("network:{host}");
+    if !m.optional_permissions.contains(&p) {
+        return Err(ExtError::Refused(format!(
+            "{} doesn't list {host} as optional",
+            m.name
+        )));
+    }
+    let mut g = granted_of(store, id)?;
+    if !g.contains(&p) {
+        g.push(p);
+        store.conn().execute(
+            "UPDATE extensions SET granted_permissions = ?2 WHERE id = ?1",
+            params![id, serde_json::to_string(&g).unwrap()],
+        )?;
+    }
+    Ok(())
+}
+
+/// LK6: Settings › Extensions › Remove beside a host the reader allowed.
+pub fn revoke_optional(store: &Store, dir: &Path, id: &str, host: &str) -> Result<(), ExtError> {
+    let m = read_manifest(dir, id)
+        .ok_or_else(|| ExtError::Invalid(format!("{id} is not installed")))?;
+    let p = format!("network:{host}");
+    if !m.optional_permissions.contains(&p) {
+        return Err(ExtError::Refused(
+            "only hosts allowed on request can be removed".into(),
+        ));
+    }
+    let g: Vec<String> = granted_of(store, id)?
+        .into_iter()
+        .filter(|x| x != &p)
+        .collect();
+    store.conn().execute(
+        "UPDATE extensions SET granted_permissions = ?2 WHERE id = ?1",
+        params![id, serde_json::to_string(&g).unwrap()],
+    )?;
+    Ok(())
+}
+
+// ---------------------------------------------------------------- keys (LK7)
+
+/// A key the extension saved: its name, the host it goes to and its label. Never its value.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct SecretRow {
+    pub name: String,
+    pub host: String,
+    pub label: String,
+}
+
+pub fn secret_record(
+    store: &Store,
+    id: &str,
+    name: &str,
+    host: &str,
+    label: &str,
+) -> Result<(), ExtError> {
+    store.conn().execute(
+        "INSERT INTO extension_secrets (ext_id, name, host, label, saved_at) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(ext_id, name) DO UPDATE SET host = excluded.host, label = excluded.label,
+           saved_at = excluded.saved_at",
+        params![id, name, host, label, now_ms()],
+    )?;
+    Ok(())
+}
+
+pub fn secrets_of(store: &Store, id: &str) -> Result<Vec<SecretRow>, ExtError> {
+    let mut stmt = store.conn().prepare(
+        "SELECT name, host, label FROM extension_secrets WHERE ext_id = ?1 ORDER BY name",
+    )?;
+    let rows = stmt.query_map([id], |r| {
+        Ok(SecretRow {
+            name: r.get(0)?,
+            host: r.get(1)?,
+            label: r.get(2)?,
+        })
+    })?;
+    Ok(rows.collect::<Result<_, _>>()?)
+}
+
+pub fn secret_forget(store: &Store, id: &str, name: &str) -> Result<(), ExtError> {
+    store.conn().execute(
+        "DELETE FROM extension_secrets WHERE ext_id = ?1 AND name = ?2",
+        params![id, name],
+    )?;
+    Ok(())
 }
 
 /// Test builds only: install without the compatibility check, as if the app had
@@ -449,13 +567,24 @@ pub struct FetchResponse {
     pub body: String,
 }
 
+/// A key for one request (LK7): the host it was saved for and its value.
+pub struct RequestKey {
+    pub scheme: super::secrets::Scheme,
+    pub host: String,
+    pub value: String,
+}
+
 /// Fetch for an extension, to hosts it declared and was granted only. Redirects
 /// are not followed (a redirect could lead anywhere); the extension sees the 3xx.
+/// LK7: the extension's own headers are checked; a key is added only when the URL's
+/// host is the one it was saved for.
 pub fn net_fetch(
     granted: &[String],
     url: &str,
     method: &str,
     body: Option<&str>,
+    headers: &[(String, String)],
+    key: Option<RequestKey>,
 ) -> Result<FetchResponse, ExtError> {
     if !manifest::network_allows(granted, url) {
         return Err(ExtError::Refused(format!(
@@ -465,12 +594,28 @@ pub fn net_fetch(
     if method != "GET" && method != "POST" {
         return Err(ExtError::Invalid("net.fetch supports GET and POST".into()));
     }
+    let headers = super::secrets::checked_headers(headers).map_err(ExtError::Refused)?;
+    if let Some(k) = &key {
+        if !super::secrets::may_send(&k.host, url) {
+            return Err(ExtError::Refused(format!(
+                "a key saved for {} can't be sent to {url}",
+                k.host
+            )));
+        }
+    }
     let agent = ureq::AgentBuilder::new()
         .redirects(0)
         .timeout(std::time::Duration::from_secs(10))
         .user_agent("Linen")
         .build();
-    let request = agent.request(method, url);
+    let mut request = agent.request(method, url);
+    for (k, v) in &headers {
+        request = request.set(k, v);
+    }
+    if let Some(k) = &key {
+        let (name, value) = k.scheme.header(&k.value);
+        request = request.set(&name, &value);
+    }
     let result = match body {
         Some(b) => request.send_string(b),
         None => request.call(),
@@ -784,10 +929,112 @@ mod tests {
     #[test]
     fn net_fetch_refuses_undeclared_hosts_before_connecting() {
         let granted = vec!["network:api.dictionaryapi.dev".to_string()];
-        assert!(net_fetch(&granted, "http://127.0.0.1:9/x", "GET", None)
-            .unwrap_err()
-            .to_string()
-            .contains("not allowed"));
-        assert!(net_fetch(&[], "https://api.dictionaryapi.dev/", "GET", None).is_err());
+        assert!(
+            net_fetch(&granted, "http://127.0.0.1:9/x", "GET", None, &[], None)
+                .unwrap_err()
+                .to_string()
+                .contains("not allowed")
+        );
+        assert!(net_fetch(
+            &[],
+            "https://api.dictionaryapi.dev/",
+            "GET",
+            None,
+            &[],
+            None
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn the_sample_and_test_packages_install() {
+        // The folders scripts/corpus/generate.py packs for the e2e suite (D4).
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("Extensions");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        for folder in [
+            "examples/extensions",
+            "src-tauri/tests/fixtures/ext-packages",
+        ] {
+            for ext in std::fs::read_dir(root.join(folder)).unwrap().flatten() {
+                // `future` is built for an API this Linen doesn't have, on purpose.
+                if !ext.path().is_dir() || ext.file_name() == "future" {
+                    continue;
+                }
+                let mut files = vec![];
+                let mut stack = vec![ext.path()];
+                while let Some(d) = stack.pop() {
+                    for f in std::fs::read_dir(&d).unwrap().flatten() {
+                        if f.path().is_dir() {
+                            stack.push(f.path());
+                        } else {
+                            let name = f.path().strip_prefix(ext.path()).unwrap().to_owned();
+                            let text = std::fs::read_to_string(f.path()).unwrap_or_default();
+                            files.push((name.to_string_lossy().into_owned(), text));
+                        }
+                    }
+                }
+                let refs: Vec<(&str, &str)> = files
+                    .iter()
+                    .map(|(n, c)| (n.as_str(), c.as_str()))
+                    .collect();
+                let name = format!("{}.linenext", ext.file_name().to_string_lossy());
+                let path = package(tmp.path(), &name, &refs);
+                let asks = match read_package(&path) {
+                    Ok((m, _)) => m.permissions,
+                    Err(e) => panic!("{name}: {e:?}"),
+                };
+                if let Err(e) = install(&mut store, &dir, &path, &asks) {
+                    panic!("{name}: {e:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn optional_hosts_are_granted_revoked_and_kept_across_updates() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join("Extensions");
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut store = Store::open_in_memory().unwrap();
+        let with = |version: &str, optional: &str| {
+            let m = manifest(version, "").replacen(
+                r#""permissions": []"#,
+                &format!(r#""permissions": [], "optionalPermissions": [{optional}]"#),
+                1,
+            );
+            package(
+                tmp.path(),
+                &format!("{version}.linenext"),
+                &[("manifest.json", &m), ("main.js", "")],
+            )
+        };
+        let id = "org.example.dictionary";
+        let network = |store: &Store| {
+            granted_of(store, id)
+                .unwrap()
+                .into_iter()
+                .filter(|p| p.starts_with("network:"))
+                .collect::<Vec<_>>()
+        };
+        let a = r#""network:api.example.com""#;
+        let b = r#""network:api.example.com", "network:other.example.com""#;
+        let c = r#""network:api.example.com", "network:new.example.com""#;
+        install(&mut store, &dir, &with("1.0.0", b), &[]).unwrap();
+        // LK6: nothing is granted until the reader allows it.
+        assert!(network(&store).is_empty());
+        assert!(grant_optional(&store, &dir, id, "evil.example.com").is_err());
+        grant_optional(&store, &dir, id, "api.example.com").unwrap();
+        grant_optional(&store, &dir, id, "other.example.com").unwrap();
+        // An update keeps the hosts it still lists, and drops the one it doesn't.
+        install(&mut store, &dir, &with("1.1.0", a), &[]).unwrap();
+        assert_eq!(network(&store), ["network:api.example.com"]);
+        // A host an update adds is asked for again, not granted with the rest.
+        install(&mut store, &dir, &with("1.2.0", c), &[]).unwrap();
+        assert_eq!(network(&store), ["network:api.example.com"]);
+        revoke_optional(&store, &dir, id, "api.example.com").unwrap();
+        assert!(network(&store).is_empty());
     }
 }
