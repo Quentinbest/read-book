@@ -7,7 +7,15 @@ import { spikeA } from './a-rendering'
 import { log, report, type SpikeResult } from './common'
 import { spikeD, spikeDTurns } from './d-fidelity'
 import { spikeE } from './e-isolation'
-import { spikeE2E, spikeMemory, spikeMemoryTrace, spikeSeed500, spikeVisual, spikeX3 } from './e2e'
+import {
+  spikeE2E,
+  spikeMemory,
+  spikeMemoryDictionaries,
+  spikeMemoryTrace,
+  spikeSeed500,
+  spikeVisual,
+  spikeX3,
+} from './e2e'
 import { spikeF } from './f-search'
 import { spikeG } from './g-extension-network'
 import { spikeLang } from './i18n'
@@ -21,7 +29,8 @@ const SPIKES: Record<string, () => Promise<SpikeResult>> = {
   f: spikeF,
   g: spikeG,
   r: spikeE2E,
-  m: spikeMemory,
+  m: () => spikeMemory(),
+  md: spikeMemoryDictionaries,
   mt: spikeMemoryTrace,
   v: spikeVisual,
   b: spikeB,

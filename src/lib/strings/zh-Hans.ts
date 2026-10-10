@@ -497,7 +497,7 @@ export const zhHans: Messages = {
     continue: '继续',
     notNow: '以后再说',
     audioUnavailable: '无法播放音频',
-    explainInContext: '结合上下文解释',
+    inContext: (title: string) => `“${title}”结合上下文`,
     noEntry: (word: string) => `你的词典中没有“${word}”的词条。`,
     dictionaryFrame: (title: string) => `“${title}”中的词条`,
     tryAgain: '重试',

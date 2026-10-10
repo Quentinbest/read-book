@@ -53,6 +53,7 @@
     oncontinue,
     onnotnow,
     onexplain,
+    explainTitle,
   }: {
     word: string
     /** The book's language, for the word and the quoted sentence (EA2). */
@@ -75,8 +76,10 @@
     /** Item 76: the first-request notice's buttons. */
     oncontinue: () => void
     onnotnow: () => void
-    /** DX14, Canvas 11: “Explain in context”, when an Explain-like lookup applies. */
+    /** DX14, Canvas 11: “Explain in context”, when an extension lookup applies. */
     onexplain?: () => void
+    /** The lookup “… in context” opens (its own title, so a dictionary lookup isn't called Explain). */
+    explainTitle?: string
   } = $props()
 
   const GAP = 12
@@ -365,7 +368,7 @@
           >
         {/if}
         {#if onexplain}
-          <button type="button" onclick={onexplain}>{t.lens.explainInContext}</button>
+          <button type="button" onclick={onexplain}>{t.lens.inContext(explainTitle ?? '')}</button>
         {/if}
         <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
       {:else if shown.kind === 'mac'}
@@ -373,7 +376,7 @@
           <button type="button" onclick={onopen}>{t.lookUp.openDictionary}</button>
         {/if}
         {#if onexplain}
-          <button type="button" onclick={onexplain}>{t.lens.explainInContext}</button>
+          <button type="button" onclick={onexplain}>{t.lens.inContext(explainTitle ?? '')}</button>
         {/if}
         <button type="button" class="link" onclick={onsearch}>{t.lookUp.searchBook}</button>
       {:else if shown.kind === 'error'}

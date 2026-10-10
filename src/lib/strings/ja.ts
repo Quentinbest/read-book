@@ -509,7 +509,7 @@ export const ja: Messages = {
     continue: '続ける',
     notNow: '今はしない',
     audioUnavailable: '音声は利用できません',
-    explainInContext: '文脈に沿って説明',
+    inContext: (title: string) => `「${title}」で文脈に沿って`,
     noEntry: (word: string) => `辞書に「${word}」の項目はありません。`,
     dictionaryFrame: (title: string) => `「${title}」の項目`,
     tryAgain: 'もう一度試す',

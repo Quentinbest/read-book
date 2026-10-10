@@ -550,7 +550,8 @@ export const en = {
     continue: 'Continue',
     notNow: 'Not now',
     audioUnavailable: 'Audio isn’t available',
-    explainInContext: 'Explain in context',
+    // DX14, Canvas 11: “Explain in context”, named after the lookup it opens.
+    inContext: (title: string) => `${title} in context`,
     noEntry: (word: string) => `No entry for “${word}” in your dictionaries.`,
     dictionaryFrame: (title: string) => `Entry in ${title}`,
     tryAgain: 'Try again',

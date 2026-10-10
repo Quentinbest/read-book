@@ -499,7 +499,7 @@ export const zhHant: Messages = {
     continue: '繼續',
     notNow: '以後再說',
     audioUnavailable: '無法播放音訊',
-    explainInContext: '結合上下文解釋',
+    inContext: (title: string) => `「${title}」結合上下文`,
     noEntry: (word: string) => `你的辭典中沒有「${word}」的詞條。`,
     dictionaryFrame: (title: string) => `「${title}」中的詞條`,
     tryAgain: '再試一次',

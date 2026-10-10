@@ -6916,6 +6916,208 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   )
 
+  // ---------------------------------------------------------------- Reading Lens gaps (§6.6)
+  /** Select `n` characters at the start of the first visible text on the page. */
+  const selectVisible = async (n = 4) => {
+    const visible = reader()!.engine.view.lastLocation!.range
+    const doc = visible.startContainer.ownerDocument!
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+    for (let t = walker.nextNode() as Text | null; t; t = walker.nextNode() as Text | null) {
+      if (!visible.intersectsNode(t)) continue
+      const from = t === visible.startContainer ? visible.startOffset : 0
+      const text = t.data.slice(from)
+      const lead = text.length - text.trimStart().length
+      if (text.trim().length < n + 2) continue
+      const r = doc.createRange()
+      r.setStart(t, from + lead)
+      r.setEnd(t, from + lead + n)
+      doc.getSelection()!.removeAllRanges()
+      doc.getSelection()!.addRange(r)
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      return r
+    }
+    throw new Error('no visible text to select')
+  }
+  const peekClear = (range: Range, where: string, problems: string[]) => {
+    const p = lensPeek()?.getBoundingClientRect()
+    if (!p) return void problems.push(`${where}: no peek`)
+    if (covers(range)) problems.push(`${where}: covers the selection`)
+    if (p.left < 0 || p.right > innerWidth + 1 || p.top < 0 || p.bottom > innerHeight + 1)
+      problems.push(
+        `${where}: outside the window (${Math.round(p.left)},${Math.round(p.top)})–(${Math.round(p.right)},${Math.round(p.bottom)})`,
+      )
+  }
+
+  checks.push({
+    id: 'EA1-keyboard-path',
+    description:
+      'With no pointer: F7 caret, ⇧→ selects, F6 enters the bar, the arrows reach Look Up, it opens the peek, Tab enters the peek, Esc returns to the text',
+    run: async () => {
+      const problems: string[] = []
+      await mobyOpen()
+      await toLoomings()
+      await reader()!.engine.goToTextStart()
+      await settled(600)
+      key('F7', { code: 'F7' })
+      await settled(200)
+      for (let i = 0; i < 4; i++) key('ArrowRight', { code: 'ArrowRight', shiftKey: true })
+      pageDoc().doc.body.dispatchEvent(new KeyboardEvent('keyup', { key: 'Shift', bubbles: true }))
+      await settled(300)
+      if (!selBar()) problems.push('no bar for the keyboard selection')
+      key('F6', { code: 'F6' })
+      await settled(200)
+      if (!selBar()?.contains(document.activeElement)) problems.push('F6 did not enter the bar')
+      let found = false
+      for (let i = 0; i < 12 && !found; i++) {
+        found = /Look Up/.test((document.activeElement as HTMLElement | null)?.textContent ?? '')
+        if (!found) {
+          document.activeElement?.dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+          )
+          await settled(60)
+        }
+      }
+      if (!found) problems.push('the arrows did not reach Look Up')
+      // A synthetic Enter does not activate a button; activating it is what Enter does.
+      ;(document.activeElement as HTMLElement | null)?.click()
+      await waitFor('the peek', lensPeek, 3000).catch(() =>
+        problems.push('Look Up did not open the peek'),
+      )
+      key('Tab', { code: 'Tab' })
+      await settled(200)
+      if (!lensPeek()?.contains(document.activeElement)) problems.push('Tab did not enter the peek')
+      ;(document.activeElement as HTMLElement | null)?.dispatchEvent(
+        new KeyboardEvent('keydown', {
+          key: 'Escape',
+          code: 'Escape',
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
+      await settled(300)
+      if (lensPeek()) problems.push('Esc did not close the peek')
+      if (lensPeek()?.contains(document.activeElement)) problems.push('focus stayed in the peek')
+      key('F7', { code: 'F7' })
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      if (selBar()) key('Escape', { code: 'Escape' })
+      await settled(200)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
+    id: 'LK1-layouts',
+    description:
+      'The peek opens clear of the selection and inside the window in a two-page spread, a right-to-left book and vertical writing',
+    run: async () => {
+      const problems: string[] = []
+      const w = getCurrentWindow()
+      const factor = await w.scaleFactor()
+      const size = await w.innerSize()
+      try {
+        // A spread (L8): a wide window in Pages mode.
+        await mobyOpen()
+        await w.setSize(new LogicalSize(1680, 1000))
+        await settled(1200)
+        await toLoomings()
+        hooks.run?.('layout.pages')
+        await settled(800)
+        let r = await selectPhrase('drizzly')
+        await pressBar(/Look Up/)
+        await waitFor('peek', lensPeek, 3000)
+        await settled(200)
+        peekClear(r, 'spread', problems)
+        await closePeek()
+        // Right to left (I15).
+        await backToLibrary()
+        await openFromLibrary(/[؀-ۿ]|anticancer|Régime|regime/i)
+        await settled(800)
+        r = await selectVisible(4)
+        await pressBar(/Look Up/)
+        await waitFor('peek', lensPeek, 3000)
+        await settled(200)
+        peekClear(r, 'right to left', problems)
+        await closePeek()
+        // Vertical writing (I16).
+        await backToLibrary()
+        await openFromLibrary(/草枕/)
+        await settled(1200)
+        r = await selectVisible(3)
+        await pressBar(/Look Up/)
+        await waitFor('peek', lensPeek, 3000)
+        await settled(200)
+        peekClear(r, 'vertical', problems)
+        await closePeek()
+      } finally {
+        await w.setSize(new LogicalSize(size.width / factor, size.height / factor))
+        await settled(1000)
+        await backToLibrary()
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  dictCheck(
+    'DX14-no-entry',
+    'With no entry in the reader’s dictionaries or this Mac’s, the peek says “No entry for … in your dictionaries”; “Explain in context” appears only when Explain applies',
+    async (problems) => {
+      await mobyOpen()
+      await toLoomings()
+      await dict.add('dict-basic.mdx')
+      await emit('dictionaries-changed')
+      await settled(300)
+      // A word in the chapter that this Mac's dictionaries don't have either.
+      let word = ''
+      for (const w of ['Manhattoes', 'Coenties', 'Corlears', 'Circumambulate', 'Cato'])
+        if ((await invoke<string | null>('look_up', { text: w })) === null) {
+          word = w
+          break
+        }
+      if (!word) return void log('DX14: this Mac’s dictionaries know every candidate; not checked')
+      await selectPhrase(word)
+      await pressBar(/Look Up/)
+      const peek = await waitFor(
+        'the no-entry line',
+        () => lensPeek()?.querySelector('[data-no-entry]'),
+        5000,
+      )
+      if (peek.textContent?.trim() !== `No entry for “${word}” in your dictionaries.`)
+        problems.push(`says “${peek.textContent?.trim()}”`)
+      // Without Explain, any in-context button names another installed lookup, never Explain.
+      if (/Explain in context/.test(lensPeek()?.textContent ?? ''))
+        problems.push('Explain in context without Explain')
+      await closePeek()
+      await lens.install()
+      try {
+        await selectPhrase(word)
+        await pressBar(/Look Up/)
+        await waitFor('the no-entry line', () => lensPeek()?.querySelector('[data-no-entry]'), 5000)
+        // The button names the lookup it opens: Explain, or another installed lookup first.
+        const names = ext()
+          .lookups({
+            'selection.words': 1,
+            'selection.chars': 9,
+            'selection.language': 'en',
+            'book.language': 'en',
+            'book.fixedLayout': false,
+            'book.lang': 'en',
+            'selection.sentences': 1,
+          })
+          .map((l) => l.title)
+        const button =
+          Array.from(lensPeek()?.querySelectorAll('.footer button') ?? []).find((b) =>
+            / in context$/.test(b.textContent ?? ''),
+          )?.textContent ?? ''
+        if (!names.some((n) => button === `${n} in context`))
+          problems.push(`in-context button “${button}” for lookups ${names.join(', ')}`)
+      } finally {
+        if (lensPeek()) await closePeek()
+        await lens.remove()
+      }
+    },
+  )
+
   // Last: the run itself raised no uncaught errors (the crash log holds only D1's probe).
   checks.push({
     id: 'D1-no-uncaught-errors',
@@ -6960,8 +7162,13 @@ export async function spikeE2E(): Promise<SpikeResult> {
  * §6.4 memory budget, as specified: a fresh session opens the 100 MB book and
  * reads 50 pages; resident memory of the app and its WebKit processes < 400 MB.
  */
-export async function spikeMemory(): Promise<SpikeResult> {
+export async function spikeMemory(options: { dictionaries?: boolean } = {}): Promise<SpikeResult> {
   const path = await invoke<string>('spike_corpus_path', { name: 'large-100mb.epub' })
+  // Reading Lens DX10, §6.8: the same budget with three dictionaries installed (one of
+  // 60,000 entries) and an entry open in the peek at the end.
+  if (options.dictionaries)
+    for (const name of ['dict-large.mdx', 'dict-basic.mdx', 'dict-v1.mdx'])
+      await invoke('dict_import', { path: await invoke<string>('spike_corpus_path', { name }) })
   await invoke('library_import', { paths: [path] })
   const { installThemeCss } = await import('../app/theme')
   await import('../app/base.css')
@@ -6979,6 +7186,26 @@ export async function spikeMemory(): Promise<SpikeResult> {
   }
   const before = await invoke<Memory>('spike_memory')
   for (let i = 0; i < 50; i++) await reader()!.engine.turn('next')
+  if (options.dictionaries) {
+    // A look-up in each dictionary, then an entry left open in the peek.
+    for (const w of ['term000123', 'cache', 'invalidate', 'term059000'])
+      await invoke('dict_lookup', { text: w })
+    const { doc } = pageDoc()
+    const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT)
+    let node = walker.nextNode() as Text | null
+    while (node && node.data.trim().length < 6) node = walker.nextNode() as Text | null
+    if (node) {
+      const r = doc.createRange()
+      const lead = node.data.length - node.data.trimStart().length
+      r.setStart(node, lead)
+      r.setEnd(node, lead + 4)
+      doc.getSelection()!.removeAllRanges()
+      doc.getSelection()!.addRange(r)
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await settled(300)
+      await pressBar(/Look Up/).catch(() => {})
+    }
+  }
   await settled(2000)
   const after = await invoke<Memory>('spike_memory')
   // §6.4 names resident memory (RSS); under memory pressure macOS compresses pages
@@ -6986,12 +7213,13 @@ export async function spikeMemory(): Promise<SpikeResult> {
   const evidence = `after opening ${before.total_mb} MB; after 50 pages RSS ${after.total_mb} MB = ${after.processes.join(' + ')}; footprint ${after.footprint_mb} MB = ${after.footprints.join(' + ')}`
   log(`memory: ${evidence}`)
   return {
-    spike: 'budget-memory',
+    spike: options.dictionaries ? 'budget-memory-dictionaries' : 'budget-memory',
     criteria: [
       {
-        id: 'budget-memory',
-        description:
-          'A 100 MB book after reading 50 pages uses < 400 MB (RSS and footprint) across the app and its WebKit processes (§6.4, M1)',
+        id: options.dictionaries ? 'budget-memory-dictionaries' : 'budget-memory',
+        description: options.dictionaries
+          ? 'With three dictionaries installed and an entry open, a 100 MB book after 50 pages stays under 400 MB (DX10, §6.4)'
+          : 'A 100 MB book after reading 50 pages uses < 400 MB (RSS and footprint) across the app and its WebKit processes (§6.4, M1)',
         // Decision M1 (docs/decisions.md): both RSS and physical footprint must be under 400 MB.
         verdict: after.total_mb < 400 && after.footprint_mb < 400 ? 'pass' : 'fail',
         evidence,
@@ -7824,3 +8052,6 @@ export async function spikeSeed500(): Promise<SpikeResult> {
     raw: {},
   }
 }
+
+/** Reading Lens DX10: the memory budget with three dictionaries (scripts/perf-memory.sh 20 dictionaries). */
+export const spikeMemoryDictionaries = () => spikeMemory({ dictionaries: true })

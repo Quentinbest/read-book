@@ -2435,6 +2435,7 @@
         onretry={() => ask()}
         oncontinue={() => ask(true)}
         onexplain={explainKey ? () => explainKey && chooseProvider(explainKey) : undefined}
+        explainTitle={lookup.providers.find((p) => p.key === explainKey)?.title}
         onnotnow={() => dispatch({ type: 'closeFloating' })}
         onrestart={() => {
           const extId =

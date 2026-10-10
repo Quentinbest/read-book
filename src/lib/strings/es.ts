@@ -522,7 +522,7 @@ export const es: Messages = {
     continue: 'Continuar',
     notNow: 'Ahora no',
     audioUnavailable: 'El audio no está disponible',
-    explainInContext: 'Explicar en contexto',
+    inContext: (title: string) => `${title} en contexto`,
     noEntry: (word: string) => `No hay ninguna entrada para “${word}” en tus diccionarios.`,
     dictionaryFrame: (title: string) => `Entrada en ${title}`,
     tryAgain: 'Reintentar',
