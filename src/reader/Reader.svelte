@@ -1042,10 +1042,20 @@
     }
     return selection ? selectionTarget(selection) : null
   }
+  /** Item 86: macOS's preferred languages, read once, for the peek's language menu. */
+  let systemLanguages: string[] = []
+  void ipc
+    .preferredLanguages()
+    .then((l) => (systemLanguages = l))
+    .catch(() => {})
   /** LK1, LK11: the providers that apply to a text; lookups are off in fixed-layout books (O13). */
   function providersFor(text: string, dicts: DictHit[] = []): LookupProvider[] {
     const lookups = fixedBook ? [] : extensions.lookups(whenContextFor(text))
-    return lookupProviders(lookups, { languages: readerLanguages(locale), mac: true, dicts })
+    return lookupProviders(lookups, {
+      languages: readerLanguages(locale, systemLanguages),
+      mac: true,
+      dicts,
+    })
   }
   /** Lookups offered in the bar's “⋯” (LK1, LK14). */
   const barLookups = $derived.by(() => {

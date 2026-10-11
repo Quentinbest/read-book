@@ -31,9 +31,24 @@ export function languageName(tag: string, inLanguage = tag): string {
   }
 }
 
-/** LK11: the languages the reader uses, for extension lookups: the UI's, then English. */
-export function readerLanguages(uiLocale: string): string[] {
-  return uiLocale === 'en' || uiLocale === 'en-XA' ? ['en'] : [uiLocale, 'en']
+/**
+ * LK11 (item 86): the languages the reader uses, for extension lookups: the UI's, then
+ * macOS's preferred languages in their order, then English; at most four. Chinese
+ * keeps its script (zh-Hans, zh-Hant); other languages are their primary subtag.
+ */
+export function readerLanguages(uiLocale: string, system: readonly string[] = []): string[] {
+  const norm = (tag: string) => {
+    const t = tag.replace(/_/g, '-')
+    if (/^zh\b/i.test(t)) return /^zh-(Hant|TW|HK|MO)\b/i.test(t) ? 'zh-Hant' : 'zh-Hans'
+    return t.split('-')[0].toLowerCase()
+  }
+  const out: string[] = []
+  for (const tag of [uiLocale === 'en-XA' ? 'en' : uiLocale, ...system.map(norm), 'en'])
+    if (tag && /^[a-z]{2,3}(-Han[st])?$/.test(tag) && !out.includes(tag)) out.push(tag)
+  // English stays offered: the books are English.
+  const kept = out.slice(0, 4)
+  if (!kept.includes('en')) kept[kept.length - 1] = 'en'
+  return kept
 }
 
 /**
