@@ -271,6 +271,12 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-11 (Reading Lens Stage 3, item 87)
+
+| # | Approved |
+|---|---|
+| How the offline check is scored (87) | As built in `linen-explain` (`offline/`, `docs/offline-run.md`): each reviewer marks every answer blind, `verdict` correct, partly or wrong, and `severe` when it is wrong and shows no doubt (no qualifier, not “needs more context”); `term_ok` for the Chinese term. Krippendorff's α on `severe` must be at least .67 before any rate is used. An answer is severe when either reviewer marks it. The rate and its one-sided 95% Clopper–Pearson bound are reported per model; G2 passes for a model when the bound is at most 5% over at least 60 items. Items are every local stuck point from the coded diary, with their context widened from the book to the sentence and one on each side. |
+
 ## Approved 2026-10-11 (Reading Lens Stage 3, items 84 and 85)
 
 | # | Approved |

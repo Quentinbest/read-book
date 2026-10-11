@@ -234,4 +234,5 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     - The rate and its Clopper–Pearson 95% upper bound are reported **per model**; G2 passes for a model when the bound is at most 5%.
     - Items: every local stuck point (L2, L3, L4, S1, S2) from the diary sheets, with the reader's name removed; at least 60.
     *Recommendation:* approve as built.
+    **Approved 2026-10-11.**
 
