@@ -8,7 +8,8 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
 | 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
-| 3–5 | Not started | After 2d, and private (Explain) |
+| 3 Explain and the offline check | In progress | Explain is built in the private repository `Quentinbest/linen-explain` (owner, 2026-10-11; DeepSeek first). Host additions below. The offline run needs Stage 1's stuck points and two bilingual reviewers |
+| 4–5 | Not started | After G2 |
 
 ## Stage 2a — lookup peek and selection context
 
@@ -163,3 +164,41 @@ Mac14,3 (M2, 8 GB), macOS 14.6.1, on the current desktop, 2026-10-10.
 - **In-app, full suite:** **170/170**, the last, `D1-no-uncaught-errors`, included. `LK6-deny-revoke` then gained the pending-request case; with it, the Stage 2d checks, `EP1-no-request-on-select` and both D1 checks passed again (8/8).
 - **Visual:** `scripts/e2e.sh v` captured the four Stage 2d screens. Against `docs/visual/baselines/`, ten older screens differ by 0.1–1.2% (the selection colour of an active window against the inactive Desktop 2 baselines, and glyph edges; item 77 describes the same). Stage 2d does not touch them, and their captures were not committed.
 - **Found and fixed while writing the checks:** removing an extension showed “stopped responding” in the peek instead of cancelling, and its host sheet stayed open.
+
+## Stage 3 — host additions for Explain
+
+- **Last updated:** 2026-10-11
+- **Where Explain lives:** a private repository, `Quentinbest/linen-explain` (plan §1.2: no Explain code here before Gate 3). This repository gains only the Host API pieces Explain needs, and the test provider that imitates them.
+
+| Rule | What | Where |
+|---|---|---|
+| LK10 (spec 4.4, “Not set up”) | A lookup may answer `error: "not_configured"`: the peek says “‹name› isn't set up yet. Finish setting it up in its options.” with Open options, and no Try again | `lib/lookup/result.ts`, `LookUpPeek.svelte`, strings |
+| LK11 | The provider menu ends with “‹name› options…” for each extension in it that has an options page; it opens Settings on that page | `LookUpPeek.svelte` (`menuOptions`), `Reader.svelte` |
+
+| LK2 | A provider's headword and What was sent are the reader's own text: Linen no longer refuses them for tag-like code (`Vec<T>`) or a percentage in the book (“50% of”). They were always shown as text | `lib/lookup/result.ts` |
+
+Checks: `LK8-options-page` covers the first two (the test provider's `unset` step); the validator's unit tests cover `not_configured`, code and a percentage in the selection. The lens checks pass (25 of 25, with `EP1`, `EX8` and both D1 checks).
+
+## Stage 3 — Explain (private repository)
+
+- **Last updated:** 2026-10-11
+- **Where:** `Quentinbest/linen-explain` (private), version 0.1.0. Its README and `docs/providers.md` hold the details; nothing of it is in this repository.
+
+| Part | State | Evidence |
+|---|---|---|
+| EX1–EX10 | Built | The lookup and its `when` (EX1); `book.selection`, `book.metadata`, `files.export`, with the six hosts optional (EX2); one request per explanation through an adapter per preset (EX3); the prompt and lengths (EX4, EX5); What was sent, the exact request without the key (EX6); Copy is Linen's (EX7); a notice per host before the first request (EX8); a session cache (EX9); the opt-in study log, exported with ⌘K (EX10) |
+| The six presets | Built | DeepSeek, Qwen (international), OpenAI, Anthropic, Gemini, Ollama, with models and endpoints checked 2026-10-11. DeepSeek's thinking mode is on by default and is turned off, to stay within the 10 s budget |
+| Provider contract tests (§6.9) | **Pass** (107, CI green) | Recorded responses for each preset replayed through a fake `net.fetch`; 401, 403, 404, 429 with and without Retry-After, 500, non-JSON, partial and empty answers, a captive portal, DNS, TLS, a timeout, Ollama not running; every answer checked with a port of Linen's validator. The recordings follow each provider's documented shape: none is a live capture yet |
+| Installs in Linen | **Pass** | The package installed through Linen's own validation (`registry::install`, a temporary test, not committed): manifest, `when`, options page, six optional hosts |
+| End to end on this Mac | **Pass**, without any provider | `scripts/fake-ollama.mjs` stands in for Ollama on localhost: the real request, real HTTP, the answer read and validated. Not yet clicked through in the app |
+| Live check (DeepSeek) | **Waiting** (item 84) | Needs your DeepSeek key: one fixed sentence, never book text |
+| EX8 notice wording | **Waiting** (item 84) | Each notice says only what the provider's own policy page says; what couldn't be confirmed is left out and listed |
+| The offline run and G2 | **Blocked** (item 85) | Needs at least 60 items from Stage 1's real stuck points, and two bilingual reviewers. Gate 0 was waived, so no diary data exists |
+
+### Known limits of Explain 0.1
+
+- **The answer's language** follows the peek's language menu, which offers only Linen's UI language and English (`readerLanguages`). With Linen in English there is no “Explain · 简体中文” (item 86).
+- **No Test connection** in its options: an options page can't make requests through Linen.
+- **The study log** sees only what reaches the extension (answered, needs context, cancelled, errors); expanded, copied and “Helped / Wrong” stay in the peek.
+- **Retry-After** isn't exposed by `net.fetch`.
+

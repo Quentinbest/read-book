@@ -207,3 +207,19 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     The new strings (`extAccess`) have machine drafts in the four languages.
     *Recommendation:* approve the screens and the English; send the drafts to the native reviewers with items 74 and 81.
     **Approved 2026-10-10.**
+
+83. **“Not set up” and “‹name› options…” in the peek (Stage 3, LK10, LK11).** The spec's error list has a “Not set up” state with one action, and LK11's menu lists “Explain options…”; Host API 1.1 had neither. A lookup may now answer `error: "not_configured"`, shown as “‹name› isn't set up yet. Finish setting it up in its options.” with Open options; and the provider menu ends with “‹name› options…” for an extension with an options page. Both are experimental Host API 1.1 additions. The strings have machine drafts in the four languages. No capture yet: they will be taken with Explain's own screens.
+    *Recommendation:* approve the behaviour and the English; send the drafts to the native reviewers with item 82's.
+
+84. **Explain's live check and notices (Stage 3, EX8).** Explain 0.1.0 is in the private repository `Quentinbest/linen-explain`, with contract tests passing on recorded responses. Two things wait on you:
+    - **The live check:** in that repository, `DEEPSEEK_API_KEY=… npm run live -- deepseek --record` sends one fixed sentence about caches (never book text) and records DeepSeek's answer for the tests. The key stays in your shell.
+    - **The notices:** `docs/providers.md` there lists each preset's notice and the policy page it comes from (checked 2026-10-11). What couldn't be confirmed (DeepSeek's API retention and training, Anthropic's retention period) is left out of the notices.
+
+    *Recommendation:* run the live check, then approve the notices as written.
+
+85. **Where Stage 3's offline items come from (G2).** The plan's offline run needs at least 60 items drawn from Stage 1's real stuck points, scored blind by two bilingual reviewers. Gate 0 was waived, so there are none. Options: (a) run the Stage 1 diary now (`docs/reading-lens-stage1.md`), which is still the only source of real items; (b) collect stuck points from your own reading with Linen's rose highlight, coded the same way; (c) a synthetic set, which the plan rejects (spec 4.9: “items drawn from the diary, not a 68-item synthetic set”).
+    *Recommendation:* (a), with you as one of the readers; G2 can't be decided before the items and reviewers exist.
+
+86. **The peek's languages (LK11).** The peek offers extension lookups in Linen's UI language and English only. A Chinese-speaking reader with Linen in English can't choose “Explain · 简体中文”. The plan's audience is exactly that reader.
+    *Recommendation:* add the languages from macOS's preferred languages (Settings › General › Language & Region) to the menu, after Linen's own; a small change in `readerLanguages`, with a unit test.
+

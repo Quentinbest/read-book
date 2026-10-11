@@ -488,6 +488,8 @@ export const zhHans: Messages = {
     timeout: (name: string) => `${name} 未在 10 秒内回答。`,
     unauthorized: (name: string) => `${name} 未接受密钥。`,
     unauthorizedDetail: '密钥可能已过期或被撤销。',
+    notConfigured: (name: string) => `${name} 尚未设置。`,
+    notConfiguredDetail: '请在其选项中完成设置。',
     rateLimited: (name: string) => `${name} 正在限制请求。`,
     rateLimitedDetail: '请一分钟后再试。',
     unavailable: (name: string) => `${name} 目前不可用。`,
@@ -556,6 +558,7 @@ export const zhHans: Messages = {
     done: '完成',
     keyUnavailable: (name: string) => `Linen 无法读取 ${name} 的密钥。`,
     keyUnavailableDetail: '钥匙串可能已锁定，或访问被拒绝。未发送任何内容。',
+    optionsItem: (name: string) => `${name} 选项…`,
     openOptions: '打开选项',
   },
   image: {

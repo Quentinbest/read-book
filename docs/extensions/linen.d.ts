@@ -50,7 +50,8 @@ export interface LookupAnswer {
   sent?: string
   /** needs_context: what the passage lacks. */
   missing?: string
-  error?: 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
+  /** `not_configured` (1.1, experimental): set up first; the peek offers Open options. */
+  error?: 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable' | 'not_configured'
   /** notice: before the first request to a host; Linen draws Continue and Not now. */
   notice?: { title: string; text: string; host: string }
 }

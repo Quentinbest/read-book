@@ -6,8 +6,12 @@
 /** `notice` (item 76, EX8): before the first request to a host, the provider says what it will send. */
 export type LookupStatus = 'ok' | 'needs_context' | 'error' | 'notice'
 
-/** LK10: failures a provider reports; the core words them and offers the action. */
-export type LookupErrorKind = 'offline' | 'unauthorized' | 'rate_limited' | 'unavailable'
+/**
+ * LK10: failures a provider reports; the core words them and offers the action.
+ * `not_configured` (Stage 3): the provider needs setting up first (Open options).
+ */
+export type LookupErrorKind =
+  'offline' | 'unauthorized' | 'rate_limited' | 'unavailable' | 'not_configured'
 
 export interface LookupResult {
   status: LookupStatus
@@ -63,7 +67,13 @@ const TOP = new Set([
   'notice',
 ])
 const SOURCE = new Set(['kind', 'name', 'model'])
-const ERRORS = new Set<LookupErrorKind>(['offline', 'unauthorized', 'rate_limited', 'unavailable'])
+const ERRORS = new Set<LookupErrorKind>([
+  'offline',
+  'unauthorized',
+  'rate_limited',
+  'unavailable',
+  'not_configured',
+])
 /** EQ2: no percentages and no confidence or probability talk. */
 const SCORE = /\d\s*%|\bpercent\b|\bconfiden(?:ce|t)\b|\bprobabilit/i
 /** Plain text only: markup is never rendered, so it is refused rather than shown as tags. */
@@ -77,6 +87,8 @@ function text(
   max: number,
   required: boolean,
   scored = true,
+  /** Provider prose may not hold markup; the reader's own text (what was sent) may. */
+  prose = true,
 ): string | undefined {
   if (v === undefined || v === null) {
     if (required) throw new Error(`${field} is missing`)
@@ -84,7 +96,7 @@ function text(
   }
   if (typeof v !== 'string') throw new Error(`${field} is not text`)
   if (v.length > max) throw new Error(`${field} is longer than ${max} characters`)
-  if (MARKUP.test(v)) throw new Error(`${field} holds markup`)
+  if (prose && MARKUP.test(v)) throw new Error(`${field} holds markup`)
   if (scored && SCORE.test(v)) throw new Error(`${field} holds a percentage or a score`)
   return v
 }
@@ -106,7 +118,9 @@ export function validateResult(raw: unknown): Validated {
       throw new Error('source.kind must be ai or dictionary')
     const result: LookupResult = {
       status,
-      headword: text(r.headword, 'headword', LIMITS.headword, true)!,
+      // The selection itself, shown as text: code such as `Vec<T>` is not markup, and
+      // “50% of” in the book is not a score.
+      headword: text(r.headword, 'headword', LIMITS.headword, true, false, false)!,
       meaning: text(r.meaning, 'meaning', LIMITS.meaning, status === 'ok') ?? '',
       source: {
         kind: s.kind,
@@ -119,8 +133,9 @@ export function validateResult(raw: unknown): Validated {
     if (term) result.term = term
     const qualifier = text(r.qualifier, 'qualifier', LIMITS.qualifier, false)
     if (qualifier) result.qualifier = qualifier
-    // What was sent is the reader's own text: a percentage in the book is not a score.
-    const sent = text(r.sent, 'sent', LIMITS.sent, false, false)
+    // What was sent is the reader's own text: a percentage in the book is not a score,
+    // and `Vec<T>` in a programming book is not markup (Linen renders it as text).
+    const sent = text(r.sent, 'sent', LIMITS.sent, false, false, false)
     if (sent) result.sent = sent
     if (r.details !== undefined) {
       if (!Array.isArray(r.details)) throw new Error('details is not a list')
@@ -142,7 +157,9 @@ export function validateResult(raw: unknown): Validated {
     else if (r.missing !== undefined) throw new Error('missing belongs to needs_context')
     if (status === 'error') {
       if (!ERRORS.has(r.error as LookupErrorKind))
-        throw new Error('error must be offline, unauthorized, rate_limited or unavailable')
+        throw new Error(
+          'error must be offline, unauthorized, rate_limited, unavailable or not_configured',
+        )
       result.error = r.error as LookupErrorKind
     } else if (r.error !== undefined) throw new Error('error belongs to status error')
     if (status === 'notice') {

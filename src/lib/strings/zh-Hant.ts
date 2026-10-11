@@ -490,6 +490,8 @@ export const zhHant: Messages = {
     timeout: (name: string) => `${name} 未在 10 秒內回答。`,
     unauthorized: (name: string) => `${name} 未接受密鑰。`,
     unauthorizedDetail: '密鑰可能已過期或被撤銷。',
+    notConfigured: (name: string) => `${name} 尚未設定。`,
+    notConfiguredDetail: '請在其選項中完成設定。',
     rateLimited: (name: string) => `${name} 正在限制請求。`,
     rateLimitedDetail: '請一分鐘後再試。',
     unavailable: (name: string) => `${name} 目前無法使用。`,
@@ -558,6 +560,7 @@ export const zhHant: Messages = {
     done: '完成',
     keyUnavailable: (name: string) => `Linen 無法讀取 ${name} 的密鑰。`,
     keyUnavailableDetail: '鑰匙圈可能已鎖定，或存取遭拒。未傳送任何內容。',
+    optionsItem: (name: string) => `${name} 選項…`,
     openOptions: '打開選項',
   },
   image: {

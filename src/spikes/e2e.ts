@@ -7175,7 +7175,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
 
   keyedCheck(
     'LK8-options-page',
-    'Options… opens the extension’s page in a Linen dialog on its own origin; the page reaches Linen only through its frame (it learns whether a key is saved, never the key)',
+    'Options… opens the extension’s page in a Linen dialog on its own origin; the page reaches Linen only through its frame (it learns whether a key is saved, never the key); a refused key and “not set up” offer Open options, and the provider menu has “‹name› options…” (LK11)',
     async (problems) => {
       await keyedReady()
       await invoke('extension_storage_delete', { id: KEYED, key: 'options-saw' })
@@ -7209,6 +7209,19 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await keyed.run('probe')
       if (!lensPeek()?.querySelector('[data-open-options]'))
         problems.push('a refused key offers no Open options')
+      await closePeek()
+      // Stage 3: not set up yet, with Open options; LK11: “‹name› options…” in the menu.
+      await keyed.run('unset')
+      if (!/isn’t set up yet/.test(lensPeek()?.textContent ?? ''))
+        problems.push(`not set up reads “${lensPeek()?.textContent?.slice(0, 120)}”`)
+      if (!lensPeek()?.querySelector('[data-open-options]'))
+        problems.push('not set up offers no Open options')
+      lensPeek()?.querySelector<HTMLButtonElement>('button.provider')?.click()
+      await settled(200)
+      if (!lensPeek()?.querySelector(`[data-menu-options="${KEYED}"]`))
+        problems.push('no “Test Keyed options…” in the provider menu')
+      key('Escape', { code: 'Escape' })
+      await settled(200)
     },
   )
 

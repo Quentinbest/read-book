@@ -980,6 +980,25 @@
   }
   let lookup = $state.raw<Lookup | null>(null)
   let lookupPeek: ReturnType<typeof LookUpPeek> | undefined = $state()
+  /** LK11: “‹name› options…” in the provider menu, once per extension with an options page. */
+  const menuOptions = $derived.by(() => {
+    const ids = [...new Set((lookup?.providers ?? []).map((p) => p.extId).filter(Boolean))]
+    return ids.flatMap((id) => {
+      const x = extensions.extensions.find((e) => e.manifest.id === id)
+      return x?.manifest.contributes.options
+        ? [
+            {
+              key: x.manifest.id,
+              label: t.extAccess.optionsItem(x.manifest.name),
+              open: () => {
+                dispatch({ type: 'closeFloating' })
+                void openSettingsWindow(x.manifest.id)
+              },
+            },
+          ]
+        : []
+    })
+  })
   /** LK8: the current lookup's extension, when it has an options page (for a refused key). */
   const optionsExt = $derived.by(() => {
     const extId =
@@ -2456,6 +2475,7 @@
         explainTitle={lookup.providers.find((p) => p.key === explainKey)?.title}
         onnotnow={() => dispatch({ type: 'closeFloating' })}
         onoptions={optionsExt ? () => void openSettingsWindow(optionsExt) : undefined}
+        {menuOptions}
         onrestart={() => {
           const extId =
             lookup?.invocation?.extId ??

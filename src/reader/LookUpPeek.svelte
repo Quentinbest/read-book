@@ -17,6 +17,8 @@
           | 'unauthorized'
           | 'rate_limited'
           | 'unavailable'
+          /** Stage 3: the provider isn't set up yet (Open options). */
+          | 'not_configured'
           | 'timeout'
           | 'stopped'
           | 'bad'
@@ -57,6 +59,7 @@
     onexplain,
     explainTitle,
     onoptions,
+    menuOptions = [],
   }: {
     word: string
     /** The book's language, for the word and the quoted sentence (EA2). */
@@ -85,6 +88,8 @@
     explainTitle?: string
     /** LK8: a key the provider refused; the extension's options page, when it has one. */
     onoptions?: () => void
+    /** LK11: “‹name› options…” at the foot of the provider menu, one per extension with a page. */
+    menuOptions?: { key: string; label: string; open: () => void }[]
   } = $props()
 
   const GAP = 12
@@ -194,6 +199,8 @@
         return [t.lens.unauthorized(name), t.lens.unauthorizedDetail]
       case 'keychain':
         return [t.extAccess.keyUnavailable(name), t.extAccess.keyUnavailableDetail]
+      case 'not_configured':
+        return [t.lens.notConfigured(name), t.lens.notConfiguredDetail]
       case 'rate_limited':
         return [t.lens.rateLimited(name), t.lens.rateLimitedDetail]
       case 'unavailable':
@@ -217,7 +224,9 @@
 
   function menuKey(e: KeyboardEvent) {
     const items = Array.from(
-      peek?.querySelectorAll<HTMLElement>('.menu [role="menuitemradio"]') ?? [],
+      peek?.querySelectorAll<HTMLElement>(
+        '.menu [role="menuitemradio"], .menu [role="menuitem"]',
+      ) ?? [],
     )
     const i = items.indexOf(document.activeElement as HTMLElement)
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -389,7 +398,7 @@
       {:else if shown.kind === 'error'}
         {#if shown.error === 'stopped'}
           <button type="button" onclick={onrestart}>{t.lens.restart(name)}</button>
-        {:else if shown.error !== 'unauthorized' && shown.error !== 'keychain'}
+        {:else if !['unauthorized', 'keychain', 'not_configured'].includes(shown.error)}
           <button type="button" onclick={onretry}>{t.lens.tryAgain}</button>
         {:else if onoptions}
           <button type="button" data-open-options onclick={onoptions}
@@ -449,6 +458,24 @@
           >{item.label}
         </button>
       {/each}
+      {#if menuOptions.length}
+        <span class="sep" aria-hidden="true"></span>
+        {#each menuOptions as o (o.key)}
+          <button
+            type="button"
+            role="menuitem"
+            tabindex="-1"
+            data-menu-options={o.key}
+            onclick={() => {
+              menuOpen = false
+              o.open()
+            }}
+          >
+            <svg class="check" width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"
+            ></svg>{o.label}
+          </button>
+        {/each}
+      {/if}
     </div>
   {/if}
   <span class="pointer" aria-hidden="true"></span>

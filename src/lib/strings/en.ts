@@ -541,6 +541,8 @@ export const en = {
     timeout: (name: string) => `${name} didn’t answer within 10 seconds.`,
     unauthorized: (name: string) => `${name} didn’t accept the key.`,
     unauthorizedDetail: 'It may have expired or been revoked.',
+    notConfigured: (name: string) => `${name} isn’t set up yet.`,
+    notConfiguredDetail: 'Finish setting it up in its options.',
     rateLimited: (name: string) => `${name} is limiting requests.`,
     rateLimitedDetail: 'Try again in a minute.',
     unavailable: (name: string) => `${name} isn’t available right now.`,
@@ -611,6 +613,7 @@ export const en = {
     done: 'Done',
     keyUnavailable: (name: string) => `Linen couldn’t read the key for ${name}.`,
     keyUnavailableDetail: 'The Keychain may be locked, or access was refused. Nothing was sent.',
+    optionsItem: (name: string) => `${name} options…`,
     openOptions: 'Open options',
   },
   image: {

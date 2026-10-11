@@ -60,6 +60,10 @@ describe('LK2 result validator', () => {
       ok: false,
     })
     expect(validateResult({ ...ok, meaning: 'a < b and c > d' }).ok).toBe(true)
+    // What was sent is the book's own text, shown as text: code in it is not markup.
+    expect(validateResult({ ...ok, sent: 'Selected: Vec<T> and <div>' }).ok).toBe(true)
+    expect(validateResult({ ...ok, headword: 'Vec<T>' }).ok).toBe(true)
+    expect(validateResult({ ...ok, headword: '50% of the lines' }).ok).toBe(true)
   })
 
   it('checks each status’s own fields (EQ4, LK10)', () => {
@@ -69,6 +73,8 @@ describe('LK2 result validator', () => {
       validateResult({ ...base, status: 'needs_context', missing: 'Defined in chapter 3.' }).ok,
     ).toBe(true)
     expect(validateResult({ ...base, status: 'error', error: 'offline' }).ok).toBe(true)
+    // Stage 3: a provider that needs setting up first.
+    expect(validateResult({ ...base, status: 'error', error: 'not_configured' }).ok).toBe(true)
     expect(validateResult({ ...base, status: 'error', error: 'kaboom' })).toMatchObject({
       ok: false,
     })
