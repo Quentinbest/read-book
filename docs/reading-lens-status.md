@@ -5,9 +5,9 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 | Stage | State | Why |
 |---|---|---|
 | 1 Stuck-point diary | Running (owner, from 2026-10-11; item 85) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
-| 2a Lookup peek and selection context | Built; see below | — |
-| 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
-| 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
+| 2a Lookup peek and selection context | Released in 0.4.0 (2026-10-11); see below | — |
+| 2b Local dictionaries | Released in 0.4.0 (2026-10-11); see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
+| 2d Secrets, optional hosts, options pages | Released in 0.4.0 (2026-10-11); see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
 | 3 Explain and the offline check | In progress | Explain is built in the private repository `Quentinbest/linen-explain` (owner, 2026-10-11; DeepSeek first). Host additions below. The offline run needs Stage 1's stuck points and two bilingual reviewers |
 | 4–5 | Not started | After G2 |
 

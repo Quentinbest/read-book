@@ -66,6 +66,16 @@ The release checklist in §6.5 passes, on macOS only (the scope decision).
   - The draft got user-facing release notes.
 - **Checked after publishing:** the update address answers 0.3.0 for both architectures. Both archives are 0.3.0 for their architecture (arm64, x86_64), verify against the key in the app with `minisign-verify` (the updater's library; trusted comment `version:0.3.0`), and a changed byte is refused; `latest.json`'s signatures equal the `.sig` files. Last time these were checked before publishing.
 
+**v0.4.0, published 2026-10-11** (https://github.com/Quentinbest/read-book/releases/tag/v0.4.0): Reading Lens Stages 2a, 2b and 2d (#20, #23), the host additions for Explain and the peek's languages (#24, #25), the version bump and the release decisions in #28 (`docs/decisions.md`, “release 0.4.0”: the new translations ship as drafts; Stage 2d ships under Gate 0's waiver). Published by Claude at the owner's request, after the checks below.
+- **Before the tag:** the full in-app suite on `main` with the bump, 170/170. A first run had three flakes, each passing when rerun: a search-timing check, and two that use the real mouse while the owner was using the Mac. Bisecting `I-dictionary-frame` showed no regression.
+- **Release workflow:** the draft and both builds passed first time.
+- **Checked before publishing:**
+  - Both DMGs hold Linen 0.4.0 for their architecture (arm64, x86_64), ad-hoc signed, and `codesign --verify --deep --strict` passes; the arm64 DMG's checksum is valid.
+  - Both updater archives verify against the key in the app with `minisign-verify` 0.2.5 (the updater's library; trusted comment `version:0.4.0`), and a changed byte is refused; `latest.json`'s signatures equal the `.sig` files.
+  - The release binary holds none of the test-only key store or commands (`MemoryVault`, `spike_secret_save`, `spike_vault_deny`), and does hold the Keychain store.
+  - The draft got user-facing release notes, which say the new text in the four languages is a draft.
+- **Checked after publishing:** the update address answers 0.4.0 (HTTP 200), byte for byte the verified `latest.json`, and its archive links resolve.
+
 ## Work items
 
 | Item | Status |
