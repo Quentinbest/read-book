@@ -139,6 +139,20 @@ describe('LK11, LK15, EQ1 providers', () => {
     expect(readerLanguages('en')).toEqual(['en'])
   })
 
+  it('adds macOS’s preferred languages after the UI’s, Chinese with its script (item 86)', () => {
+    expect(readerLanguages('en', ['en-US', 'zh-Hans-CN', 'ja-JP'])).toEqual(['en', 'zh-Hans', 'ja'])
+    expect(readerLanguages('zh-Hans', ['zh-Hans-CN', 'en-GB'])).toEqual(['zh-Hans', 'en'])
+    expect(readerLanguages('en', ['zh-TW', 'zh-HK', 'zh_CN'])).toEqual(['en', 'zh-Hant', 'zh-Hans'])
+    expect(readerLanguages('en', ['fr-FR', 'de', 'es-ES', 'it', 'ja'])).toEqual([
+      'en',
+      'fr',
+      'de',
+      'es',
+    ])
+    expect(readerLanguages('ja', ['de', 'fr', 'it'])).toEqual(['ja', 'de', 'fr', 'en'])
+    expect(readerLanguages('en', ['', 'x-weird'])).toEqual(['en'])
+  })
+
   it('is plain text when one provider applies (LK15)', () => {
     const mac = lookupProviders([], { languages: ['en'], mac: true })
     expect(providerMenu(mac, 'mac').plain).toBe(true)

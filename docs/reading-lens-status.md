@@ -197,7 +197,7 @@ Checks: `LK8-options-page` covers the first two (the test provider's `unset` ste
 
 ### Known limits of Explain 0.1
 
-- **The answer's language** follows the peek's language menu, which offers only Linen's UI language and English (`readerLanguages`). With Linen in English there is no “Explain · 简体中文” (item 86).
+- **The answer's language** follows the peek's language menu. Since item 86 (2026-10-11) it offers Linen's UI language, then macOS's preferred languages, then English: on a Mac whose languages are English and 简体中文, “Explain · 简体中文” is there with Linen in English. The lens checks pass with those languages (33 of 33).
 - **No Test connection** in its options: an options page can't make requests through Linen.
 - **The study log** sees only what reaches the extension (answered, needs context, cancelled, errors); expanded, copied and “Helped / Wrong” stay in the peek.
 - **Retry-After** isn't exposed by `net.fetch`.

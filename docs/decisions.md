@@ -271,6 +271,13 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-11 (Reading Lens Stage 3, items 83 and 86)
+
+| # | Approved |
+|---|---|
+| “Not set up” and “‹name› options…” (83) | A lookup may answer `not_configured`, shown with Open options; the provider menu ends with “‹name› options…”. Experimental Host API 1.1. The English is approved; the four translations go to the native reviewers with item 82's. |
+| The peek's languages (86) | Extension lookups are offered in Linen's UI language, then macOS's preferred languages in their order, then English, at most four (`readerLanguages`). Chinese keeps its script (zh-Hans, zh-Hant). |
+
 ## Approved 2026-10-10 (Reading Lens Stage 2d, item 82)
 
 The owner approved item 82 as recommended (`docs/pending-approvals.md`).
