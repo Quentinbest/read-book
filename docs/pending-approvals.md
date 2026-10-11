@@ -217,6 +217,7 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     - **The notices:** `docs/providers.md` there lists each preset's notice and the policy page it comes from (checked 2026-10-11). What couldn't be confirmed (DeepSeek's API retention and training, Anthropic's retention period) is left out of the notices.
 
     *Recommendation:* run the live check, then approve the notices as written.
+    **Live check passed 2026-10-11** (DeepSeek, 1.7 s, valid answer, recorded). The notices still wait for approval.
 
 85. **Where Stage 3's offline items come from (G2).** The plan's offline run needs at least 60 items drawn from Stage 1's real stuck points, scored blind by two bilingual reviewers. Gate 0 was waived, so there are none. Options: (a) run the Stage 1 diary now (`docs/reading-lens-stage1.md`), which is still the only source of real items; (b) collect stuck points from your own reading with Linen's rose highlight, coded the same way; (c) a synthetic set, which the plan rejects (spec 4.9: “items drawn from the diary, not a 68-item synthetic set”).
     *Recommendation:* (a), with you as one of the readers; G2 can't be decided before the items and reviewers exist.
