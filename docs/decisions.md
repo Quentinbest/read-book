@@ -271,6 +271,13 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-11 (Reading Lens Stage 3, items 84 and 85)
+
+| # | Approved |
+|---|---|
+| Explain's live check and notices (84) | The DeepSeek live check passed (one fixed sentence; `deepseek-flash`, 1.7 s, a valid answer, recorded in `linen-explain`). Each preset's first-request notice is approved as written in `linen-explain/docs/providers.md` (checked 2026-10-11). |
+| Where the offline items come from (85) | The Stage 1 diary runs now, with the owner as one of the readers (`docs/reading-lens-stage1.md`). Its local stuck points are the offline check's items; G2 waits for them and for two bilingual reviewers. |
+
 ## Approved 2026-10-11 (Reading Lens Stage 3, items 83 and 86)
 
 | # | Approved |

@@ -4,7 +4,7 @@ The state of each stage of `docs/reading-lens-plan.md` (§5), on branch `reading
 
 | Stage | State | Why |
 |---|---|---|
-| 1 Stuck-point diary | Ready to start (owner) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
+| 1 Stuck-point diary | Running (owner, from 2026-10-11; item 85) | No code; thresholds set 2026-10-10. Guide and coding script: `docs/reading-lens-stage1.md`, `scripts/reading-lens/g0.py` |
 | 2a Lookup peek and selection context | Built; see below | — |
 | 2b Local dictionaries | Built; see below | O3 and O4 approved 2026-10-10 (items 78, 79) |
 | 2d Secrets, optional hosts, options pages | Built; see below | Gate 0 waived by the owner 2026-10-10 (not passed); Spike J passed. Canvas 12–13 baselines approved (item 82) |
@@ -192,9 +192,9 @@ Checks: `LK8-options-page` covers the first two (the test provider's `unset` ste
 | Installs in Linen | **Pass** | The package installed through Linen's own validation (`registry::install`, a temporary test, not committed): manifest, `when`, options page, six optional hosts |
 | End to end on this Mac | **Pass**, without any provider | `scripts/fake-ollama.mjs` stands in for Ollama on localhost: the real request, real HTTP, the answer read and validated |
 | Tried in the app by the owner | **Pass** (owner, 2026-10-11: “All worked”) | Explain 0.1.0 installed in a dev build of `main` (26be610): install sheet, options page, host sheet and key, the peek's states and the language menu. Which provider answered wasn't recorded |
-| Live check (DeepSeek) | **Pass** (2026-10-11) | Run by the owner: one fixed sentence, never book text. `deepseek-flash`, HTTP 200 in 1.7 s (the budget is 10 s), thinking off, a valid answer (“invalidate · 使失效”). The real response is recorded and replayed by the contract tests |
-| EX8 notice wording | **Waiting** (item 84) | Each notice says only what the provider's own policy page says; what couldn't be confirmed is left out and listed |
-| The offline run and G2 | **Blocked** (item 85) | Needs at least 60 items from Stage 1's real stuck points, and two bilingual reviewers. Gate 0 was waived, so no diary data exists |
+| Live check (DeepSeek) | **Pass** (2026-10-11; item 84 approved with the notices) | Run by the owner: one fixed sentence, never book text. `deepseek-flash`, HTTP 200 in 1.7 s (the budget is 10 s), thinking off, a valid answer (“invalidate · 使失效”). The real response is recorded and replayed by the contract tests |
+| EX8 notice wording | **Approved** 2026-10-11 (item 84) | Each notice says only what the provider's own policy page says; what couldn't be confirmed is left out and listed |
+| The offline run and G2 | **Waiting for the diary** (item 85 approved: Stage 1 runs now) | The kit is built in `linen-explain` (`offline/`): items from the coded diary sheets, answers from two or three models, blind sheets for two reviewers, and the scoring (α, the rate per model with its Clopper–Pearson bound). The rubric is item 87 (provisional) |
 
 ### Known limits of Explain 0.1
 

@@ -217,12 +217,21 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     - **The notices:** `docs/providers.md` there lists each preset's notice and the policy page it comes from (checked 2026-10-11). What couldn't be confirmed (DeepSeek's API retention and training, Anthropic's retention period) is left out of the notices.
 
     *Recommendation:* run the live check, then approve the notices as written.
-    **Live check passed 2026-10-11** (DeepSeek, 1.7 s, valid answer, recorded). The notices still wait for approval.
+    **Live check passed 2026-10-11** (DeepSeek, 1.7 s, valid answer, recorded). **Notices approved 2026-10-11.**
 
 85. **Where Stage 3's offline items come from (G2).** The plan's offline run needs at least 60 items drawn from Stage 1's real stuck points, scored blind by two bilingual reviewers. Gate 0 was waived, so there are none. Options: (a) run the Stage 1 diary now (`docs/reading-lens-stage1.md`), which is still the only source of real items; (b) collect stuck points from your own reading with Linen's rose highlight, coded the same way; (c) a synthetic set, which the plan rejects (spec 4.9: “items drawn from the diary, not a 68-item synthetic set”).
     *Recommendation:* (a), with you as one of the readers; G2 can't be decided before the items and reviewers exist.
+    **Approved 2026-10-11: (a).**
 
 86. **The peek's languages (LK11).** The peek offers extension lookups in Linen's UI language and English only. A Chinese-speaking reader with Linen in English can't choose “Explain · 简体中文”. The plan's audience is exactly that reader.
     *Recommendation:* add the languages from macOS's preferred languages (Settings › General › Language & Region) to the menu, after Linen's own; a small change in `readerLanguages`, with a unit test.
     **Approved 2026-10-11; built.**
+
+87. **How the offline check is scored (G2, provisional).** The plan sets the bound (item 59) but not the rubric. Built as follows in `linen-explain` (`offline/`, `docs/offline-run.md`):
+    - Each answer is scored blind by each reviewer: **verdict** `correct`, `partly` (right but vague or incomplete) or `wrong` (the meaning given is wrong for this passage); **severe** `y` when the answer is wrong *and* gives no sign of doubt (no qualifier, not “needs more context”), so a reader would likely take the wrong meaning; **term** `ok`, `wrong` or `na` for the Chinese term.
+    - **Agreement first:** Krippendorff's α on `severe` (nominal) must be at least .67 before any rate is used; α on `verdict` is reported beside it.
+    - **An answer counts as severe when either reviewer marks it** (the conservative reading); the rate when both mark it is reported too.
+    - The rate and its Clopper–Pearson 95% upper bound are reported **per model**; G2 passes for a model when the bound is at most 5%.
+    - Items: every local stuck point (L2, L3, L4, S1, S2) from the diary sheets, with the reader's name removed; at least 60.
+    *Recommendation:* approve as built.
 
