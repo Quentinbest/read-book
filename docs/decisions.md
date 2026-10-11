@@ -271,6 +271,15 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-11 (release 0.4.0)
+
+The owner asked for release 0.4.0 and chose, when asked:
+
+| Decision | What |
+|---|---|
+| Unreviewed translations ship as drafts | The zh-Hans, zh-Hant, ja and es text added since 0.3.0 (the lookup peek, Settings › Dictionaries, the host and key sheets, options pages; items 74, 81, 82, 83) ships as machine drafts, and the release notes say so. This amends item 74 (“before Stage 2a ships”): the native review (L-6) still happens, after the release. |
+| Stage 2d ships | Optional hosts, Keychain keys and options pages ship in 0.4.0 as experimental Host API 1.1. Gate 0's waiver (2026-10-10) covers shipping them, not only building them. |
+
 ## Approved 2026-10-11 (Reading Lens Stage 3, item 87)
 
 | # | Approved |
