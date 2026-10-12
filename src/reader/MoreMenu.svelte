@@ -80,6 +80,7 @@
 
 <div
   class="more"
+  data-reader-layer
   bind:this={menu}
   role="menu"
   tabindex="-1"

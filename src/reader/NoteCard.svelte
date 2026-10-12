@@ -98,6 +98,7 @@
 <div
   bind:this={card}
   class="note {mode}"
+  data-reader-layer
   role="dialog"
   tabindex="-1"
   aria-label={t.annotations.noteLabel}

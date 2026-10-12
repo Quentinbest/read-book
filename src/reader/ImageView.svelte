@@ -46,6 +46,7 @@
 
 <div
   class="image-view"
+  data-reader-layer
   role="dialog"
   tabindex="-1"
   aria-label={image.caption || t.image.label}

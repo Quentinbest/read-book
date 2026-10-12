@@ -247,6 +247,7 @@
 
 <div
   class="peek"
+  data-reader-layer
   class:above={!below}
   bind:this={peek}
   role="dialog"

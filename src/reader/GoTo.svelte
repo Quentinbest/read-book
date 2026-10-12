@@ -96,6 +96,7 @@
 
 <div
   class="goto"
+  data-reader-layer
   role="dialog"
   aria-label={t.goto.label}
   style:right={below ? undefined : `${Math.max(12, innerWidth - anchor.right - 20)}px`}

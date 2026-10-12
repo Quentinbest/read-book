@@ -36,6 +36,7 @@
 
 <div
   class="peek"
+  data-reader-layer
   bind:this={peek}
   bind:clientHeight={height}
   role="dialog"
