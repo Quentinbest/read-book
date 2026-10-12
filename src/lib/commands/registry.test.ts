@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
-import { chordLabel, isTextField, type KeyContext } from './keys'
+import { ariaKeyShortcuts, chordLabel, isTextField, type KeyContext } from './keys'
 import { CORE_COMMANDS, CommandRegistry } from './registry'
 
 const page: KeyContext = {
@@ -161,6 +161,11 @@ describe('labels', () => {
   it('uses macOS modifier order and glyphs', () => {
     expect(chordLabel({ code: 'KeyG', meta: true, shift: true })).toBe('⇧⌘G')
     expect(chordLabel({ code: 'KeyF', meta: true, ctrl: true })).toBe('⌃⌘F')
+    // SB2: the same chords for aria-keyshortcuts.
+    expect(ariaKeyShortcuts({ code: 'KeyD', meta: true, ctrl: true })).toBe('Control+Meta+D')
+    expect(ariaKeyShortcuts({ code: 'KeyN', meta: true, shift: true })).toBe('Shift+Meta+N')
+    expect(ariaKeyShortcuts({ code: 'F6' })).toBe('F6')
+    expect(ariaKeyShortcuts({ code: 'Equal', meta: true })).toBe('Meta+=')
     expect(chordLabel({ code: 'ArrowDown', alt: true })).toBe('⌥↓')
     expect(chordLabel({ code: 'BracketLeft', meta: true })).toBe('⌘[')
     expect(chordLabel({ code: 'Slash', shift: true })).toBe('?')

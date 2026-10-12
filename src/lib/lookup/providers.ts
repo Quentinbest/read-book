@@ -2,6 +2,7 @@
 // the answer that switches between them, and the label the core puts on an
 // answer. The core owns every label; providers only fill the LK2 fields.
 
+import type { LookupIcon } from '../extensions/types'
 import { t } from '../strings'
 import type { LookupResult } from './result'
 
@@ -15,6 +16,8 @@ export interface LookupProvider {
   lookupId?: string
   /** The extension's name (for its failure messages). */
   name?: string
+  /** SB4: the icon of the lookup's button on the bar, when it names one. */
+  icon?: LookupIcon | null
   /** BCP 47: the language the extension answers in (LK11: each language the reader uses). */
   language?: string
   /** Stage 2b: one of the reader's MDX dictionaries with an entry (DX11). */
@@ -52,11 +55,51 @@ export function readerLanguages(uiLocale: string, system: readonly string[] = []
 }
 
 /**
+ * SB1: the title each extension lookup shows, keyed by `extId/lookupId`. Lookups that share
+ * a title (case and surrounding space aside) add their extension's name, “Explain (Test
+ * Lookup)”. One whose extension is named like the title keeps the plain title when it is
+ * the only one; when names clash too, the extension's ID (then the lookup's) tells them
+ * apart. Worked out over every lookup there is, so a label never changes with the selection.
+ */
+export function distinctLookupTitles(
+  lookups: readonly { extId: string; id: string; title: string; name: string }[],
+): Map<string, string> {
+  const norm = (s: string) => s.trim().toLocaleLowerCase()
+  const out = new Map<string, string>()
+  const groups = new Map<string, (typeof lookups)[number][]>()
+  for (const l of lookups) groups.set(norm(l.title), [...(groups.get(norm(l.title)) ?? []), l])
+  for (const group of groups.values()) {
+    const plain = group.filter((l) => norm(l.name) === norm(l.title))
+    for (const l of group) {
+      if (group.length === 1 || (plain.length === 1 && plain[0] === l)) {
+        out.set(`${l.extId}/${l.id}`, l.title)
+        continue
+      }
+      const unique = (f: (x: (typeof lookups)[number]) => string) =>
+        group.filter((x) => norm(f(x)) === norm(f(l))).length === 1
+      const from = unique((x) => x.name)
+        ? l.name
+        : unique((x) => x.extId)
+          ? l.extId
+          : `${l.extId}/${l.id}`
+      out.set(`${l.extId}/${l.id}`, t.lens.titleFrom(l.title, from))
+    }
+  }
+  return out
+}
+
+/**
  * The extension lookups, one per language the reader uses, then the reader's own
  * dictionaries that have an entry, in their order (DX11), then this Mac's dictionaries.
  */
 export function lookupProviders(
-  lookups: { extId: string; id: string; title: string; name: string }[],
+  lookups: {
+    extId: string
+    id: string
+    title: string
+    name: string
+    icon?: LookupIcon | null
+  }[],
   options: {
     languages: string[]
     mac: boolean
@@ -79,6 +122,7 @@ export function lookupProviders(
         extId: l.extId,
         lookupId: l.id,
         name: l.name,
+        icon: l.icon ?? null,
         language,
       })
   for (const d of options.dicts ?? [])

@@ -89,11 +89,13 @@
       return () => registry.undefine(id)
     })
     // Reading Lens LK1: “Look Up with …” for each lookup; the open reader handles them.
+    // SB1: lookups that share a title are told apart by their extension.
+    const titles = extensions.lookupTitles
     for (const x of extensions.active)
       for (const l of x.manifest.contributes.lookups ?? []) {
         const id = registry.defineExtension(x.manifest.id, {
           id: `lookup.${l.id}`,
-          title: t.lens.lookUpWithCommand(l.title),
+          title: t.lens.lookUpWithCommand(titles.get(`${x.manifest.id}/${l.id}`) ?? l.title),
           extensionName: x.manifest.name,
         })
         const key = `${x.manifest.id}/${l.id}`

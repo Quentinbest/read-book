@@ -9,6 +9,8 @@ Approved so far; the record is in `docs/decisions.md`:
 - item 56, on 2026-10-07, and item 57, on 2026-10-08 (UI localisation).
 - items 58–76, on 2026-10-09 (Reading Lens). Item 60 with the MIT licence; item 59's values on 2026-10-10.
 - items 77–81, on 2026-10-10 (Reading Lens follow-ups and Stage 2b).
+- item 82, on 2026-10-10, and items 83–87, on 2026-10-11 (Reading Lens Stages 2d and 3).
+- items 88–96, on 2026-10-13 (compact selection bar).
 
 Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
@@ -236,3 +238,48 @@ The open questions of `docs/reading-lens-plan.md` (§2, O1–O17), with what thi
     *Recommendation:* approve as built.
     **Approved 2026-10-11.**
 
+## Compact selection bar (2026-10-13)
+
+The owner asked for a shorter selection bar, with Explain as an icon (2026-10-12). Plan: `docs/selection-bar-plan.md` (rules SB1–SB6); status: `docs/selection-bar-status.md`. Each item was built as recommended while it waited, except item 95. **All approved 2026-10-13 as recommended** (`docs/decisions.md`).
+
+88. **Icons in place of the bar's words (SB3; amends A1).** Note, Copy, Search (Delete for a clicked highlight) and Look Up show their icon only; the colour dots already do. Each has a tooltip (item 89) and a name for VoiceOver: Note, Copy, Search the book, Delete highlight, Look Up. A divider now sets Look Up (and item 91's button) apart from Note, Copy and Search. Attach here and Cancel, and the items inside “⋯”, keep their words; the right-click menu, the Edit menu, ⌘K and the cheat sheet keep naming every action. Delete can be undone. Measured in the captures: 475 → 298 px with no extension, about 518 → 332 px with Explain (its button, item 91), 524 → 347 px with “⋯” (Screen 12): a third shorter.
+    New string: “Delete highlight” (Search reuses “Search the book”), with machine drafts in the four languages.
+    *Recommendation:* approve; send the drafts to the native reviewers with item 74's.
+    **Approved 2026-10-13.**
+
+89. **The bar's tooltips (SB2).** X4 asks for tooltips on icon buttons; Linen's are the native `title`, which shows only on hover, after the system's delay, and can't keep clear of the selection. Proposed instead, for the bar: a tooltip after 500 ms of rest, then at once on the next button; at once on keyboard focus (F6, arrows); gone on leave, click, Esc or when the bar moves; on the side of the bar away from the selection; the tooltip colours already tested at 7:1 in every theme; never takes focus or changes the selection. Its text is the button's name and, where the command has one, its shortcut (“Look Up (⌃⌘D)”). Copy shows no ⌘C: ⌘C is the Edit menu's standard Copy, which may copy styled text, not Linen's plain-text Copy (B4); this wasn't checked in the app.
+    *Recommendation:* approve SB2 as written. Separately, check ⌘C on a reader selection; if it pastes plain text, the Copy tooltip can show it.
+    **Approved 2026-10-13.** The ⌘C check is still open.
+
+90. **Hit areas on the bar (X4).** X4 gives icon buttons 44 px hit areas. The bar's buttons have been 32 px since Phase 5 (the dots 30 px), in approved baselines; they were labelled, so X4 didn't apply. Icon-only, it would. Options: (a) keep the 32 px faces with no gaps between hit areas, and record an exception to X4 for the selection bar; (b) 44 px per icon, which adds about 70 px and leaves the bar about 20% shorter instead of about 35%.
+    *Recommendation:* (a). macOS toolbars use controls of this size; a pointer, not a finger, uses the bar (touch is deferred).
+    **Approved 2026-10-13: (a).**
+
+91. **Explain's button on the bar (SB4, SB5; amends LK1).** Explain moves from “⋯” to an icon button after Look Up, named and tooltipped “Explain in context” (the peek's approved words). The core can't name Explain (plan §1.2), so the rule is general: the first lookup that names an icon (item 92), whose condition holds and that isn't stuck, gets the button; others stay in “⋯”. It is hidden, never greyed, when it doesn't apply (over 40 words, a book not in English, fixed layout, safe mode). A stuck one goes back to “⋯” with Not responding and Restart, as Screen 12 draws. “⋯” shows only with something in it, so with Explain alone the bar ends at Explain. The peek's “Explain in context” opens the same lookup as the button. Choosing Explain still makes exactly one request, and selecting none (EP1).
+    *Recommendation:* approve.
+    **Approved 2026-10-13.**
+
+92. **Host API 1.2: a lookup's icon (SB4, SB6).** A lookup may name `"icon": "lightbulb"`, from a set the core draws; any other name is refused at install. Extensions never supply artwork for Linen's own bar. Linen 0.4.2 refuses manifests with fields it doesn't know, so Explain can name its icon only in a release that requires Host API 1.2 and ships after a Linen that has it. Older extensions (`^1.1`) install as before. The extension docs said lookups are “experimental until Host API 1.2”; they stay experimental in 1.2, whose only addition is `icon`.
+    *Recommendation:* approve Host API 1.2 with `icon`, lookups still experimental; release Linen first, then Explain 0.2.0.
+    **Approved 2026-10-13.**
+
+93. **The two “Explain” entries.** Checked, not assumed. Your library (read only) has the harness's **Test Lookup** (`test.lookup`, installed 2026-10-09), whose lookup is also titled “Explain”, besides Explain (installed 2026-10-11). Extensions are listed in install order, so the first “Explain” in “⋯”, and the peek's “Explain in context”, open the test provider. They differ: the test provider answers from a script in its storage and may reach only `127.0.0.1:8765`; Explain sends to the provider in its options (DeepSeek is granted). Explain itself contributes one lookup, and the bar shows each lookup once.
+    Built (provisional): lookups that share a title are told apart everywhere, “Explain (Test Lookup)” (SB1); the peek's button follows the bar's (SB5).
+    *Recommendation:* remove Test Lookup in Settings › Extensions (your library; nothing was changed there), and approve SB1 and its string “‹title› (‹name›)”, with machine drafts in the four languages.
+    **Approved 2026-10-13.** You remove Test Lookup in Settings › Extensions.
+
+94. **Explain's icon.** An outline lightbulb in Linen's icon style (24 px grid, 1.6 px stroke, round ends, no fill, no rays), drawn at 16 px like Note and Copy, inverted with the bar at Night. It means “make this clear”: what the words mean here. Not a magnifier (Search), an open book (Look Up), a speech bubble (Note) or a question mark (help). A sparkle would say “AI”, how it works rather than what the reader gets; it is the fallback if you want the AI visible on the bar. Tooltip: “Explain in context”.
+    *Recommendation:* approve the lightbulb.
+    **Approved 2026-10-13: the lightbulb.**
+
+95. **The extension's name (not built).** “Lens” is short, keeps the Reading Lens lineage, and reads well in “Lens options…” and “Restart Lens”; but it is generic, recalls Google Lens (camera search) and zoom, says nothing of what it does, and needs a name check before any public release. Whatever the name, the action stays “Explain”: Linen builds “‹title› in context”, “Look Up with ‹title›” and “‹title› · 简体中文” from the lookup's title, and “Lens in context” says nothing. Only the display name changes; the ID stays, so keys (Keychain account `<extension id>/<name>`), grants and storage carry over (checked in the code).
+    Options: (a) **Reading Lens**: distinctive, says what it's for, matches the spec; its length costs little, because the name appears in Settings, sheets and status lines, never on the bar. (b) **Lens**, if brevity matters more. (c) **Gloss**: exactly “an explanation of a word in its passage”, but less familiar to the readers it is for (Chinese speakers reading English), and “gloss over” is negative.
+    *Recommendation:* (a) Reading Lens, in Explain 0.2.0.
+    **Approved 2026-10-13: (a) Reading Lens.** Applied in `linen-explain` 0.2.0.
+
+96. **Selection bar captures (items 88–94).** In `docs/visual/app/`, from `scripts/e2e.sh v` on the current desktop (active window), 2026-10-13:
+    - Changed: `06-selection-bar` and `14-night-selection` (icons, tooltips' names, the divider before Look Up), `12-extension-failure` (the same bar; “⋯” with the stuck Dictionary, Not responding and one Restart, unchanged).
+    - New: `sb-bar-lookup-paper` and `sb-bar-lookup-night` (the test provider's lightbulb after Look Up, no “⋯” because nothing else applies to that passage), `sb-bar-tooltip-paper` (“Explain in context” above the bar, clear of the selection).
+    - Not changed by this work, though they differ from their baselines: `03-more-menu`, `04`, `05`, `16`, `17-goto` (as item 77 records) and `rl-05-menu-*` (the macOS languages item 86 added to the peek's menu after its baseline). Their captures were not kept.
+    *Recommendation:* approve the six as baselines once items 88, 91 and 94 are decided; recapture if any of them changes.
+    **Approved 2026-10-13.** Copied into `docs/visual/baselines/webkit-19618/`.

@@ -13,7 +13,8 @@
   import { testHooks } from '../app/testHooks'
   import type { WriteQueue } from '../app/writes'
   import { NativeTurns, type NativeScroll } from '../lib/input/native'
-  import type { KeyContext } from '../lib/commands/keys'
+  import { ariaKeyShortcuts, chordLabel, type KeyContext } from '../lib/commands/keys'
+  import { layoutLabels } from '../app/keyLabels'
   import type { CommandRegistry } from '../lib/commands/registry'
   import { LocationHistory } from '../lib/reader/history'
   import type { MessageQueue } from '../lib/reader/messages'
@@ -1137,7 +1138,12 @@
       dicts,
     })
   }
-  /** Lookups offered in the bar's “⋯” (LK1, LK14). */
+  /** SB2: a command's current shortcut (a remapped one included), for the bar's tooltips. */
+  function barShortcut(command: string) {
+    const c = registry.get(command)?.chord
+    return c ? { label: chordLabel(c, layoutLabels()), aria: ariaKeyShortcuts(c) } : null
+  }
+  /** Lookups offered in the bar: one as its own button (SB4), the others in “⋯” (LK1, LK14). */
   const barLookups = $derived.by(() => {
     if (!bar || bar.mode === 'attach') return []
     const text =
@@ -1159,6 +1165,7 @@
         title: p.title,
         extId: p.extId!,
         name: p.name ?? p.title,
+        icon: p.icon ?? null,
         status: extensions.status[p.extId!] ?? 'idle',
       }))
   })
@@ -1382,8 +1389,16 @@
     const off = listen('dictionaries-changed', countDictionaries)
     return () => void off.then((f) => f())
   })
-  /** Canvas 11: “Explain in context” switches to the first extension lookup. */
-  const explainKey = $derived(lookup?.providers.find((p) => p.kind === 'extension')?.key ?? null)
+  /**
+   * Canvas 11: “Explain in context” switches to an extension lookup. SB5: the one with the
+   * bar's button when there is one (so the two open the same thing), otherwise the first.
+   */
+  const explainKey = $derived.by(() => {
+    const ours = lookup?.providers.filter((p) => p.kind === 'extension') ?? []
+    const stuck = (p: LookupProvider) =>
+      ['not-responding', 'suspended'].includes(extensions.status[p.extId!] ?? 'idle')
+    return (ours.find((p) => p.icon && !stuck(p)) ?? ours[0])?.key ?? null
+  })
   function openInDictionary() {
     const word = lookup?.word
     dispatch({ type: 'closeFloating' })
@@ -2664,6 +2679,7 @@
           closeBar(false)
           registry.run('app.settings')
         }}
+        shortcut={barShortcut}
       />
     {/if}
     {#if noteOpen && noteFor}

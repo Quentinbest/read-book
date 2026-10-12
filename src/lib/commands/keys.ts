@@ -96,6 +96,24 @@ export function chordLabel(c: Chord, layout?: ReadonlyMap<string, string>): stri
   )
 }
 
+/** SB2: the same chord as `aria-keyshortcuts` wants it, e.g. `Control+Meta+D`. */
+export function ariaKeyShortcuts(c: Chord): string {
+  const keys: Record<string, string> = {
+    Equal: '=',
+    Minus: '-',
+    Slash: '/',
+    BracketLeft: '[',
+    BracketRight: ']',
+    Comma: ',',
+    Period: '.',
+  }
+  const m = /^(Key|Digit)(.)$/.exec(c.code)
+  const key = m ? m[2] : (keys[c.code] ?? c.code)
+  return [c.ctrl && 'Control', c.alt && 'Alt', c.shift && 'Shift', c.meta && 'Meta', key]
+    .filter(Boolean)
+    .join('+')
+}
+
 /** True when the focused element takes text input. */
 export function isTextField(el: Element | null): boolean {
   if (!el) return false

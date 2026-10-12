@@ -29,6 +29,8 @@ export const ICONS = {
     'M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5zM12 6.5v13',
   grid: 'M4.5 4.5h6v6h-6zM13.5 4.5h6v6h-6zM4.5 13.5h6v6h-6zM13.5 13.5h6v6h-6z',
   list: 'M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01',
+  // SB4 (approved 2026-10-13, item 94): a lookup's button, “make this clear”; a bulb and its base.
+  lightbulb: 'M9.5 17.5c0-1.6-.7-2.5-1.5-3.5A6.2 6.2 0 1 1 16 14c-.8 1-1.5 1.9-1.5 3.5zM10 20.8h4',
 } as const
 
 export type IconName = keyof typeof ICONS

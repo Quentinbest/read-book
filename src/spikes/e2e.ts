@@ -155,6 +155,18 @@ const barButton = (label: RegExp) =>
   Array.from(selBar()?.querySelectorAll<HTMLButtonElement>('button') ?? []).find((b) =>
     label.test(b.getAttribute('aria-label') ?? b.textContent ?? ''),
   )
+/**
+ * A lookup in the selection bar: its own button when it names an icon (SB4), otherwise
+ * its item in “⋯”, which this opens. Works in any language.
+ */
+const lookupItem = async (key: string) => {
+  const own = selBar()?.querySelector<HTMLButtonElement>(`:scope > [data-lookup-item="${key}"]`)
+  if (own) return own
+  if (!selBar()?.querySelector('.ext-menu'))
+    selBar()?.querySelector<HTMLButtonElement>('.action.more')?.click()
+  await settled(150)
+  return selBar()?.querySelector<HTMLButtonElement>(`.ext-menu [data-lookup-item="${key}"]`) ?? null
+}
 const pressBar = async (label: RegExp) => {
   const b = barButton(label)
   if (!b) throw new Error(`no ${label} in the selection bar`)
@@ -2346,15 +2358,15 @@ export async function spikeE2E(): Promise<SpikeResult> {
       clickOn(range)
       const bar = await waitFor('bar for the highlight', selBar)
       await settled(150)
-      if (!barButton(/^delete$/i)) problems.push('no Delete')
-      if (barButton(/^search$/i)) problems.push('Search shown for a highlight')
+      if (!barButton(/^delete highlight$/i)) problems.push('no Delete')
+      if (barButton(/^search the book$/i)) problems.push('Search shown for a highlight')
       const current = bar.querySelector('button[aria-pressed="true"]')?.getAttribute('aria-label')
       if (!/blue/i.test(current ?? '')) problems.push(`current colour “${current}”`)
       key('Escape', { code: 'Escape' })
       await settled(300)
       // A drag that starts on the highlight: a new selection, with the new-selection bar.
       await selectPhrase('drizzly November in my soul; whenever I find')
-      if (!barButton(/^search$/i))
+      if (!barButton(/^search the book$/i))
         problems.push('a drag from a highlight did not start a new selection')
       pageDoc().doc.getSelection()?.removeAllRanges()
       key('Escape', { code: 'Escape' })
@@ -2376,7 +2388,7 @@ export async function spikeE2E(): Promise<SpikeResult> {
         pageDoc().doc.getSelection()?.removeAllRanges()
         clickOn(range)
         await waitFor('bar', selBar)
-        await pressBar(/^delete$/i)
+        await pressBar(/^delete highlight$/i)
       }
       await del()
       if (annotationsOf().get(november)) problems.push('not deleted')
@@ -5599,15 +5611,11 @@ export async function spikeE2E(): Promise<SpikeResult> {
   }
   const lensPeek = () => document.querySelector<HTMLElement>('[data-lookup]')
   const peekState = () => lensPeek()?.getAttribute('data-state') ?? null
-  /** Open the bar's “⋯” and choose a lookup (LK1). */
+  /** Choose a lookup in the bar: its button (SB4) or its item in “⋯” (LK1). */
   const chooseLookup = async (key = EXPLAIN) => {
     await waitFor('bar', selBar)
-    const more = barButton(/more actions from extensions/i)
-    if (!more) throw new Error('no ⋯ in the bar')
-    more.click()
-    await settled(150)
-    const item = selBar()?.querySelector<HTMLButtonElement>(`[data-lookup-item="${key}"]`)
-    if (!item) throw new Error(`no ${key} in ⋯`)
+    const item = await lookupItem(key)
+    if (!item) throw new Error(`no ${key} in the bar or ⋯`)
     item.click()
     return waitFor('the lookup peek', lensPeek, 2000)
   }
@@ -5796,6 +5804,291 @@ export async function spikeE2E(): Promise<SpikeResult> {
     },
   )
 
+  // SB1 (docs/selection-bar-plan.md): a second lookup titled “Explain”, as in the owner's
+  // library (item 93), and every place a lookup is offered tells the two apart.
+  const TWIN = 'test.lookup-twin'
+  lensCheck(
+    'SB1-same-title',
+    'SB1: two lookups titled “Explain” are told apart by their extension in the bar, the right-click menu, ⌘K and the peek’s provider menu',
+    async (problems) => {
+      await lensWithBook()
+      try {
+        if (!ext().get(TWIN)) {
+          await withSettings((root) => installViaSettings(root, 'lookup-twin'))
+          await waitFor('the twin installed', () => ext().get(TWIN), 5000)
+        }
+        const ours = /\(Test Lookup\)/
+        const twin = /\(Twin Lookup\)/
+        const range = await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        barButton(/more actions from extensions/i)?.click()
+        await settled(150)
+        const label = (key: string) => {
+          const b = selBar()?.querySelector<HTMLElement>(`[data-lookup-item="${key}"]`)
+          return b ? (b.getAttribute('aria-label') ?? b.textContent ?? '') : ''
+        }
+        const inBar = [label(EXPLAIN), label(`${TWIN}/explain@en`)]
+        if (!ours.test(inBar[0]) || !twin.test(inBar[1])) problems.push(`bar: ${inBar.join(' | ')}`)
+        key('Escape', { code: 'Escape' })
+        await settled(150)
+        hooks.contextMenu = undefined
+        const r = Array.from(range.getClientRects()).find((x) => x.width > 4)!
+        range.startContainer.parentElement!.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            clientX: r.left + r.width / 2,
+            clientY: r.top + r.height / 2,
+            bubbles: true,
+            cancelable: true,
+          }),
+        )
+        await settled(100)
+        const recorded = () => hooks.contextMenu
+        const menu = recorded()?.labels ?? []
+        for (const want of [
+          'Look Up with Explain (Test Lookup)',
+          'Look Up with Explain (Twin Lookup)',
+        ])
+          if (!menu.includes(want)) problems.push(`right-click menu has no “${want}”`)
+        const palette = (id: string) =>
+          hooks.registry!.available().find((c) => c.id === id)?.title ?? ''
+        const cmds = [
+          palette('extension:test.lookup:lookup.explain'),
+          palette(`extension:${TWIN}:lookup.explain`),
+        ]
+        if (!ours.test(cmds[0]) || !twin.test(cmds[1])) problems.push(`⌘K: ${cmds.join(' | ')}`)
+        // The peek's provider menu, from Look Up.
+        await selectPhrase('drizzly')
+        await pressBar(/Look Up/)
+        const peek = await waitFor('peek', lensPeek)
+        peek.querySelector<HTMLButtonElement>('button.provider')?.click()
+        await settled(150)
+        const items = Array.from(peek.querySelectorAll('[role="menuitemradio"]')).map(
+          (b) => b.textContent?.trim() ?? '',
+        )
+        const lookups = items.filter((s) => /^Explain/.test(s))
+        if (!lookups.some((s) => ours.test(s)) || !lookups.some((s) => twin.test(s)))
+          problems.push(`peek menu: ${items.join(' | ')}`)
+        if (lookups.some((s) => !ours.test(s) && !twin.test(s)))
+          problems.push(`peek menu has a plain Explain: ${lookups.join(' | ')}`)
+      } finally {
+        if (ext().get(TWIN)) {
+          await invoke('extension_remove', { id: TWIN, deleteData: true })
+          await emit('extensions-changed')
+          await waitFor('the twin removed', () => !ext().get(TWIN), 5000)
+        }
+      }
+    },
+  )
+
+  checks.push({
+    id: 'SB2-bar-tooltips',
+    description:
+      'SB2: a bar button’s tooltip shows after a 500 ms rest and at once on the next button; at once on keyboard focus; gone on leave, a press and Esc; on the side of the bar away from the selection, inside the window; the selection never changes and no button has a title',
+    run: async () => {
+      const problems: string[] = []
+      await mobyOpen()
+      await toLoomings()
+      const range = await selectPhrase('drizzly')
+      const bar = await waitFor('bar', selBar)
+      await settled(150)
+      const selected = () => pageDoc().doc.getSelection()?.toString()
+      const before = selected()
+      const frame = () => new Promise((r) => requestAnimationFrame(() => r(null)))
+      const tipEl = () => bar.querySelector<HTMLElement>('.tip')
+      const text = () => tipEl()?.textContent?.trim() ?? null
+      const over = (b: Element, from: Element | null = null) =>
+        b.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: from }))
+      const out = (b: Element, to: Element | null = null) =>
+        b.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: to }))
+      const note = barButton(/^note/i)
+      const copy = barButton(/^copy$/i)
+      const lookUp = barButton(/^look up/i)
+      if (!note || !copy || !lookUp) return 'no Note, Copy or Look Up in the bar'
+      // Rest, then at once on the next button.
+      over(note)
+      await settled(300)
+      if (tipEl()) problems.push('a tooltip before the rest')
+      await settled(400)
+      if (text() !== note.dataset.tip) problems.push(`Note’s tooltip “${text()}”`)
+      if (!/ \(⇧⌘N\)$/.test(text() ?? ''))
+        problems.push(`Note’s tooltip has no shortcut: “${text()}”`)
+      out(note, copy)
+      over(copy, note)
+      await frame()
+      if (text() !== copy.dataset.tip) problems.push(`not at once on Copy: “${text()}”`)
+      const tr = tipEl()?.getBoundingClientRect()
+      const br = bar.getBoundingClientRect()
+      const lines = lineRects(range)
+      if (tr) {
+        if (tr.left < 0 || tr.right > innerWidth || tr.top < 0 || tr.bottom > innerHeight)
+          problems.push('the tooltip is outside the window')
+        const barAbove = br.bottom <= lines[0].top
+        if (barAbove ? tr.bottom > br.top : tr.top < br.bottom)
+          problems.push('the tooltip is on the selection’s side')
+        if (lines.some((l) => overlaps(tr, l))) problems.push('the tooltip covers the selection')
+      }
+      out(copy)
+      await frame()
+      if (tipEl()) problems.push('still shown after the pointer left')
+      // Past the warm time it waits again.
+      await settled(400)
+      over(lookUp)
+      await settled(100)
+      if (tipEl()) problems.push('at once after the warm time')
+      await settled(500)
+      if (!/^Look Up \(⌃⌘D\)$/.test(text() ?? '')) problems.push(`Look Up’s tooltip “${text()}”`)
+      lookUp.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }))
+      await frame()
+      if (tipEl()) problems.push('still shown after a press')
+      out(lookUp)
+      await settled(400)
+      // Keyboard: F6 and the arrows show it at once; Esc hides it.
+      key('F6', { code: 'F6' })
+      await settled(100)
+      const first = document.activeElement as HTMLElement
+      if (!bar.contains(first)) problems.push('F6 did not reach the bar')
+      else if (text() !== first.dataset.tip)
+        problems.push(`F6: “${text()}” for “${first.dataset.tip}”`)
+      first.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'End', bubbles: true, cancelable: true }),
+      )
+      await frame()
+      const last = document.activeElement as HTMLElement
+      if (text() !== last.dataset.tip) problems.push(`End: “${text()}” for “${last.dataset.tip}”`)
+      last.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+      )
+      await settled(150)
+      if (tipEl()) problems.push('still shown after Esc')
+      if (bar.contains(document.activeElement)) problems.push('Esc left focus in the bar')
+      if (selected() !== before) problems.push(`the selection changed to “${selected()}”`)
+      if (bar.querySelector('[title]')) problems.push('a button on the bar has a title')
+      key('Escape', { code: 'Escape' })
+      pageDoc().doc.getSelection()?.removeAllRanges()
+      await settled(200)
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  lensCheck(
+    'SB4-lookup-button',
+    'SB4, SB5: a lookup that names an icon has a button after Look Up, “‹title› in context”, even when another lookup was installed first; it asks once; none for 41 words, in safe mode or while stuck (then it is in ⋯ with Restart); ⋯ only with something in it; the peek’s “in context” opens the same lookup',
+    async (problems) => {
+      // The twin first, so the button's lookup isn't the first one (SB5).
+      await mobyOpen()
+      await toLoomings()
+      await lens.remove()
+      await withSettings((root) => installViaSettings(root, 'lookup-twin'))
+      await waitFor('the twin installed', () => ext().get(TWIN), 5000)
+      await lens.install()
+      try {
+        const own = () =>
+          selBar()?.querySelector<HTMLButtonElement>(`:scope > [data-lookup-item="${EXPLAIN}"]`)
+        await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        const button = own()
+        if (!button) return void problems.push('no button for the lookup with an icon')
+        const name = 'Explain (Test Lookup) in context'
+        if (button.getAttribute('aria-label') !== name || button.dataset.tip !== name)
+          problems.push(`named “${button.getAttribute('aria-label')}”`)
+        if (!button.querySelector('svg')) problems.push('the button has no icon')
+        const prev = button.previousElementSibling as HTMLElement | null
+        if (prev?.getAttribute('aria-label') !== 'Look Up') problems.push('not right after Look Up')
+        if (selBar()?.querySelector(`:scope > [data-lookup-item="${TWIN}/explain@en"]`))
+          problems.push('the twin, with no icon, has a button')
+        const twinItem = await lookupItem(`${TWIN}/explain@en`)
+        if (!twinItem?.closest('.ext-menu')) problems.push('the twin is not in ⋯')
+        if (selBar()?.querySelector(`.ext-menu [data-lookup-item="${EXPLAIN}"]`))
+          problems.push('the button’s lookup is in ⋯ too')
+        key('Escape', { code: 'Escape' })
+        await settled(150)
+        // It asks once, when chosen.
+        await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        if ((await lens.count('asked')) !== 0) problems.push('asked before it was chosen')
+        own()?.click()
+        await answered()
+        if ((await lens.count('asked')) !== 1) problems.push('the button did not ask once')
+        await closePeek()
+        // SB5: the peek's “in context”, from Look Up, opens the button's lookup.
+        await selectPhrase('drizzly')
+        await pressBar(/^Look Up$/)
+        const peek = await waitFor('peek', lensPeek)
+        await waitFor('the peek settles', () => peekState() !== 'pending', 5000).catch(() => {})
+        const inContext = Array.from(
+          peek.querySelectorAll<HTMLButtonElement>('.footer button'),
+        ).find((b) => / in context$/.test(b.textContent ?? ''))
+        if (!inContext) problems.push('no “in context” in the Look Up peek')
+        else {
+          if (inContext.textContent?.trim() !== name)
+            problems.push(`the peek's button says “${inContext.textContent?.trim()}”`)
+          inContext.click()
+          await settled(300)
+          if (lensPeek()?.getAttribute('data-provider') !== EXPLAIN)
+            problems.push(`“in context” opened ${lensPeek()?.getAttribute('data-provider')}`)
+        }
+        await closePeek()
+        // 41 words: hidden, never greyed.
+        const { extractText } = await import('../lib/search/extract')
+        const text = extractText(pageDoc().doc.body).text
+        const start = text.indexOf('Call me Ishmael')
+        const long = text.slice(start).split(/(\s+)/).slice(0, 81).join('')
+        await selectPhrase(text.slice(0, start + long.length), { from: start })
+        await waitFor('bar', selBar)
+        if (selBar()?.querySelector(`[data-lookup-item="${EXPLAIN}"]`))
+          problems.push('a button for 41 words')
+        key('Escape', { code: 'Escape' })
+        // Stuck: back in ⋯, marked, with Restart.
+        ext().status[LENS] = 'not-responding'
+        try {
+          await selectPhrase('drizzly')
+          await waitFor('bar', selBar)
+          if (own()) problems.push('a stuck lookup keeps its button')
+          const item = await lookupItem(EXPLAIN)
+          if (!item?.disabled) problems.push('the stuck lookup is not marked in ⋯')
+          if (
+            !Array.from(selBar()?.querySelectorAll('.ext-menu button') ?? []).some((b) =>
+              /Restart/.test(b.textContent ?? ''),
+            )
+          )
+            problems.push('no Restart for the stuck lookup')
+          key('Escape', { code: 'Escape' })
+        } finally {
+          ext().status[LENS] = 'idle'
+        }
+        // Safe mode: nothing.
+        ext().safeMode = true
+        try {
+          await selectPhrase('drizzly')
+          await waitFor('bar', selBar)
+          if (selBar()?.querySelector('[data-lookup-item]')) problems.push('a lookup in safe mode')
+        } finally {
+          ext().safeMode = false
+        }
+        key('Escape', { code: 'Escape' })
+      } finally {
+        if (ext().get(TWIN)) {
+          await invoke('extension_remove', { id: TWIN, deleteData: true })
+          await emit('extensions-changed')
+          await waitFor('the twin removed', () => !ext().get(TWIN), 5000)
+        }
+      }
+      // With no other lookup or action, ⋯ has nothing to offer and doesn't show.
+      const others = ext().slotted.filter(
+        (x) =>
+          x.manifest.id !== LENS &&
+          ((x.manifest.contributes.lookups ?? []).length ||
+            x.manifest.contributes.selectionActions.length),
+      )
+      if (!others.length) {
+        await selectPhrase('drizzly')
+        await waitFor('bar', selBar)
+        if (selBar()?.querySelector('.action.more')) problems.push('⋯ shows with nothing in it')
+        key('Escape', { code: 'Escape' })
+      }
+    },
+  )
+
   lensCheck(
     'LK1-peek-placement',
     'AC3: the peek is up within 100 ms, below the selection with a pointer, never over a selected line; near the page foot it opens above; Pages and Scroll',
@@ -5808,10 +6101,10 @@ export async function spikeE2E(): Promise<SpikeResult> {
         await toLoomings()
         const range = await selectPhrase('drizzly')
         await waitFor('bar', selBar)
-        barButton(/more actions from extensions/i)!.click()
-        await settled(150)
+        const item = await lookupItem(EXPLAIN)
+        if (!item) throw new Error('no Explain in the bar')
         const t0 = performance.now()
-        selBar()!.querySelector<HTMLButtonElement>(`[data-lookup-item="${EXPLAIN}"]`)!.click()
+        item.click()
         await new Promise((r) => requestAnimationFrame(() => r(null)))
         const ms = performance.now() - t0
         if (!lensPeek()) problems.push(`${mode}: no peek in the next frame`)
@@ -7368,7 +7661,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
       if (!selBar()?.contains(document.activeElement)) problems.push('F6 did not enter the bar')
       let found = false
       for (let i = 0; i < 12 && !found; i++) {
-        found = /Look Up/.test((document.activeElement as HTMLElement | null)?.textContent ?? '')
+        const focused = document.activeElement as HTMLElement | null
+        // SB3: the bar's buttons are named by aria-label, not by their (icon-only) content.
+        found = /^Look Up$/.test(focused?.getAttribute('aria-label') ?? focused?.textContent ?? '')
         if (!found) {
           document.activeElement?.dispatchEvent(
             new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
@@ -8066,6 +8361,26 @@ export async function spikeVisual(): Promise<SpikeResult> {
   await hooks.extensions!.load()
   await emit('extensions-changed')
   await settled(400)
+  // SB4 (docs/selection-bar-plan.md, items 88–94): the bar with a lookup's button (the test
+  // provider names the lightbulb) beside “⋯” (the sample Dictionary), Paper and Night, and
+  // a tooltip (SB2).
+  for (const theme of ['paper', 'night']) {
+    await openIn(theme)
+    await hideControls()
+    clearMessage()
+    await selectPhrase(MANHATTOES)
+    const bar = await waitFor('selection bar', selBar)
+    await capture(`sb-bar-lookup-${theme}`)
+    if (theme === 'paper') {
+      const button = bar.querySelector<HTMLElement>(':scope > [data-lookup-item]')
+      button?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+      await capture('sb-bar-tooltip-paper')
+      button?.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }))
+    }
+    key('Escape', { code: 'Escape' })
+    pageDoc().doc.getSelection()?.removeAllRanges()
+    await settled(300)
+  }
   const lensScript = (script: Record<string, unknown>) =>
     invoke('extension_storage_set', {
       id: 'test.lookup',
@@ -8076,11 +8391,7 @@ export async function spikeVisual(): Promise<SpikeResult> {
   const explain = async (phrase: string, wait: (state: string | null) => boolean) => {
     await selectPhrase(phrase)
     await waitFor('bar', selBar)
-    barButton(startsWith(t.extensions.more))?.click()
-    await settled(150)
-    selBar()!
-      .querySelector<HTMLButtonElement>('[data-lookup-item="test.lookup/explain@en"]')!
-      .click()
+    ;(await lookupItem('test.lookup/explain@en'))!.click()
     await waitFor(
       'the peek',
       () => peekShown() && wait(peekShown()!.getAttribute('data-state')),
@@ -8223,9 +8534,7 @@ export async function spikeVisual(): Promise<SpikeResult> {
       })
       await selectPhrase('spleen')
       await waitFor('bar', selBar)
-      barButton(startsWith(t.extensions.more))?.click()
-      await settled(150)
-      selBar()!.querySelector<HTMLButtonElement>(`[data-lookup-item="${KEYED}/keyed@en"]`)!.click()
+      ;(await lookupItem(`${KEYED}/keyed@en`))!.click()
       await waitFor(
         'the peek',
         () => peekShown() && wait(peekShown()!.getAttribute('data-state')),

@@ -5,7 +5,7 @@
       "id": "visual-captured",
       "description": "Baseline candidates captured",
       "verdict": "manual",
-      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions, 11-settings-reading, 11-settings-shortcuts, 12-extension-failure, rl-02-pending-paper, rl-03-answer-paper, rl-04-more-paper, rl-05-menu-paper, rl-06-sent-paper, rl-07-needs-context-paper, rl-08-notice-paper, rl-09-error-offline-paper, rl-09-error-key-paper, rl-11-mac-dictionary-paper, rl-03-answer-night, rl-05-menu-night, rl-11-mac-dictionary-night, rl-03-answer-sepia, rl-11-dictionary-entry-paper, rl-11-dictionary-entry-night, rl-14-settings-dictionaries, rl-13-host-sheet, rl-09-error-keychain-paper, rl-12-settings-sends-to, rl-12-options-dialog"
+      "evidence": "02-reader-immersive-paper, 03-reader-controls-paper, 10-reader-sepia, 10-reader-night, 14-night-controls, g8-spread-immersive, g8-spread-controls, g8-scroll-reading, g8-scroll-join, g8-rtl-controls, g8-fxl-fit, g8-fxl-zoom, 04-navigator-contents, 16-command-palette, g10-cheat-sheet, 03-more-menu, 17-goto, 17-footnote-peek, 05-navigator-search, 06-selection-bar, 07-margin-note, 08-navigator-notes, 14-night-selection, 15-note-sheet, 09-reading-settings, 01-library, 12-damaged-book, 12-empty-library, 11-settings-extensions, 11-settings-reading, 11-settings-shortcuts, 12-extension-failure, sb-bar-lookup-paper, sb-bar-tooltip-paper, sb-bar-lookup-night, rl-02-pending-paper, rl-03-answer-paper, rl-04-more-paper, rl-05-menu-paper, rl-06-sent-paper, rl-07-needs-context-paper, rl-08-notice-paper, rl-09-error-offline-paper, rl-09-error-key-paper, rl-11-mac-dictionary-paper, rl-03-answer-night, rl-05-menu-night, rl-11-mac-dictionary-night, rl-03-answer-sepia, rl-11-dictionary-entry-paper, rl-11-dictionary-entry-night, rl-14-settings-dictionaries, rl-13-host-sheet, rl-09-error-keychain-paper, rl-12-settings-sends-to, rl-12-options-dialog"
     },
     {
       "id": "visual-overflow",
@@ -49,6 +49,9 @@
       "11-settings-reading": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/11-settings-reading.png",
       "11-settings-shortcuts": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/11-settings-shortcuts.png",
       "12-extension-failure": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/12-extension-failure.png",
+      "sb-bar-lookup-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/sb-bar-lookup-paper.png",
+      "sb-bar-tooltip-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/sb-bar-tooltip-paper.png",
+      "sb-bar-lookup-night": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/sb-bar-lookup-night.png",
       "rl-02-pending-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-02-pending-paper.png",
       "rl-03-answer-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-03-answer-paper.png",
       "rl-04-more-paper": "/Users/quentin/workspace/claude-work/read-book/src-tauri/../docs/visual/app/rl-04-more-paper.png",
@@ -107,6 +110,9 @@
       "11-settings-reading": [],
       "11-settings-shortcuts": [],
       "12-extension-failure": [],
+      "sb-bar-lookup-paper": [],
+      "sb-bar-tooltip-paper": [],
+      "sb-bar-lookup-night": [],
       "rl-02-pending-paper": [],
       "rl-03-answer-paper": [],
       "rl-04-more-paper": [],
@@ -137,7 +143,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791642522,
+    "time": 1791825421,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

@@ -402,6 +402,8 @@ export const en = {
     copy: 'Copy',
     search: 'Search',
     delete: 'Delete',
+    // SB3 (approved 2026-10-13, item 88): the icon's name and tooltip.
+    deleteHighlight: 'Delete highlight',
     copied: 'Copied',
     highlighted: (color: string) => `Highlighted ${color}`,
     deleted: 'Highlight deleted',
@@ -554,6 +556,8 @@ export const en = {
     audioUnavailable: 'Audio isn’t available',
     // DX14, Canvas 11: “Explain in context”, named after the lookup it opens.
     inContext: (title: string) => `${title} in context`,
+    // SB1 (approved 2026-10-13, item 93): two lookups with one title, told apart by their extension.
+    titleFrom: (title: string, from: string) => `${title} (${from})`,
     noEntry: (word: string) => `No entry for “${word}” in your dictionaries.`,
     dictionaryFrame: (title: string) => `Entry in ${title}`,
     tryAgain: 'Try again',

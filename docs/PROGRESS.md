@@ -25,6 +25,7 @@ This file is updated at every phase boundary. Before the next phase starts, the 
 |---|---|---|
 | UI localisation (zh-Hans, zh-Hant, ja, es; L-1 to L-11, 2026-10-07) | Done: four languages signed off and registered 2026-10-08; released as 0.3.0 on 2026-10-09 | `docs/i18n-plan.md` (stage table at its end) |
 | Reading Lens (lookup peek, local dictionaries, optional hosts and keys; 2026-10-09) | Stages 2a, 2b and 2d released as 0.4.0 on 2026-10-11; Stage 1 (the diary) running; Stage 3's Explain is private (`linen-explain`) and its offline check waits for the diary | `docs/reading-lens-plan.md`, `docs/reading-lens-status.md` |
+| Compact selection bar (owner, 2026-10-12: icons with tooltips, Explain as an icon, the two “Explain” entries, the extension's name) | Built on branch `selection-bar-compact` (not committed), 2026-10-13: local CI green, in-app suite 172/175 (the three canary checks blocked by a busy port); items 88–96 approved 2026-10-13, captures are baselines; Explain 0.2.0, renamed “Reading Lens”, on `linen-explain` branch `selection-bar-icon` | `docs/selection-bar-plan.md`, `docs/selection-bar-status.md` |
 
 ## How the work is checked
 

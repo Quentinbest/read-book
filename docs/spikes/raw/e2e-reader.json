@@ -562,8 +562,8 @@
     {
       "id": "P2-hostile-extension",
       "description": "A hostile extension reaches no undeclared host, no Tauri command, no book text or selection without permission, no other extension’s storage, and no more than 10 MB",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "canary: "
     },
     {
       "id": "P6-watchdog",
@@ -766,12 +766,30 @@
     {
       "id": "EP1-no-request-on-select",
       "description": "AC1: selecting, highlighting, copying and searching make no request; only choosing Explain does (net.fetch and the canary)",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "canary: "
     },
     {
       "id": "LK1-menu-items",
       "description": "AC2: Explain appears in “⋯” and ⌘K only when its when-clause holds; none in safe mode; Look Up stays in the bar",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "SB1-same-title",
+      "description": "SB1: two lookups titled “Explain” are told apart by their extension in the bar, the right-click menu, ⌘K and the peek’s provider menu",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "SB2-bar-tooltips",
+      "description": "SB2: a bar button’s tooltip shows after a 500 ms rest and at once on the next button; at once on keyboard focus; gone on leave, a press and Esc; on the side of the bar away from the selection, inside the window; the selection never changes and no button has a title",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
+      "id": "SB4-lookup-button",
+      "description": "SB4, SB5: a lookup that names an icon has a button after Look Up, “‹title› in context”, even when another lookup was installed first; it asks once; none for 41 words, in safe mode or while stuck (then it is in ⋯ with Restart); ⋯ only with something in it; the peek’s “in context” opens the same lookup",
       "verdict": "pass",
       "evidence": "ok"
     },
@@ -988,8 +1006,8 @@
     {
       "id": "LK7-secrets",
       "description": "AC9: a key is typed into Linen’s dialog and kept out of the WebView; it goes only to its own host, a redirect is not followed, and an extension can’t set Authorization, Cookie or Host or read the key back",
-      "verdict": "pass",
-      "evidence": "ok"
+      "verdict": "fail",
+      "evidence": "own host: {\"ok\":true,\"status\":404}; redirect: {\"ok\":true,\"status\":404}; own host without the key: "
     },
     {
       "id": "LK6-remove-extension",
@@ -1040,7 +1058,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791812924,
+    "time": 1791827222,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"
