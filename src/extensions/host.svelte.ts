@@ -499,7 +499,14 @@ export class ExtensionHost {
       }, limit)
       run.calls.set(id, { resolve, reject, timer })
       this.#touch(extId, run)
-      run.frame.contentWindow?.postMessage(message, '*')
+      try {
+        run.frame.contentWindow?.postMessage(message, '*')
+      } catch (e) {
+        // Not sent (a value that can't be cloned): no timeout may follow it.
+        clearTimeout(timer)
+        run.calls.delete(id)
+        reject(e instanceof Error ? e : new ExtensionError(String(e)))
+      }
     })
   }
 
@@ -557,11 +564,17 @@ export class ExtensionHost {
       return m.error ? c.reject(new ExtensionError(String(m.error))) : c.resolve(m.result)
     }
     if (typeof m.rpc === 'number') {
-      const reply = (result: unknown, error?: string) =>
-        run.frame.contentWindow?.postMessage(
-          error ? { reply: m.rpc, error } : { reply: m.rpc, result },
-          '*',
-        )
+      // A reply that can't be cloned (a reactive proxy) becomes an error: a Worker is
+      // never left waiting for an answer that will not come.
+      const reply = (result: unknown, error?: string) => {
+        const post = (data: unknown) => run.frame.contentWindow?.postMessage(data, '*')
+        try {
+          post(error ? { reply: m.rpc, error } : { reply: m.rpc, result: $state.snapshot(result) })
+        } catch {
+          console.warn(`extension ${extId}: the answer to ${String(m.method)} could not be sent`)
+          post({ reply: m.rpc, error: 'the answer could not be sent' })
+        }
+      }
       this.#touch(extId, run)
       this.#rpc(extId, String(m.method), (m.params ?? {}) as Record<string, unknown>).then(
         (r) => reply(r ?? null),

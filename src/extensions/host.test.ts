@@ -216,4 +216,68 @@ describe('LK1, LK4 lookups', () => {
     expect(posted.filter((m) => (m as { lookup?: number }).lookup)).toEqual([])
     host.unload('org.example.tab')
   })
+
+  it('answers book.metadata with plain data when the book is a proxy, and never leaves a call waiting', async () => {
+    const host = new ExtensionHost()
+    const x = withLookup('1.0.0')
+    x.granted = ['book.selection', 'book.metadata']
+    core.list = [x]
+    await host.load()
+    // The reader's book is reactive state: its arrays are proxies, which can't be cloned.
+    host.bridge = {
+      metadata: () => ({
+        title: 'T',
+        authors: new Proxy(['A. Author'], {}),
+        language: 'en',
+        identifier: null,
+      }),
+    } as unknown as NonNullable<typeof host.bridge>
+    const started = host.activate('org.example.tab')
+    ready()
+    await started
+    const posted: unknown[] = []
+    let refuse = false
+    vi.spyOn(frames()[0].contentWindow!, 'postMessage').mockImplementation((m: unknown) => {
+      if (refuse && (m as { result?: unknown }).result !== undefined)
+        throw new DOMException('The object can not be cloned.', 'DataCloneError')
+      posted.push(structuredClone(m)) // as WebKit does
+    })
+    answer({ rpc: 1, method: 'book.metadata', params: null })
+    await vi.waitFor(() => expect(posted).toHaveLength(1))
+    expect(posted[0]).toEqual({
+      reply: 1,
+      result: { title: 'T', authors: ['A. Author'], language: 'en', identifier: null },
+    })
+    // Whatever still can't be sent comes back as an error, not as silence.
+    refuse = true
+    answer({ rpc: 2, method: 'book.metadata', params: null })
+    await vi.waitFor(() => expect(posted).toHaveLength(2))
+    expect(posted[1]).toEqual({ reply: 2, error: 'the answer could not be sent' })
+    host.unload('org.example.tab')
+  })
+
+  it('a lookup that cannot be posted fails at once and records no timeout', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = new ExtensionHost()
+      core.list = [withLookup('1.0.0')]
+      await host.load()
+      const started = host.activate('org.example.tab')
+      ready()
+      await started
+      vi.spyOn(frames()[0].contentWindow!, 'postMessage').mockImplementation((m: unknown) => {
+        if ((m as { lookup?: number }).lookup)
+          throw new DOMException('The object can not be cloned.', 'DataCloneError')
+        const ping = (m as { ping?: number }).ping
+        if (ping) queueMicrotask(() => answer({ pong: ping })) // an idle, healthy Worker
+      })
+      const l = host.lookup('org.example.tab', 'explain', request, { text: 'cache', cfi: 'x' })
+      await expect(l.result).rejects.toThrow('cloned')
+      await vi.advanceTimersByTimeAsync(11_000)
+      expect(core.calls).not.toContain('extension_crashed')
+      host.unload('org.example.tab')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

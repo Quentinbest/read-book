@@ -795,7 +795,8 @@
   const bridge: ReaderBridge = {
     metadata: () => ({
       title: book.title,
-      authors: book.authors,
+      // A plain copy: the book is reactive state, and a proxy can't be posted to a Worker.
+      authors: [...book.authors],
       language: book.language,
       identifier: book.package_identifier,
     }),
@@ -2074,10 +2075,12 @@
         await listen<NativeScroll>('native-scroll', ({ payload }) => {
           if (!active) return // S14: the library is on top
           // Over a panel (the Navigator, docked or floating, included) the wheel scrolls
-          // the panel only, also once it has reached its top or bottom.
+          // the panel only, also once it has reached its top or bottom. Every floating
+          // layer carries data-reader-layer (Aa, Go to, ⋯, the selection bar, the note
+          // card, the peeks, the image view): S6 is for page turns, not for its own scrolling.
           const panel = document
             .elementFromPoint(payload.x, payload.y)
-            ?.closest('.chrome, dialog, .popover, .navigator')
+            ?.closest('.chrome, dialog, [data-reader-layer], .navigator')
           if (panel) return
           // I17: a zoomed page pans with the wheel and two fingers; no page turns.
           if (engine?.zoom && engine.zoom > 1) return

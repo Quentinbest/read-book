@@ -137,6 +137,7 @@
 <div
   bind:this={panel}
   class="aa"
+  data-reader-layer
   role="dialog"
   aria-label={t.aa.label}
   style:right="{right}px"

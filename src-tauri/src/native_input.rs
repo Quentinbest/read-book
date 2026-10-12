@@ -38,7 +38,7 @@ pub fn install<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     use objc2::MainThreadMarker;
     use objc2_app_kit::{NSApplication, NSEvent, NSEventMask, NSEventType};
     use std::ptr::NonNull;
-    use tauri::Emitter;
+    use tauri::{Emitter, Manager};
 
     let Some(mtm) = MainThreadMarker::new() else {
         log::warn!("native input: not on the main thread; monitor not installed");
@@ -51,9 +51,20 @@ pub fn install<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         let t = e.timestamp() * 1000.0;
         let ty = e.r#type();
         if ty == NSEventType::ScrollWheel {
+            // Only the reader's window turns pages: a scroll in Settings (or a sheet) is
+            // that window's own, and its coordinates mean nothing in the reader.
+            let window = e.window(mtm);
+            let main = app
+                .get_webview_window("main")
+                .and_then(|w| w.ns_window().ok());
+            // An event with no window (posted to the app) is the reader's, as before.
+            let other = matches!((&window, main), (Some(w), Some(m))
+                if !std::ptr::eq(objc2::rc::Retained::as_ptr(w).cast(), m));
+            if other {
+                return event.as_ptr();
+            }
             let p = e.locationInWindow();
-            let height = e
-                .window(mtm)
+            let height = window
                 .and_then(|w| w.contentView())
                 .map(|v| v.frame().size.height)
                 .unwrap_or(0.0);

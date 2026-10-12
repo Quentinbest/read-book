@@ -134,6 +134,7 @@
   bind:clientWidth={width}
   bind:clientHeight={height}
   class="bar"
+  data-reader-layer
   class:below
   role="toolbar"
   aria-label={t.annotations.bar}
