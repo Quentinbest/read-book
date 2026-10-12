@@ -1118,6 +1118,46 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'Q4-real-click-in-text',
+    description:
+      'One real mouse click in the book text closes each open panel: Aa, Go to, and the docked Contents, Notes and Search (owner, 2026-10-12)',
+    run: async () => {
+      const problems: string[] = []
+      const panels: [string, string, string][] = [
+        ['Aa', 'reader.settings', '.aa'],
+        ['Go to', 'goto.open', '.goto'],
+        ['Contents', 'navigator.contents', '.navigator'],
+        ['Notes', 'navigator.notes', '.navigator'],
+        ['Search', 'search.open', '.navigator'],
+      ]
+      for (const [name, command, selector] of panels) {
+        hooks.run?.(command)
+        await settled(600)
+        if (!document.querySelector(selector)) {
+          problems.push(`${name} did not open`)
+          continue
+        }
+        // A point in the text: the middle of the reading area, a third of the way down.
+        const host = document.querySelector<HTMLElement>('.stage .host')!.getBoundingClientRect()
+        const x = host.left + host.width / 2
+        const y = host.top + host.height / 3
+        // As a hand would: the pointer arrives over the text before it presses (a click
+        // straight after a jump between the app and the book's frame can be lost).
+        await invoke('spike_mouse', { x, y, click: false })
+        await settled(300)
+        await invoke('spike_mouse', { x, y, click: true })
+        await settled(600)
+        if (document.querySelector(selector)) {
+          problems.push(`${name} stayed open`)
+          hooks.run?.('layer.close')
+          await settled(300)
+        }
+      }
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
     id: 'Q4-panels-wheel-and-outside-click',
     description:
       'The wheel over Aa scrolls it and never turns the page; a press outside closes it, and its click turns no page (owner, 2026-10-12)',
@@ -5302,6 +5342,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
           await showControls()
           const contents = rect('.chrome.top .tool')
           if (contents) {
+            // The pointer arrives first, as a hand's would (it may come from the book's frame).
+            await realMouse(contents.left + contents.width / 2, contents.top + contents.height / 2)
+            await settled(300)
             await realMouse(
               contents.left + contents.width / 2,
               contents.top + contents.height / 2,

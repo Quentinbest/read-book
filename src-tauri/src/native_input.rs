@@ -29,6 +29,10 @@ pub struct NativeScroll {
 pub struct NativeMouseDown {
     pub app_active: bool,
     pub key_window: bool,
+    /// In the reader's (main) window; then `x`, `y` are where, as for `native-scroll`.
+    pub main_window: bool,
+    pub x: f64,
+    pub y: f64,
     pub t: f64,
 }
 
@@ -82,11 +86,26 @@ pub fn install<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
                 },
             );
         } else if ty == NSEventType::LeftMouseDown {
+            let window = e.window(mtm);
+            let main = app
+                .get_webview_window("main")
+                .and_then(|w| w.ns_window().ok());
+            let main_window = matches!((&window, main), (Some(w), Some(m))
+                if std::ptr::eq(objc2::rc::Retained::as_ptr(w).cast(), m));
+            let p = e.locationInWindow();
+            let height = window
+                .as_ref()
+                .and_then(|w| w.contentView())
+                .map(|v| v.frame().size.height)
+                .unwrap_or(0.0);
             let _ = app.emit(
                 "native-mouse-down",
                 NativeMouseDown {
                     app_active: NSApplication::sharedApplication(mtm).isActive(),
-                    key_window: e.window(mtm).map(|w| w.isKeyWindow()).unwrap_or(false),
+                    key_window: window.as_ref().map(|w| w.isKeyWindow()).unwrap_or(false),
+                    main_window,
+                    x: p.x,
+                    y: height - p.y,
                     t,
                 },
             );
