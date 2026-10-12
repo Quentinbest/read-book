@@ -8,6 +8,7 @@ vi.mock('@tauri-apps/api/core', () => ({
     core.calls.push(cmd)
     if (cmd === 'app_safe_mode') return false
     if (cmd === 'extensions_list') return core.list
+    if (cmd === 'extension_net_fetch') return new Promise(() => {}) // a provider that never answers
     return null
   },
 }))
@@ -275,6 +276,33 @@ describe('LK1, LK4 lookups', () => {
       await expect(l.result).rejects.toThrow('cloned')
       await vi.advanceTimersByTimeAsync(11_000)
       expect(core.calls).not.toContain('extension_crashed')
+      host.unload('org.example.tab')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Q5: a timeout while a request is in flight is not counted as a crash', async () => {
+    vi.useFakeTimers()
+    try {
+      const host = new ExtensionHost()
+      core.list = [withLookup('1.0.0')]
+      await host.load()
+      const started = host.activate('org.example.tab')
+      ready()
+      await started
+      vi.spyOn(frames()[0].contentWindow!, 'postMessage').mockImplementation((m: unknown) => {
+        const ping = (m as { ping?: number }).ping
+        if (ping) queueMicrotask(() => answer({ pong: ping }))
+      })
+      const l = host.lookup('org.example.tab', 'explain', request, { text: 'cache', cfi: 'x' })
+      const failed = expect(l.result).rejects.toThrow('did not answer')
+      await vi.advanceTimersByTimeAsync(10)
+      answer({ rpc: 1, method: 'net.fetch', params: { url: 'https://api.example.com/' } })
+      await vi.advanceTimersByTimeAsync(10_500)
+      await failed
+      expect(core.calls).not.toContain('extension_crashed')
+      expect(host.status['org.example.tab']).toBe('running')
       host.unload('org.example.tab')
     } finally {
       vi.useRealTimers()

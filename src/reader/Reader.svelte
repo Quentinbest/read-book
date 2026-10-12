@@ -359,21 +359,60 @@
     )
   }
   /** Floating popovers close on a click outside them (S2). */
-  function onReaderPointerDown(e: PointerEvent) {
+  /**
+   * Outside clicks (owner, 2026-10-12, Q4): every floating layer but the modals (S8) and
+   * the image view (its own) closes when the pointer goes down outside it. The docked
+   * Navigator is layout and stays. Inside means the layer, or the button that toggles it.
+   */
+  const CLOSED_BY_OUTSIDE_CLICK: ReadonlySet<string> = new Set([
+    'aa',
+    'goto',
+    'more',
+    'selection',
+    'note',
+    'peek',
+    'lookup',
+    'navigator',
+  ])
+  const LAYER_OR_TOGGLE =
+    '[data-reader-layer], .navigator, .aa-button, .more-button, .goto-label, .nav-goto'
+  /**
+   * Q4: the click that closed a layer does nothing else on the text or a margin (no page
+   * turn, no link, no highlight); on the chrome it goes through, so one click switches.
+   * A drag still selects (S7).
+   */
+  function swallowNextClick(target: EventTarget) {
+    const stop = (e: Event) => {
+      e.preventDefault()
+      e.stopImmediatePropagation()
+    }
+    target.addEventListener('click', stop, { capture: true, once: true })
+    // Only the click of this press: a press that ends in no click must not eat a later one.
+    setTimeout(() => target.removeEventListener('click', stop, { capture: true }), 600)
+  }
+  /**
+   * Panels whose closing click is swallowed. The selection bar and the peeks follow the
+   * text: a click that leaves them still does what it does (A5: a highlight right after
+   * a selection opens its bar in one click; N9: another footnote marker opens its note).
+   */
+  const SWALLOW_CLOSING_CLICK: ReadonlySet<string> = new Set([
+    'aa',
+    'goto',
+    'more',
+    'note',
+    'navigator',
+  ])
+  /** Close the layer for a press at `target`; true when its click is to be swallowed. */
+  function closeForOutsidePress(target: Element | null): boolean {
     const kind = lanes.floating?.kind
-    if (
-      kind !== 'goto' &&
-      kind !== 'peek' &&
-      kind !== 'lookup' &&
-      kind !== 'more' &&
-      kind !== 'aa' &&
-      kind !== 'note'
-    )
-      return
-    const inside = (e.target as Element | null)?.closest?.(
-      '.goto, .goto-label, .nav-goto, .peek, .more, .more-button, .aa, .aa-button, .note',
-    )
-    if (!inside) dispatch({ type: 'closeFloating' })
+    if (!kind || !CLOSED_BY_OUTSIDE_CLICK.has(kind)) return false
+    if (target?.closest?.(LAYER_OR_TOGGLE)) return false
+    dispatch({ type: 'closeFloating' })
+    return SWALLOW_CLOSING_CLICK.has(kind)
+  }
+  function onReaderPointerDown(e: PointerEvent) {
+    const target = e.target as Element | null
+    if (closeForOutsidePress(target) && !target?.closest?.('.chrome')) swallowNextClick(window)
   }
 
   // ---- Search (F1–F8; Screen 05)
@@ -758,6 +797,26 @@
     const existing = hit ? annotations.get(hit) : null
     if (!sel && !existing) return
     e.preventDefault()
+    // G11: while re-attaching, the menu offers what the bar does then.
+    if (sel && reattaching) {
+      await popUpMenu([
+        { label: t.annotations.attachHere, run: attachSelection },
+        { label: t.annotations.cancel, run: cancelReattach },
+      ])
+      return
+    }
+    // Q1 (owner, 2026-10-12): everything the bar offers is here too, so the bar is optional
+    // to use; extension lookups (Explain) and actions follow, for a new selection (A1, LK1).
+    const lookups = sel
+      ? providersFor(sel.text)
+          .filter((p) => p.kind === 'extension')
+          .filter(
+            (p, i, all) =>
+              all.findIndex((x) => x.lookupId === p.lookupId && x.extId === p.extId) === i,
+          )
+      : []
+    const actions = sel && !existing ? extensions.selectionActions(whenContextFor(sel.text)) : []
+    if (lanes.floating?.kind === 'selection') closeBar(false) // S2: one layer at a time
     const entries: MenuEntry[] = [
       ...(['yellow', 'green', 'blue', 'rose'] as const).map((c) => ({
         label: t.annotations.highlightCommand(t.colors[c]),
@@ -781,6 +840,19 @@
               label: t.lookUp.contextMenu(sel.text.trim()),
               run: () => openLookup(selectionTarget(sel), 'mac'),
             },
+            ...lookups.map((p) => ({
+              label: t.lens.lookUpWithCommand(p.title),
+              run: () => openLookup(selectionTarget(sel), p.key),
+            })),
+          ]
+        : []),
+      ...(actions.length
+        ? [
+            null,
+            ...actions.map((a) => ({
+              label: a.title,
+              run: () => void runSelectionAction(a),
+            })),
           ]
         : []),
     ]
@@ -1946,21 +2018,14 @@
       cleanups.push(engine.onLinkHover((href) => (hoverUrl = href)))
       cleanups.push(engine.onSelection(onSelection))
       cleanups.push(engine.onHighlightClick(onHighlightClick))
-      // A click in the text closes the peek, a clicked highlight's bar and the note
-      // card (none is a modal, S8; A6: a click elsewhere closes the note).
+      // A press in the text closes the floating layer (Q4; the footnote marker of an open
+      // peek excepted, N9) and its click does nothing else. The note card saves first (S6).
       cleanups.push(
         engine.onDocument((doc) => {
           doc.addEventListener('pointerdown', (e) => {
-            const kind = lanes.floating?.kind
-            if (kind === 'peek' && (e.target as Element | null)?.closest?.('.linen-peek-marker'))
-              return
-            if (
-              kind === 'peek' ||
-              kind === 'lookup' ||
-              kind === 'note' ||
-              (kind === 'selection' && bar?.mode === 'existing')
-            )
-              dispatch({ type: 'closeFloating' })
+            const target = e.target as Element | null
+            if (lanes.floating?.kind === 'peek' && target?.closest?.('.linen-peek-marker')) return
+            if (closeForOutsidePress(target)) swallowNextClick(doc.defaultView ?? doc)
           })
           doc.addEventListener('contextmenu', (e) => void contextMenu(e))
         }),

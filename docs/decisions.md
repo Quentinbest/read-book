@@ -300,6 +300,16 @@ The owner asked for release 0.4.0 and chose, when asked:
 | “Not set up” and “‹name› options…” (83) | A lookup may answer `not_configured`, shown with Open options; the provider menu ends with “‹name› options…”. Experimental Host API 1.1. The English is approved; the four translations go to the native reviewers with item 82's. |
 | The peek's languages (86) | Extension lookups are offered in Linen's UI language, then macOS's preferred languages in their order, then English, at most four (`readerLanguages`). Chinese keeps its script (zh-Hans, zh-Hant). |
 
+## Decided 2026-10-12 (reader panels and the lookup budget, after 0.4.0)
+
+The owner reported that Explain didn't work with DeepSeek, that the selection bar and Aa vanished when the wheel was used over them in Pages mode, and asked that reader panels close on an outside click. The causes were fixed in #30. Then the owner decided:
+
+| Question | Decided |
+|---|---|
+| Selection interaction (Q1) | Keep the selection bar on mouse-up (A1, unchanged). The right-click menu offers everything the bar does, including Look Up with each extension lookup (Explain) and extension actions; while re-attaching it offers Attach here and Cancel. A setting that turns the bar off is not built. |
+| Outside clicks (Q4) | Every floating layer but the modals (S8) and the image view closes when the pointer goes down outside it or its toggle button: Aa, Go to, ⋯, the selection bar, the note card (it saves first), the footnote and lookup peeks, and the floating Navigator. The docked Navigator stays. When Aa, Go to, ⋯, the note card or the floating Navigator closes this way, the closing click does nothing else on the text or a margin (no page turn, link or highlight); on the chrome it goes through. The selection bar and the peeks follow the text, so their closing click still acts (A5, N9: found by the in-app suite). A drag still selects (S7). A click inside a panel but outside its open menu closes the menu only. |
+| The lookup budget (Q5) | `net.fetch` gives up after 8 s, inside the 10 s work budget (LK10), so a slow provider ends as the extension's own error. A watchdog timeout while one of the extension's requests is in flight still ends the call, but doesn't count toward suspension (P6). |
+
 ## Approved 2026-10-10 (Reading Lens Stage 2d, item 82)
 
 The owner approved item 82 as recommended (`docs/pending-approvals.md`).

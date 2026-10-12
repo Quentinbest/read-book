@@ -200,6 +200,12 @@
       "evidence": "ok"
     },
     {
+      "id": "Q4-panels-wheel-and-outside-click",
+      "description": "The wheel over Aa scrolls it and never turns the page; a press outside closes it, and its click turns no page (owner, 2026-10-12)",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "L15-font-fallback",
       "description": "A book font that fails to load falls back to Literata without a prompt",
       "verdict": "pass",
@@ -1028,7 +1034,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791736535,
+    "time": 1791770596,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

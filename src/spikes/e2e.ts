@@ -1118,6 +1118,52 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'Q4-panels-wheel-and-outside-click',
+    description:
+      'The wheel over Aa scrolls it and never turns the page; a press outside closes it, and its click turns no page (owner, 2026-10-12)',
+    run: async () => {
+      const aa = () => document.querySelector<HTMLElement>('.aa')
+      const open = async () => {
+        if (!aa()) hooks.run?.('reader.settings')
+        await settled(400)
+        return aa()
+      }
+      let panel = await open()
+      if (!panel) return 'Aa did not open'
+      await settled(1500) // past any wheel cooldown
+      const r = panel.getBoundingClientRect()
+      const before = where()
+      await invoke('spike_scroll_wheel', {
+        x: r.left + r.width / 2,
+        y: r.top + r.height / 2,
+        delta: -1,
+        count: 1,
+        pixels: false,
+        hid: true, // through the real cursor: AppKit gives it the window, as a real wheel
+      })
+      await settled(700)
+      if (where() !== before) return 'a wheel notch over Aa turned the page'
+      if (!aa()) return 'a wheel notch over Aa closed it'
+      // A press on the next-page margin closes Aa; its click does not turn the page.
+      const margin = document.querySelector<HTMLElement>('.margin.right')!
+      margin.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      margin.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await settled(500)
+      if (aa()) return 'a press on the margin did not close Aa'
+      if (where() !== before) return 'the click that closed Aa also turned the page'
+      // A press in the text closes it too.
+      panel = await open()
+      if (!panel) return 'Aa did not open again'
+      const doc = reader()!.engine.view.renderer.getContents()[0].doc
+      const p = doc.querySelector('p') ?? doc.body
+      p.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }))
+      p.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await settled(400)
+      return aa() ? 'a press in the text did not close Aa' : 'ok'
+    },
+  })
+
+  checks.push({
     id: 'L15-font-fallback',
     description: 'A book font that fails to load falls back to Literata without a prompt',
     run: async () => {

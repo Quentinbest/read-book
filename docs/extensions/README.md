@@ -64,6 +64,7 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
 - **The watchdog (P6).**
   - A command has 10 s to finish; a UI contribution has 2 s.
   - A Worker busy in a loop between calls stops answering its heartbeat and is stopped.
+  - `net.fetch` gives up after 8 s and throws, so the extension can say what went wrong within its 10 s. A call that runs out of time while one of its requests is still waiting on the network ends as a timeout, but isn't counted as a failure.
   - Three failures in ten minutes suspend the extension. Its slots then show “… stopped responding · Restart”, and reading is never affected.
 - **Safe mode (P7).** Holding ⇧ while Linen opens, or Settings › Extensions › Restart without extensions, starts Linen with every extension off.
 
