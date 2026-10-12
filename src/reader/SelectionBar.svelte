@@ -145,7 +145,12 @@
   style:--tail="{tail}px"
   transition:fade={{ duration: MOTION.selectionBar }}
   {onkeydown}
-  onpointerdown={(e) => e.preventDefault()}
+  onpointerdown={(e) => {
+    e.preventDefault()
+    // Nested (S4): a click in the bar but outside its open menu closes the menu only.
+    const t = e.target as Element
+    if (menuOpen && !t.closest('.ext-menu, .action.more')) menuOpen = false
+  }}
 >
   {#if mode === 'attach'}
     <button type="button" class="action strong" onclick={onattach}

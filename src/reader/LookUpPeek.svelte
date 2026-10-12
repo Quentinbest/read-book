@@ -149,6 +149,16 @@
     void width
     requestAnimationFrame(measure)
   })
+  // Nested (S4): a click in the peek but outside its open menu closes the menu only.
+  $effect(() => {
+    const el = peek
+    if (!el) return
+    const press = (e: PointerEvent) => {
+      if (menuOpen && !(e.target as Element).closest('.menu, .provider')) menuOpen = false
+    }
+    el.addEventListener('pointerdown', press)
+    return () => el.removeEventListener('pointerdown', press)
+  })
   $effect(() => {
     // A new answer starts on its first layer.
     void current

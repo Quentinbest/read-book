@@ -574,6 +574,9 @@ pub struct RequestKey {
     pub value: String,
 }
 
+/// How long one `net.fetch` may take (owner, 2026-10-12, Q5).
+pub const NET_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
 /// Fetch for an extension, to hosts it declared and was granted only. Redirects
 /// are not followed (a redirect could lead anywhere); the extension sees the 3xx.
 /// LK7: the extension's own headers are checked; a key is added only when the URL's
@@ -605,7 +608,9 @@ pub fn net_fetch(
     }
     let agent = ureq::AgentBuilder::new()
         .redirects(0)
-        .timeout(std::time::Duration::from_secs(10))
+        // Below the host's 10 s work budget (LK10): a slow provider ends as the
+        // extension's own error, worded by it, not as the watchdog's timeout.
+        .timeout(NET_TIMEOUT)
         .user_agent("Linen")
         .build();
     let mut request = agent.request(method, url);

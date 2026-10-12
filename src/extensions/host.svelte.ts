@@ -116,6 +116,9 @@ export class ExtensionHost {
   /** LK7: extensions whose running lookup met a key that couldn't be read. */
   // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
   #keyUnavailable = new Set<string>()
+  /** Q5 (owner, 2026-10-12): requests in flight per extension; a timeout while one is waits on the network, not a fault. */
+  // eslint-disable-next-line svelte/prefer-svelte-reactivity -- bookkeeping, nothing renders from it
+  #fetching = new Map<string, number>()
 
   constructor() {
     addEventListener('message', (e) => this.#onMessage(e))
@@ -495,7 +498,11 @@ export class ExtensionHost {
         run.calls.delete(id)
         this.status[extId] = 'not-responding'
         reject(new ExtensionError(`${extId} did not answer within ${limit / 1000} s`))
-        void this.#failure(extId, 'timeout')
+        // Q5: waiting on a provider doesn't count toward suspension (P6); a hang does.
+        if ((this.#fetching.get(extId) ?? 0) > 0) {
+          console.warn(`extension ${extId}: timeout while a request was in flight`)
+          if (this.status[extId] === 'not-responding') this.status[extId] = 'running'
+        } else void this.#failure(extId, 'timeout')
       }, limit)
       run.calls.set(id, { resolve, reject, timer })
       this.#touch(extId, run)
@@ -666,6 +673,9 @@ export class ExtensionHost {
         // The core checks the host against the granted permissions again, and adds a key
         // only for the host it was saved for (LK7). A key it couldn't read marks the
         // running lookup, whatever the extension makes of the refusal.
+        this.#fetching.set(extId, (this.#fetching.get(extId) ?? 0) + 1)
+        const done = () =>
+          this.#fetching.set(extId, Math.max(0, (this.#fetching.get(extId) ?? 1) - 1))
         return invoke('extension_net_fetch', {
           id: extId,
           url,
@@ -675,12 +685,14 @@ export class ExtensionHost {
           auth: auth
             ? { secret: String(auth.secret ?? ''), scheme: String(auth.scheme ?? 'bearer') }
             : null,
-        }).catch((e: unknown) => {
-          const message = (e as { message?: unknown } | null)?.message
-          if (typeof message === 'string' && message.startsWith('key-unavailable'))
-            this.#keyUnavailable.add(extId)
-          throw e
         })
+          .catch((e: unknown) => {
+            const message = (e as { message?: unknown } | null)?.message
+            if (typeof message === 'string' && message.startsWith('key-unavailable'))
+              this.#keyUnavailable.add(extId)
+            throw e
+          })
+          .finally(done)
       }
       case 'permissions.has':
         return hasHost(x, String(params.host ?? ''))
