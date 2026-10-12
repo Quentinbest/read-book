@@ -361,8 +361,8 @@
   /** Floating popovers close on a click outside them (S2). */
   /**
    * Outside clicks (owner, 2026-10-12, Q4): every floating layer but the modals (S8) and
-   * the image view (its own) closes when the pointer goes down outside it. The docked
-   * Navigator is layout and stays. Inside means the layer, or the button that toggles it.
+   * the image view (its own) closes when the pointer goes down outside it, and so does the
+   * docked Navigator. Inside means the layer, or the button that toggles it.
    */
   const CLOSED_BY_OUTSIDE_CLICK: ReadonlySet<string> = new Set([
     'aa',
@@ -405,6 +405,13 @@
   /** Close the layer for a press at `target`; true when its click is to be swallowed. */
   function closeForOutsidePress(target: Element | null): boolean {
     const kind = lanes.floating?.kind
+    // The docked Navigator (Contents, Search, Notes, extension tabs) closes too (owner,
+    // 2026-10-12: every reader panel), when nothing floats over the text.
+    if (!kind && lanes.docked) {
+      if (target?.closest?.(LAYER_OR_TOGGLE)) return false
+      dispatch({ type: 'closeNavigator' })
+      return true
+    }
     if (!kind || !CLOSED_BY_OUTSIDE_CLICK.has(kind)) return false
     if (target?.closest?.(LAYER_OR_TOGGLE)) return false
     dispatch({ type: 'closeFloating' })
@@ -2160,10 +2167,23 @@
       )
       // I11: AppKit tells whether a click is the one that activated the window.
       cleanups.push(
-        await listen<{ app_active: boolean }>('native-mouse-down', ({ payload }) => {
-          windowJustActivated = !payload.app_active
-          if (windowJustActivated) setTimeout(() => (windowJustActivated = false), 300)
-        }),
+        await listen<{ app_active: boolean; main_window: boolean; x: number; y: number }>(
+          'native-mouse-down',
+          ({ payload }) => {
+            windowJustActivated = !payload.app_active
+            if (windowJustActivated) setTimeout(() => (windowJustActivated = false), 300)
+            // Q4: WebKit can drop the first press in the book's frame (seen with Contents
+            // open), so a press AppKit saw on the text closes the panel as well. Whichever
+            // of this and the frame's pointerdown comes first closes it; the other finds
+            // nothing open.
+            if (!active || !payload.main_window) return
+            const under = document.elementFromPoint(payload.x, payload.y)
+            if (!under?.closest('.stage .host')) return
+            if (closeForOutsidePress(under))
+              for (const c of engine?.view.renderer.getContents() ?? [])
+                if (c.doc.defaultView) swallowNextClick(c.doc.defaultView)
+          },
+        ),
       )
       // X3: follow VoiceOver's scrolling while it runs.
       const srTimer = window.setInterval(
