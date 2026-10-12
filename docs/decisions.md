@@ -271,6 +271,10 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-12 (release 0.4.2)
+
+The owner asked for release 0.4.2, a fix release after 0.4.1: a click in the book text closes every reader panel, the docked Contents, Search and Notes included, and one click is enough with Contents open (#33). No UI text was added, so no translation is pending.
+
 ## Decided 2026-10-12 (release 0.4.1)
 
 The owner asked for release 0.4.1, a fix release after 0.4.0: Explain answers again (#30), the wheel over a reader panel no longer turns the page or closes it (#30), panels close on an outside click, right-click offers the selection bar's actions, and a slow provider is no longer counted as an extension crash (#31). The owner confirmed Explain with DeepSeek in a local build of `main` (2026-10-12: HTTP 200 in about 2 s). No UI text was added, so no translation is pending.
