@@ -271,6 +271,10 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-13 (release 0.5.0)
+
+The owner asked for the release after the compact selection bar (#35; “Go ahead”): 0.5.0, a minor release because it adds Host API 1.2 (a lookup's `icon`). The new strings (“Delete highlight”, “‹title› (‹name›)”) ship as machine drafts in the four languages, as 0.4.0's did, and the release notes say so. Explain 0.2.0 (“Reading Lens”, `linen-explain` #2) needs this release and ships after it is published.
+
 ## Approved 2026-10-13 (compact selection bar, items 88–96)
 
 The owner approved items 88–96 as recommended, one by one (`docs/pending-approvals.md`; plan `docs/selection-bar-plan.md`, rules SB1–SB6). They amend A1 (the bar's actions are icons with tooltips) and LK1 (one lookup may have a button on the bar instead of an item in “⋯”).
