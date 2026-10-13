@@ -47,9 +47,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libxdo-dev libssl-dev build-essential
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # The version, components and targets come from rust-toolchain.toml, as locally.
+      - name: Rust toolchain
+        run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
@@ -63,7 +63,19 @@ jobs:
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
       - name: Rust lint
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      # Plan §6.2: the public and generated corpus (hostile, broken and large books).
+      # The downloads are hash-verified and cached until the manifest changes.
+      - uses: actions/cache@v4
+        with:
+          path: corpus/cache
+          key: corpus-${{ hashFiles('corpus/manifest.json') }}
+      - name: Test corpus
+        run: |
+          python3 scripts/corpus/fetch.py
+          python3 scripts/corpus/generate.py
       - name: Rust tests
+        env:
+          LINEN_REQUIRE_CORPUS: '1'
         run: cargo test --manifest-path src-tauri/Cargo.toml
       - name: Build app
         run: pnpm tauri build --debug --no-bundle

@@ -386,16 +386,27 @@ mod tests {
         }
     }
 
+    /// Where CI and scripts/ci-local.sh fetch and generate the corpus, a missing file
+    /// fails the test instead of skipping it, so a green run means the corpus ran.
+    fn corpus_required() -> bool {
+        std::env::var_os("LINEN_REQUIRE_CORPUS").is_some_and(|v| !v.is_empty() && v != "0")
+    }
+
     fn corpus(name: &str) -> Option<PathBuf> {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("..")
             .join("corpus");
-        [
+        let found = [
             root.join("cache").join(name),
             root.join("generated").join(name),
         ]
         .into_iter()
-        .find(|p| p.exists())
+        .find(|p| p.exists());
+        assert!(
+            found.is_some() || !corpus_required(),
+            "corpus file {name} is missing: run scripts/corpus/fetch.py and generate.py"
+        );
+        found
     }
 
     fn setup() -> (tempfile::TempDir, Store, Library) {
@@ -474,6 +485,10 @@ mod tests {
             }
         }
         eprintln!("every_corpus_file_imports_or_is_refused: {seen} files");
+        assert!(
+            seen > 0 || !corpus_required(),
+            "no corpus files: run scripts/corpus/fetch.py and generate.py"
+        );
     }
 
     /// D2: the library folder is the whole backup. Put back in another place (another
