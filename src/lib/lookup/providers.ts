@@ -64,7 +64,8 @@ export function readerLanguages(uiLocale: string, system: readonly string[] = []
 export function distinctLookupTitles(
   lookups: readonly { extId: string; id: string; title: string; name: string }[],
 ): Map<string, string> {
-  const norm = (s: string) => s.trim().toLocaleLowerCase()
+  // Not toLocaleLowerCase: under a Turkish locale “I” would not match “i”.
+  const norm = (s: string) => s.trim().toLowerCase()
   const out = new Map<string, string>()
   const groups = new Map<string, (typeof lookups)[number][]>()
   for (const l of lookups) groups.set(norm(l.title), [...(groups.get(norm(l.title)) ?? []), l])
