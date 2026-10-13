@@ -44,6 +44,13 @@ jobs:
             { echo "tag $GITHUB_REF_NAME but tauri.conf.json says $conf"; exit 1; }
           test "$cargo" = "$conf" ||
             { echo "Cargo.toml says $cargo but tauri.conf.json says $conf"; exit 1; }
+      # Every release has a summary in CHANGELOG.md; it becomes the draft's notes.
+      - name: The release notes from CHANGELOG.md
+        run: |
+          awk -v h="## $GITHUB_REF_NAME " 'index($0, h) == 1 { on = 1; next }
+            on && /^## / { exit } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md" ||
+            { echo "CHANGELOG.md has no entry for $GITHUB_REF_NAME"; exit 1; }
       - name: Draft release
         id: draft
         env:
@@ -61,7 +68,7 @@ jobs:
             # a new draft for a few seconds (v0.1.1's first run failed on that).
             id=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
               -f tag_name="$GITHUB_REF_NAME" -f name="Linen $GITHUB_REF_NAME" \
-              -f body="See the commits since the previous release." -F draft=true --jq .id)
+              -f body="$(cat "$RUNNER_TEMP/notes.md")" -F draft=true --jq .id)
           fi
           test -n "$id"
           echo "id=$id" >> "$GITHUB_OUTPUT"
