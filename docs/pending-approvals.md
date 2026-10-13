@@ -12,7 +12,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - item 82, on 2026-10-10, and items 83–87, on 2026-10-11 (Reading Lens Stages 2d and 3).
 - items 88–96, on 2026-10-13 (compact selection bar).
 
-Nothing is waiting for the owner now. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Waiting for the owner: item 97 (2026-10-14). Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -283,3 +283,11 @@ The owner asked for a shorter selection bar, with Explain as an icon (2026-10-12
     - Not changed by this work, though they differ from their baselines: `03-more-menu`, `04`, `05`, `16`, `17-goto` (as item 77 records) and `rl-05-menu-*` (the macOS languages item 86 added to the peek's menu after its baseline). Their captures were not kept.
     *Recommendation:* approve the six as baselines once items 88, 91 and 94 are decided; recapture if any of them changes.
     **Approved 2026-10-13.** Copied into `docs/visual/baselines/webkit-19618/`.
+
+## How changes are decided (2026-10-14)
+
+97. **What would undo Gate 0's waiver (Reading Lens).** Gate 0 was waived on 2026-10-10, not passed, and Stage 2d shipped under the waiver in 0.4.0: optional hosts, Keychain keys and options pages, as experimental Host API 1.1 (`docs/decisions.md`). The diary (Stage 1) is still running, so G0 can still be measured. The record does not say what happens to Stage 2d if it fails.
+    - **(a) Stage 2d stays; G0 governs Explain only.** The 2d features are general extension plumbing, not Explain's: any extension may use them, and removing them would break installed extensions. A failed G0 stops Stages 3–5 (Explain stays private and is not offered to others) and is recorded beside the waiver.
+    - **(b) Stage 2d is withdrawn if G0 fails.** Host API 1.1's hosts, keys and options pages are removed in the next release, and Explain stops working.
+    - **(c) No consequence.** The waiver stands whatever the diary shows; G0 is no longer measured.
+    *Recommendation:* (a). It keeps the waiver honest (a G0 result still decides something) without breaking shipped API.
