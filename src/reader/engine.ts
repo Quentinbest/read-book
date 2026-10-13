@@ -99,6 +99,14 @@ interface MarkLayer {
   ): void
   remove(key: string): void
 }
+
+/** What one overlay's search marks are (F5), for the end-to-end tests. */
+interface LayerMarkStats {
+  drawn: number
+  active: MarkStyle | null
+  soft: MarkStyle | null
+}
+
 interface MarkStyle {
   fill: string
   stroke: string
@@ -373,7 +381,10 @@ export class ReaderEngine {
   #marks: SearchMarks | null = null
   #markKeys = new WeakMap<object, string[]>()
   /** What each overlay last drew, so an unchanged page is not redrawn. */
-  #markDrawn = new WeakMap<object, { list: unknown; active: string; set: SearchMarks | null }>()
+  #markDrawn = new WeakMap<
+    object,
+    { list: unknown; active: string; set: SearchMarks | null; stats: LayerMarkStats }
+  >()
   /** What the last mark drawing did, for the end-to-end tests (F5). */
   #markStats = {
     drawn: 0,
@@ -1048,8 +1059,14 @@ export class ReaderEngine {
       // Results stream in chapter by chapter: most updates change nothing on this page.
       const activeKey = m?.active?.index === c.index ? `${m.active.start}:${m.active.end}` : ''
       const last = this.#markDrawn.get(layer)
-      if (last && last.list === list && last.active === activeKey && !!last.set === !!m) continue
-      this.#markDrawn.set(layer, { list, active: activeKey, set: m })
+      if (last && last.list === list && last.active === activeKey && !!last.set === !!m) {
+        // Still drawn: count what is there (the overlay of a newly loaded chapter is
+        // drawn as it arrives, before the navigation that loaded it asks again).
+        if (view === this.#current) this.#countMarks(last.stats)
+        continue
+      }
+      const stats: LayerMarkStats = { drawn: 0, active: null, soft: null }
+      this.#markDrawn.set(layer, { list, active: activeKey, set: m, stats })
       for (const key of this.#markKeys.get(layer) ?? []) layer.remove(key)
       const keys: string[] = []
       let activeRange: Range | null = null
@@ -1063,24 +1080,27 @@ export class ReaderEngine {
         const style = { fill: m.colors.tint, stroke: m.colors.outline, width: 1 }
         layer.add(key, range, drawMark, style)
         keys.push(key)
-        if (view === this.#current) {
-          this.#markStats.drawn++
-          this.#markStats.soft = style
-        }
+        stats.drawn++
+        stats.soft = style
       })
       // The active match last, so it sits on top.
       if (activeRange && m) {
         const style = { fill: m.colors.activeTint, stroke: m.colors.activeOutline, width: 2 }
         layer.add('linen-search:active', activeRange, drawMark, style)
         keys.push('linen-search:active')
-        if (view === this.#current) {
-          this.#markStats.drawn++
-          this.#markStats.active = style
-        }
+        stats.drawn++
+        stats.active = style
       }
       this.#markKeys.set(layer, keys)
+      if (view === this.#current) this.#countMarks(stats)
     }
     if (view === this.#current) this.#markStats.ms += Math.round(performance.now() - t0)
+  }
+
+  #countMarks(s: LayerMarkStats) {
+    this.#markStats.drawn += s.drawn
+    this.#markStats.active = s.active ?? this.#markStats.active
+    this.#markStats.soft = s.soft ?? this.#markStats.soft
   }
 
   /** N9 “Open note in place”: go to the note, showing it if it was taken out of the flow. */
@@ -1677,12 +1697,18 @@ export class ReaderEngine {
       const { doc, index } = (e as CustomEvent<{ doc: Document; index: number }>).detail
       this.#onLoad(view, doc, index)
     })
-    // A new document's overlay is ready: draw any search marks for it (F5).
-    view.addEventListener('create-overlay', () => {
-      this.#drawMarks(view)
-      this.#drawHighlights(view)
-      this.#drawCaret()
-    })
+    // A new document's overlay is ready: draw any search marks for it (F5), and its
+    // highlights (A4). foliate-js sends this before it attaches the new overlay and
+    // makes the new document current: until then the renderer's contents are the
+    // outgoing document's, and drawing now would leave a chapter opened again (a
+    // jump from a note, A8) bare. Both happen in the same task, so draw after it.
+    view.addEventListener('create-overlay', () =>
+      queueMicrotask(() => {
+        this.#drawMarks(view)
+        this.#drawHighlights(view)
+        this.#drawCaret()
+      }),
+    )
     // A5: a plain click on a highlight (not the end of a drag that made a selection).
     view.addEventListener('show-annotation', (e) => {
       const { value, range } = (e as CustomEvent<{ value: string; range: Range }>).detail
