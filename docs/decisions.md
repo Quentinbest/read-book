@@ -271,6 +271,22 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-13 (compact selection bar, items 88–96)
+
+The owner approved items 88–96 as recommended, one by one (`docs/pending-approvals.md`; plan `docs/selection-bar-plan.md`, rules SB1–SB6). They amend A1 (the bar's actions are icons with tooltips) and LK1 (one lookup may have a button on the bar instead of an item in “⋯”).
+
+| # | Approved |
+|---|---|
+| Icons in place of the bar's words (88, SB3) | Note, Copy, Search (Delete for a clicked highlight) and Look Up show their icon only, named for VoiceOver “Note”, “Copy”, “Search the book”, “Delete highlight”, “Look Up”; a divider before Look Up. Attach here and Cancel, and the items in “⋯”, keep their words. The new string “Delete highlight” goes to the native reviewers with item 74's. |
+| The bar's tooltips (89, SB2) | Drawn by the bar, not by `title`: after a 500 ms rest, then at once on the next button, at once on keyboard focus; away from the selection; the tooltip colours. Copy names no ⌘C until ⌘C on a reader selection is checked to paste plain text. |
+| Hit areas (90) | An exception to X4 for the selection bar: 32 px faces with no gaps between them, as since Phase 5. The bar is used with a pointer (touch is deferred). |
+| Explain's button (91, SB4, SB5) | The first lookup that names an icon, applies and isn't stuck has a button after Look Up, “‹title› in context”; a stuck one goes back to “⋯”; “⋯” shows only with something in it. The peek's “in context” opens the same lookup. |
+| Host API 1.2 (92) | A lookup may name `icon` (`lightbulb` only, drawn by Linen). Lookups stay experimental. Linen with 1.2 is released before Explain 0.2.0, which requires it. |
+| The two “Explain” entries (93, SB1) | They were the harness's Test Lookup and Explain, both titled “Explain”. Lookups that share a title show their extension's name, “Explain (Test Lookup)”; the string goes to the native reviewers. The owner removes Test Lookup from their library. |
+| Explain's icon (94) | The outline lightbulb, tooltip “Explain in context”. |
+| The extension's name (95) | **Reading Lens**, in Explain 0.2.0: the display name only. The ID (`io.github.quentinbest.explain`), the action's title “Explain” and the approved notices (item 84) stay. |
+| Captures (96) | `06-selection-bar`, `14-night-selection`, `12-extension-failure`, `sb-bar-lookup-paper`, `sb-bar-lookup-night`, `sb-bar-tooltip-paper` become baselines (`docs/visual/APPROVAL.md`). |
+
 ## Decided 2026-10-12 (release 0.4.2)
 
 The owner asked for release 0.4.2, a fix release after 0.4.1: a click in the book text closes every reader panel, the docked Contents, Search and Notes included, and one click is enough with Contents open (#33). No UI text was added, so no translation is pending.

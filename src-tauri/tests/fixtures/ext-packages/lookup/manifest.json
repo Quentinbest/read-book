@@ -4,7 +4,7 @@
   "name": "Test Lookup",
   "description": "Reading Lens checks: a lookup provider with scripted answers, delays and failures.",
   "engines": {
-    "linen": "^1.1"
+    "linen": "^1.2"
   },
   "main": "main.js",
   "activation": ["onLookup:explain"],
@@ -13,6 +13,7 @@
       {
         "id": "explain",
         "title": "Explain",
+        "icon": "lightbulb",
         "when": "(book.lang == \"en\" || book.lang == \"\") && selection.words <= 40"
       }
     ]

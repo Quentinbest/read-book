@@ -1,0 +1,21 @@
+{
+  "id": "test.lookup-twin",
+  "version": "1.0.0",
+  "name": "Twin Lookup",
+  "description": "Selection bar check SB1: a second lookup titled like the test provider's.",
+  "engines": {
+    "linen": "^1.1"
+  },
+  "main": "main.js",
+  "activation": ["onLookup:explain"],
+  "contributes": {
+    "lookups": [
+      {
+        "id": "explain",
+        "title": "Explain",
+        "when": "(book.lang == \"en\" || book.lang == \"\") && selection.words <= 40"
+      }
+    ]
+  },
+  "permissions": ["book.selection"]
+}

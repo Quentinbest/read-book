@@ -67,7 +67,7 @@
     }
   }
   self.linen = Object.freeze({
-    apiVersion: '1.1.0',
+    apiVersion: '1.2.0',
     commands: Object.freeze({
       register(id, handler) {
         commands.set(id, handler)

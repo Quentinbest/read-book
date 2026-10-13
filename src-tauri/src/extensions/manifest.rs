@@ -11,7 +11,8 @@ use std::collections::HashSet;
 /// The Host API this build provides. The core supports this major version and the
 /// previous one (P5); with API 1 there is no previous one yet.
 /// 1.1 adds `lookups` (Reading Lens LK1) and the selection's context (LK5).
-pub const API_VERSION: &str = "1.1.0";
+/// 1.2 adds a lookup's `icon` (SB4, docs/selection-bar-plan.md).
+pub const API_VERSION: &str = "1.2.0";
 pub const SUPPORTED_MAJORS: &[u64] = &[1];
 
 /// Limits that keep manifests small and slots tidy.
@@ -138,7 +139,14 @@ pub struct Lookup {
     /// e.g. "book.lang == \"en\" && selection.words <= 40" (see `when` in the host).
     #[serde(default)]
     pub when: Option<String>,
+    /// SB4 (API 1.2): one of the icons Linen draws, for the lookup's button on the bar.
+    #[serde(default)]
+    pub icon: Option<String>,
 }
+
+/// SB4: the icons a lookup may name. Linen draws them; extensions never supply artwork
+/// for its own bar.
+pub const LOOKUP_ICONS: &[&str] = &["lightbulb"];
 
 /// How a permission is consented to (P3), for the install sheet.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -405,6 +413,14 @@ pub fn parse(json: &str) -> Result<Manifest, Vec<String>> {
         if !lookup_ids.insert(x.id.as_str()) {
             errors.push(format!("lookup “{}” is listed twice", x.id));
         }
+        if let Some(icon) = &x.icon {
+            if !LOOKUP_ICONS.contains(&icon.as_str()) {
+                errors.push(format!(
+                    "lookup icon “{icon}” is not one Linen draws ({})",
+                    LOOKUP_ICONS.join(", ")
+                ));
+            }
+        }
         if let Some(w) = &x.when {
             if let Err(e) = super::when::parse(w) {
                 errors.push(format!("when “{w}”: {e}"));
@@ -649,6 +665,42 @@ mod tests {
             "\"title\": \"Explain\", \"label\": \"Verified\","
         ))
         .is_err());
+    }
+
+    #[test]
+    fn lookup_icons_are_ones_linen_draws() {
+        // SB4: API 1.2 lets a lookup name an icon for its button on the bar.
+        let explain = r#"{ "id": "org.test.explain", "version": "1.0.0", "name": "Explain",
+            "engines": { "linen": "^1.2" }, "main": "main.js",
+            "activation": ["onLookup:explain"],
+            "contributes": { "lookups": [
+                { "id": "explain", "title": "Explain", "icon": "lightbulb" }] },
+            "permissions": ["book.selection"] }"#;
+        let m = parse(explain).unwrap();
+        assert_eq!(m.contributes.lookups[0].icon.as_deref(), Some("lightbulb"));
+        assert_eq!(incompatibility(&m), None, "API 1.2 is this build's");
+        let errors = parse(&explain.replace("lightbulb", "rocket")).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("icon “rocket”")),
+            "{errors:?}"
+        );
+        assert!(parse(&explain.replace("\"lightbulb\"", "\"<svg/>\"")).is_err());
+        // Without an icon, and for API 1.1, as before.
+        let plain = parse(
+            &explain
+                .replace(", \"icon\": \"lightbulb\"", "")
+                .replace("^1.2", "^1.1"),
+        )
+        .unwrap();
+        assert_eq!(plain.contributes.lookups[0].icon, None);
+        assert_eq!(
+            incompatibility(&plain),
+            None,
+            "a 1.1 extension still installs"
+        );
+        // An API this Linen doesn't have yet.
+        let later = parse(&explain.replace("^1.2", "^1.3")).unwrap();
+        assert!(incompatibility(&later).is_some());
     }
 
     #[test]

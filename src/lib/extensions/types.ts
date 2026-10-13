@@ -1,6 +1,9 @@
 // The core's view of an extension (src-tauri/src/extensions): its manifest (P1)
 // and its state in this library.
 
+/** SB4 (API 1.2): the icons a lookup may name; Linen draws them (`components/icons.ts`). */
+export type LookupIcon = 'lightbulb'
+
 export interface ExtensionManifest {
   id: string
   version: string
@@ -22,7 +25,8 @@ export interface ExtensionManifest {
     }[]
     exporters: { id: string; title: string; command: string }[]
     /** API 1.1, experimental (Reading Lens LK1). Older manifests from the core may lack it. */
-    lookups?: { id: string; title: string; when?: string | null }[]
+    /** SB4 (API 1.2): `icon` names one Linen draws, for the lookup's button on the bar. */
+    lookups?: { id: string; title: string; when?: string | null; icon?: LookupIcon | null }[]
     /** API 1.1, experimental (LK8): an options page, opened from Settings. */
     options?: { page: string } | null
   }

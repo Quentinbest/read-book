@@ -88,7 +88,7 @@ export interface ReadingSession {
 }
 
 export interface Linen {
-  apiVersion: '1.1.0'
+  apiVersion: '1.2.0'
   /** 1.1, experimental: answer a lookup declared in `contributes.lookups`. Needs `book.selection`. */
   lookups: {
     register(

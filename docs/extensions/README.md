@@ -68,12 +68,13 @@ An extension is a zip file named `*.linenext`, with `manifest.json` at its root:
   - Three failures in ten minutes suspend the extension. Its slots then show “… stopped responding · Restart”, and reading is never affected.
 - **Safe mode (P7).** Holding ⇧ while Linen opens, or Settings › Extensions › Restart without extensions, starts Linen with every extension off.
 
-## Lookups (Host API 1.1, experimental)
+## Lookups (Host API 1.1, experimental; `icon` in 1.2)
 
-A lookup answers in the lookup peek, under the selection (Reading Lens, `docs/reading-lens-plan.md`, LK1–LK15). It is experimental until Host API 1.2 and may change.
+A lookup answers in the lookup peek, under the selection (Reading Lens, `docs/reading-lens-plan.md`, LK1–LK15). It is experimental and may change; 1.2 adds only `icon`.
 
 - **Declare it** in `contributes.lookups`: `{ "id": "explain", "title": "Explain", "when": "…" }`, with `onLookup:<id>` in `activation`. A lookup needs `book.selection`; `engines.linen` must allow 1.1 (`"^1.1"`).
-- **Where it shows.** In the selection's “⋯” menu, for a new selection and for a clicked highlight; in ⌘K as “Look Up with …”; and in the peek's menu above the answer, once in each language the reader uses. Not in fixed-layout books, and not in safe mode.
+- **Where it shows.** In the selection's “⋯” menu, for a new selection and for a clicked highlight; in ⌘K as “Look Up with …”; and in the peek's menu above the answer, once in each language the reader uses. Not in fixed-layout books, and not in safe mode. Two lookups with the same title are shown with their extension's name, “Explain (Test Lookup)” (SB1).
+- **A button on the bar (1.2).** A lookup may name an `icon` Linen draws (for now only `"lightbulb"`; any other is refused at install), with `engines.linen` allowing 1.2 (`"^1.2"`). The first lookup that names one, whose `when` holds and that isn't stuck, gets an icon button after Look Up in the selection bar, named “‹title› in context”; the others stay in “⋯” (SB4, `docs/selection-bar-plan.md`). Linen 1.1 refuses a manifest with `icon`.
 - **Nothing is sent before the reader chooses it.** Selecting, highlighting, copying and searching never call a lookup.
 - **Answer it** with `linen.lookups.register(id, handler)`. The handler gets the request (`text`, `context`, `bookLang`, `language`) and `{ signal }`; it returns the fields below. `book.selection()` gives the same selection, with its context, while the lookup runs.
 - **The context** is `{ before, sentence, after, paragraph, chapter }`: whole sentences around the selection in its own chapter, 1,200 characters at most in all. It never includes other chapters, front matter, highlights or notes; footnote markers and soft hyphens are taken out.

@@ -15,6 +15,7 @@ import { ipc } from '../app/ipc'
 import { testHooks } from '../app/testHooks'
 import { contributionLabels } from '../lib/extensions/labels'
 import { packProblems, themeFromPack } from '../lib/extensions/themes'
+import { distinctLookupTitles } from '../lib/lookup/providers'
 import type { InstalledExtension } from '../lib/extensions/types'
 import { when, type WhenContext } from '../lib/extensions/when'
 import {
@@ -196,8 +197,23 @@ export class ExtensionHost {
     )
   }
 
+  /** SB1: the title each lookup shows (`extId/lookupId`), the same whatever the selection. */
+  get lookupTitles(): Map<string, string> {
+    return distinctLookupTitles(
+      this.slotted.flatMap((x) =>
+        (x.manifest.contributes.lookups ?? []).map((l) => ({
+          extId: x.manifest.id,
+          id: l.id,
+          title: l.title,
+          name: x.manifest.name,
+        })),
+      ),
+    )
+  }
+
   /** LK1: the lookups whose `when` holds, in install order (a stuck one is marked, P6). */
   lookups(ctx: WhenContext) {
+    const titles = this.lookupTitles
     return this.slotted.flatMap((x) =>
       (x.manifest.contributes.lookups ?? [])
         .filter((l) => when(l.when, ctx))
@@ -205,7 +221,8 @@ export class ExtensionHost {
           extId: x.manifest.id,
           name: x.manifest.name,
           id: l.id,
-          title: l.title,
+          title: titles.get(`${x.manifest.id}/${l.id}`) ?? l.title,
+          icon: l.icon ?? null,
           status: this.status[x.manifest.id] ?? 'idle',
         })),
     )
