@@ -39,7 +39,7 @@ Linen's own names (Pages, Scroll, Navigator, Paper…) describe what the reader 
 |---|---|---|---|---|---|---|
 | Library | All the reader's books | 书库 | 書庫 | ライブラリ | Biblioteca | reviewed |
 | Book | An EPUB in the library | 书 | 書 | ブック | Libro | reviewed |
-| Continue reading / Resume reading | The book last open | 继续阅读 | 繼續閱讀 | 続きを読む | Seguir leyendo | reviewed |
+| Continue reading / Resume reading | The book last open | 继续阅读 | 繼續閱讀 | 続きを読む (heading) / 続きから読む (button) | Seguir leyendo | reviewed; ja names the library's heading and its button apart, as the approved catalogue does |
 | Contents | The book's table of contents | 目录 | 目錄 | 目次 | Índice | reviewed |
 | Chapter | A section of the book | 章节 | 章節 | 章 | Capítulo | reviewed |
 | Navigator | The side panel with Contents, Search and Notes | 导航栏 | 導覽列 | ナビゲータ | Navegador | reviewed; the reviewer may prefer a plainer word for a side panel |
