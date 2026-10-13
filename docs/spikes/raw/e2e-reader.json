@@ -458,6 +458,12 @@
       "evidence": "ok"
     },
     {
+      "id": "A8-return-drawn",
+      "description": "Back on a highlight’s page from the Notes tab after reading elsewhere, its highlights and note dot are drawn again: one and several, in Pages and Scroll, every time",
+      "verdict": "pass",
+      "evidence": "ok"
+    },
+    {
       "id": "A9-reflow",
       "description": "Highlights stay on their text through reflow (window size, Scroll mode and back)",
       "verdict": "pass",
@@ -562,8 +568,8 @@
     {
       "id": "P2-hostile-extension",
       "description": "A hostile extension reaches no undeclared host, no Tauri command, no book text or selection without permission, no other extension’s storage, and no more than 10 MB",
-      "verdict": "fail",
-      "evidence": "canary: "
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "P6-watchdog",
@@ -766,8 +772,8 @@
     {
       "id": "EP1-no-request-on-select",
       "description": "AC1: selecting, highlighting, copying and searching make no request; only choosing Explain does (net.fetch and the canary)",
-      "verdict": "fail",
-      "evidence": "canary: "
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "LK1-menu-items",
@@ -1006,8 +1012,8 @@
     {
       "id": "LK7-secrets",
       "description": "AC9: a key is typed into Linen’s dialog and kept out of the WebView; it goes only to its own host, a redirect is not followed, and an extension can’t set Authorization, Cookie or Host or read the key back",
-      "verdict": "fail",
-      "evidence": "own host: {\"ok\":true,\"status\":404}; redirect: {\"ok\":true,\"status\":404}; own host without the key: "
+      "verdict": "pass",
+      "evidence": "ok"
     },
     {
       "id": "LK6-remove-extension",
@@ -1058,7 +1064,7 @@
     "memory_bytes": "8589934592",
     "only": "",
     "os": "14.6.1",
-    "time": 1791827222,
+    "time": 1791890449,
     "webkit": "19618.3.11.11.5"
   },
   "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko)"

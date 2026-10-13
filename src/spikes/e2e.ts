@@ -2758,6 +2758,105 @@ export async function spikeE2E(): Promise<SpikeResult> {
   })
 
   checks.push({
+    id: 'A8-return-drawn',
+    description:
+      'Back on a highlight’s page from the Notes tab after reading elsewhere, its highlights and note dot are drawn again: one and several, in Pages and Scroll, every time',
+    run: async () => {
+      const problems: string[] = []
+      const engine = reader()!.engine
+      const snapshot = () =>
+        JSON.stringify(
+          annotationsOf()
+            .items.map((a) => [a.id, a.color, a.cfi, a.note])
+            .sort(),
+        )
+      // A third highlight, in a chapter far from Loomings's two.
+      await engine.goToFraction(0.5)
+      await settled(900)
+      const range = firstLineRange()
+      const doc = range.startContainer.ownerDocument!
+      doc.getSelection()!.removeAllRanges()
+      doc.getSelection()!.addRange(range)
+      doc.body.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }))
+      await waitFor('bar', selBar)
+      await pressBar(/highlight green/i)
+      const far = annotationsOf().items.at(-1)!
+      if (far.quote.exact !== range.toString()) return `no far highlight (“${far.quote.exact}”)`
+      const before = snapshot()
+      const away = async (fraction: number) => {
+        await engine.goToFraction(fraction)
+        await settled(900)
+      }
+      const choose = async (id: string) => {
+        keyOnApp('a', { code: 'KeyA', metaKey: true, shiftKey: true })
+        const item = await waitFor('notes item', () =>
+          document.querySelector<HTMLElement>(`.navigator .notes [data-annotation="${id}"]`),
+        )
+        await settled(200)
+        item.click()
+        await settled(900)
+      }
+      const expect = (when: string, ids: string[]) => {
+        for (const id of ids) {
+          const d = drawn(id)
+          const what = annotationsOf().get(id)!.quote.exact.slice(0, 16)
+          if (!d.behindText) problems.push(`${when}: no tint on “${what}”`)
+          if (!d.lines.length) problems.push(`${when}: no underline on “${what}”`)
+        }
+        const dot = pageDoc().overlayer?.element.querySelector('[data-linen-note-dot]')
+        if (ids.includes(manhattoes) && !dot) problems.push(`${when}: no note dot`)
+      }
+      const loomings = [november, manhattoes]
+      try {
+        await away(0.9)
+        await choose(manhattoes)
+        expect('Pages, from far away', loomings)
+        await choose(far.id)
+        expect('Pages, to the far one', [far.id])
+        await choose(november)
+        expect('Pages, back from the far one', loomings)
+        for (const [i, f] of [0.75, 0.3, 0.9].entries()) {
+          await away(f)
+          await choose(i % 2 ? november : manhattoes)
+          expect(`Pages, return ${i + 2}`, loomings)
+        }
+        // Turning into a chapter shows the neighbour view, which laid it out unseen.
+        const farIndex = engine.cfiIndex(far.cfi) ?? -1
+        if (farIndex < 1) throw new Error(`the far highlight is in section ${farIndex}`)
+        await engine.goTo(farIndex - 1)
+        await settled(900)
+        for (let i = 0; i < 300 && loc()!.sectionIndex !== farIndex; i++) {
+          await engine.turn('next')
+          await settled(30)
+        }
+        await settled(600)
+        expect('Pages, turning into its chapter', [far.id])
+        hooks.run?.('layout.scroll')
+        await settled(900)
+        await away(0.9)
+        await choose(manhattoes)
+        expect('Scroll, from far away', loomings)
+        await choose(far.id)
+        expect('Scroll, to the far one', [far.id])
+        await choose(november)
+        expect('Scroll, back from the far one', loomings)
+      } finally {
+        hooks.run?.('layout.pages')
+        await settled(900)
+        if (document.querySelector('.navigator')) key('Escape', { code: 'Escape' })
+        await settled(300)
+      }
+      if (snapshot() !== before) problems.push('the jumps changed the annotations')
+      if ((await stored()).length !== annotationsOf().items.length)
+        problems.push('saved annotations differ')
+      // Tidy: later checks count Loomings's two.
+      annotationsOf().remove(far.id)
+      await hooks.writes!.idle()
+      return problems.length ? problems.join('; ') : 'ok'
+    },
+  })
+
+  checks.push({
     id: 'A9-reflow',
     description: 'Highlights stay on their text through reflow (window size, Scroll mode and back)',
     run: async () => {

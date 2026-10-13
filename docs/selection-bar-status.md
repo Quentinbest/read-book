@@ -32,7 +32,7 @@ The state of each step of `docs/selection-bar-plan.md` (§3), on branch `selecti
 
 ## Not done
 
-- **Committed:** this repository as #35; `linen-explain` as its #2 (branch `selection-bar-icon`), which waits for a Linen release with Host API 1.2.
+- **Released:** this repository as #35, in Linen 0.5.0 (published 2026-10-13); `linen-explain` #2, Explain 0.2.0 (“Reading Lens”), merged after it. **The owner tested it by hand on 2026-10-13: “the functionality is working.”**
 - **Your actions:** remove Test Lookup in Settings › Extensions (item 93); check ⌘C on a reader selection (item 89); send “Delete highlight” and “‹title› (‹name›)” to the native reviewers (items 88, 93).
 - **Translations:** “Delete highlight” and “‹title› (‹name›)” are machine drafts in es, ja, zh-Hans and zh-Hant until the native review.
 - **Release order** (item 92): a Linen release with Host API 1.2 first, then Explain 0.2.0 (“Reading Lens”).
