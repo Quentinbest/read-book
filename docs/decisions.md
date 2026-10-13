@@ -281,7 +281,6 @@ The owner asked for Phase 1 of the development-process review (2026-10-14: “St
 |---|---|
 | Review findings | Before a merge is asked for, the automated review of the latest push has finished, and every finding has an answer in its thread: **Fixed** (the commit), **Rejected** (a one-line reason) or **Deferred** (a numbered item in `docs/pending-approvals.md`). The PR lists them (`.github/pull_request_template.md`). |
 | Decisions | Only the owner's explicit answers are recorded as approved. A choice left to Claude is recorded as **Delegated to Claude**; a question nobody answered stays open and is not built. A PR built from a plan with open questions says which were answered, delegated or left open. A waived gate records what result would undo the waiver (item 97). |
-| One Rust, and the corpus in CI | `rust-toolchain.toml` pins the Rust that CI, release builds and `scripts/ci-local.sh` use, bumped on purpose. CI and `ci-local.sh` fetch and generate the test corpus, and its tests fail rather than skip when a file is missing (`LINEN_REQUIRE_CORPUS`). |
 
 ## Decided 2026-10-13 (release 0.5.1)
 
