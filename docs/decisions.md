@@ -10,6 +10,7 @@ Owner decisions taken after plan revision D. IDs refer to `docs/implementation-p
 | T5 | **UI font:** the platform font (`system-ui`, SF Pro on macOS), as V3 states. Literata (OFL) is bundled as the reading fallback. Instrument Sans is not shipped. | 2026-09-24 |
 | B7 | **One window, one open book** in the MVP. | 2026-09-24 |
 | D5 | **Accessibility target:** WCAG 2.2 AA, plus the design’s AAA 7:1 body-text contrast (X1). | 2026-09-24 |
+| Rust and corpus | **One Rust, and the corpus in CI** (owner: “Start Phase 1 fixes” of the process review). `rust-toolchain.toml` pins the Rust that CI, release builds and `scripts/ci-local.sh` use (1.99.0, CI's `stable` on 2026-10-13); a bump is its own PR. CI and `ci-local.sh` fetch and generate the test corpus, and with `LINEN_REQUIRE_CORPUS` its tests fail rather than skip when a file is missing. Downloading the public corpus in CI: delegated to Claude. | 2026-10-14 |
 
 Still open before Phase 1 exits: B1, B4, B9, B10, G4 import states, G6 (macOS-only scope reduces G6 to the macOS menu bar).
 
