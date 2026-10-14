@@ -3,6 +3,7 @@
 # Rule index
 
 Every rule ID in the plan, with the owner decisions that change it. **When a rule has decisions, they win over the plan**, newest last.
+It is found by matching text, so it can miss a decision or list one twice: it helps you find things, and `docs/decisions.md` is the record. Known gaps: issue #60.
 Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9`.
 
 187 rules; 47 changed or settled by a decision.
