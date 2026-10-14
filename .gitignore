@@ -42,3 +42,6 @@ src-tauri/fuzz/target
 src-tauri/fuzz/corpus
 src-tauri/fuzz/artifacts
 src-tauri/fuzz/Cargo.lock
+
+# Logo working files (concepts, checks, release package); see docs/decisions.md
+logo-project/

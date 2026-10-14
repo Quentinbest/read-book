@@ -5,7 +5,16 @@ import ts from 'typescript-eslint'
 import svelteConfig from './svelte.config.js'
 
 export default ts.config(
-  { ignores: ['dist/', 'src-tauri/target/', 'src-tauri/gen/', 'src-tauri/fuzz/target/'] },
+  {
+    ignores: [
+      'dist/',
+      'src-tauri/target/',
+      'src-tauri/gen/',
+      'src-tauri/fuzz/target/',
+      '.claude/',
+      'logo-project/',
+    ],
+  },
   js.configs.recommended,
   ...ts.configs.recommended,
   ...svelte.configs.recommended,
