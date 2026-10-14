@@ -1,0 +1,46 @@
+name: Feature or change
+description: A requirement for Linen. Say what is needed and why; the plan says how.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Write the requirement, not the design. An agent works this issue only once the owner labels it `ready-for-agent` or names it in a session (`AGENTS.md`, "Issues"). A feature gets a plan first, `docs/<feature>-plan.md`, where its open questions wait for the owner's answers.
+  - type: textarea
+    id: need
+    attributes:
+      label: What is needed, and for whom
+      description: The reader's problem or the gap, and who has it. Cite the design (P§n, Screen nn) or the plan's rule IDs where they say it.
+    validations:
+      required: true
+  - type: textarea
+    id: done-when
+    attributes:
+      label: Done when
+      description: Outcomes someone can check in the app, one per line. Leave out what you haven't decided; put it under Open questions.
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: What this issue must not grow into.
+  - type: textarea
+    id: decided
+    attributes:
+      label: Already decided
+      description: Owner decisions it rests on, with their `docs/decisions.md` entries.
+  - type: textarea
+    id: questions
+    attributes:
+      label: Open questions
+      description: What you haven't decided. Nothing here is built until you answer it.
+  - type: dropdown
+    id: size
+    attributes:
+      label: Size
+      options:
+        - 'Small: straight to a pull request'
+        - 'Feature: a plan pull request first'
+    validations:
+      required: true
