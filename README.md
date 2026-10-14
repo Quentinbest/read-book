@@ -121,7 +121,7 @@ scripts/release-macos.sh --unsigned # a development DMG
 scripts/release-macos.sh            # signed and notarised (needs the credentials it lists)
 ```
 
-- **Releases.** Bump `version` in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, add the version's summary to [`CHANGELOG.md`](CHANGELOG.md), then push a matching `vX.Y.Z` tag. `.github/workflows/release.yml` makes a draft GitHub Release with that summary, DMGs for Apple silicon and Intel, the signed update archives and `latest.json`; publishing the draft releases it. Until there is an Apple Developer ID the builds are ad-hoc signed.
+- **Releases.** Bump `version` in `src-tauri/tauri.conf.json` and `src-tauri/Cargo.toml`, add the version's summary to [`CHANGELOG.md`](CHANGELOG.md), then push a matching `vX.Y.Z` tag. `.github/workflows/release.yml` makes a draft GitHub Release with that summary, DMGs for Apple silicon and Intel, the signed update archives and `latest.json`; publishing the draft releases it. Before it is published, the draft is tried on this Mac with real input, following [`docs/release-acceptance.md`](docs/release-acceptance.md) (`scripts/release-candidate.sh`). Until there is an Apple Developer ID the builds are ad-hoc signed.
 - **The update key** is `~/.tauri/linen-updater.key` (with `.password`) on the release Mac, and the repository secrets `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Keep a backup: without it, installed copies cannot be updated. Never commit it.
 
 ## Licence
