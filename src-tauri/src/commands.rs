@@ -213,7 +213,10 @@ pub fn book_entries(state: State<AppState>, book_id: String) -> CmdResult<Vec<(S
                 message: e.to_string(),
             })?;
             if entry.is_file() {
-                out.push((entry.name().to_string(), entry.size()));
+                let name = entry.name().map_err(|e| CommandError::Failed {
+                    message: e.to_string(),
+                })?;
+                out.push((name.into_owned(), entry.size()));
             }
         }
         Ok(out)
@@ -236,9 +239,8 @@ pub fn book_entry(
 fn read_entry(archive: &mut zip::ZipArchive<std::fs::File>, name: &str) -> CmdResult<Vec<u8>> {
     use std::io::Read;
     let failed = |e: String| CommandError::Failed { message: e };
-    let entry = archive
-        .by_name(name)
-        .map_err(|e| failed(format!("{name}: {e}")))?;
+    let entry =
+        crate::epub::by_decoded_name(archive, name).map_err(|e| failed(format!("{name}: {e}")))?;
     if entry.size() > MAX_ENTRY_BYTES {
         return Err(failed(format!("{name} is too large")));
     }

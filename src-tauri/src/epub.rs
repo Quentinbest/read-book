@@ -106,6 +106,60 @@ pub struct Package {
     pub has_toc: bool,
 }
 
+/// Entries by their names as Linen reads them. zip 9 looks names up by their raw bytes, so a
+/// name stored in CP437 (no UTF-8 flag, as old tools wrote them) is only found by its decoded
+/// form, as zip 8 found it (L17: entries are listed decoded, then read by name). This holds
+/// the decoded names the raw lookup misses, built in one pass: empty for a UTF-8 book, and
+/// built once for a whole package, so no lookup rescans the archive.
+pub struct DecodedNames(HashMap<String, usize>);
+
+impl DecodedNames {
+    pub fn new<R: Read + Seek>(archive: &zip::ZipArchive<R>) -> Self {
+        let mut missed = HashMap::new();
+        for i in 0..archive.len() {
+            if let Some(Ok(name)) = archive.name_for_index(i) {
+                if archive.index_for_name(&name) != Some(i) {
+                    missed.entry(name.into_owned()).or_insert(i);
+                }
+            }
+        }
+        Self(missed)
+    }
+
+    pub fn index<R: Read + Seek>(&self, archive: &zip::ZipArchive<R>, name: &str) -> Option<usize> {
+        archive
+            .index_for_name(name)
+            .or_else(|| self.0.get(name).copied())
+    }
+
+    pub fn by_name<'a, R: Read + Seek>(
+        &self,
+        archive: &'a mut zip::ZipArchive<R>,
+        name: &str,
+    ) -> zip::result::ZipResult<zip::read::ZipFile<'a, R>> {
+        let index = self
+            .index(archive, name)
+            .ok_or(zip::result::ZipError::FileNotFound)?;
+        archive.by_index(index)
+    }
+}
+
+/// One lookup by decoded name; a caller making many builds `DecodedNames` once. The raw
+/// lookup comes first, so a UTF-8 book never pays for the table. A miss on an ASCII name is
+/// final: CP437 below 0x80 is ASCII, so such a name would have matched its raw bytes.
+pub fn by_decoded_name<'a, R: Read + Seek>(
+    archive: &'a mut zip::ZipArchive<R>,
+    name: &str,
+) -> zip::result::ZipResult<zip::read::ZipFile<'a, R>> {
+    if let Some(index) = archive.index_for_name(name) {
+        return archive.by_index(index);
+    }
+    if name.is_ascii() {
+        return Err(zip::result::ZipError::FileNotFound);
+    }
+    DecodedNames::new(archive).by_name(archive, name)
+}
+
 /// Check the archive against the §7.1 limits without decompressing anything.
 pub fn validate_archive<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<(), Rejection> {
     if archive.len() > MAX_ENTRIES {
@@ -114,7 +168,8 @@ pub fn validate_archive<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Res
     let mut total: u64 = 0;
     for i in 0..archive.len() {
         let entry = archive.by_index_raw(i).map_err(|_| Rejection::NotZip)?;
-        let name = entry.name().to_string();
+        // zip 9: a name that is neither UTF-8 nor CP437 is an error; such a book is refused.
+        let name = entry.name().map_err(|_| Rejection::NotZip)?.into_owned();
         if !is_safe_path(&name) {
             return Err(Rejection::UnsafePath(name));
         }
@@ -150,9 +205,10 @@ pub fn is_safe_path(name: &str) -> bool {
 /// Read a (small) XML entry, refusing entity declarations.
 fn read_xml<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
+    names: &DecodedNames,
     name: &str,
 ) -> Result<Option<String>, Rejection> {
-    let Ok(entry) = archive.by_name(name) else {
+    let Ok(entry) = names.by_name(archive, name) else {
         return Ok(None);
     };
     if entry.size() > MAX_XML_BYTES {
@@ -262,20 +318,21 @@ const MAX_PROLOG_BYTES: u64 = 1 << 20;
 /// does not end within `MAX_PROLOG_BYTES` cannot be checked, and is refused.
 fn check_xml_entry<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
+    names: &DecodedNames,
     name: &str,
 ) -> Result<(), Rejection> {
-    let size = match archive.by_name(name) {
+    let size = match names.by_name(archive, name) {
         Ok(entry) => entry.size(),
         Err(_) => return Ok(()),
     };
     if size <= MAX_XML_BYTES {
-        return match read_xml(archive, name) {
+        return match read_xml(archive, names, name) {
             Err(Rejection::XmlEntities(n)) => Err(Rejection::XmlEntities(n)),
             // An unreadable entry is reported as damage when it is opened.
             _ => Ok(()),
         };
     }
-    let Ok(entry) = archive.by_name(name) else {
+    let Ok(entry) = names.by_name(archive, name) else {
         return Ok(());
     };
     let mut head = Vec::new();
@@ -396,16 +453,19 @@ struct ManifestItem {
 pub fn read_package<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
 ) -> Result<Package, Rejection> {
-    if archive.by_name("META-INF/encryption.xml").is_ok() {
+    // Built once: every lookup below finds CP437 names without rescanning the archive.
+    let names = DecodedNames::new(archive);
+    if names.by_name(archive, "META-INF/encryption.xml").is_ok() {
         // Font obfuscation also uses encryption.xml; only real encryption is DRM.
-        let xml = read_xml(archive, "META-INF/encryption.xml")?.unwrap_or_default();
+        let xml = read_xml(archive, &names, "META-INF/encryption.xml")?.unwrap_or_default();
         if let Some(item) = drm_encrypted_item(&xml) {
             return Err(Rejection::Drm(item));
         }
     }
-    let container = read_xml(archive, "META-INF/container.xml")?.ok_or(Rejection::NoPackage)?;
+    let container =
+        read_xml(archive, &names, "META-INF/container.xml")?.ok_or(Rejection::NoPackage)?;
     let opf_path = container_rootfile(&container).ok_or(Rejection::NoPackage)?;
-    let opf = read_xml(archive, &opf_path)?.ok_or(Rejection::NoPackage)?;
+    let opf = read_xml(archive, &names, &opf_path)?.ok_or(Rejection::NoPackage)?;
 
     let mut reader = Reader::from_str(&opf);
     let mut md = Metadata {
@@ -556,7 +616,11 @@ pub fn read_package<R: Read + Seek>(
         .map(|(_, v)| v.clone())
         .filter(|v| !v.is_empty());
 
-    let entries: HashSet<String> = archive.file_names().map(String::from).collect();
+    // validate_archive has already refused a book with a name that can't be read.
+    let entries: HashSet<String> = archive
+        .file_names()
+        .filter_map(|n| n.ok().map(|n| n.into_owned()))
+        .collect();
     let mut damage = Vec::new();
     let mut spine = Vec::new();
     for id in &spine_ids {
@@ -581,7 +645,7 @@ pub fn read_package<R: Read + Seek>(
     for item in manifest.values() {
         let xml = item.media_type.contains("xml") || item.href.ends_with(".ncx");
         if xml && entries.contains(&item.href) {
-            check_xml_entry(archive, &item.href)?;
+            check_xml_entry(archive, &names, &item.href)?;
         }
     }
 
@@ -592,7 +656,7 @@ pub fn read_package<R: Read + Seek>(
     let has_toc = nav.is_some_and(|n| entries.contains(&n.href))
         || ncx.is_some_and(|n| entries.contains(&n.href));
     if let Some(n) = nav {
-        if let Ok(Some(xml)) = read_xml(archive, &n.href) {
+        if let Ok(Some(xml)) = read_xml(archive, &names, &n.href) {
             md.has_page_list = xml.contains("page-list");
         }
     }
@@ -605,7 +669,7 @@ pub fn read_package<R: Read + Seek>(
         .map(|i| i.href.clone());
 
     let first_heading = spine.first().and_then(|first| {
-        let xml = read_xml(archive, first).ok().flatten()?;
+        let xml = read_xml(archive, &names, first).ok().flatten()?;
         first_heading_text(&xml)
     });
 
@@ -693,6 +757,42 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+
+    /// L17 on zip 9: an entry named in CP437 (no UTF-8 flag) is listed by its decoded name,
+    /// and must be found by that name again, as zip 8 found it (Codex review of #74).
+    #[test]
+    fn a_cp437_name_is_found_by_its_decoded_form() {
+        let bytes = include_bytes!("../tests/fixtures/zip/cp437-name.zip");
+        let mut archive = zip::ZipArchive::new(Cursor::new(&bytes[..])).unwrap();
+        let listed: Vec<String> = archive
+            .file_names()
+            .map(|n| n.unwrap().into_owned())
+            .collect();
+        assert_eq!(listed, ["café.xhtml"]);
+        // zip 9 itself looks for the raw bytes, which are CP437, not UTF-8.
+        assert!(archive.by_name("café.xhtml").is_err());
+        let names = DecodedNames::new(&archive);
+        assert_eq!(
+            names.0.len(),
+            1,
+            "only the name the raw lookup misses is held"
+        );
+        assert_eq!(names.index(&archive, "café.xhtml"), Some(0));
+        let mut text = String::new();
+        by_decoded_name(&mut archive, "café.xhtml")
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+        assert_eq!(text, "<p>café</p>\n");
+        assert!(by_decoded_name(&mut archive, "missing.xhtml").is_err());
+        // A UTF-8 book holds nothing, so building the table costs one pass and no memory.
+        let mut utf8 = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        utf8.start_file("café.xhtml", SimpleFileOptions::default())
+            .unwrap();
+        utf8.write_all(b"<p/>").unwrap();
+        let utf8 = zip::ZipArchive::new(utf8.finish().unwrap()).unwrap();
+        assert!(DecodedNames::new(&utf8).0.is_empty());
+    }
 
     /// L-1: every rejection code has a message in the English catalogue, with as
     /// many values as the core sends (`no_chapters` comes from import.rs).

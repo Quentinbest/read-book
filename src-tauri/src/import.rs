@@ -350,7 +350,7 @@ fn extract_cover<R: Read + std::io::Seek>(
     dir: &Path,
     stem: &str,
 ) -> std::io::Result<Option<String>> {
-    let Ok(entry) = archive.by_name(href) else {
+    let Ok(entry) = crate::epub::by_decoded_name(archive, href) else {
         return Ok(None);
     };
     if entry.size() > MAX_COVER_BYTES {
@@ -684,7 +684,7 @@ mod tests {
             let mut out = zip::ZipWriter::new(std::fs::File::create(dst).unwrap());
             for i in 0..input.len() {
                 let mut e = input.by_index(i).unwrap();
-                let name = e.name().to_string();
+                let name = e.name().unwrap().into_owned();
                 let mut data = Vec::new();
                 e.read_to_end(&mut data).unwrap();
                 if name.ends_with(".opf") {
@@ -725,7 +725,7 @@ mod tests {
         let mut out = zip::ZipWriter::new(std::fs::File::create(&dst).unwrap());
         for i in 0..input.len() {
             let mut e = input.by_index(i).unwrap();
-            let name = e.name().to_string();
+            let name = e.name().unwrap().into_owned();
             let mut data = Vec::new();
             e.read_to_end(&mut data).unwrap();
             out.start_file(name, zip::write::SimpleFileOptions::default())
