@@ -10,6 +10,7 @@ step pnpm lint
 step pnpm check
 step pnpm test
 step pnpm design:check
+step pnpm rules:check
 step cargo fmt --manifest-path $M --check
 step cargo clippy --manifest-path $M --all-targets -- -D warnings
 # As on CI, the corpus tests must run, not skip (fetch.py skips verified copies).

@@ -80,6 +80,7 @@ pnpm tauri dev      # run the app
 | `src/lib/strings/`         | All interface text, one catalogue per language. Shared terms are in `docs/i18n/glossary.md`.                       |
 | `src/extensions/`          | The extension host. The API reference is [`docs/extensions/README.md`](docs/extensions/README.md).                 |
 | `docs/`                    | The implementation plan, the design, decisions and progress. Code comments cite the plan's rule IDs (`// B8: …`).  |
+| `docs/rule-index.md`       | Every plan rule with the decisions that change it (`python3 scripts/rule-index.py S9` for one rule).               |
 | `AGENTS.md`                | What a coding agent (or a new contributor) needs on day one; the longer notes are in `docs/development.md`.        |
 
 ### Your first change
