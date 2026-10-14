@@ -2,6 +2,8 @@
 
 The longer notes behind [`AGENTS.md`](../AGENTS.md): the commands in full, the in-app end-to-end suite, the architecture and how foliate-js is patched. Read the part you need.
 
+**Rule IDs.** `docs/rule-index.md` lists every plan rule with the decisions that change it, which win over the plan. `python3 scripts/rule-index.py S9` prints one rule with its decisions, the code that cites it and its in-app checks. After a change to `docs/decisions.md` that names a plan rule, run `pnpm rules:index`; CI fails while the index is out of date.
+
 ## Commands
 
 ```sh
