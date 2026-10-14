@@ -2029,11 +2029,13 @@ name = "linen"
 version = "0.5.1"
 dependencies = [
  "ammonia",
+ "base64 0.22.1",
  "block2",
  "encoding_rs",
  "flate2",
  "libc",
  "log",
+ "minisign-verify",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",
