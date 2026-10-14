@@ -1,6 +1,6 @@
 # Waiting for the owner
 
-Items set aside while work continued (owner's instruction, 2026-09-25). Each has a recommendation; approving it means “as recommended”. Newest phase last.
+Items set aside while work continued (owner's instruction, 2026-09-25). Each has a recommendation; approving it means “as recommended”. Newest phase last. Only questions for the owner belong here; other open work is a GitHub issue (since 2026-10-14).
 
 Approved so far; the record is in `docs/decisions.md`:
 - items 1–8 and 11–20, on 2026-09-25;

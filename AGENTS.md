@@ -5,7 +5,7 @@ Linen is a quiet EPUB reader for macOS: Tauri 2 (Rust core), Svelte 5 (runes) an
 ## Where things are
 
 - **The plan**, `docs/implementation-plan.md`, is **read-only**. Its rule IDs (B8, S14, L16…) are cited in code comments and tests; later work has its own plan (`docs/*-plan.md`) with its own IDs (LK, SB…).
-- **State and decisions:** `docs/PROGRESS.md`, the status documents, `docs/decisions.md` (what the owner decided) and `docs/pending-approvals.md` (what waits on the owner).
+- **State and decisions:** `docs/PROGRESS.md`, the status documents, `docs/decisions.md` (what the owner decided) and `docs/pending-approvals.md` (questions waiting on the owner). Open work (deferred findings, follow-ups, checks still to do) is in [GitHub Issues](https://github.com/Quentinbest/read-book/issues), the one backlog.
 - **The design** is `docs/design/` with a text export in `docs/design/text/`. All UI text is in `src/lib/strings/`; foliate-js is reached only through `src/reader/engine.ts`.
 
 ## Commands
@@ -22,7 +22,7 @@ Rust comes from `rust-toolchain.toml`; a bump is its own PR. The in-app suite an
 
 1. **Checks:** `scripts/ci-local.sh` is green before every commit, and after a push the CI run is green (`gh run watch`). Never dismiss a warning as "pre-existing": fix it or tell the owner.
 2. **Behaviour is shown, not assumed.** A bug fix comes with a check that fails without it. Input bugs are reproduced with real input in the in-app suite (`spike_mouse`, the HID wheel), not synthetic DOM events.
-3. **Review findings are answered before a merge is asked for.** After the latest push, wait for the automated review (Codex reviews a PR when it opens; after a later push, comment `@codex review`). Answer each finding in its thread with **Fixed** (the commit), **Rejected** (one line why) or **Deferred** (a numbered pending item), and fill in the PR's Review findings table.
+3. **Review findings are answered before a merge is asked for.** After the latest push, wait for the automated review (Codex reviews a PR when it opens; after a later push, comment `@codex review`). Answer each finding in its thread with **Fixed** (the commit), **Rejected** (one line why) or **Deferred** (an issue; a numbered pending item if it needs the owner's decision), and fill in the PR's Review findings table.
 4. **The PR says** what changed, what was checked and what was not, using `.github/pull_request_template.md`.
 
 ## Decisions
@@ -34,7 +34,7 @@ Rust comes from `rust-toolchain.toml`; a bump is its own PR. The in-app suite an
 ## Working here
 
 - **Small PRs:** one stage or feature per PR, under about 1,000 changed lines (baselines, generated files and translations aside). Mechanical changes go in their own PR; a larger one says why.
-- **A shared checkout.** Other sessions use this checkout. Check `git status` and the branch before editing; do code work in a worktree from `main`. The in-app suite takes over the screen and pointer, so never run two at once. The owner merges.
+- **A shared checkout.** Other sessions use this checkout. Check `git status` and the branch before editing; do code work in a worktree from `main`. The in-app suite takes over the screen and pointer, so never run two at once. The owner merges; `main` accepts a merge only when CI's three jobs pass.
 - **Comments cite rule IDs** (`// B8: …`). Don't commit the `*.txt` session exports in the root.
 - **Codex** only non-interactively (`codex exec … -s read-only`, `codex review`): never bare `codex`, never `~/.codex/`, never `--dangerously-bypass-approvals-and-sandbox`.
 

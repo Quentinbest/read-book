@@ -275,6 +275,17 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-14 (Phase 3 of the process review)
+
+The owner asked for Phase 3 and chose as recommended when asked (2026-10-14).
+
+| What | Approved |
+|---|---|
+| One backlog (R7) | Open work lives in GitHub Issues: deferred review findings, follow-ups, checks still to do. `docs/pending-approvals.md` keeps only questions for the owner. This amends “Deferred” in the 2026-10-14 review-findings rule: an issue, or a pending item when the owner must decide. |
+| The open PRs #7–#9 (R7) | Claude checks each against `main` and reports what still applies; the owner then decides each one: rebase and finish, or close with its branch kept. Nothing is closed without that answer. |
+| Dependency updates and audits (R8) | Weekly Dependabot PRs for Cargo, npm and GitHub Actions, grouped; `cargo audit` and `pnpm audit --prod` in CI. foliate-js stays pinned. |
+| Branch protection (R9) | Merging into `main` requires CI's three jobs to pass, for everyone, the owner included; no review approval is required. |
+
 ## Approved 2026-10-14 (Gate 0's waiver, item 97; Phase 2 of the process review)
 
 The owner chose item 97's option (a) and, for Phase 2 of the development-process review, chose as recommended when asked (2026-10-14).

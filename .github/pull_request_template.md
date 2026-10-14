@@ -20,7 +20,7 @@
 
 <!-- Before asking for a merge: the automated review of the latest push has finished, and every
      finding has an answer in its thread. Fixed: the commit. Rejected: a one-line reason.
-     Deferred: an item in docs/pending-approvals.md. "None" when the review found nothing. -->
+     Deferred: an issue, or an item in docs/pending-approvals.md when the owner must decide. "None" when the review found nothing. -->
 
 | Finding | Answer |
 | ------- | ------ |
