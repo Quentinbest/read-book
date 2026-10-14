@@ -30,7 +30,7 @@ jobs:
     outputs:
       release_id: ${{ steps.draft.outputs.id }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # A manual run from a branch would release under the branch's name ("main").
       - name: The tag matches the app version
         run: |
@@ -85,7 +85,7 @@ jobs:
         target: [aarch64-apple-darwin, x86_64-apple-darwin]
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       # rust-toolchain.toml names the version and both macOS targets, so CI and
       # releases build with the Rust the checks ran on.
       - name: Rust toolchain
