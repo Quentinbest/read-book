@@ -713,8 +713,13 @@ export class ExtensionHost {
       }
       case 'permissions.has':
         return hasHost(x, String(params.host ?? ''))
-      case 'permissions.request':
-        return requestHost(x, String(params.host ?? ''), params.purpose, this.ask)
+      case 'permissions.request': {
+        const allowed = await requestHost(x, String(params.host ?? ''), params.purpose, this.ask)
+        // LK6: the grant counts before the answer arrives, so a permissions.has or
+        // secrets.request right after it sees the host (Codex review of #23).
+        if (allowed) await this.load()
+        return allowed
+      }
       case 'secrets.has':
         return hasSecret(extId, String(params.name ?? ''))
       case 'secrets.request':

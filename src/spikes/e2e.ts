@@ -7502,7 +7502,9 @@ export async function spikeE2E(): Promise<SpikeResult> {
         problems.push('the sheet doesn’t quote the purpose')
       await answerSheet(false)
       await answered()
-      if ((await keyed.report()).granted !== false) problems.push('Don’t allow did not refuse')
+      const refused = await keyed.report()
+      if (refused.granted !== false) problems.push('Don’t allow did not refuse')
+      if (refused.has !== false) problems.push('permissions.has was true after Don’t allow')
       if (keyed.granted().includes('network:127.0.0.1:8765'))
         problems.push('granted after Don’t allow')
       await closePeek()
@@ -7510,7 +7512,10 @@ export async function spikeE2E(): Promise<SpikeResult> {
       await keyed.start('grant')
       await answerSheet(true)
       await answered()
-      if ((await keyed.report()).granted !== true) problems.push('Allow did not grant')
+      const allowed = await keyed.report()
+      if (allowed.granted !== true) problems.push('Allow did not grant')
+      // Asked straight after the grant, without waiting for anything else.
+      if (allowed.has !== true) problems.push('permissions.has was false right after Allow')
       await waitFor('the grant', () => keyed.granted().includes('network:127.0.0.1:8765'), 3000)
       await closePeek()
       // Removing the host while a request is pending cancels it: the peek closes and

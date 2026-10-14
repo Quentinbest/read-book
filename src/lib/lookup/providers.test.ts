@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { distinctLookupTitles, lookupProviders } from './providers'
 
 const lookup = (extId: string, title: string, name: string, id = 'explain') => ({
@@ -44,6 +44,26 @@ describe('distinctLookupTitles (SB1)', () => {
     ])
     expect(titles.get('a.one/explain')).toBe('explain (Lens)')
     expect(titles.get('b.two/explain')).toBe('Explain  (Gloss)')
+  })
+
+  it('compares titles the same way whatever the system locale (Turkish dotted I)', () => {
+    // Under a Turkish locale, toLocaleLowerCase() makes “I” into a dotless “ı”.
+    const own = String.prototype.toLocaleLowerCase
+    const spy = vi.spyOn(String.prototype, 'toLocaleLowerCase').mockImplementation(function (
+      this: string,
+    ) {
+      return own.call(this, 'tr')
+    })
+    try {
+      const titles = distinctLookupTitles([
+        lookup('a.one', 'INFO', 'Lens'),
+        lookup('b.two', 'info', 'Gloss'),
+      ])
+      expect(titles.get('a.one/explain')).toBe('INFO (Lens)')
+      expect(titles.get('b.two/explain')).toBe('info (Gloss)')
+    } finally {
+      spy.mockRestore()
+    }
   })
 
   it('falls back to the extension ID when names clash too, then to the lookup', () => {

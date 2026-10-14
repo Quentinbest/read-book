@@ -19,9 +19,12 @@ linen.lookups.register('keyed', async (request, { signal }) => {
   const headword = request.text
   const source = { kind: 'ai', name: 'Keyed', model: 'test-model' }
   switch (script.step) {
-    case 'grant':
-      await report({ granted: await linen.permissions.request(HOST, { purpose: 'To test keys.' }) })
+    case 'grant': {
+      const granted = await linen.permissions.request(HOST, { purpose: 'To test keys.' })
+      // Asked at once: an allowed host must already count (Codex review of #23).
+      await report({ granted, has: await linen.permissions.has(HOST) })
       break
+    }
     case 'key':
       await report({
         saved: await linen.secrets.request('token', { host: HOST, label: 'Test token' }),

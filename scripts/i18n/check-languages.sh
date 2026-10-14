@@ -17,6 +17,15 @@ strings src-tauri/target/release/linen 2>/dev/null | grep -q spike_capture || {
   echo "src-tauri/target/release/linen is not a test build; build it first." >&2
   exit 1
 }
+# Each visual pass rewrites these tracked files and the script puts them back with
+# git checkout, so it refuses to start over uncommitted edits it would throw away.
+TRACKED="docs/visual/app docs/spikes/raw/visual-candidates.json"
+# shellcheck disable=SC2086 # TRACKED is a list of paths
+if [ -n "$(git status --porcelain -- $TRACKED)" ]; then
+  echo "Uncommitted changes in docs/visual/app or visual-candidates.json would be lost;" >&2
+  echo "commit or set them aside first." >&2
+  exit 1
+fi
 LOCALES="${*:-zh-Hans zh-Hant ja es}"
 OUT=i18n-out/visual
 
@@ -26,7 +35,8 @@ rm -rf "$OUT/en"
 scripts/e2e.sh v > /dev/null 2>&1
 mkdir -p "$OUT/en"
 cp docs/spikes/raw/visual-candidates.json docs/visual/app/*.png "$OUT/en/"
-git checkout -- docs/visual/app docs/spikes/raw/visual-candidates.json
+# shellcheck disable=SC2086
+git checkout -- $TRACKED
 
 for l in $LOCALES; do
   rm -rf "${OUT:?}/$l"
