@@ -12,6 +12,7 @@ Since 2026-10-14, a choice the owner left to Claude (“make your best calls”)
 | T5 | **UI font:** the platform font (`system-ui`, SF Pro on macOS), as V3 states. Literata (OFL) is bundled as the reading fallback. Instrument Sans is not shipped. | 2026-09-24 |
 | B7 | **One window, one open book** in the MVP. | 2026-09-24 |
 | D5 | **Accessibility target:** WCAG 2.2 AA, plus the design’s AAA 7:1 body-text contrast (X1). | 2026-09-24 |
+| Dependencies | **How dependencies are kept current (R8; delegated to Claude, 2026-10-14).** The owner chose Dependabot and audits; the details are Claude's: weekly Dependabot PRs for Cargo, npm and GitHub Actions; minor and patch updates grouped per ecosystem, majors alone; at most five open per ecosystem; foliate-js ignored (pinned and patched). The Audit workflow (`pnpm audit --prod`, `cargo audit`) runs on every change and weekly, and is not a required check. | 2026-10-14 |
 | Rust and corpus | **One Rust, and the corpus in CI** (owner: “Start Phase 1 fixes” of the process review). `rust-toolchain.toml` pins the Rust that CI, release builds and `scripts/ci-local.sh` use (1.99.0, CI's `stable` on 2026-10-13); a bump is its own PR. CI and `ci-local.sh` fetch and generate the test corpus, and with `LINEN_REQUIRE_CORPUS` its tests fail rather than skip when a file is missing. Downloading the public corpus in CI: delegated to Claude. | 2026-10-14 |
 
 Still open before Phase 1 exits: B1, B4, B9, B10, G4 import states, G6 (macOS-only scope reduces G6 to the macOS menu bar).
