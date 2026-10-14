@@ -144,11 +144,19 @@ impl DecodedNames {
     }
 }
 
-/// One lookup by decoded name (`DecodedNames`); a caller making many builds `DecodedNames`.
+/// One lookup by decoded name; a caller making many builds `DecodedNames` once. The raw
+/// lookup comes first, so a UTF-8 book never pays for the table. A miss on an ASCII name is
+/// final: CP437 below 0x80 is ASCII, so such a name would have matched its raw bytes.
 pub fn by_decoded_name<'a, R: Read + Seek>(
     archive: &'a mut zip::ZipArchive<R>,
     name: &str,
 ) -> zip::result::ZipResult<zip::read::ZipFile<'a, R>> {
+    if let Some(index) = archive.index_for_name(name) {
+        return archive.by_index(index);
+    }
+    if name.is_ascii() {
+        return Err(zip::result::ZipError::FileNotFound);
+    }
     DecodedNames::new(archive).by_name(archive, name)
 }
 
