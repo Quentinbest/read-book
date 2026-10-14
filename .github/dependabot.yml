@@ -9,6 +9,17 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    ignore:
+      # Tauri's crates must stay on the same major.minor as its npm packages, and
+      # Dependabot updates each ecosystem alone (#65 failed the build): Tauri is
+      # updated by hand, Rust and npm in one PR.
+      - dependency-name: 'tauri'
+      - dependency-name: 'tauri-build'
+      - dependency-name: 'tauri-plugin-*'
+      # examples/verify_update.rs checks a release as the updater does, so these
+      # follow tauri-plugin-updater's versions, in the same hand-made PR.
+      - dependency-name: 'minisign-verify'
+      - dependency-name: 'base64'
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
@@ -21,6 +32,11 @@ updates:
     ignore:
       # Pinned to a commit and patched (patches/foliate-js@0.0.0.patch); updated by hand.
       - dependency-name: foliate-js
+      # With Tauri's crates, by hand (see the cargo entry).
+      - dependency-name: '@tauri-apps/*'
+      # Node's types stay on the Node that CI and the app run (24).
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
@@ -29,6 +45,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Only a real release exercises it; moved by hand (#75).
+      - dependency-name: 'tauri-apps/tauri-action'
     groups:
       actions-minor-and-patch:
         update-types: [minor, patch]

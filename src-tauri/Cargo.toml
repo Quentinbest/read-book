@@ -46,7 +46,7 @@ spikes = []
 tempfile = "3"
 # examples/verify_update.rs checks a release's updater archive as the updater does.
 base64 = "0.22"
-minisign-verify = "0.2"
+minisign-verify = "0.3"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "block2", "NSWorkspace", "NSPasteboard", "NSAccessibility", "NSEvent", "NSApplication", "NSResponder", "NSWindow", "NSGraphics", "NSButton", "NSControl", "NSView", "NSAlert", "NSTextField", "NSSecureTextField", "NSRunningApplication"] }
