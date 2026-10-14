@@ -9,7 +9,7 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 
 | Rule | Plan | Rule text (abridged) | Decisions (docs/decisions.md) |
 |---|---|---|---|
-| A1 | L160 | Selection bar: four colour dots, Note, Copy, Search, “⋯” (extension actions). It sits 12 px above the first s… |  |
+| A1 | L160 | Selection bar: four colour dots, Note, Copy, Search, “⋯” (extension actions). It sits 12 px above the first s… | Approved 2026-10-13 (compact selection bar, items 88–96) |
 | A2 | L161 | The bar is announced as “Selection actions, F6”. F6 moves focus in, arrows move between actions, Esc returns… |  |
 | A3 | L162 | H / ⇧⌘H applies the last-used colour; N / ⇧⌘N adds a note |  |
 | A4 | L163 | Clicking a colour saves the highlight with no confirmation. Highlights are a tint plus a 2 px darker underlin… |  |
@@ -65,8 +65,8 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | F7 | L153 | Esc returns to the original page if you only browsed; after choosing a result you stay and Back returns |  |
 | F8 | L154 | The index is built in a background worker on first search and persisted |  |
 | G1 | L749 | Extension install and permission consent dialog, including the re-prompt when an update asks for more (Phase… | Approved 2026-09-26 (Phases 7–8 review) |
-| G2 | L750 | Preferences sections other than Extensions: General, Reading, Library, Shortcuts, About (Phase 6). | Approved 2026-09-25 (Phases 3–6 review)<br>Decided 2026-10-10 (Reading Lens gate thresholds, item 59, O1) |
-| G3 | L751 | Book info sheet: read-only (Q4), with EPUB accessibility metadata (E10) (Phase 6). | Approved 2026-09-25 (Phases 3–6 review)<br>Decided 2026-10-10 (Reading Lens gate thresholds, item 59, O1) |
+| G2 | L750 | Preferences sections other than Extensions: General, Reading, Library, Shortcuts, About (Phase 6). | Approved 2026-09-25 (Phases 3–6 review)<br>Approved 2026-10-10 (Reading Lens, items 77–81) |
+| G3 | L751 | Book info sheet: read-only (Q4), with EPUB accessibility metadata (E10) (Phase 6). | Approved 2026-09-25 (Phases 3–6 review) |
 | G4 | L752 | Library states: sort menu open, item menu, remove confirmation or Undo (and whether Remove deletes the copied… | Approved 2026-09-25 (Phases 3–6 review) |
 | G5 | L753 | Navigator, popovers, ⌘K, sheets, library and Preferences in Sepia and Night. S4 now supplies every token, so… | Approved 2026-09-25 (Phases 3–6 review) |
 | G6 | L754 | Windows and Linux window chrome and the ⋯ app menu. P§16 describes them, but every mock uses macOS (Phase 1 e… |  |
@@ -151,10 +151,10 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | P8 | L262 | Extensions can’t inject DOM or CSS into the page or chrome, draw over text, add toolbar buttons, bind core sh… |  |
 | P9 | L263 | Themes are declarative token packs (JSON, no code, no permissions), listed with the built-in themes |  |
 | P10 | L264 | Core selection actions render immediately; extension actions are appended when ready and never block the bar |  |
-| Q1 | L711 | Is the written proposal and system spec approved along with the 17 screens? | Decided 2026-10-12 (reader panels and the lookup budget, after 0.4.0) |
+| Q1 | L711 | Is the written proposal and system spec approved along with the 17 screens? |  |
 | Q2 | L712 | Is tablet in the first release? |  |
 | Q3 | L713 | UI framework and shell? |  |
-| Q4 | L714 | Can users edit metadata? | Decided 2026-10-12 (reader panels and the lookup budget, after 0.4.0) |
+| Q4 | L714 | Can users edit metadata? |  |
 | S1 | L110 | Three independent reader lanes, each with at most one state. Chrome: Immersive ⇄ Controls visible. Docked pan… |  |
 | S2 | L111 | Opening a floating layer closes the current one. Below 1100 px the Navigator floats and joins the floating la… |  |
 | S3 | L112 | Chrome and Navigator alternate: opening the Navigator hides the bars, and its header carries Library, title a… |  |
@@ -191,7 +191,7 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | X1 | L227 | Contrast: body text ≥ 7:1 in every theme; secondary UI text ≥ 4.5:1; highlighted text ≥ 9:1; meaningful non-t… |  |
 | X2 | L228 | Focus order: top bar → Navigator → page → bottom bar. Nothing is ever focused while invisible |  |
 | X3 | L229 | Pagination is visual only: assistive tech reads the chapter continuously, and the visible page follows the re… | Approved 2026-09-26 (Phases 7–8 review) |
-| X4 | L230 | Icon buttons have labels and tooltips; hit areas are 44 px, extending past the visible icon |  |
+| X4 | L230 | Icon buttons have labels and tooltips; hit areas are 44 px, extending past the visible icon | Approved 2026-10-13 (compact selection bar, items 88–96) |
 | X5 | L231 | User text spacing (WCAG 1.4.12) triggers re-pagination, not clipping |  |
 | X6 | L232 | At 200–400% zoom the layout uses its narrow form: one column, floating panels, no horizontal UI scrolling | Decided 2026-10-06 (the review's side findings; the owner: “Make your best calls”) |
 | X7 | L233 | Windows high-contrast mode is honoured; highlights fall back to system highlight colours |  |

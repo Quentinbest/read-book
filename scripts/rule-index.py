@@ -44,24 +44,53 @@ def plan_rules() -> dict[str, dict]:
     return rules
 
 
+# Decision sections whose IDs belong to other work and only look like plan rules:
+# (words in the section heading, the IDs that are not the plan's there).
+OTHER_IDS = [
+    ("Reading Lens gate thresholds", re.compile(r"G\d")),  # Reading Lens gates G0–G3
+    ("reader panels and the lookup budget", re.compile(r"Q\d")),  # that review's questions
+]
+# An amendment named in a row's text or a section's prose: "amends A1", "an exception to X4".
+AMENDS = re.compile(
+    r"\b(?:amends?|amended|exception to|replaces|supersedes|overrides)\s+"
+    r"((?:[A-Z]{1,2}\d{1,2})(?:(?:,\s*|\s+and\s+)[A-Z]{1,2}\d{1,2})*)"
+)
+
+
 def decisions(known: set[str]) -> dict[str, list[dict]]:
-    """Rows of docs/decisions.md tables whose first cell names a plan rule."""
+    """Decisions that change a plan rule: table rows whose first cell names it, and rows
+    or prose that say they amend it."""
     found: dict[str, list[dict]] = {}
     section = "Decision record"
+
+    def add(rid: str, n: int, label: str, text: str) -> None:
+        if rid not in known or any(
+            words in section and pattern.fullmatch(rid) for words, pattern in OTHER_IDS
+        ):
+            return
+        if not any(d["line"] == n for d in found.get(rid, [])):
+            found.setdefault(rid, []).append(
+                {"line": n, "section": section, "label": label, "text": text}
+            )
+
     for n, line in enumerate(DECISIONS.read_text().splitlines(), 1):
         if line.startswith("## "):
             section = line[3:].strip()
             continue
-        if not line.startswith("|") or line.startswith("|---") or line.startswith("| #"):
+        if line.startswith("|---") or line.startswith("| #"):
             continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if len(cells) < 2:
-            continue
-        for rid in dict.fromkeys(RULE_ID.findall(cells[0])):
-            if rid in known:
-                found.setdefault(rid, []).append(
-                    {"line": n, "section": section, "label": cells[0], "text": cells[1]}
-                )
+        if line.startswith("|"):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if len(cells) < 2:
+                continue
+            for rid in dict.fromkeys(RULE_ID.findall(cells[0])):
+                add(rid, n, cells[0], cells[1])
+            rest = " | ".join(cells[1:])
+        else:
+            rest = line
+        for m in AMENDS.finditer(rest):
+            for rid in RULE_ID.findall(m.group(1)):
+                add(rid, n, m.group(0), rest)
     return found
 
 
