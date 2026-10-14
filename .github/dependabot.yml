@@ -30,5 +30,5 @@ updates:
     schedule:
       interval: weekly
     groups:
-      actions:
-        patterns: ['*']
+      actions-minor-and-patch:
+        update-types: [minor, patch]
