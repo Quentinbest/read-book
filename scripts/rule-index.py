@@ -31,23 +31,24 @@ def plain(text: str, limit: int = 110) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
-# Plan table columns that carry a rule's substance beyond its second cell, read from
-# each table's header: a question's or conflict's decision goes first (it is the rule),
-# a shortcut's macOS keys after the action. Source, Phase, Owner and dates are left out.
-DECISION_COLUMNS = ("Decision", "Decision (accepted default)", "Resolved by")
-EXTRA_COLUMNS = ("macOS",)
+# Plan tables differ: most are ID | Rule | Source | Phase, but the questions, conflicts,
+# open items and shortcuts carry their substance in other columns. Each row is written as
+# its columns under their own headers, minus bookkeeping; a column headed "Decision…"
+# comes first, since that answer is the rule. "Decide by" and "Resolved by" keep their
+# headings: they usually name a deadline or a spike, and sometimes the decision itself (D7).
+META_COLUMNS = {"#", "ID", "Source", "Phase", "Owner", "Decided", "Windows / Linux"}
 
 
 def row_text(header: list[str], cells: list[str]) -> str:
-    text = cells[1]
-    named = dict(zip(header, cells))
-    for col in DECISION_COLUMNS:
-        if named.get(col):
-            text = f"Decision: {named[col]} (on: {text})"
-    for col in EXTRA_COLUMNS:
-        if named.get(col):
-            text = f"{text}; {col}: {named[col]}"
-    return text
+    named = [
+        (h, c)
+        for h, c in zip(header, cells)
+        if h not in META_COLUMNS and c and c != cells[0]
+    ]
+    if len(named) == 1 or not header:
+        return named[0][1] if named else cells[1]
+    named.sort(key=lambda hc: not hc[0].startswith("Decision"))
+    return "; ".join(f"{h}: {c}" for h, c in named)
 
 
 def plan_rules() -> dict[str, dict]:
@@ -105,18 +106,32 @@ def decisions(known: set[str]) -> dict[str, list[dict]]:
                 {"line": n, "section": section, "label": label, "text": text}
             )
 
-    for n, line in enumerate(DECISIONS.read_text().splitlines(), 1):
+    lines = DECISIONS.read_text().splitlines()
+    header: list[str] = []
+    for n, line in enumerate(lines, 1):
         if line.startswith("## "):
             section = line[3:].strip()
             continue
-        if line.startswith("|---") or line.startswith("| #"):
+        if line.startswith("|---"):
             continue
         if line.startswith("|"):
             cells = [c.strip() for c in line.strip("|").split("|")]
+            if n < len(lines) and lines[n].startswith("|---"):
+                header = cells  # the next line is the separator: this row is a header
+                continue
             if len(cells) < 2:
                 continue
+            # The decision is the column its header calls one ("Approved decision" beside a
+            # "Finding"); otherwise the second cell, as in most tables here.
+            col = next(
+                (i for i, h in enumerate(header) if i and re.search(r"(?i)decision|decided|approved", h)),
+                1,
+            )
+            text = cells[col] if col < len(cells) else cells[1]
+            if col != 1:
+                text = f"{text} ({header[1].lower()}: {cells[1]})"
             for rid in dict.fromkeys(RULE_ID.findall(cells[0])):
-                add(rid, n, cells[0], cells[1])
+                add(rid, n, cells[0], text)
             rest = " | ".join(cells[1:])
         else:
             rest = line

@@ -20,32 +20,32 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | A9 | L168 | Two anchors per highlight: an EPUB CFI and a text quote with prefix and suffix. Stored as W3C Web Annotation–… |  |
 | A10 | L169 | Touch: long-press with system handles; the bar sits below the selection. Right-click gives the native context… |  |
 | A11 | L170 | Keyboard selection uses caret browsing (F7) with ⇧ + arrows |  |
-| B1 | L733 | What a “page” number means. “Back to page 43” and “Back to page 7” (Screens 08, 12) use dynamic page numbers… | Recommended defaults adopted 2026-09-24 |
-| B2 | L734 | The “N min left in chapter” algorithm (“from the reader’s own pace”, P§6): the reading-pace model and what da… | Recommended defaults adopted 2026-09-24<br>Decided 2026-09-29 (immersive reading, like macOS Books) |
-| B3 | L735 | Import semantics. The design fixes “copied into your library” (Screen 12). Still open: library folder locatio… | Decision record<br>Signed off 2026-09-24 (found during Phase 0–1 work) |
-| B4 | L736 | Highlight edge cases: overlapping or nested highlights, highlights spanning chapters, maximum length, what Co… | Recommended defaults adopted 2026-09-24 |
-| B5 | L737 | Undo scope: only deletions (as drawn), or also colour changes and note edits? | Recommended defaults adopted 2026-09-24 |
-| B6 | L738 | Search limits: result caps for very common words. Regex and whole-word matching are deferred (P§7); decide on… | Recommended defaults adopted 2026-09-24<br>Approved 2026-10-01 (release 1.1, and item 31) |
-| B7 | L739 | Multiple windows or books open at once. The design shows one reader; recommend one book per window, with a si… | Decision record<br>Recommended defaults adopted 2026-09-24 |
-| B8 | L740 | Scroll mode: continuous across chapters or per chapter; what the location line and scrubber show. | Recommended defaults adopted 2026-09-24 |
-| B9 | L741 | DRM-protected files: detection and messaging (DRM is out of scope, but such files will be opened). | Recommended defaults adopted 2026-09-24 |
-| B10 | L742 | UI localisation. P§17 says the UI stays in the app’s language; decide whether strings are externalised from t… | Recommended defaults adopted 2026-09-24<br>Decided 2026-10-07 (UI localisation: Simplified Chinese, Traditional Chinese, Japanese, Spanish) |
-| B11 | L743 | What Esc from the Navigator returns to. S2 draws Navigator → Chrome, but chrome and Navigator alternate (S3).… | Recommended defaults adopted 2026-09-24 |
-| B12 | L744 | Whether the two-page spread breakpoint (1480 px) uses the window width or the width left after a docked Navig… | Recommended defaults adopted 2026-09-24 |
-| B13 | L745 | The lifetime of Back history and ⌘K › Recently closed: per session or persisted, and maximum depth. Recommend… | Recommended defaults adopted 2026-09-24 |
-| C1 | L722 | Decision: 10 s, pausing on hover or focus, like every other message (M2, M4) (on: The resume chip is a “four-… |  |
-| C2 | L723 | Decision: One command: “Go to chapter…” in ⌘K opens the Contents tab with focus on the current chapter; ⌘T ru… |  |
-| C3 | L724 | Decision: MVP ships annotation events only. Session events and the background permission come in 1.1; Reading… |  |
-| C4 | L725 | Decision: No shortcuts for extension commands in the MVP; they arrive with remapping (on: P§18 gives extensio… | Approved 2026-10-01 (release 1.1, and item 31) |
-| C5 | L726 | Decision: Both are 1.1; the MVP relies on the sanitiser and comfort overrides (L13, L14) (on: The P§22 failur… | Approved 2026-10-01 (release 1.1, and item 31) |
-| C6 | L727 | Decision: The platform label in menus (“Show in Finder” / “Show in Explorer” / “Show in Files”), and “Show fi… |  |
-| D1 | L779 | Privacy: telemetry and crash reporting (opt-in or none). The design promises books “stay on this device” (Scr… | Approved 2026-09-26 (Phases 7–8 review) |
-| D2 | L780 | Backup, export and restore of all user data; uninstall behaviour | Approved 2026-09-25 (Phases 3–6 review) |
-| D3 | L781 | Distribution channels. The Mac App Store sandbox limits file access and extensions; also Microsoft Store and… | Decision record |
-| D4 | L782 | Extension package format, signing, API reference, extension localisation. A signed registry comes after the M… | Approved 2026-09-26 (Phases 7–8 review)<br>Decided 2026-10-07 (UI localisation: Simplified Chinese, Traditional Chinese, Japanese, Spanish) |
-| D5 | L783 | Accessibility conformance target (recommend WCAG 2.2 AA, plus the design’s AAA body contrast) | Decision record |
-| D6 | L784 | Auto-update mechanism and release cadence | Approved 2026-09-26 (Phases 7–8 review) |
-| D7 | L785 | Minimum OS versions | Signed off 2026-09-24 (found during Phase 0–1 work) |
+| B1 | L733 | Item: What a “page” number means. “Back to page 43” and “Back to page 7” (Screens 08, 12) use dynamic page nu… | Recommended defaults adopted 2026-09-24 |
+| B2 | L734 | Item: The “N min left in chapter” algorithm (“from the reader’s own pace”, P§6): the reading-pace model and w… | Recommended defaults adopted 2026-09-24<br>Decided 2026-09-29 (immersive reading, like macOS Books) |
+| B3 | L735 | Item: Import semantics. The design fixes “copied into your library” (Screen 12). Still open: library folder l… | Decision record<br>Signed off 2026-09-24 (found during Phase 0–1 work) |
+| B4 | L736 | Item: Highlight edge cases: overlapping or nested highlights, highlights spanning chapters, maximum length, w… | Recommended defaults adopted 2026-09-24 |
+| B5 | L737 | Item: Undo scope: only deletions (as drawn), or also colour changes and note edits?; Decide by: Phase 5 start | Recommended defaults adopted 2026-09-24 |
+| B6 | L738 | Item: Search limits: result caps for very common words. Regex and whole-word matching are deferred (P§7); dec… | Recommended defaults adopted 2026-09-24<br>Approved 2026-10-01 (release 1.1, and item 31) |
+| B7 | L739 | Item: Multiple windows or books open at once. The design shows one reader; recommend one book per window, wit… | Decision record<br>Recommended defaults adopted 2026-09-24 |
+| B8 | L740 | Item: Scroll mode: continuous across chapters or per chapter; what the location line and scrubber show.; Deci… | Recommended defaults adopted 2026-09-24 |
+| B9 | L741 | Item: DRM-protected files: detection and messaging (DRM is out of scope, but such files will be opened).; Dec… | Recommended defaults adopted 2026-09-24 |
+| B10 | L742 | Item: UI localisation. P§17 says the UI stays in the app’s language; decide whether strings are externalised… | Recommended defaults adopted 2026-09-24<br>Decided 2026-10-07 (UI localisation: Simplified Chinese, Traditional Chinese, Japanese, Spanish) |
+| B11 | L743 | Item: What Esc from the Navigator returns to. S2 draws Navigator → Chrome, but chrome and Navigator alternate… | Recommended defaults adopted 2026-09-24 |
+| B12 | L744 | Item: Whether the two-page spread breakpoint (1480 px) uses the window width or the width left after a docked… | Recommended defaults adopted 2026-09-24 |
+| B13 | L745 | Item: The lifetime of Back history and ⌘K › Recently closed: per session or persisted, and maximum depth. Rec… | Recommended defaults adopted 2026-09-24 |
+| C1 | L722 | Decision (accepted default): 10 s, pausing on hover or focus, like every other message (M2, M4); Conflict: Th… |  |
+| C2 | L723 | Decision (accepted default): One command: “Go to chapter…” in ⌘K opens the Contents tab with focus on the cur… |  |
+| C3 | L724 | Decision (accepted default): MVP ships annotation events only. Session events and the background permission c… |  |
+| C4 | L725 | Decision (accepted default): No shortcuts for extension commands in the MVP; they arrive with remapping; Conf… | Approved 2026-10-01 (release 1.1, and item 31) |
+| C5 | L726 | Decision (accepted default): Both are 1.1; the MVP relies on the sanitiser and comfort overrides (L13, L14);… | Approved 2026-10-01 (release 1.1, and item 31) |
+| C6 | L727 | Decision (accepted default): The platform label in menus (“Show in Finder” / “Show in Explorer” / “Show in Fi… |  |
+| D1 | L779 | Item: Privacy: telemetry and crash reporting (opt-in or none). The design promises books “stay on this device… | Approved 2026-09-26 (Phases 7–8 review) |
+| D2 | L780 | Item: Backup, export and restore of all user data; uninstall behaviour; Decide by: Phase 6 start | Approved 2026-09-25 (Phases 3–6 review) |
+| D3 | L781 | Item: Distribution channels. The Mac App Store sandbox limits file access and extensions; also Microsoft Stor… | Decision record |
+| D4 | L782 | Item: Extension package format, signing, API reference, extension localisation. A signed registry comes after… | Approved 2026-09-26 (Phases 7–8 review)<br>Decided 2026-10-07 (UI localisation: Simplified Chinese, Traditional Chinese, Japanese, Spanish) |
+| D5 | L783 | Item: Accessibility conformance target (recommend WCAG 2.2 AA, plus the design’s AAA body contrast); Decide b… | Decision record |
+| D6 | L784 | Item: Auto-update mechanism and release cadence; Decide by: Phase 8 start | Approved 2026-09-26 (Phases 7–8 review) |
+| D7 | L785 | Item: Minimum OS versions; Decide by: Decided 2026-09-24: macOS 13+, Windows 10 22H2+ (evergreen WebView2), U… | Signed off 2026-09-24 (found during Phase 0–1 work) |
 | E1 | L240 | EPUB 2 and 3: navigation document first, NCX as fallback; EPUB 3 landmarks, page-list and noteref semantics u… |  |
 | E2 | L241 | Basic fixed layout: pages scaled to fit, spreads per rendition:spread, zoom by pinch and ⌘+; typography contr… |  |
 | E3 | L242 | Corrupted book: validate on import, tolerate damaged entries. Error card: “Part of this book couldn’t be open… | Approved 2026-09-25 (Phases 3–6 review) |
@@ -93,21 +93,21 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | I15 | L102 | RTL books follow the spine’s page-progression-direction: ← is next, the left zone moves forward, swipes mirro… |  |
 | I16 | L103 | Vertical writing (vertical-rl) paginates right to left with ruby preserved; Scroll becomes horizontal for the… |  |
 | I17 | L104 | Pinch has no effect on reflowable books; it zooms fixed-layout pages |  |
-| K1 | L185 | Next / previous chapter; macOS: ⌥↓ ⌥↑ (also ] [) |  |
-| K2 | L186 | Search in book · next / previous result; macOS: ⌘F · ⌘G ⇧⌘G |  |
-| K3 | L187 | Contents: one command, listed as “Go to chapter…” in ⌘K, that opens the Contents tab focused on the current c… |  |
-| K4 | L188 | Go to location; macOS: ⌘J |  |
-| K5 | L189 | Highlights and notes panel; macOS: ⇧⌘A |  |
-| K6 | L190 | Highlight / note on selection; macOS: ⇧⌘H / ⇧⌘N (also H / N) |  |
-| K7 | L191 | Into the selection bar · caret browsing; macOS: F6 · F7 |  |
-| K8 | L192 | Text size larger / smaller / reset; macOS: ⌘+ ⌘− ⌘0 |  |
-| K9 | L193 | Command palette · shortcut cheat sheet; macOS: ⌘K · ? |  |
-| K10 | L194 | Back after a jump; macOS: ⌘[ |  |
-| K11 | L195 | Library · Open; macOS: ⌘L · ⌘O |  |
-| K12 | L196 | Full screen; macOS: ⌃⌘F |  |
-| K13 | L197 | Undo; macOS: ⌘Z |  |
-| K14 | L198 | Close layer / hide chrome; macOS: Esc |  |
-| K15 | L199 | Safe mode; macOS: hold ⇧ at launch |  |
+| K1 | L185 | Action: Next / previous chapter; macOS: ⌥↓ ⌥↑ (also ] [) |  |
+| K2 | L186 | Action: Search in book · next / previous result; macOS: ⌘F · ⌘G ⇧⌘G |  |
+| K3 | L187 | Action: Contents: one command, listed as “Go to chapter…” in ⌘K, that opens the Contents tab focused on the c… |  |
+| K4 | L188 | Action: Go to location; macOS: ⌘J |  |
+| K5 | L189 | Action: Highlights and notes panel; macOS: ⇧⌘A |  |
+| K6 | L190 | Action: Highlight / note on selection; macOS: ⇧⌘H / ⇧⌘N (also H / N) |  |
+| K7 | L191 | Action: Into the selection bar · caret browsing; macOS: F6 · F7 |  |
+| K8 | L192 | Action: Text size larger / smaller / reset; macOS: ⌘+ ⌘− ⌘0 |  |
+| K9 | L193 | Action: Command palette · shortcut cheat sheet; macOS: ⌘K · ? |  |
+| K10 | L194 | Action: Back after a jump; macOS: ⌘[ |  |
+| K11 | L195 | Action: Library · Open; macOS: ⌘L · ⌘O |  |
+| K12 | L196 | Action: Full screen; macOS: ⌃⌘F |  |
+| K13 | L197 | Action: Undo; macOS: ⌘Z |  |
+| K14 | L198 | Action: Close layer / hide chrome; macOS: Esc |  |
+| K15 | L199 | Action: Safe mode; macOS: hold ⇧ at launch |  |
 | L1 | L65 | Measure is 66 ch of the current font (≈ 640 px at 19 px), clamped to 56–74 ch; CJK 34–40 |  |
 | L2 | L66 | Column = min(measure, W − 2 × min margin). Side margin = (W − measure) / 2, at least 24 px on desktop. Extra… |  |
 | L3 | L67 | Page height = viewport − max(48 px, 7vh), snapped to whole lines; never a half line at the foot |  |
@@ -151,9 +151,9 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | P8 | L262 | Extensions can’t inject DOM or CSS into the page or chrome, draw over text, add toolbar buttons, bind core sh… |  |
 | P9 | L263 | Themes are declarative token packs (JSON, no code, no permissions), listed with the built-in themes |  |
 | P10 | L264 | Core selection actions render immediately; extension actions are appended when ready and never block the bar |  |
-| Q1 | L711 | Decision: Yes, 2026-09-24 (on: Is the written proposal and system spec approved along with the 17 screens?) |  |
-| Q2 | L712 | Decision: No: desktop only, tablet next (2026-09-24) (on: Is tablet in the first release?) |  |
-| Q3 | L713 | Decision: Svelte 5 and Tauri 2, subject to the Phase 0 go/no-go (2026-09-24) (on: UI framework and shell?) |  |
+| Q1 | L711 | Decision: Yes, 2026-09-24; Question: Is the written proposal and system spec approved along with the 17 scree… |  |
+| Q2 | L712 | Decision: No: desktop only, tablet next (2026-09-24); Question: Is tablet in the first release? |  |
+| Q3 | L713 | Decision: Svelte 5 and Tauri 2, subject to the Phase 0 go/no-go (2026-09-24); Question: UI framework and shel… |  |
 | Q4 | L714 | Decision: No; metadata is read-only (2026-09-24). This supersedes the P§22 failure-table row “Edit title and… |  |
 | S1 | L110 | Three independent reader lanes, each with at most one state. Chrome: Immersive ⇄ Controls visible. Docked pan… |  |
 | S2 | L111 | Opening a floating layer closes the current one. Below 1100 px the Navigator floats and joins the floating la… |  |
@@ -171,14 +171,14 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | S14 | L123 | The reader is never unloaded while layers are open; after going to the library the book stays warm in memory | Approved 2026-09-25 (Phases 3–6 review) |
 | S15 | L124 | Top bar: Library · Contents · Search · Notes · Aa · ⋯. Bottom bar: progress scrubber · Go to. Eight controls… |  |
 | S16 | L125 | Extensions can occupy a Navigator tab or a menu item, never a new lane |  |
-| T1 | L766 | Decision: Spike B (on: Trackpad momentum and gesture-phase detection (I2, I3, I5)) |  |
-| T2 | L767 | Decision: Spike C (on: “The visible page follows the screen reader” (X3)) |  |
-| T3 | L768 | Decision: Phase 2 start (on: Caret browsing with F7 (A11): Chromium has it; WKWebView and WebKitGTK may need… | Recommended defaults adopted 2026-09-24 |
-| T4 | L769 | Decision: Not needed for the first release (Q2) (on: iPad edit-menu integration and Apple Pencil need native… |  |
-| T5 | L770 | Decision: Phase 1 start (on: Platform UI font vs Instrument Sans (the stand-in used in all screens); licence… | Decision record |
-| T6 | L771 | Decision: Phase 1 start (on: Detecting a running screen reader, so single-key shortcuts and motion switch off… |  |
-| T7 | L772 | Decision: Phase 1 start (on: Physical key binding with correct labels. KeyboardEvent.code gives position in e… |  |
-| T8 | L773 | Decision: Phase 2 start (on: Dock and taskbar auto-hide state, and the macOS full-screen menu-bar zone (S11),… |  |
+| T1 | L766 | Item: Trackpad momentum and gesture-phase detection (I2, I3, I5); Resolved by: Spike B |  |
+| T2 | L767 | Item: “The visible page follows the screen reader” (X3); Resolved by: Spike C |  |
+| T3 | L768 | Item: Caret browsing with F7 (A11): Chromium has it; WKWebView and WebKitGTK may need our own implementation;… | Recommended defaults adopted 2026-09-24 |
+| T4 | L769 | Item: iPad edit-menu integration and Apple Pencil need native code on Tauri mobile; Resolved by: Not needed f… |  |
+| T5 | L770 | Item: Platform UI font vs Instrument Sans (the stand-in used in all screens); licence check for bundled fonts… | Decision record |
+| T6 | L771 | Item: Detecting a running screen reader, so single-key shortcuts and motion switch off (K rules, V9). There i… |  |
+| T7 | L772 | Item: Physical key binding with correct labels. KeyboardEvent.code gives position in every engine, but naviga… |  |
+| T8 | L773 | Item: Dock and taskbar auto-hide state, and the macOS full-screen menu-bar zone (S11), need native queries; R… |  |
 | V1 | L213 | Theme tokens: Paper ground #F7F3EC, ink #22201C (14.7:1), secondary #6B655C (5.2:1), accent #8C4A2F (6.0:1),… |  |
 | V2 | L214 | Night chrome keeps the page colour with a #3A3733 hairline; the selection bar inverts to a light surface (13.… |  |
 | V3 | L215 | UI type: platform face (SF Pro, Segoe UI Variable, desktop sans on Linux); sizes 12 / 14 / 17 px only; weight… |  |
