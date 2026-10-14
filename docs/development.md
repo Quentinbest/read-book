@@ -63,7 +63,7 @@ python3 scripts/perf-coldstart.py; scripts/perf-memory.sh    # §6.4 budgets
 
 ### Frontend (`src`)
 
-There are three pages: `index.html` → `main.ts`/`App.svelte`, `settings.html` → `src/prefs/` (the Settings window), and `spikes.html` (spike builds only). Settings changes reach other windows through the `settings-changed` event (`app/settingsSync.ts`).
+The app has three pages: `index.html` → `main.ts`/`App.svelte`, `settings.html` → `src/prefs/` (the Settings window), and `spikes.html` (spike builds only). A fourth, `gallery.html`, is for tests only: the Playwright accessibility checks (`tests/integration/gallery-a11y.spec.ts`) render the shared components there, so a change to them shows up in that suite. Settings changes reach other windows through the `settings-changed` event (`app/settingsSync.ts`).
 
 - **`App.svelte`.** The library or the reader, the command palette, the message bar.
   - **S14:** the last book stays mounted behind the library ("warm") in a `.reader-layer.warm` wrapper, hidden with `opacity: 0` and `inert`. It can't use `display: none`, which would re-lay the book out at zero size, or `visibility`, which the engine's views override.
