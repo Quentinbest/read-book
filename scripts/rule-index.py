@@ -80,12 +80,12 @@ def plan_rules() -> dict[str, dict]:
 # Decision sections whose IDs belong to other work and only look like plan rules:
 # (words in the section heading, the IDs that are not the plan's there).
 OTHER_IDS = [
-    ("Reading Lens gate thresholds", re.compile(r"G\d")),  # Reading Lens gates G0–G3
-    ("reader panels and the lookup budget", re.compile(r"Q\d")),  # that review's questions
+    ("Reading Lens gate thresholds", re.compile(r"G[0-3]")),  # Reading Lens gates G0–G3
+    ("reader panels and the lookup budget", re.compile(r"Q[1-5]")),  # that review’s questions Q1–Q5
 ]
 # An amendment named in a row's text or a section's prose: "amends A1", "an exception to X4".
 AMENDS = re.compile(
-    r"\b(?:amends?|amended|exception to|replaces|supersedes|overrides)\s+"
+    r"\b(?:amends?|amended|exception to|replaces|supersedes|overrides|reduces|narrows|limits)\s+"
     r"((?:[A-Z]{1,2}\d{1,2})(?:(?:,\s*|\s+and\s+)[A-Z]{1,2}\d{1,2})*)"
 )
 
@@ -181,6 +181,13 @@ def lookup(rid: str) -> None:
     print(f"== {rid}  (plan L{r['line']}, {r['section']})\n{r['text']}\n")
     for d in decisions({rid}).get(rid, []):
         print(f"-- decisions.md L{d['line']}, {d['section']} [{d['label']}]\n{d['text']}\n")
+    # An ID that other work also uses (OTHER_IDS) can't be told apart in code or check
+    # names, so nothing is listed rather than the other work's code and checks.
+    shared = [words for words, pattern in OTHER_IDS if pattern.fullmatch(rid)]
+    if shared:
+        print(f"code and e2e checks: not listed; {rid} is also an ID in “{shared[0]}”,")
+        print("so code and checks citing it may mean that one. Search by the rule's words.\n")
+        return
     code = subprocess.run(
         ["git", "grep", "-c", "-w", rid, "--", "src", "src-tauri/src", ":!src/spikes"],
         cwd=ROOT, capture_output=True, text=True,
