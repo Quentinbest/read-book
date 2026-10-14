@@ -1,5 +1,5 @@
 {
-  "note": "Public test corpus, plan §6.2. Fetch with scripts/corpus/fetch.py. Generated files (broken, hostile, large) come from scripts/corpus/generate.py.",
+  "note": "Public test corpus, plan §6.2. Fetch with scripts/corpus/fetch.py. Generated files (broken, hostile, large) come from scripts/corpus/generate.py. Project Gutenberg rebuilds its EPUBs from time to time: when fetch.py reports a MISMATCH for one, check that the new file gives the same corpus_outcomes result, then pin its new hash.",
   "files": [
     {
       "name": "standardebooks-moby-dick.epub",
@@ -20,7 +20,7 @@
         "epub2",
         "ncx"
       ],
-      "sha256": "81d6fa4e416843c2a5c1a85a21d2d437419db4d16b0db032e026f61410bd9aca"
+      "sha256": "18ea404f414d79008039791dcec05b2ab1c1021e01c560a999fef5eef233205a"
     },
     {
       "name": "idpf-GhV-oeb-page.epub",

@@ -1,0 +1,8 @@
+# One Rust for CI, release builds and local checks, so a green scripts/ci-local.sh
+# predicts a green CI (newer Clippy on CI's floating `stable` failed code that was
+# green locally). Bump on purpose, in its own PR. cargo-fuzz keeps `+nightly`.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+profile = "minimal"
