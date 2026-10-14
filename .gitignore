@@ -34,9 +34,6 @@ docs/visual/diff/
 *.p8
 *.p12
 
-# Local agent guidance
-CLAUDE.md
-
 # Translation exports (scripts/i18n/export.mjs)
 i18n-out/
 

@@ -60,7 +60,7 @@ Linen sends nothing anywhere. If something goes wrong, the details go to a crash
 
 ### Set up
 
-You need a Mac with the Xcode command-line tools, [Rust](https://rustup.rs) (stable), Node.js 24 and pnpm (`corepack enable` gives the version in `package.json`).
+You need a Mac with the Xcode command-line tools, [Rust](https://rustup.rs) (`rustup` installs the version in `rust-toolchain.toml`), Node.js 24 and pnpm (`corepack enable` gives the version in `package.json`).
 
 ```sh
 git clone https://github.com/Quentinbest/read-book.git
@@ -80,6 +80,7 @@ pnpm tauri dev      # run the app
 | `src/lib/strings/`         | All interface text, one catalogue per language. Shared terms are in `docs/i18n/glossary.md`.                       |
 | `src/extensions/`          | The extension host. The API reference is [`docs/extensions/README.md`](docs/extensions/README.md).                 |
 | `docs/`                    | The implementation plan, the design, decisions and progress. Code comments cite the plan's rule IDs (`// B8: …`).  |
+| `AGENTS.md`                | What a coding agent (or a new contributor) needs on day one; the longer notes are in `docs/development.md`.        |
 
 ### Your first change
 
@@ -92,7 +93,7 @@ pnpm tauri dev      # run the app
    pnpm vitest run src/reader/layout.test.ts    # one test file
    ```
 
-3. Open a pull request. It is merged once CI is green.
+3. Open a pull request with the template's sections filled in. It is merged once CI is green and every automated review finding has an answer.
 
 ### Write an extension
 
@@ -112,7 +113,7 @@ python3 scripts/perf-coldstart.py; scripts/perf-memory.sh   # budgets (§6.4)
 (cd src-tauri && cargo test --features spikes)        # Rust, with the test-only code
 ```
 
-The suite runs on the current desktop and keeps the display awake; `LINEN_SPACE=2 scripts/e2e.sh` moves its window to Desktop 2 instead. The Rust corpus tests skip themselves until `python3 scripts/corpus/fetch.py` and `python3 scripts/corpus/generate.py` have made the test books.
+The suite runs on the current desktop and keeps the display awake; `LINEN_SPACE=2 scripts/e2e.sh` moves its window to Desktop 2 instead. The Rust corpus tests need the test books from `python3 scripts/corpus/fetch.py` and `python3 scripts/corpus/generate.py`; `scripts/ci-local.sh` makes them, and fails rather than skips without them.
 
 ### Build and release
 

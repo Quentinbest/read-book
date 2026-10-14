@@ -1,5 +1,8 @@
 ## What changes
 
+<!-- One stage or feature. Over about 1,000 changed lines (baselines, generated files and
+     translations aside)? Say why. -->
+
 ## Checks
 
 <!-- Commands run and their results (scripts/ci-local.sh, in-app checks by id with n/n). Say what was not run, and why. -->
