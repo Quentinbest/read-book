@@ -2,6 +2,8 @@
 
 Owner decisions taken after plan revision D. IDs refer to `docs/implementation-plan.md` §10. The plan text is not edited; this file is the record.
 
+Since 2026-10-14, a choice the owner left to Claude (“make your best calls”) is recorded as **Delegated to Claude**, not as approved, and a question nobody answered stays open and is not built (see “Decided 2026-10-14”).
+
 | # | Decision | Date |
 |---|---|---|
 | Scope | Develop and verify on **macOS only** for now. Windows and Linux work (WebView2, WebKitGTK, NVDA, Orca, Windows high contrast, Linux packaging) is deferred, not dropped. Spike criteria that compare engines are recorded as deferred. CI builds macOS only. | 2026-09-24 |
@@ -270,6 +272,15 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | The light card (79, O4, DX7) | Dictionary entries sit on a light card in every theme. |
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
+
+## Decided 2026-10-14 (how changes are reviewed and decided)
+
+The owner asked for Phase 1 of the development-process review (2026-10-14: “Start Phase 1 fixes”). Two defects had shipped that were visible before release: an automated review finding on #31 described the bug that 0.4.2 fixed, and a recommendation nobody answered was built in 0.4.1 (“Decided 2026-10-12”).
+
+| What | Decided |
+|---|---|
+| Review findings | Before a merge is asked for, the automated review of the latest push has finished, and every finding has an answer in its thread: **Fixed** (the commit), **Rejected** (a one-line reason) or **Deferred** (a numbered item in `docs/pending-approvals.md`). The PR lists them (`.github/pull_request_template.md`). |
+| Decisions | Only the owner's explicit answers are recorded as approved. A choice left to Claude is recorded as **Delegated to Claude**; a question nobody answered stays open and is not built. A PR built from a plan with open questions says which were answered, delegated or left open. A waived gate records what result would undo the waiver (item 97). |
 
 ## Decided 2026-10-13 (release 0.5.1)
 
