@@ -12,7 +12,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - item 82, on 2026-10-10, and items 83–87, on 2026-10-11 (Reading Lens Stages 2d and 3).
 - items 88–96, on 2026-10-13 (compact selection bar).
 
-Waiting for the owner: item 97 (2026-10-14). Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
+Nothing is waiting for the owner now. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details. (Open pull requests #7–#9 add items 42–52; numbers may need adjusting when they merge.)
 
 ## Review fixes (2026-09-26)
 
@@ -291,3 +291,4 @@ The owner asked for a shorter selection bar, with Explain as an icon (2026-10-12
     - **(b) Stage 2d is withdrawn if G0 fails.** Host API 1.1's hosts, keys and options pages are removed in the next release, and Explain stops working.
     - **(c) No consequence.** The waiver stands whatever the diary shows; G0 is no longer measured.
     *Recommendation:* (a). It keeps the waiver honest (a G0 result still decides something) without breaking shipped API.
+    **Approved 2026-10-14: (a).**

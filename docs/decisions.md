@@ -274,6 +274,16 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-14 (Gate 0's waiver, item 97; Phase 2 of the process review)
+
+The owner chose item 97's option (a) and, for Phase 2 of the development-process review, chose as recommended when asked (2026-10-14).
+
+| What | Approved |
+|---|---|
+| What would undo Gate 0's waiver (97) | **(a).** Stage 2d (optional hosts, Keychain keys, options pages) stays whatever the diary shows: it is general extension plumbing, and removing it would break installed extensions. If the Stage 1 diary fails G0, Stages 3–5 stop: Explain stays private and is not offered to others, and the result is recorded beside the waiver. |
+| Testing a release candidate (R4) | Before the owner publishes a draft release: Claude runs the full in-app suite on the release commit and writes 3–8 acceptance scenarios from its `CHANGELOG.md` entry; a script backs up the owner's library folder and installs the draft's DMG; the owner runs the scenarios by hand with real input; Claude records each result with its setup. Release builds keep ignoring `LINEN_DATA_DIR`, so the hand test uses the real library, after the backup. |
+| Agent instructions in the repository (R5) | A one-page `AGENTS.md` is committed (Codex reads it); a committed `CLAUDE.md` imports it; the longer development notes move to `docs/development.md`. Nothing is kept private. |
+
 ## Decided 2026-10-14 (how changes are reviewed and decided)
 
 The owner asked for Phase 1 of the development-process review (2026-10-14: “Start Phase 1 fixes”). Two defects had shipped that were visible before release: an automated review finding on #31 described the bug that 0.4.2 fixed, and a recommendation nobody answered was built in 0.4.1 (“Decided 2026-10-12”).
