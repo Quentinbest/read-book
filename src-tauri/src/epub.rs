@@ -114,7 +114,8 @@ pub fn validate_archive<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Res
     let mut total: u64 = 0;
     for i in 0..archive.len() {
         let entry = archive.by_index_raw(i).map_err(|_| Rejection::NotZip)?;
-        let name = entry.name().to_string();
+        // zip 9: a name that is neither UTF-8 nor CP437 is an error; such a book is refused.
+        let name = entry.name().map_err(|_| Rejection::NotZip)?.into_owned();
         if !is_safe_path(&name) {
             return Err(Rejection::UnsafePath(name));
         }
@@ -556,7 +557,11 @@ pub fn read_package<R: Read + Seek>(
         .map(|(_, v)| v.clone())
         .filter(|v| !v.is_empty());
 
-    let entries: HashSet<String> = archive.file_names().map(String::from).collect();
+    // validate_archive has already refused a book with a name that can't be read.
+    let entries: HashSet<String> = archive
+        .file_names()
+        .filter_map(|n| n.ok().map(|n| n.into_owned()))
+        .collect();
     let mut damage = Vec::new();
     let mut spine = Vec::new();
     for id in &spine_ids {

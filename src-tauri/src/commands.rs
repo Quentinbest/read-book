@@ -213,7 +213,10 @@ pub fn book_entries(state: State<AppState>, book_id: String) -> CmdResult<Vec<(S
                 message: e.to_string(),
             })?;
             if entry.is_file() {
-                out.push((entry.name().to_string(), entry.size()));
+                let name = entry.name().map_err(|e| CommandError::Failed {
+                    message: e.to_string(),
+                })?;
+                out.push((name.into_owned(), entry.size()));
             }
         }
         Ok(out)

@@ -106,15 +106,15 @@ fn read_package(path: &Path) -> Result<(Manifest, zip::ZipArchive<std::fs::File>
             continue;
         }
         total += entry.size();
-        let ext = entry
-            .name()
+        // validate_archive above has refused a name that can't be read.
+        let name = entry.name().map_err(|e| ExtError::Invalid(e.to_string()))?;
+        let ext = name
             .rsplit_once('.')
             .map(|(_, e)| e.to_ascii_lowercase())
             .unwrap_or_default();
         if !PACKAGE_TYPES.contains(&ext.as_str()) {
             return Err(ExtError::Invalid(format!(
-                "the package has a file Linen does not load: {}",
-                entry.name()
+                "the package has a file Linen does not load: {name}"
             )));
         }
     }
@@ -216,7 +216,11 @@ fn unpack(zip: &mut zip::ZipArchive<std::fs::File>, dir: &Path, id: &str) -> Res
         if entry.is_dir() {
             continue;
         }
-        let dest = staging.join(entry.name());
+        let name = entry
+            .name()
+            .map_err(|e| ExtError::Invalid(e.to_string()))?
+            .into_owned();
+        let dest = staging.join(name);
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
