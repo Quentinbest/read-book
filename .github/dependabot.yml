@@ -1,0 +1,34 @@
+# Dependency updates (development-process review R8, owner 2026-10-14).
+# Weekly; minor and patch updates come grouped, one PR per ecosystem, and a major
+# update comes alone. Each PR goes through CI, the review and its findings like any
+# other (AGENTS.md). Rust itself is pinned in rust-toolchain.toml and bumped by hand.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      cargo-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    ignore:
+      # Pinned to a commit and patched (patches/foliate-js@0.0.0.patch); updated by hand.
+      - dependency-name: foliate-js
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

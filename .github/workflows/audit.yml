@@ -1,0 +1,33 @@
+name: Audit
+
+# Known vulnerabilities in the dependencies (development-process review R8): on every
+# change, and weekly, because an advisory can be published without any change here.
+# Not a required check for merging (only CI's jobs are): a new advisory shows red
+# here without blocking unrelated work.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      # The production dependencies only: what ships in the app.
+      - name: npm advisories
+        run: pnpm audit --prod
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Rust advisories
+        run: cargo audit --file src-tauri/Cargo.lock
