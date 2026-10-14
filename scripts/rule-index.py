@@ -77,15 +77,26 @@ def plan_rules() -> dict[str, dict]:
     return rules
 
 
-# Decision sections whose IDs belong to other work and only look like plan rules:
-# (words in the section heading, the IDs that are not the plan's there).
-OTHER_IDS = [
-    ("Reading Lens gate thresholds", re.compile(r"G[0-3]")),  # Reading Lens gates G0–G3
-    ("reader panels and the lookup budget", re.compile(r"Q[1-5]")),  # that review’s questions Q1–Q5
-]
+# Decision sections whose IDs belong to other work and only look like plan rules (the
+# Reading Lens gates, the reader-panel review's questions). The IDs themselves are read
+# from those sections' tables, so only the ones that really collide are set apart.
+OTHER_SECTIONS = ("Reading Lens gate thresholds", "reader panels and the lookup budget")
+
+
+def other_ids() -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {}
+    section = ""
+    for line in DECISIONS.read_text().splitlines():
+        if line.startswith("## "):
+            section = next((w for w in OTHER_SECTIONS if w in line), "")
+        elif section and line.startswith("|"):
+            first = line.strip("|").split("|")[0]
+            found.setdefault(section, set()).update(RULE_ID.findall(first))
+    return found
 # An amendment named in a row's text or a section's prose: "amends A1", "an exception to X4".
 AMENDS = re.compile(
-    r"\b(?:amends?|amended|exception to|replaces|supersedes|overrides|reduces|narrows|limits)\s+"
+    r"\b(?:amends?|amended|exception to|replaces|supersedes|overrides|reduces|narrows|limits"
+    r"|approved(?:\s+the)?|settles|closes)\s+"
     r"((?:[A-Z]{1,2}\d{1,2})(?:(?:,\s*|\s+and\s+)[A-Z]{1,2}\d{1,2})*)"
 )
 
@@ -95,11 +106,10 @@ def decisions(known: set[str]) -> dict[str, list[dict]]:
     or prose that say they amend it."""
     found: dict[str, list[dict]] = {}
     section = "Decision record"
+    others = other_ids()
 
     def add(rid: str, n: int, label: str, text: str) -> None:
-        if rid not in known or any(
-            words in section and pattern.fullmatch(rid) for words, pattern in OTHER_IDS
-        ):
+        if rid not in known or any(words in section and rid in ids for words, ids in others.items()):
             return
         if not any(d["line"] == n for d in found.get(rid, [])):
             found.setdefault(rid, []).append(
@@ -181,9 +191,9 @@ def lookup(rid: str) -> None:
     print(f"== {rid}  (plan L{r['line']}, {r['section']})\n{r['text']}\n")
     for d in decisions({rid}).get(rid, []):
         print(f"-- decisions.md L{d['line']}, {d['section']} [{d['label']}]\n{d['text']}\n")
-    # An ID that other work also uses (OTHER_IDS) can't be told apart in code or check
+    # An ID that other work also uses (OTHER_SECTIONS) can't be told apart in code or check
     # names, so nothing is listed rather than the other work's code and checks.
-    shared = [words for words, pattern in OTHER_IDS if pattern.fullmatch(rid)]
+    shared = [words for words, ids in other_ids().items() if rid in ids]
     if shared:
         print(f"code and e2e checks: not listed; {rid} is also an ID in “{shared[0]}”,")
         print("so code and checks citing it may mean that one. Search by the rule's words.\n")
@@ -194,7 +204,8 @@ def lookup(rid: str) -> None:
     ).stdout.split()
     print("code:", ", ".join(code) if code else "(none)")
     checks = subprocess.run(
-        ["git", "grep", "-n", "-o", "-E", rf"id: '{rid}[-'][^']*", "--", "src/spikes/e2e.ts"],
+        # Every rule token counts in a compound ID: I5 in 'I2-I5-trackpad'.
+        ["git", "grep", "-n", "-o", "-E", rf"id: '([A-Za-z0-9]+-)*{rid}[-'][^']*", "--", "src/spikes/e2e.ts"],
         cwd=ROOT, capture_output=True, text=True,
     ).stdout.split("\n")
     # "src/spikes/e2e.ts:1234:id: 'S9-edge-reveal" → "S9-edge-reveal (e2e.ts:1234)"

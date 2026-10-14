@@ -5,7 +5,7 @@
 Every rule ID in the plan, with the owner decisions that change it. **When a rule has decisions, they win over the plan**, newest last.
 Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9`.
 
-187 rules; 46 changed or settled by a decision.
+187 rules; 47 changed or settled by a decision.
 
 | Rule | Plan | Rule text (abridged) | Decisions (docs/decisions.md) |
 |---|---|---|---|
@@ -71,7 +71,7 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | G5 | L753 | Navigator, popovers, ⌘K, sheets, library and Preferences in Sepia and Night. S4 now supplies every token, so… | Approved 2026-09-25 (Phases 3–6 review) |
 | G6 | L754 | Windows and Linux window chrome and the ⋯ app menu. P§16 describes them, but every mock uses macOS (Phase 1 e… | Decision record |
 | G7 | L755 | Extension surfaces: an extension’s Navigator tab, pinned items in the top-bar ⋯ menu, and the “Built-in” and… | Approved 2026-09-26 (Phases 7–8 review) |
-| G8 | L756 | Reading variants: Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, image vi… |  |
+| G8 | L756 | Reading variants: Scroll mode, two-page spread, fixed-layout zoom and pan, RTL and vertical writing, image vi… | Recommended defaults adopted 2026-09-24 |
 | G9 | L757 | Tablet beyond the tap-zone overlay: not needed for the first release (Q2). |  |
 | G10 | L758 | The ? cheat sheet (Phase 3 start). | Approved 2026-09-25 (Phases 3–6 review) |
 | G11 | L759 | The “Couldn’t place” Re-attach flow: how the reader picks the new passage (Phase 5 start). | Approved 2026-09-25 (Phases 3–6 review) |
