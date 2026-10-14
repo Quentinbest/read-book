@@ -422,6 +422,11 @@ mod tests {
             r#"<iframe src="http://canary/frame"></iframe><object data="x"></object><form action="http://canary/form"><input></form>"#,
             r#"<svg><script>fetch("http://canary/svg")</script><circle r="2"/></svg>"#,
             r#"<p style="background:url(http://canary/style)">s</p><style>@import "http://canary/import";</style>"#,
+            // RUSTSEC-2021-0158 (ammonia < 4.2.3): SVG animation elements.
+            r#"<svg><a><animate attributeName="href" values="javascript:alert(1)"/><text>a</text></a></svg>"#,
+            r#"<svg><animateMotion path="M0 0" /><animateTransform attributeName="transform" /><animateColor to="red" /><set attributeName="href" to="javascript:alert(2)"/></svg>"#,
+            // RUSTSEC-2021-0157 (ammonia < 4.2.3): quoted url() in a style attribute.
+            r#"<p style='background:url("http://canary/quoted")'>q</p><p style="background:url('javascript:alert(3)')">j</p>"#,
         ];
         for h in hostile {
             let out = sanitise_html(h, G, "Audio isn't available");
@@ -441,6 +446,9 @@ mod tests {
                 "<style",
                 "srcset",
                 "<link",
+                "<animate",
+                "<set",
+                "<svg",
             ] {
                 assert!(!lower.contains(bad), "{bad} survived in {out}");
             }
