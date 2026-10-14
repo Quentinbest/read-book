@@ -350,7 +350,7 @@ fn extract_cover<R: Read + std::io::Seek>(
     dir: &Path,
     stem: &str,
 ) -> std::io::Result<Option<String>> {
-    let Ok(entry) = archive.by_name(href) else {
+    let Ok(entry) = crate::epub::by_decoded_name(archive, href) else {
         return Ok(None);
     };
     if entry.size() > MAX_COVER_BYTES {

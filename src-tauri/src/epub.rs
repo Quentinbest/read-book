@@ -106,6 +106,25 @@ pub struct Package {
     pub has_toc: bool,
 }
 
+/// An entry by its name as Linen reads it. zip 9 looks names up by their raw bytes, so a
+/// name stored in CP437 (no UTF-8 flag, as old tools wrote them) is only found by its
+/// decoded form here, as zip 8 found it (L17: entries are listed decoded, then read by name).
+pub fn entry_index<R: Read + Seek>(archive: &zip::ZipArchive<R>, name: &str) -> Option<usize> {
+    archive.index_for_name(name).or_else(|| {
+        (0..archive.len())
+            .find(|&i| matches!(archive.name_for_index(i), Some(Ok(decoded)) if decoded == name))
+    })
+}
+
+/// `ZipArchive::by_name`, but finding CP437 names by their decoded form (`entry_index`).
+pub fn by_decoded_name<'a, R: Read + Seek>(
+    archive: &'a mut zip::ZipArchive<R>,
+    name: &str,
+) -> zip::result::ZipResult<zip::read::ZipFile<'a, R>> {
+    let index = entry_index(archive, name).ok_or(zip::result::ZipError::FileNotFound)?;
+    archive.by_index(index)
+}
+
 /// Check the archive against the §7.1 limits without decompressing anything.
 pub fn validate_archive<R: Read + Seek>(archive: &mut zip::ZipArchive<R>) -> Result<(), Rejection> {
     if archive.len() > MAX_ENTRIES {
@@ -153,7 +172,7 @@ fn read_xml<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     name: &str,
 ) -> Result<Option<String>, Rejection> {
-    let Ok(entry) = archive.by_name(name) else {
+    let Ok(entry) = by_decoded_name(archive, name) else {
         return Ok(None);
     };
     if entry.size() > MAX_XML_BYTES {
@@ -265,7 +284,7 @@ fn check_xml_entry<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
     name: &str,
 ) -> Result<(), Rejection> {
-    let size = match archive.by_name(name) {
+    let size = match by_decoded_name(archive, name) {
         Ok(entry) => entry.size(),
         Err(_) => return Ok(()),
     };
@@ -276,7 +295,7 @@ fn check_xml_entry<R: Read + Seek>(
             _ => Ok(()),
         };
     }
-    let Ok(entry) = archive.by_name(name) else {
+    let Ok(entry) = by_decoded_name(archive, name) else {
         return Ok(());
     };
     let mut head = Vec::new();
@@ -397,7 +416,7 @@ struct ManifestItem {
 pub fn read_package<R: Read + Seek>(
     archive: &mut zip::ZipArchive<R>,
 ) -> Result<Package, Rejection> {
-    if archive.by_name("META-INF/encryption.xml").is_ok() {
+    if by_decoded_name(archive, "META-INF/encryption.xml").is_ok() {
         // Font obfuscation also uses encryption.xml; only real encryption is DRM.
         let xml = read_xml(archive, "META-INF/encryption.xml")?.unwrap_or_default();
         if let Some(item) = drm_encrypted_item(&xml) {
@@ -698,6 +717,29 @@ mod tests {
     use super::*;
     use std::io::{Cursor, Write};
     use zip::write::SimpleFileOptions;
+
+    /// L17 on zip 9: an entry named in CP437 (no UTF-8 flag) is listed by its decoded name,
+    /// and must be found by that name again, as zip 8 found it (Codex review of #74).
+    #[test]
+    fn a_cp437_name_is_found_by_its_decoded_form() {
+        let bytes = include_bytes!("../tests/fixtures/zip/cp437-name.zip");
+        let mut archive = zip::ZipArchive::new(Cursor::new(&bytes[..])).unwrap();
+        let listed: Vec<String> = archive
+            .file_names()
+            .map(|n| n.unwrap().into_owned())
+            .collect();
+        assert_eq!(listed, ["café.xhtml"]);
+        // zip 9 itself looks for the raw bytes, which are CP437, not UTF-8.
+        assert!(archive.by_name("café.xhtml").is_err());
+        assert_eq!(entry_index(&archive, "café.xhtml"), Some(0));
+        let mut text = String::new();
+        by_decoded_name(&mut archive, "café.xhtml")
+            .unwrap()
+            .read_to_string(&mut text)
+            .unwrap();
+        assert_eq!(text, "<p>café</p>\n");
+        assert!(by_decoded_name(&mut archive, "missing.xhtml").is_err());
+    }
 
     /// L-1: every rejection code has a message in the English catalogue, with as
     /// many values as the core sends (`no_chapters` comes from import.rs).

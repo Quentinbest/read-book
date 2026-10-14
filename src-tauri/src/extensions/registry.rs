@@ -122,7 +122,7 @@ fn read_package(path: &Path) -> Result<(Manifest, zip::ZipArchive<std::fs::File>
         return Err(ExtError::Invalid("the package is larger than 20 MB".into()));
     }
     let mut json = String::new();
-    zip.by_name("manifest.json")
+    crate::epub::by_decoded_name(&mut zip, "manifest.json")
         .map_err(|_| ExtError::Invalid("the package has no manifest.json".into()))?
         .take(MAX_MANIFEST)
         .read_to_string(&mut json)
@@ -134,12 +134,12 @@ fn read_package(path: &Path) -> Result<(Manifest, zip::ZipArchive<std::fs::File>
         ));
     }
     if let Some(main) = &m.main {
-        if zip.by_name(main).is_err() {
+        if crate::epub::by_decoded_name(&mut zip, main).is_err() {
             return Err(ExtError::Invalid(format!("the package has no {main}")));
         }
     }
     for tab in &m.contributes.navigator_tabs {
-        if zip.by_name(&tab.page).is_err() {
+        if crate::epub::by_decoded_name(&mut zip, &tab.page).is_err() {
             return Err(ExtError::Invalid(format!(
                 "the package has no {}",
                 tab.page
