@@ -65,7 +65,7 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       # Plan §6.2: the public and generated corpus (hostile, broken and large books).
       # The downloads are hash-verified and cached until the manifest changes.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: corpus/cache
           key: corpus-${{ hashFiles('corpus/manifest.json') }}
