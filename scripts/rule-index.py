@@ -31,14 +31,46 @@ def plain(text: str, limit: int = 110) -> str:
     return text if len(text) <= limit else text[: limit - 1].rstrip() + "…"
 
 
+# Plan table columns that carry a rule's substance beyond its second cell, read from
+# each table's header: a question's or conflict's decision goes first (it is the rule),
+# a shortcut's macOS keys after the action. Source, Phase, Owner and dates are left out.
+DECISION_COLUMNS = ("Decision", "Decision (accepted default)", "Resolved by")
+EXTRA_COLUMNS = ("macOS",)
+
+
+def row_text(header: list[str], cells: list[str]) -> str:
+    text = cells[1]
+    named = dict(zip(header, cells))
+    for col in DECISION_COLUMNS:
+        if named.get(col):
+            text = f"Decision: {named[col]} (on: {text})"
+    for col in EXTRA_COLUMNS:
+        if named.get(col):
+            text = f"{text}; {col}: {named[col]}"
+    return text
+
+
 def plan_rules() -> dict[str, dict]:
     rules: dict[str, dict] = {}
     section = ""
+    header: list[str] = []
     for n, line in enumerate(PLAN.read_text().splitlines(), 1):
         if line.startswith("#"):
             section = line.lstrip("#").strip()
             continue
-        m = TABLE_ROW.match(line) or BULLET.match(line)
+        if line.startswith("|"):
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if line.startswith("|---"):
+                continue
+            if not TABLE_ROW.match(line):
+                header = cells
+                continue
+            rid = cells[0]
+            if rid not in rules and len(cells) >= 2:
+                rules[rid] = {"line": n, "section": section, "text": row_text(header, cells)}
+            continue
+        header = []
+        m = BULLET.match(line)
         if m and m.group(1) not in rules:
             rules[m.group(1)] = {"line": n, "section": section, "text": m.group(2)}
     return rules
