@@ -198,10 +198,18 @@ def lookup(rid: str) -> None:
         print(f"code and e2e checks: not listed; {rid} is also an ID in “{shared[0]}”,")
         print("so code and checks citing it may mean that one. Search by the rule's words.\n")
         return
-    code = subprocess.run(
-        ["git", "grep", "-c", "-w", rid, "--", "src", "src-tauri/src", ":!src/spikes"],
+    hits = subprocess.run(
+        ["git", "grep", "-n", "-w", rid, "--", "src", "src-tauri/src", ":!src/spikes"],
         cwd=ROOT, capture_output=True, text=True,
-    ).stdout.split()
+    ).stdout.splitlines()
+    # The design's system boards are S1–S5 too: "design S3" cites the board, not the rule.
+    board = re.compile(rf"(?i)\b(?:design|board)\s+{rid}\b")
+    per_file: dict[str, int] = {}
+    for hit in hits:
+        path, _, text = hit.split(":", 2)
+        if not board.search(text):
+            per_file[path] = per_file.get(path, 0) + 1
+    code = [f"{path}:{count}" for path, count in per_file.items()]
     print("code:", ", ".join(code) if code else "(none)")
     checks = subprocess.run(
         # Every rule token counts in a compound ID: I5 in 'I2-I5-trackpad'.
