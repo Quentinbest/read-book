@@ -74,6 +74,8 @@ got=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$CAND/Cont
 [ "$got" = "$VERSION" ] || fail "the DMG holds Linen $got, not $VERSION"
 codesign --verify --deep --strict "$CAND" || fail "the candidate's signature does not verify"
 
+# Again: Linen may have been opened while the DMG was downloaded and checked.
+running && fail "Linen was opened meanwhile; quit it and run this again"
 BACKUP="$(dirname "$DATA")/app.linen.reader.before-$TAG-$STAMP"
 mkdir "$BACKUP"
 if [ -d "$DATA" ]; then ditto "$DATA" "$BACKUP/app.linen.reader"; fi
