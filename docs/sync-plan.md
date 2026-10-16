@@ -131,9 +131,9 @@ Each rule has an ID that code comments and tests cite. A rule built from an open
 | ID | Rule | Source | Stage |
 |---|---|---|---|
 | SY22 | **Small things first.** Places, highlights, notes and settings go before book files, so a large upload never delays them | #73 | 4 |
-| SY23 | **Book files.** Each is stored once as `books/‹sha256›.epub`. A file from storage is imported through the same pipeline as a file from Finder: validation, zip and XML limits, DRM refusal, B3 (plan §7.1). Its hash must match its name and its record, or it is refused and fetched again later | B3; plan §7.1 | 4 |
+| SY23 | **Book files.** Each is stored once as `books/‹sha256›.epub`. A file from storage is imported through the same pipeline as a file from Finder: validation, zip and XML limits, DRM refusal, B3 (plan §7.1). Its hash must match its name and its record, or it is refused. The refusing device notes the bad object in its `devices/` file. Any device that holds a good copy with that hash replaces the object (written to a temporary name and renamed), and the refusing device fetches it again once it has been replaced, so a damaged object is repaired rather than refused forever | B3; plan §7.1 | 4 |
 | SY24 | **A book still on its way** (prov.) appears in the library when its file has arrived; until then its place and highlights wait (Prototype), and Settings › Sync says “Copying 3 books”. No new tile state | Prototype | 4 |
-| SY25 | **Full storage.** When a write fails for space, everything else keeps syncing, Settings › Sync says what waits (“iCloud Drive is full · 4 books not copied”), a quiet message says so once, and nothing on the device changes | #73 | 4 |
+| SY25 | **Full storage.** When a book doesn't fit but there is room for small objects, everything else keeps syncing. When nothing fits, every change waits in the journal, in order, and goes when there is room. Either way, Settings › Sync says what waits (“iCloud Drive is full · 4 books not copied”, or “iCloud Drive is full · changes wait on this Mac”), a quiet message says so once, and nothing on the device changes | #73 | 4 |
 
 ### 4.6 Safety
 
@@ -238,7 +238,7 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
 ### Stage 3 — Turning it on: places, highlights and notes, settings (M–L)
 
 - Settings › Sync, the setup sheet, status, Sync Now, Turn Off (items 99, 109); timing (item 107); the settings list (item 103); the open-book message (item 104).
-- **In-app checks** (two library folders, run one after the other against one temporary storage):
+- **In-app checks** (two library folders, run one after the other against one temporary storage. In the test build, each library's device store is a file beside its `LINEN_DATA_DIR`, outside the library folder, so each library is one stable device and SY7's renewal is exercised only on purpose):
   - `SY-place-resume`: read to a place in library A and quit; open the same book in library B, and it resumes there (#73).
   - `SY-highlight-roundtrip`: a highlight and its note made in A appear in B; editing it in B shows in A.
   - `SY-settings`: a theme and text size set in A apply in B; a device-only setting doesn't.
@@ -254,7 +254,8 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
   - A book imported in A appears in B with its highlights.
   - An updated file in A replaces B's copy, and its highlights re-anchor or go to “Couldn't place”.
   - A book file damaged in storage is refused and fetched again.
-  - With storage full, places and notes still sync and the message shows once.
+  - With room for small objects but not for a book: places and notes still sync, and the message shows once. With no room at all: nothing is lost, and every change goes, in order, once there is room.
+  - A book object damaged in storage is replaced by a device with a good copy, and the refusing device then receives it.
   - A book removed in A while open in B stays open, and goes when it closes.
 - **Done when:** the checks pass, and a 500-book library (the cold-start fixture) syncs without breaking the memory budget (plan §6.4).
 
