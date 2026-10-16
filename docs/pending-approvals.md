@@ -329,7 +329,7 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet,
     *Recommendation:* approve.
 107. **When it syncs (SY32; Stage 3).** Proposed (provisional): at launch, 10 s after the last local change, every 5 minutes while Linen is open, on quit (at most 2 s), and on Sync Now.
     *Recommendation:* approve.
-108. **Encrypting what is in storage.** Linen would store books, highlights and notes in iCloud Drive or Google Drive as they are; Apple or Google keep them under their own encryption. Linen could add a passphrase, but a forgotten passphrase loses the synced copy, and the two built-in providers can't read the bodies anyway (SY3).
+108. **Encrypting what is in storage (Stage 1: it shapes the protocol's formats).** Linen would store books, highlights and notes in iCloud Drive or Google Drive as they are; Apple or Google keep them under their own encryption. Linen could add a passphrase, but a forgotten passphrase loses the synced copy, and the two built-in providers can't read the bodies anyway (SY3).
     *Recommendation:* no encryption in this plan; decide again before any provider other than the two folders is allowed.
 109. **One storage at a time (SY29; Stage 1, its screens Stage 3).** Proposed: one storage per library. Switching keeps the old copy where it is (the reader may delete its `Linen` folder) and joins the new storage as a first sync, with no duplicates. Both devices must choose the same storage to see each other; Settings › Sync names it.
     *Recommendation:* approve.
