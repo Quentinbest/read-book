@@ -291,7 +291,7 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 
 ## Decided 2026-10-14 (sync across devices, #73)
 
-The owner wrote these into issue #73 (“Already decided”); they are copied here as the record. The plan is `docs/sync-plan.md`; its open questions are items 98–109.
+The owner wrote these into issue #73 (“Already decided”); they are copied here as the record. The plan is `docs/sync-plan.md`; its open questions are items 98–110.
 
 | What | Decided |
 |---|---|
