@@ -300,3 +300,32 @@ The owner asked for a shorter selection bar, with Explain as an icon (2026-10-12
     - **(c) No consequence.** The waiver stands whatever the diary shows; G0 is no longer measured.
     *Recommendation:* (a). It keeps the waiver honest (a G0 result still decides something) without breaking shipped API.
     **Approved 2026-10-14: (a).**
+
+## Sync across devices (2026-10-16, #73)
+
+The plan is `docs/sync-plan.md`; its rules are SY1–SY33. Nothing is built yet, and sync waits for a second platform (2026-10-14). Each item names the stage that needs it.
+
+98. **The new permissions (SY1, SY2; Stage 2).** The design says extensions get no file system (P§19, plan §7.2), so writing into these folders needs a brokered permission. Proposed: `sync.provider` lets an extension offer a sync provider; it is shown at install, strongly warned (“Can store all your books, highlights, notes and settings”). `folder:icloud-drive` and `folder:google-drive` let it read and write a `Linen` folder at the top of that storage, and nothing else; they are consented to in Linen's setup sheet when the reader turns sync on, which names the folder. Bodies reach the provider as handles it cannot read (SY3), so the two built-in providers never see a book or a note.
+    *Recommendation:* approve.
+99. **Where sync is set up (SY6, SY31; Stage 3).** No screen in the design has sync. Proposed: a new Settings section, Sync, after Library (amends G2): a storage menu (None, iCloud Drive, Google Drive and its account), the setup sheet, one status line, Sync Now, Turn Off and Recently deleted…. The two providers are also listed as Built-in in Settings › Extensions.
+    *Recommendation:* approve; built provisional and captured for approval in Stage 3.
+100. **Where the reader decides a conflict (SY13; Stage 5).** Proposed: a “Changed on two devices” group at the top of the Notes tab, as “Couldn't place” is (A8). Each entry shows both versions, with the device and time, and Keep this under each. After the sync that finds them, one quiet message: “2 highlights changed on two devices · Review”. Until the reader chooses, the version changed last shows in the text and the other is kept.
+    *Recommendation:* approve.
+101. **Where deleted things are restored (SY19; Stage 5).** Proposed: Settings › Sync › Recently deleted…, a sheet listing the books, highlights and notes deleted in the last 7 days, newest first, with the device and date, and Restore. The library and the Notes tab don't change.
+    *Recommendation:* approve. Deleting is rare, and one place for restoring keeps the reading screens as they are.
+102. **A change and a deletion made apart (SY13, SY20; Stage 1).** One device deletes a highlight (or removes a book); another changed it, or added highlights to the book, before they synced. Proposed: a conflict the reader decides (item 100), but only when the second device changed it after the last sync it shared with the deleting device. Otherwise the deletion applies without asking. This also covers a device away for more than a week: what was deleted elsewhere never comes back unless the reader keeps it.
+    *Recommendation:* approve. It keeps both of your rules: the reader decides between changes, and nothing deleted returns on its own.
+103. **Which settings sync (SY15; Stage 3).** Proposed: theme, text size, line spacing, font, page width, publisher styles, single-key shortcuts, page-turn crossfade and announcements, the UI language, the library's sort and view, the reading pace, and per book its Pages or Scroll and Simplify styles. Device-only: open at launch, pinned extension commands (extensions don't sync), the docked Navigator tab (it depends on the window's width), safe mode and the sync setup. A new setting stays on the device until it is added to the list. Text size and margins between a Mac and an iPad (the tablet uses 20 px text, P§4) are decided with #80.
+    *Recommendation:* approve.
+104. **A newer place for the open book (SY12; Stage 3).** Opening a book uses the newest place (#73). If the book is already open, proposed: it never moves under the reader; a message (M1) says “You read further on ‹device› · Go there”, and Back returns (N1).
+    *Recommendation:* approve.
+105. **Merge rules other than highlights and notes (SY12, SY14, SY16; Stage 1).** Proposed: the newest place wins, even when it is earlier in the book; each setting, last opened and finished: the newest wins; a merge never undoes adding a book (only a deletion removes one); when two devices import different updated files of one book while apart (B3), the newest import wins, highlights re-anchor and unplaceable ones go to “Couldn't place”.
+    *Recommendation:* approve.
+106. **Safety values (SY10, SY26, SY27; Stage 1).** Proposed (all provisional): versions from a clock more than 24 h ahead are set aside until this Mac's clock catches up; a sync that would remove more than 10 books, more than a quarter of the library or more than 50 highlights asks first (“Remove · Stop syncing”); before the first sync and before such a removal, a copy of the database goes into the library folder's `Backups/` for 7 days.
+    *Recommendation:* approve.
+107. **When it syncs (SY32; Stage 3).** Proposed (provisional): at launch, 10 s after the last local change, every 5 minutes while Linen is open, on quit (at most 2 s), and on Sync Now.
+    *Recommendation:* approve.
+108. **Encrypting what is in storage.** Linen would store books, highlights and notes in iCloud Drive or Google Drive as they are; Apple or Google keep them under their own encryption. Linen could add a passphrase, but a forgotten passphrase loses the synced copy, and the two built-in providers can't read the bodies anyway (SY3).
+    *Recommendation:* no encryption in this plan; decide again before any provider other than the two folders is allowed.
+109. **One storage at a time (SY29; Stage 3).** Proposed: one storage per library. Switching keeps the old copy where it is (the reader may delete its `Linen` folder) and joins the new storage as a first sync, with no duplicates. Both devices must choose the same storage to see each other; Settings › Sync names it.
+    *Recommendation:* approve.
