@@ -220,7 +220,8 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
   - Expiry under skew: one clock 8 days ahead removes nothing; a deletion from a device whose clock is 8 days behind is still restorable for a week (SY17).
   - Backups: with places and notes still in the WAL, and a book replaced and another removed by a sync weeks after the first, the newest backup restores all of them (SY27).
   - Compaction past the size limit: a library whose view exceeds one shard (SY11) compacts, publishes and is read back whole, with every note within its limit; a 9 MB note stays on its device, unsent and unchanged (SY28; Stage 3 checks that Settings › Sync names it).
-  - A note compacted into an offline device's view, then deleted elsewhere: its text stays in storage while that device is away; once it is back and its frontier includes the deletion, and the week has passed, the text is nowhere in storage, and that device has applied the deletion (SY11, SY17).
+  - A note compacted into an offline device's view, then deleted elsewhere: its text stays in storage while that device is away; once it is back it applies the deletion, sends a hold and offers Restore for its own week (SY17), and when that week has passed too, the text is nowhere in storage (SY11).
+  - A device whose clock ran a year ahead writes, then its clock is corrected: it rotates with a raised epoch, its wrong-clock versions are offered for Keep or Discard, and after Keep, a later edit made with the corrected clock wins on every device (SY10).
   - Two devices setting up one empty folder at once end in one library once the reader joins one to the other; a claim written by a device nobody enrolled is never adopted (SY11, SY34).
   - A highlight deleted on one device while another, apart, adds its first note: a conflict, and the note isn't lost (SY13).
   - Two devices uploading the same book or blob at once: one object stays, and no conflict copy remains (SY11).
