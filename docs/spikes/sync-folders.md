@@ -96,12 +96,19 @@ The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc 
 6. **SY11, blobs or packs.** One file per body works at 2,000 files in both storages, at about 7–8 uploads a second. Packs aren't needed for correctness. They would only shorten a large library's first upload, so the recommendation is to keep one file per body and revisit if Stage 4's 500-book check shows the first sync too slow.
 7. **SY32, timing.** A change takes about 10–20 s to upload, so a frontier acknowledgement or hold (SY11) takes at least that long. That fits the plan's 10 s and 5-minute timings, and the in-app checks must allow for it.
 
-## Not measured (still open in #91)
+## Not measured yet
 
-- **Other macOS releases** (13, 15 and 26): only 14.6.1 was available.
-- **A second device:** whether a rename looks atomic and how long a file takes to arrive there, conflict-copy names (they need concurrent edits from two devices), and Migration Assistant or a Time Machine restore to another Mac.
-- **iCloud Drive turned off or signed out, offline, and full storage.** Going offline would cut this session's network, and filling the storage wasn't attempted.
-- **Two Google accounts:** this Mac has one.
-- **Google Drive's stream or mirror mode:** not read from its settings (eviction worked, so Linen must handle not-downloaded files in either).
-- **The exact wording of the iCloud Drive prompt, and what the app receives after a refusal** (the error a refused app gets).
-- **A different path:** the app run from a different path (a copy in `/Applications` versus a disk image) wasn't tested for the prompt.
+The owner narrowed Stage 0 on 2026-10-17 (`docs/decisions.md`). There's no second device or account yet, and sync waits for a second platform anyway.
+
+**Still to do in Stage 0 (#91), on this Mac with the owner:**
+- iCloud Drive turned off and signed out, offline, and full storage.
+- Google Drive's stream or mirror mode.
+- The exact wording of the iCloud Drive prompt, and what the app receives after a refusal.
+- The prompt when the app runs from a different path (a copy in `/Applications` versus a disk image).
+
+**Moved to Stage 6 (#97), real devices:**
+- Other macOS releases (13, 15 and 26): only 14.6.1 was available.
+- A second device on the same accounts: whether a rename looks atomic there, how long a file takes to arrive, conflict-copy names (they need concurrent edits from two devices), and Migration Assistant or a Time Machine restore to another Mac.
+
+**Moved to Stage 2 (#93), as a unit test:**
+- Several Google accounts. Root discovery only reads folder names (`GoogleDrive-‹account›`, with leftovers to skip), so a test over fake folders covers it; no second account is needed.
