@@ -311,7 +311,7 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
 - Two real devices (a Mac and the second platform, per Decision 10-14) stay in step over a week of real reading through iCloud Drive and three days through Google Drive. The record goes in the status document; it confirms the soak test in real use and doesn't replace it.
 - `docs/release-acceptance.md` gains the sync checks; the README's Privacy section says what sync copies and where (SY33); sync appears in release builds.
 - **Moved here from Stage 0** (owner, 2026-10-17), measured on the real devices and recorded in `docs/spikes/sync-folders.md`:
-  - macOS 13, 15 and 26: the iCloud Drive prompt and the Keychain results.
+  - macOS 13, 15 and 26: every measurement in `docs/spikes/sync-folders.md` repeated on each (roots and leftovers, the prompt, not-downloaded files and the download request, offline, the Drive app quit, renames and upload time, names and links, 2,000 small files, the Keychain), since File Provider behaviour changes between releases (§8, risk 2).
   - With the second device on the same accounts: how long a file takes to arrive, whether a rename looks atomic there, and conflict-copy names.
   - Migration Assistant or a Time Machine restore to another Mac: with the login keychain (SY7's current store) the ID is copied, and the new Mac sees a different hardware UUID and takes a new ID at once; once the data-protection item is in use, the ID isn't copied at all.
   - iCloud Drive off and signed out, and full storage, on a device set up for testing.
