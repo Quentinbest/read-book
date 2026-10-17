@@ -1,0 +1,148 @@
+{
+ "date": "2026-10-17",
+ "machine": "Apple M2 (Mac14,3), macOS 14.6.1 (23G93)",
+ "google_drive_for_desktop": "115.0.1.0 (File Provider)",
+ "keychain": {
+  "login": "OSStatus 0",
+  "login_thisdeviceonly": "OSStatus 0, but the accessibility attribute is not stored (absent on read-back)",
+  "dataprotection_thisdeviceonly": "OSStatus -34018: A required entitlement isn't present",
+  "signing": "ad-hoc (codesign -s -)",
+  "hardware_uuid_ioplatformuuid": "readable by the ad-hoc program via IOKit, no entitlement (value not recorded)"
+ },
+ "background_process_access": {
+  "icloud_drive_list": "Operation not permitted (no prompt)",
+  "google_drive_list": "allowed"
+ },
+ "google_drive_writes": {
+  "tmp_state_before_rename": ".linen-tmp-1: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=false uploading=false conflicts=false err=- dataless=false size=1021",
+  "small_upload_seconds": 21.5,
+  "small_state": "change-1.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=true uploading=false conflicts=false err=- dataless=false size=1021",
+  "5mb_upload_seconds": 11.2,
+  "case": "case-insensitive: case.txt is the same file as Case.txt",
+  "unicode": "normalisation-insensitive: NFD name opens the NFC file",
+  "symlink": "created locally: link.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=false uploading=false conflicts=- err=- dataless=false size=13",
+  "listing": [
+   "Case.txt",
+   "blob-5mb.bin",
+   "café.txt",
+   "change-1.json",
+   "link.json"
+  ]
+ },
+ "google_drive_more": {
+  "evict": "evict: ok\nblob-5mb.bin: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusNotDownloaded uploaded=true uploading=false conflicts=false err=- dataless=true size=5242880",
+  "after_evict": "blob-5mb.bin: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusNotDownloaded uploaded=true uploading=false conflicts=false err=- dataless=true size=5242880",
+  "read_evicted_seconds": 7.44,
+  "read_bytes": 5242880,
+  "after_read": "blob-5mb.bin: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=true uploading=false conflicts=false err=- dataless=false size=5242880",
+  "replace_by_rename": {
+   "content": "{\"gen\": 2}",
+   "seconds_to_uploaded": 7.9,
+   "state": "index.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=true uploading=false conflicts=false err=- dataless=false size=10"
+  },
+  "small_upload_seconds_x10": [
+   8.9,
+   11.0,
+   11.5,
+   6.8,
+   8.9,
+   7.9,
+   9.0,
+   7.5,
+   9.2,
+   11.7
+  ],
+  "small_median": 8.95,
+  "symlink_later": "link.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=true uploading=false conflicts=false err=- dataless=false size=13"
+ },
+ "google_drive_app_quit": {
+  "evict_before_quit": "small-0.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusNotDownloaded uploaded=true uploading=false conflicts=false err=- dataless=true size=8",
+  "drive_running": false,
+  "list": "16 entries",
+  "list_s": 0.04,
+  "read_downloaded": "8 chars",
+  "read_downloaded_s": 0.0,
+  "read_evicted": "exit 1: cat: ~/Library/CloudStorage/‹account›/My Drive/Linen-spike/small-0.json: Operation timed out",
+  "read_evicted_s": 0.1,
+  "write_while_quit": "while-quit.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=false uploading=false conflicts=false err=- dataless=false size=7",
+  "write_while_quit_s": 0.04,
+  "after_reopen_upload_s": 40.7,
+  "after_reopen": "while-quit.json: ubiq=true dl=NSURLUbiquitousItemDownloadingStatusCurrent uploaded=true uploading=false conflicts=false err=- dataless=false size=7",
+  "drive_running_after": true
+ },
+ "icloud_app_probe_first_run": {
+  "gdrive_list": "16 entries in Linen-spike",
+  "gdrive_list_s": "2.59",
+  "icloud_case": "case-insensitive",
+  "icloud_case_s": "0.00",
+  "icloud_evict_read": "dataless after evict=true; read 2097152 bytes in 2.91 s",
+  "icloud_evict_read_s": "24.28",
+  "icloud_list": "12 entries",
+  "icloud_list_s": "4.27",
+  "icloud_mkdir": "created",
+  "icloud_mkdir_s": "0.00",
+  "icloud_placeholder_names": "",
+  "icloud_placeholder_names_s": "0.00",
+  "icloud_upload_wait": "uploaded after 19.5 s",
+  "icloud_upload_wait_s": "19.51",
+  "icloud_write_rename": "ok",
+  "icloud_write_rename_s": "0.00",
+  "ubiquityIdentityToken": "present",
+  "ubiquityIdentityToken_s": "0.01"
+ },
+ "icloud_app_probe_rebuilt": {
+  "icloud_list": "13 entries",
+  "icloud_list_s": "0.09",
+  "ubiquityIdentityToken": "present (build 2)",
+  "ubiquityIdentityToken_s": "0.07"
+ },
+ "owner_observations": {
+  "first_run_prompts": "one prompt, about iCloud Drive (exact wording not recorded); none for Google Drive",
+  "rebuilt_app_different_cdhash": "no prompt"
+ },
+ "scale_2000_small_files": {
+  "google_drive": {
+   "delete_s": "0.3",
+   "exists_after_delete": "false",
+   "list_s": "0.00",
+   "listed": "2000",
+   "not_uploaded_after_30_min": "0",
+   "uploaded_by_seconds": "1000 files: 234 s; 1800 files: 234 s; 2000 files: 290 s",
+   "write_s": "0.5"
+  },
+  "icloud_drive": {
+   "delete_s": "0.2",
+   "exists_after_delete": "false",
+   "list_s": "0.01",
+   "listed": "2000",
+   "not_uploaded_after_30_min": "0",
+   "uploaded_by_seconds": "1000 files: 143 s; 1800 files: 224 s; 2000 files: 245 s",
+   "write_s": "0.7"
+  },
+  "file_size_bytes": 213
+ },
+ "explicit_download_request_2mb": {
+  "google_drive": {
+   "after_download": "NSURLUbiquitousItemDownloadingStatusCurrent dataless=false",
+   "after_evict": "NSURLUbiquitousItemDownloadingStatusNotDownloaded dataless=true",
+   "evict": "ok",
+   "exists_after_delete": "false",
+   "read_after_s": "0.003",
+   "read_bytes": "2097152",
+   "startDownloading_call": "ok, returned in 0.004 s",
+   "until_current_s": "4.0",
+   "uploaded_s": "22.6"
+  },
+  "icloud_drive": {
+   "after_download": "NSURLUbiquitousItemDownloadingStatusCurrent dataless=false",
+   "after_evict": "NSURLUbiquitousItemDownloadingStatusNotDownloaded dataless=true",
+   "evict": "ok",
+   "exists_after_delete": "false",
+   "read_after_s": "0.003",
+   "read_bytes": "2097152",
+   "startDownloading_call": "ok, returned in 0.003 s",
+   "until_current_s": "2.0",
+   "uploaded_s": "35.4"
+  }
+ }
+}

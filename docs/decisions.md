@@ -290,6 +290,16 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-17 (sync Stage 0's scope, #91)
+
+The owner has no second device, iCloud account or Google account for now, and chose as recommended (2026-10-17). This changes Stage 0 in `docs/sync-plan.md`, which asked for two Google accounts, a second device and every supported macOS.
+
+| What | Decided |
+|---|---|
+| Stage 0 (#91) | Done when the items one Mac can do are measured, with the owner at the Mac for iCloud Drive off or signed out, offline, full storage, Drive's mode, the prompt's wording and a refusal, and another app path. |
+| Second-device items and other macOS releases | Move to Stage 6 (#97): arrival time and rename atomicity on another device, conflict-copy names, Migration Assistant or a restore to another Mac, and macOS 13, 15 and 26. |
+| Several Google accounts | A unit test of root discovery over fake folders, in Stage 2 (#93). No second account is needed. |
+
 ## Approved 2026-10-17 (the sync plan, #84)
 
 The owner approved the plan (2026-10-17: “Proceed with approved PR #84”), and it was merged.
