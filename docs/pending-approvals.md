@@ -339,3 +339,10 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet,
     - **(a)** Other devices' reports never shorten this device's Restore. A device back late offers Restore for its own week, labelled with the reported age (“Deleted on ‹device› about 10 days ago · Restore”), and holds the content meanwhile. Nothing comes back unless the reader chooses Restore.
     - **(b)** Two devices whose enrollment is independent (neither enrolled the other, directly or through others) can end the week for a third. A device back late shows the deletion as past its week. A compromised first device could still enrol two independent-looking keys, so this is weaker.
     *Recommendation:* (a). Restoring stays the reader's explicit choice, so “does not bring it back” holds in the sense that nothing returns by itself; and no device, however compromised, can hide another device's Restore.
+
+## Sync Stage 0 (2026-10-17, #91)
+
+112. **Where the sync device ID is kept (SY7; Stage 1).** SY7 plans a *ThisDeviceOnly* item in the data-protection keychain, so Migration Assistant and backups can't copy the ID to another Mac. Stage 0 found that an ad-hoc-signed program, as Linen's releases are, can't use that keychain (`-34018`, missing entitlement), and that the login keychain ignores the *ThisDeviceOnly* class (`docs/spikes/sync-folders.md`). Options:
+    - **(a)** Keep the ID in the login keychain for now. A copied ID is still caught by SY7's writer token (a device that finds its ID with another token takes a new one at once) and by the high-water mark. Move to the *ThisDeviceOnly* item once releases have a Developer ID (#53).
+    - **(b)** Wait for a Developer ID before building Stage 1.
+    *Recommendation:* (a). The writer token was designed for exactly this case (an ID copied some other way), and Stage 1 tests it with two libraries sharing an ID.
