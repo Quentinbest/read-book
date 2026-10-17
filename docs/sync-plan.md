@@ -1,10 +1,10 @@
 # Sync across devices — plan
 
-Status: approved by the owner 2026-10-17 (#84; `docs/decisions.md`), drafted 2026-10-16 for #73. Stages are #91 (Stage 0) to #97 (Stage 6). Nothing here is built. Values marked (prov.) are provisional until the owner approves them, as in `docs/implementation-plan.md` §1.2. The open questions are items 98–111 in `docs/pending-approvals.md`; nothing that depends on one is built while it is open.
+Status: approved by the owner 2026-10-17 (#84; `docs/decisions.md`), drafted 2026-10-16 for #73. Stages are #91 (Stage 0) to #97 (Stage 6). Nothing here is built. Values marked (prov.) are provisional until the owner approves them, as in `docs/implementation-plan.md` §1.2. The open questions are items 98–111 in `docs/pending-approvals.md`; nothing that depends on one is built while it is open. Items 102, 105, 106 and 108–111 were approved on 2026-10-17, item 112 the same day. The byte-level protocol is `docs/sync-protocol.md` (SP1–SP37).
 
 Sync lets one reader keep their place, highlights and notes, settings, library list and books the same on every device they use, through storage they already have: their iCloud Drive or Google Drive folder. It comes as provider extensions in a new sync slot of the Host API, the two providers listed as Built-in. This file is the rule register that code and tests for this work cite (`// SY14: …`). It doesn't change `docs/implementation-plan.md`, which stays read-only.
 
-**When it is built.** The owner decided on 2026-10-14 that sync waits for a second platform (#54, #80). After this plan merges, each stage in §6 gets its own sub-issue of #73, unlabelled; a stage is built when the owner labels it.
+**When it is built.** The owner decided on 2026-10-14 that sync waits for a second platform (#54, #80), and on 2026-10-17 that this applies to shipping it: Stage 1 is built now (#92), and sync stays out of release builds until Stage 6. After this plan merges, each stage in §6 gets its own sub-issue of #73, unlabelled; a stage is built when the owner labels it.
 
 ## 1. Sources and scope
 
