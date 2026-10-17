@@ -1,6 +1,6 @@
 # Sync across devices — plan
 
-Status: draft for owner review, 2026-10-16 (#73). Nothing here is built. Values marked (prov.) are provisional until the owner approves them, as in `docs/implementation-plan.md` §1.2. The open questions are items 98–111 in `docs/pending-approvals.md`; nothing that depends on one is built while it is open.
+Status: approved by the owner 2026-10-17 (#84; `docs/decisions.md`), drafted 2026-10-16 for #73. Stages are #91 (Stage 0) to #97 (Stage 6). Nothing here is built. Values marked (prov.) are provisional until the owner approves them, as in `docs/implementation-plan.md` §1.2. The open questions are items 98–111 in `docs/pending-approvals.md`; nothing that depends on one is built while it is open.
 
 Sync lets one reader keep their place, highlights and notes, settings, library list and books the same on every device they use, through storage they already have: their iCloud Drive or Google Drive folder. It comes as provider extensions in a new sync slot of the Host API, the two providers listed as Built-in. This file is the rule register that code and tests for this work cite (`// SY14: …`). It doesn't change `docs/implementation-plan.md`, which stays read-only.
 
