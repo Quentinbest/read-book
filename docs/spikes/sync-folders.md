@@ -66,12 +66,13 @@ So Linen will meet **one macOS prompt for iCloud Drive**, the first time it read
 | Data-protection keychain, *ThisDeviceOnly* | **refused: `-34018`, "A required entitlement isn't present"** |
 | Login keychain, with *ThisDeviceOnly* requested | stored, but the accessibility class isn't kept (absent on read-back) |
 | Login keychain | stored |
+| The Mac's hardware UUID (`IOPlatformUUID`, IOKit) | readable, no entitlement needed |
 
 The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc builds. It needs the keychain entitlement a Developer ID signature brings (#53). The login keychain ignores it, and Migration Assistant and backups carry the login keychain, so a migrated Mac would bring Linen's device ID along. Migration itself wasn't run.
 
 ## What this changes in the plan (for the owner)
 
-1. **SY7, the device ID store (pending item 112).** Use the login keychain until Linen has a Developer ID, and rely on SY7's other two guards to catch a copied ID: the writer token (a copied ID meets its own ID with another token) and the high-water mark. Move to the *ThisDeviceOnly* data-protection item once releases have a Developer ID.
+1. **SY7, the device ID store (pending item 112).** Use the login keychain until Linen has a Developer ID. Everything kept with the ID would migrate with it, including SY7's writer token and high-water mark, so the ID also records the Mac's hardware UUID (`IOPlatformUUID`, readable by an ad-hoc program without any entitlement, measured). On a mismatch, as on a Mac set up by Migration Assistant, the device takes a new ID. A Time Machine restore of the same Mac rolls the keychain and the library back together. That case is caught by storage: when it holds changes under this ID *newer* than the device's own mark, the device takes a new ID. (Stale storage is always behind, never ahead, so this can't fire on it.) Move to the *ThisDeviceOnly* item once releases have a Developer ID.
 2. **SY2, finding the roots.** Skip `CloudStorage` folders with a ` (…)` suffix, and write Google Drive's `Linen` folder inside `My Drive`. These are clarifications that follow from SY2, for Stage 2.
 3. **SY6, the setup sheet.** For iCloud Drive, the sheet should say macOS will ask once, and the first read should come from the sheet's confirmation, so the prompt has context. A refusal (`EPERM`) gets its own status line: "Linen can't open iCloud Drive · Open System Settings". This is wording within item 99, to be captured in Stage 3.
 4. **SY30, files not downloaded.** Before reading, check `SF_DATALESS` (or the downloading status) and call `startDownloadingUbiquitousItem`. Never read such a file on the main thread, and count the wait in SY2's 60 s pass budget. `ETIMEDOUT` from a dataless file means "waiting" (SY21), not damaged or missing.
@@ -84,5 +85,6 @@ The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc 
 - **A second device:** whether a rename looks atomic and how long a file takes to arrive there, conflict-copy names (they need concurrent edits from two devices), and Migration Assistant or a Time Machine restore to another Mac.
 - **iCloud Drive turned off or signed out, offline, and full storage.** Going offline would cut this session's network, and filling the storage wasn't attempted.
 - **Two Google accounts:** this Mac has one.
+- **Google Drive's stream or mirror mode:** not read from its settings (eviction worked, so Linen must handle not-downloaded files in either).
 - **The exact wording of the iCloud Drive prompt.**
 - **A different path:** the app run from a different path (a copy in `/Applications` versus a disk image) wasn't tested for the prompt.

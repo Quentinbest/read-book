@@ -6,7 +6,8 @@
   "login": "OSStatus 0",
   "login_thisdeviceonly": "OSStatus 0, but the accessibility attribute is not stored (absent on read-back)",
   "dataprotection_thisdeviceonly": "OSStatus -34018: A required entitlement isn't present",
-  "signing": "ad-hoc (codesign -s -)"
+  "signing": "ad-hoc (codesign -s -)",
+  "hardware_uuid_ioplatformuuid": "readable by the ad-hoc program via IOKit, no entitlement (value not recorded)"
  },
  "background_process_access": {
   "icloud_drive_list": "Operation not permitted (no prompt)",

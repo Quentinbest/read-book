@@ -343,6 +343,6 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet,
 ## Sync Stage 0 (2026-10-17, #91)
 
 112. **Where the sync device ID is kept (SY7; Stage 1).** SY7 plans a *ThisDeviceOnly* item in the data-protection keychain, so Migration Assistant and backups can't copy the ID to another Mac. Stage 0 found that an ad-hoc-signed program, as Linen's releases are, can't use that keychain (`-34018`, missing entitlement), and that the login keychain ignores the *ThisDeviceOnly* class (`docs/spikes/sync-folders.md`). Options:
-    - **(a)** Keep the ID in the login keychain for now. A copied ID is still caught by SY7's writer token (a device that finds its ID with another token takes a new one at once) and by the high-water mark. Move to the *ThisDeviceOnly* item once releases have a Developer ID (#53).
+    - **(a)** Keep the ID in the login keychain for now. Since the writer token and high-water mark would migrate with it, also record the Mac's hardware UUID with the ID. On a mismatch (a Mac set up by Migration Assistant), the device takes a new ID. A same-Mac Time Machine restore (the keychain and the library both older) is caught by storage holding changes under this ID newer than the device's own mark. Move to the *ThisDeviceOnly* item once releases have a Developer ID (#53).
     - **(b)** Wait for a Developer ID before building Stage 1.
-    *Recommendation:* (a). The writer token was designed for exactly this case (an ID copied some other way), and Stage 1 tests it with two libraries sharing an ID.
+    *Recommendation:* (a). The hardware UUID can't migrate, and Stage 1 tests both cases: a migrated copy and a restored older Mac.
