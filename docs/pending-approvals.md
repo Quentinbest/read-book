@@ -346,3 +346,4 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet,
     - **(a)** Keep the ID in the login keychain for now. Since the writer token and high-water mark would migrate with it, also record the Mac's hardware UUID with the ID. On a mismatch (a Mac set up by Migration Assistant), the device takes a new ID. A same-Mac Time Machine restore (the keychain and the library both older) is caught by storage holding changes under this ID newer than the device's own mark. Move to the *ThisDeviceOnly* item only once a built release is shown to carry the keychain entitlement, which needs a provisioning profile as well as a Developer ID (#53).
     - **(b)** Wait for a Developer ID before building Stage 1.
     *Recommendation:* (a). The hardware UUID can't migrate, and Stage 1 tests both cases: a migrated copy and a restored older Mac.
+    **Approved 2026-10-17: (a).**

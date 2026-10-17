@@ -144,5 +144,57 @@
    "until_current_s": "2.0",
    "uploaded_s": "35.4"
   }
+ },
+ "session_with_owner_2026_10_17": {
+  "google_drive_mode": "Stream files (owner)",
+  "app_path": {
+   "applications_copy": {
+    "bundle_path": "/Applications/LinenSpike.app",
+    "list": "ok, 12 entries",
+    "list_s": "0.0",
+    "open_create": "ok",
+    "opendir": "ok"
+   },
+   "disk_image_made_locally": {
+    "bundle_path": "/Volumes/LinenSpikeDMG/LinenSpike.app",
+    "list": "ok, 12 entries",
+    "list_s": "0.1",
+    "open_create": "ok",
+    "opendir": "ok"
+   }
+  },
+  "refusal": "not measured: three resets, the prompt each time, answered Allow each time",
+  "offline": {
+   "google_drive_probe": {
+    "read_evicted": "read 65536 bytes",
+    "read_evicted_s": "84.5",
+    "startDownloading": "ok",
+    "write_offline": "ok, uploaded=false"
+   },
+   "icloud_probe": {
+    "read_evicted": "read 65536 bytes",
+    "read_evicted_s": "20.8",
+    "startDownloading": "ok",
+    "write_offline": "ok, uploaded=false"
+   },
+   "google_drive_after": {
+    "deleted": "true",
+    "evicted_now_dataless": "false",
+    "fresh_uploaded": "true",
+    "fresh_uploaded_after_online_s": "0"
+   },
+   "icloud_after": {
+    "deleted": "true",
+    "evicted_now_dataless": "false",
+    "fresh_uploaded": "true",
+    "fresh_uploaded_after_online_s": "13"
+   },
+   "timeline": [
+    "offline at 17:53:49",
+    "probed at 17:55:36",
+    "online at 17:55:36",
+    "done at 17:55:50"
+   ]
+  }
  }
 }
