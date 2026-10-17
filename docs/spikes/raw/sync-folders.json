@@ -120,5 +120,29 @@
    "write_s": "0.7"
   },
   "file_size_bytes": 213
+ },
+ "explicit_download_request_2mb": {
+  "google_drive": {
+   "after_download": "NSURLUbiquitousItemDownloadingStatusCurrent dataless=false",
+   "after_evict": "NSURLUbiquitousItemDownloadingStatusNotDownloaded dataless=true",
+   "evict": "ok",
+   "exists_after_delete": "false",
+   "read_after_s": "0.003",
+   "read_bytes": "2097152",
+   "startDownloading_call": "ok, returned in 0.004 s",
+   "until_current_s": "4.0",
+   "uploaded_s": "22.6"
+  },
+  "icloud_drive": {
+   "after_download": "NSURLUbiquitousItemDownloadingStatusCurrent dataless=false",
+   "after_evict": "NSURLUbiquitousItemDownloadingStatusNotDownloaded dataless=true",
+   "evict": "ok",
+   "exists_after_delete": "false",
+   "read_after_s": "0.003",
+   "read_bytes": "2097152",
+   "startDownloading_call": "ok, returned in 0.003 s",
+   "until_current_s": "2.0",
+   "uploaded_s": "35.4"
+  }
  }
 }

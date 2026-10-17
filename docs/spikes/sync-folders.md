@@ -42,6 +42,7 @@ So Linen will meet **one macOS prompt for iCloud Drive**, the first time it read
 | Reading it while the app runs | blocks until downloaded: 5 MB in 7.4 s | blocks until downloaded: 2 MB in 2.9 s |
 | Reading it with Google Drive for desktop quit | fails at once (0.1 s) with `ETIMEDOUT`, "Operation timed out" | not tested |
 | Placeholder `.icloud` files | n/a | none: macOS 14 uses dataless files, not `.name.icloud` |
+| Asking for the download (`startDownloadingUbiquitousItem`, 2 MB, evicted) | the call returns in 4 ms; the file reports downloaded after 4.0 s; reading it then takes 3 ms | the call returns in 3 ms; downloaded after 2.0 s; reading takes 3 ms |
 
 ### Writing and uploading
 
