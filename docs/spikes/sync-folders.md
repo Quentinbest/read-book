@@ -31,7 +31,7 @@ Throwaway programs outside the repository, all ad-hoc signed (`codesign -s -`) a
 | The app bundle, first run | **one prompt, about iCloud Drive** (owner; the exact wording wasn't recorded), then allowed | no prompt, allowed |
 | The app rebuilt, with a new CDHash at the same path and bundle ID (as an update would be) | no prompt, allowed | allowed |
 
-So Linen will meet **one macOS prompt for iCloud Drive**, the first time it reads the folder, and none for Google Drive. The answer is kept across an ad-hoc rebuild at the same path and bundle ID. A refusal shows up as `EPERM` ("Operation not permitted").
+So Linen will meet **one macOS prompt for iCloud Drive**, the first time it reads the folder, and none for Google Drive. The answer is kept across an ad-hoc rebuild at the same path and bundle ID. What the app receives after a reader *refuses* the prompt wasn't measured: the app was allowed, and `EPERM` was only seen by the command-line process that got no prompt.
 
 ### Files that aren't downloaded (SY30)
 
@@ -53,6 +53,21 @@ So Linen will meet **one macOS prompt for iCloud Drive**, the first time it read
 - **Temporary files are tracked too.** `.linen-tmp-…` is a ubiquitous item while it exists, so a temporary file left behind by a crash could be uploaded.
 - **With Google Drive for desktop quit:** listing and reading downloaded files work; a new file is written locally and marked not uploaded, and it uploaded 40.7 s after the app reopened.
 
+### Thousands of small files (SY11's blobs)
+
+2,000 files of about 200 bytes each, written by temporary name and rename into a fresh folder, then deleted:
+
+| | Google Drive | iCloud Drive |
+|---|---|---|
+| Writing them | 0.5 s | 0.7 s |
+| Listing the folder | 0.00 s | 0.01 s |
+| Half uploaded | 234 s | 143 s |
+| All uploaded | 290 s (about 7 files a second) | 245 s (about 8 files a second) |
+| Not uploaded after 30 min | 0 | 0 |
+| Deleting the folder | 0.3 s | 0.2 s |
+
+One file per body works. Locally it's instant; uploading goes at about 7–8 files a second, so a first sync of a library with 10,000 notes and highlights takes about 20–25 minutes to reach storage.
+
 ### Names
 
 - **Case:** both folders are case-insensitive (`case.txt` is `Case.txt`).
@@ -68,16 +83,17 @@ So Linen will meet **one macOS prompt for iCloud Drive**, the first time it read
 | Login keychain | stored |
 | The Mac's hardware UUID (`IOPlatformUUID`, IOKit) | readable, no entitlement needed |
 
-The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc builds. It needs the keychain entitlement a Developer ID signature brings (#53). The login keychain ignores it, and Migration Assistant and backups carry the login keychain, so a migrated Mac would bring Linen's device ID along. Migration itself wasn't run.
+The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc builds. It needs a keychain-access-group entitlement. A Developer ID signature alone doesn't grant that: the entitlement must be authorised by an embedded provisioning profile (Apple TN3125), which the release workflow doesn't embed today (#53). The login keychain ignores it, and Migration Assistant and backups carry the login keychain, so a migrated Mac would bring Linen's device ID along. Migration itself wasn't run.
 
 ## What this changes in the plan (for the owner)
 
-1. **SY7, the device ID store (pending item 112).** Use the login keychain until Linen has a Developer ID. Everything kept with the ID would migrate with it, including SY7's writer token and high-water mark, so the ID also records the Mac's hardware UUID (`IOPlatformUUID`, readable by an ad-hoc program without any entitlement, measured). On a mismatch, as on a Mac set up by Migration Assistant, the device takes a new ID. A Time Machine restore of the same Mac rolls the keychain and the library back together. That case is caught by storage: when it holds changes under this ID *newer* than the device's own mark, the device takes a new ID. (Stale storage is always behind, never ahead, so this can't fire on it.) Move to the *ThisDeviceOnly* item once releases have a Developer ID.
+1. **SY7, the device ID store (pending item 112).** Use the login keychain until Linen has a Developer ID. Everything kept with the ID would migrate with it, including SY7's writer token and high-water mark, so the ID also records the Mac's hardware UUID (`IOPlatformUUID`, readable by an ad-hoc program without any entitlement, measured). On a mismatch, as on a Mac set up by Migration Assistant, the device takes a new ID. A Time Machine restore of the same Mac rolls the keychain and the library back together. That case is caught by storage: when it holds changes under this ID *newer* than the device's own mark, the device takes a new ID. (Stale storage is always behind, never ahead, so this can't fire on it.) Move to the *ThisDeviceOnly* item only once a built release is shown to carry the keychain entitlement, authorised by an embedded provisioning profile (checked with `codesign -d --entitlements`, then a probe like this one returning success), not merely once releases have a Developer ID.
 2. **SY2, finding the roots.** Skip `CloudStorage` folders with a ` (…)` suffix, and write Google Drive's `Linen` folder inside `My Drive`. These are clarifications that follow from SY2, for Stage 2.
-3. **SY6, the setup sheet.** For iCloud Drive, the sheet should say macOS will ask once, and the first read should come from the sheet's confirmation, so the prompt has context. A refusal (`EPERM`) gets its own status line: "Linen can't open iCloud Drive · Open System Settings". This is wording within item 99, to be captured in Stage 3.
+3. **SY6, the setup sheet.** For iCloud Drive, the sheet should say macOS will ask once, and the first read should come from the sheet's confirmation, so the prompt has context. A refusal gets its own status line: "Linen can't open iCloud Drive · Open System Settings". This is wording within item 99, to be captured in Stage 3. Which error a refusal produces is still to measure, so Stage 3 treats any permission error from the root that way.
 4. **SY30, files not downloaded.** Before reading, check `SF_DATALESS` (or the downloading status) and call `startDownloadingUbiquitousItem`. Never read such a file on the main thread, and count the wait in SY2's 60 s pass budget. `ETIMEDOUT` from a dataless file means "waiting" (SY21), not damaged or missing.
 5. **SY11, temporary files.** A `.linen-tmp-…` file can be uploaded if left behind, so each device removes its own stale temporary files (older than an hour) at the start of a pass.
-6. **SY32, timing.** A change takes about 10–20 s to upload, so a frontier acknowledgement or hold (SY11) takes at least that long. That fits the plan's 10 s and 5-minute timings, and the in-app checks must allow for it.
+6. **SY11, blobs or packs.** One file per body works at 2,000 files in both storages, at about 7–8 uploads a second. Packs aren't needed for correctness. They would only shorten a large library's first upload, so the recommendation is to keep one file per body and revisit if Stage 4's 500-book check shows the first sync too slow.
+7. **SY32, timing.** A change takes about 10–20 s to upload, so a frontier acknowledgement or hold (SY11) takes at least that long. That fits the plan's 10 s and 5-minute timings, and the in-app checks must allow for it.
 
 ## Not measured (still open in #91)
 
@@ -86,5 +102,5 @@ The *ThisDeviceOnly* class that SY7 relies on isn't available to Linen's ad-hoc 
 - **iCloud Drive turned off or signed out, offline, and full storage.** Going offline would cut this session's network, and filling the storage wasn't attempted.
 - **Two Google accounts:** this Mac has one.
 - **Google Drive's stream or mirror mode:** not read from its settings (eviction worked, so Linen must handle not-downloaded files in either).
-- **The exact wording of the iCloud Drive prompt.**
+- **The exact wording of the iCloud Drive prompt, and what the app receives after a refusal** (the error a refused app gets).
 - **A different path:** the app run from a different path (a copy in `/Applications` versus a disk image) wasn't tested for the prompt.

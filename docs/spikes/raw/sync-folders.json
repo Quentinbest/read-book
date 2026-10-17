@@ -99,5 +99,26 @@
  "owner_observations": {
   "first_run_prompts": "one prompt, about iCloud Drive (exact wording not recorded); none for Google Drive",
   "rebuilt_app_different_cdhash": "no prompt"
+ },
+ "scale_2000_small_files": {
+  "google_drive": {
+   "delete_s": "0.3",
+   "exists_after_delete": "false",
+   "list_s": "0.00",
+   "listed": "2000",
+   "not_uploaded_after_30_min": "0",
+   "uploaded_by_seconds": "1000 files: 234 s; 1800 files: 234 s; 2000 files: 290 s",
+   "write_s": "0.5"
+  },
+  "icloud_drive": {
+   "delete_s": "0.2",
+   "exists_after_delete": "false",
+   "list_s": "0.01",
+   "listed": "2000",
+   "not_uploaded_after_30_min": "0",
+   "uploaded_by_seconds": "1000 files: 143 s; 1800 files: 224 s; 2000 files: 245 s",
+   "write_s": "0.7"
+  },
+  "file_size_bytes": 213
  }
 }
