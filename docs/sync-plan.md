@@ -206,7 +206,7 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
   - What happens offline, with iCloud Drive turned off, signed out, with the Google Drive app quit, and when the storage is full.
 - **Report:** `docs/spikes/sync-folders.md`, with the rule changes it implies listed for the owner.
 - **Done when:** each item above has a measurement on this Mac, and on a second device where an item needs one.
-- **Narrowed by the owner, 2026-10-17 (`docs/decisions.md`):** done with what one Mac could give (#99, #100). Other macOS releases, the second-device items, iCloud Drive off or signed out, full storage, the prompt's wording and a refusal, an offline iCloud Drive read and a quarantined disk image moved to Stage 6; several Google accounts became a Stage 2 unit test.
+- **Narrowed by the owner, 2026-10-17 (`docs/decisions.md`):** done with what one Mac could give (#99, #100). Other macOS releases, the second-device items, iCloud Drive off or signed out, full storage, the prompt's wording and a refusal, an offline iCloud Drive read, a quarantined disk image and Google Drive's Mirror files mode (this Mac streams) moved to Stage 6; several Google accounts became a Stage 2 unit test.
 
 ### Stage 1 — The sync core (L, Rust only, three PRs)
 
@@ -316,6 +316,7 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
   - Migration Assistant or a Time Machine restore to another Mac: with the login keychain (SY7's current store) the ID is copied, and the new Mac sees a different hardware UUID and takes a new ID at once; once the data-protection item is in use, the ID isn't copied at all.
   - iCloud Drive off and signed out, and full storage, on a device set up for testing.
   - The prompt's wording and what an app receives after a refusal; an offline read of a not-downloaded iCloud Drive file; an app run from a downloaded, quarantined disk image.
+  - Google Drive in Mirror files mode (Stage 0's Mac streams): where the root is, and whether files can be evicted and read as SY30 expects.
 - **Done when:** the record is complete, the moved Stage 0 checks are measured, the owner has approved the captures, and the release candidate passes acceptance.
 
 ## 7. Edge cases the checks must cover

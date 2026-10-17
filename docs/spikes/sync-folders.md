@@ -110,6 +110,7 @@ The owner narrowed Stage 0 on 2026-10-17 (`docs/decisions.md`): there's no secon
 - iCloud Drive turned off and signed out, and full storage (the owner chose not to on this Mac).
 - The exact wording of the iCloud Drive prompt, and what the app receives after a refusal (the prompt was answered "Allow" each time).
 - Reading a not-downloaded iCloud Drive file offline, and an app run from a downloaded, quarantined disk image.
+- Google Drive in Mirror files mode: this Mac streams.
 
 **Moved to Stage 2 (#93), as a unit test:**
 - Several Google accounts. Root discovery only reads folder names (`GoogleDrive-‹account›`, with leftovers to skip), so a test over fake folders covers it; no second account is needed.
