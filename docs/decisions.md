@@ -289,6 +289,15 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-17 (the sync plan, #84)
+
+The owner approved the plan (2026-10-17: “Proceed with approved PR #84”), and it was merged.
+
+| What | Approved |
+|---|---|
+| The plan | `docs/sync-plan.md` as merged: rules SY1–SY34 and stages 0–6. Its stages are #91 (Stage 0) to #97 (Stage 6), sub-issues of #73, unlabelled until the owner labels one to build. |
+| Not decided by this | Items 98–111 in `docs/pending-approvals.md` stay open: approving the plan answers none of them, and nothing that depends on one is built. Values marked (prov.) stay provisional. Sync still waits for a second platform (2026-10-14). |
+
 ## Decided 2026-10-14 (sync across devices, #73)
 
 The owner wrote these into issue #73 (“Already decided”); they are copied here as the record. The plan is `docs/sync-plan.md`; its open questions are items 98–111.
