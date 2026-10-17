@@ -289,6 +289,20 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Decided 2026-10-14 (sync across devices, #73)
+
+The owner wrote these into issue #73 (“Already decided”); they are copied here as the record. The plan is `docs/sync-plan.md`; its open questions are items 98–111.
+
+| What | Decided |
+|---|---|
+| What syncs | Everything: places, highlights and notes, settings, the library list and the books. Extensions and MDX dictionaries do not. |
+| Storage | Linen runs no storage server. It uses existing storage services, iCloud and Google Drive first. |
+| How it comes | As extensions through the design's sync slot (P§18, P§20); the iCloud and Google Drive providers come with Linen, listed as “Built-in”. |
+| Folders | Both providers write into a folder on the Mac: the reader's iCloud Drive folder, and the Google Drive for desktop folder. Neither needs an iCloud container, an Apple Developer account or Google's API. |
+| Conflicts | When two devices changed the same highlight or note, the reader decides which to keep. |
+| Deletion | A deletion removes the local copy first, then the copy in storage. What was deleted is kept in the reader's storage for one week and can be restored during it. A device away for more than a week does not bring it back. |
+| When | Sync waits for a second platform (#54, #80). |
+
 ## Decided 2026-10-14 (requirements as issues, worked by an agent)
 
 The owner asked how requirements should reach agents, then said “start working based on the suggestions” (2026-10-14). This builds on R7 (one backlog).
