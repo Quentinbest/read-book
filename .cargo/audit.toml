@@ -1,0 +1,14 @@
+# cargo audit's settings. CI runs it from the repository root (.github/workflows/audit.yml),
+# so this file is read there and by a local `cargo audit --file src-tauri/Cargo.lock`.
+
+[advisories]
+# zip 4.6.1's extract() and symlink advisories (#88, approved by the owner 2026-10-17).
+# This zip comes only from tauri-plugin-updater 2.13.3, the latest stable release, and only
+# for Windows and Linux targets: the macOS app doesn't compile it
+# (`cargo tree -i zip@4.6.1` prints nothing on macOS). Linen's own zip is 9 (#74).
+# Remove these when tauri-plugin-updater depends on zip >= 9.0.0.
+ignore = [
+    "RUSTSEC-2026-0367", # SUID/SGID bits preserved on extraction
+    "RUSTSEC-2026-0368", # extract() creates symbolic links pointing outside the destination
+    "RUSTSEC-2026-0369", # extract() applies Unix permissions through symbolic links
+]
