@@ -815,9 +815,12 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
     // What the library now shows, and everything it descends from, has been seen.
     // For newest-wins records the losing heads are superseded too; for those the
     // reader decides, they stay unapplied, waiting in the conflict (SY13).
-    let newest_wins = !reader_decides(winner.version.kind);
+    // Settled (one head, equal contents, or newest-wins): every head is superseded or
+    // the same, so all have been seen. In a conflict only the shown one has.
+    let settled = matches!(record.outcome(&HashSet::new()), Some(Outcome::Settled(_)));
+    let all_seen = settled || !reader_decides(winner.version.kind);
     for p in record.versions() {
-        if winner.descends_from(p) || (newest_wins && heads.iter().any(|h| h.descends_from(p))) {
+        if winner.descends_from(p) || (all_seen && heads.iter().any(|h| h.descends_from(p))) {
             mark_applied(conn, lib, p)?;
         }
     }
@@ -1578,6 +1581,38 @@ mod tests {
             "held for the reader, not lost"
         );
         assert_eq!(note_of(&a, "book-a"), Some(Some("A's unsent".into())));
+    }
+
+    #[test]
+    fn equal_notes_written_apart_settle_once_on_both() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a", Some("same"), 1_760_000_001_000))
+            .unwrap();
+        b.save_annotation(&highlight("book-b", Some("same"), 1_760_000_001_000))
+            .unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
+        for (s, l) in [(&a, &la), (&b, &lb)] {
+            assert_eq!(
+                apply_pending(s.conn(), l, crate::store::now_ms()).unwrap(),
+                0
+            );
+            let left: i64 = s
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_versions WHERE applied = 0",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(left, 0, "nothing left pending");
+        }
     }
 
     #[test]
