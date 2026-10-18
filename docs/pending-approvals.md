@@ -13,8 +13,9 @@ Approved so far; the record is in `docs/decisions.md`:
 - item 82, on 2026-10-10, and items 83–87, on 2026-10-11 (Reading Lens Stages 2d and 3).
 - items 88–96, on 2026-10-13 (compact selection bar).
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
+- items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: items 98–101, 103, 104 and 107 (sync, needed by Stages 2–5), and 113 and 114 (the sync protocol, needed before Stage 1 is built). Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: items 98–101, 103, 104 and 107 (sync, needed by Stages 2–5). Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -358,12 +359,14 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet.
 
 ## Sync protocol (2026-10-17, #92)
 
-The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1, written for its own security review. Nothing in it is built until the owner has reviewed it.
+The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1, written for its own security review. The owner reviewed it and merged it (#101) on 2026-10-18.
 
 113. **A device that missed a removal (#86; SP31, SP32; Stage 1).** If the storage, or whoever controls what one device sees of it, hides a removal from that device and holds the removed device's key, everything the device sees is correctly signed, and nothing in the folder can show it the removal. An outside source (a time server, a Linen service) would send something without the reader choosing it, which D1 and P§20 rule out. What already bounds it: the device keeps undo data for every change the others haven't acknowledged, so it reverts all of them once the removal reaches it; SY26 and SY27 cap and back up what it applies meanwhile; and the device that removed names each device that hasn't caught up yet (SP31). Options:
     - **(a)** Also SP32: when a device has heard nothing for 7 days (prov.) from any enrolled device other than the writer and the devices the writer enrolled, that writer's deletions, book-file replacements and changes to highlights and notes wait, and Settings › Sync asks once (“Linen hasn't heard from ‹device› for 9 days. ‹device› removed 3 notes · Apply · Not now”). The reader at the device is the outside source, and nothing leaves it. Additions, places and settings still apply. It asks needlessly when a third device just sits unused for a week.
     - **(b)** Only SP31: no waiting, and §8's risk 5 stays a known limit.
     - **(c)** Either of the above, and also keep the undo data and local copies for every deletion and replacement from another device for 30 days rather than SY26's 7 (item 106), so a removal hidden for up to a month can always be undone, whoever the device hears from. Costs disk space on each device for a month of deleted content. (Raised by the PR's Codex security review: two old devices that only hear from each other count as each other's witnesses under (a).)
     *Recommendation:* (a). It catches the likely case (you removed a lost Mac on one device and keep using it, while the storage hides that from another) for one question a week at most; once you answer, it applies what (b) would.
+    **Approved 2026-10-18: (a).**
 114. **The new device confirms the code too (SP24, SY34; Stage 1, its screens Stage 3).** Item 110 asks the reader to confirm the six-digit code only on the enrolled device. The new device, though, can't tell a real library from one a stranger made in the folder, and a stranger could answer it and enrol it at once in a library of their own, whose deletions it would then apply to the reader's books and notes. Proposed: the new device shows the code with “Does ‹device› show this code? · It matches · Cancel”, and joins only after It matches.
     *Recommendation:* approve. It is one more click when adding a device, and without it the code protects only the library, not the device joining it.
+    **Approved 2026-10-18.**
