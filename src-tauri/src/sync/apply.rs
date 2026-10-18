@@ -54,8 +54,9 @@ pub const ASIDE_ITEMS: i64 = 1000;
 pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
 
 /// SY10, SY28: whether keeping one more item of `extra_bytes` aside from one device
-/// would pass its budget: set-aside items, and versions held for a clock ahead
-/// (`applied = -2`) with the bodies they name, the candidate included.
+/// would pass its budget: set-aside items, and versions waiting for their ancestry
+/// or a clock ahead (`applied` −1, −2) with the bodies they name, the candidate
+/// included.
 fn aside_full(
     conn: &Connection,
     lib: &Library,
@@ -69,7 +70,7 @@ fn aside_full(
     )?;
     let (m, held): (i64, Option<i64>) = conn.query_row(
         "SELECT COUNT(*), SUM(length(raw) + COALESCE(json_extract(raw, '$.body.size'), 0))
-         FROM sync_versions WHERE library = ?1 AND device = ?2 AND applied = -2",
+         FROM sync_versions WHERE library = ?1 AND device = ?2 AND applied IN (-1, -2)",
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
@@ -434,9 +435,24 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     })
 }
 
-/// Versions waiting for their ancestry, checked again: those that resolve join the
-/// merge, those found false are set aside. Returns the keys that joined.
+/// Versions waiting for their ancestry, checked again until a pass resolves none:
+/// one version resolving can resolve the next of its chain. A loop, not recursion,
+/// and each pass drops its rows; waiting versions count against SY28's budget, so
+/// the work is bounded. Returns the keys that joined the merge.
 fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key>> {
+    let mut joined = Vec::new();
+    loop {
+        let more = recheck_pass(conn, lib, now_ms)?;
+        if more.is_empty() {
+            return Ok(joined);
+        }
+        joined.extend(more);
+    }
+}
+
+/// One pass over the waiting versions: those that resolve join the merge, those
+/// found false are set aside.
+fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key>> {
     let waiting: Vec<(i64, String, i64, String)> = conn
         .prepare(
             "SELECT rowid, device, seq, raw FROM sync_versions
@@ -480,10 +496,6 @@ fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<
                 set_waiting(conn, lib, &placed, -1)?;
             }
         }
-    }
-    // One version resolving can resolve the next of its chain: again until settled.
-    if !joined.is_empty() {
-        joined.extend(recheck_waiting(conn, lib, now_ms)?);
     }
     Ok(joined)
 }
@@ -655,13 +667,27 @@ fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
             let text = body
                 .as_ref()
                 .and_then(|b| b["text"].as_str().map(str::to_owned));
-            let n = conn.execute(
+            let local: Option<Option<String>> = conn
+                .query_row(
+                    "SELECT note FROM annotations WHERE id = ?1",
+                    [subject(&v.key)],
+                    |r| r.get(0),
+                )
+                .optional()?;
+            match local {
+                // A tombstone with no highlight here has nothing to delete; if the
+                // highlight arrives later, it arrives without the note.
+                None if text.is_none() => return Ok(true),
+                None => return Ok(false), // its highlight hasn't arrived
+                // SY28: a note over its limit stays on this device, unsynced; nothing
+                // from another device replaces it.
+                Some(Some(n)) if n.len() as u64 > Kind::Note.body_limit() => return Ok(false),
+                Some(_) => {}
+            }
+            conn.execute(
                 "UPDATE annotations SET note = ?2 WHERE id = ?1",
                 params![subject(&v.key), text],
             )?;
-            if n == 0 {
-                return Ok(false); // its highlight hasn't arrived
-            }
         }
         // Settings (item 103), books and their files (Stage 4) and choices (Stage 5)
         // aren't applied yet; they wait.
@@ -1337,6 +1363,51 @@ mod tests {
         assert_eq!(
             chains.prior_version(other, &format!("note:{ANNO}"), 2),
             Prior::At(1, h)
+        );
+    }
+
+    #[test]
+    fn an_oversized_local_note_isnt_replaced_from_another_device() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("short"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let long = "x".repeat(5 * 1024 * 1024);
+        b.save_annotation(&highlight("book-b", Some(&long), 1_760_000_002_000))
+            .unwrap();
+        a.save_annotation(&highlight("book-a", Some("A edits"), 1_760_000_003_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert_eq!(
+            note_of(&b, "book-b").flatten().map(|n| n.len()),
+            Some(long.len()),
+            "SY28: stays"
+        );
+    }
+
+    #[test]
+    fn a_note_tombstone_without_its_highlight_settles() {
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let v = serde_json::json!({
+            "format": 1, "key": format!("note:{ANNO}"), "device": other.to_string(),
+            "clock": [crate::store::now_ms() as u64, 0], "history": [], "deleted": { "covers": [] },
+        });
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions: vec![v],
+            bodies: vec![],
+        };
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Applied { applied: 1, .. }
+        ));
+        assert_eq!(
+            apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap(),
+            0
         );
     }
 
