@@ -53,10 +53,11 @@ pub enum Received {
 pub const ASIDE_ITEMS: i64 = 1000;
 pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
 
-/// SY10, SY28: whether keeping one more item of `extra_bytes` aside from one device
-/// would pass its budget: set-aside items, and versions waiting for their ancestry
-/// or a clock ahead (`applied` −1, −2) with the bodies they name, the candidate
-/// included.
+/// SY10, SY28: whether keeping one more item of `extra_bytes` from one device
+/// would pass what this device keeps of it unapplied. Everything kept and not
+/// applied counts: set-aside items, and versions pending, waiting (for ancestry, a
+/// clock ahead, a book or a highlight) or excluded, with the real size of the bodies
+/// they name. So no path keeps more of a device than the budget, whatever it sends.
 fn aside_full(
     conn: &Connection,
     lib: &Library,
@@ -69,8 +70,10 @@ fn aside_full(
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let (m, held): (i64, Option<i64>) = conn.query_row(
-        "SELECT COUNT(*), SUM(length(raw) + COALESCE(json_extract(raw, '$.body.size'), 0))
-         FROM sync_versions WHERE library = ?1 AND device = ?2 AND applied IN (-1, -2)",
+        "SELECT COUNT(*), SUM(length(v.raw) + COALESCE(length(b.body), 0))
+         FROM sync_versions v
+         LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
+         WHERE v.library = ?1 AND v.device = ?2 AND v.applied != 1",
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
@@ -298,19 +301,40 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut keys = Vec::new();
     let mut aside = 0;
     let mut named = HashSet::new();
+    let lengths: std::collections::HashMap<Hash32, usize> = batch
+        .bodies
+        .iter()
+        .map(|b| (identity_hash(b), b.len()))
+        .collect();
     for raw in &batch.versions {
-        match check_version(raw.clone(), batch.device) {
+        // SY28: a body must be the size its version declares, and every version is
+        // counted, with the body it brings, before anything of it is kept. A budget
+        // spent part-way leaves the whole change unkept (the transaction rolls back).
+        let checked = check_version(raw.clone(), batch.device).and_then(|c| match c {
+            Checked::Version(v) => match &v.content {
+                Content::Body { hash, size }
+                    if lengths.get(hash).is_some_and(|&l| l as u64 != *size) =>
+                {
+                    Err(super::record::RecordError::Field("body"))
+                }
+                _ => Ok(Checked::Version(v)),
+            },
+            other => Ok(other),
+        });
+        if let Ok(Checked::Version(v)) = &checked {
+            let body = match &v.content {
+                Content::Body { hash, .. } => lengths.get(hash).copied().unwrap_or(0) as i64,
+                _ => 0,
+            };
+            if aside_full(&tx, lib, batch.device, raw.to_string().len() as i64 + body)? {
+                return Ok(Received::Stopped);
+            }
+        }
+        match checked {
             // SY10: more than 24 hours ahead of this clock: kept with its place in the
             // chain (`applied = -2`) but never merged, applied or observed until the
             // clock catches up; then it is checked like any other.
             Ok(Checked::Version(v)) if too_far_ahead(&v, now_ms) => {
-                let body = match &v.content {
-                    Content::Body { size, .. } => *size as i64,
-                    _ => 0,
-                };
-                if aside_full(&tx, lib, batch.device, raw.to_string().len() as i64 + body)? {
-                    return Ok(Received::Stopped);
-                }
                 let placed = Placed {
                     version: v,
                     seq: batch.seq,
@@ -585,7 +609,16 @@ fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
                 Err(e) => {
                     // SY28: a body that fails is set aside and its version taken out
                     // of merging (`applied = -4`), never applied.
-                    set_aside(conn, lib, v.device, &bytes, &e.to_string(), ms)?;
+                    // The body stays counted under its version (see `aside_full`); the
+                    // aside entry only records why.
+                    set_aside(
+                        conn,
+                        lib,
+                        v.device,
+                        hash.to_string().as_bytes(),
+                        &e.to_string(),
+                        ms,
+                    )?;
                     conn.execute(
                         "UPDATE sync_versions SET applied = -4
                          WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
@@ -1409,6 +1442,55 @@ mod tests {
             apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn a_body_larger_than_declared_is_refused() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        for v in &mut batch.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("place:")) {
+                v["body"]["size"] = serde_json::json!(3);
+            }
+        }
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Applied { set_aside: 1, .. }
+        ));
+        assert!(b.position("book-b").unwrap().is_none());
+    }
+
+    #[test]
+    fn versions_waiting_for_a_highlight_count_against_the_budget() {
+        // A device sending notes for highlights that never come is stopped.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let mut stopped = false;
+        for seq in 1..=(ASIDE_ITEMS as u64 + 1) {
+            let text = format!(r#"{{"text":"{seq}"}}"#).into_bytes();
+            let id = uuid::Uuid::new_v4();
+            let v = serde_json::json!({
+                "format": 1, "key": format!("note:{id}"), "device": other.to_string(),
+                "clock": [crate::store::now_ms() as u64, 0], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+            });
+            let batch = Batch {
+                device: other,
+                seq,
+                hash: Hash32([seq as u8; 32]),
+                versions: vec![v],
+                bodies: vec![text],
+            };
+            if receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap() == Received::Stopped
+            {
+                stopped = true;
+                break;
+            }
+        }
+        assert!(stopped);
     }
 
     #[test]
