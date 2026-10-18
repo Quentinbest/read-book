@@ -105,10 +105,20 @@ pub fn set_device(conn: &Connection, lib: &Library, fresh_clock: bool, wall_ms: 
         .prepare("SELECT rowid, raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid")?
         .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
+    let old = Id16::parse(&stored);
     for (rowid, raw) in pending {
         let mut v: Value = serde_json::from_str(&raw).map_err(|_| RecordError::NotAnObject)?;
         v["device"] = json!(lib.device.to_string());
         if fresh_clock {
+            // The fresh clock still sorts after every applied ancestor from another
+            // device, whose clocks are good; only the old identity's is left out.
+            if let Some(key) = v["key"].as_str().and_then(Key::parse).map(|(k, _)| k) {
+                for p in record_of(&tx, lib, &key, Which::Applied)?.versions() {
+                    if Some(p.version.device) != old {
+                        observe(&tx, lib, p.version.clock, wall_ms)?;
+                    }
+                }
+            }
             v["clock"] = json!(tick(&tx, lib, wall_ms)?);
         }
         let Checked::Version(version) = check_version(v.clone(), lib.device)? else {
@@ -376,19 +386,40 @@ pub fn take_unsent(
     last_seq: u64,
 ) -> Result<Option<(u64, Vec<Version>)>> {
     let tx = conn.unchecked_transaction()?;
+    let journalled = tx
+        .query_row(
+            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), lib.device.to_string()],
+            |r| r.get::<_, Option<i64>>(0),
+        )?
+        .unwrap_or(0) as u64;
+    if journalled == last_seq + 1 {
+        // Numbered before a crash, but never signed: the same change again, from the
+        // same rows, before anything new is numbered.
+        let mut stmt = tx.prepare(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq = ?3 ORDER BY rowid",
+        )?;
+        let again = stmt
+            .query_map(
+                params![
+                    lib.id.to_string(),
+                    lib.device.to_string(),
+                    journalled as i64
+                ],
+                |r| r.get::<_, String>(0),
+            )?
+            .map(|raw| check(&raw?, lib.device))
+            .collect::<Result<Vec<_>>>()?;
+        return Ok(Some((journalled, again)));
+    }
+    if journalled > last_seq {
+        // The library holds a later signed change of ours than the device store: a
+        // store rolled back. SY7's start check rotates before anything is published.
+        return Err(JournalError::StoreBehind(last_seq));
+    }
     let versions = unsent(&tx, lib)?;
     if versions.is_empty() {
         return Ok(None);
-    }
-    let journalled: Option<i64> = tx.query_row(
-        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
-        params![lib.id.to_string(), lib.device.to_string()],
-        |r| r.get(0),
-    )?;
-    if journalled.unwrap_or(0) as u64 > last_seq {
-        // The library holds a later change of ours than the device store: a store
-        // rolled back. SY7's start check rotates before anything is published.
-        return Err(JournalError::StoreBehind(last_seq));
     }
     let seq = last_seq + 1;
     tx.execute(
@@ -571,6 +602,9 @@ mod tests {
         let (seq, taken) = take_unsent(c, &lib, 2).unwrap().unwrap();
         assert_eq!((seq, taken.len(), taken[0].hash), (3, 1, newer.hash));
         assert!(take_unsent(c, &lib, 3).unwrap().is_none());
+        // A crash after numbering change 3, before it was signed: the same change again.
+        let (seq, again) = take_unsent(c, &lib, 2).unwrap().unwrap();
+        assert_eq!((seq, again[0].hash), (3, newer.hash));
         // A store behind the library is refused, never reused (SP15).
         record_local(c, &lib, &k, place(3), 1200).unwrap();
         assert!(matches!(
@@ -592,6 +626,26 @@ mod tests {
         );
         c.execute("UPDATE sync_libraries SET state = 'on'", [])
             .unwrap();
+        // A good remote version ahead of the system clock (under SY10's 24 hours).
+        let other = Id16([2; 16]);
+        let good = json!({
+            "format": 1, "key": PLACE, "device": other.to_string(), "clock": [5_000_000u64, 0],
+            "history": [], "body": { "hash": Hash32([5; 32]).to_string(), "size": 3 },
+        });
+        let Checked::Version(good) = check_version(good, other).unwrap() else {
+            panic!()
+        };
+        store_remote(
+            c,
+            &lib,
+            &Placed {
+                version: good.clone(),
+                seq: 1,
+            },
+        )
+        .unwrap();
+        c.execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
         // An edit far in the future, then a rotation for the clock (SY10).
         let ahead = record_local(c, &lib, &key(PLACE), place(1), 9_000_000_000_000).unwrap();
         let rotated = Library {
@@ -606,6 +660,7 @@ mod tests {
             "published under the new identity (SY7)"
         );
         assert!(left[0].clock < ahead.clock, "with a fresh clock");
+        assert!(left[0].clock > good.clock, "still after its good ancestor");
         assert_eq!(active(c).unwrap().map(|l| l.device), Some(rotated.device));
     }
 
