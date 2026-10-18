@@ -139,6 +139,35 @@ fn is_seq(s: &str) -> bool {
             .is_ok_and(|n| (1..=json::MAX_SAFE_INTEGER).contains(&n))
 }
 
+/// A9's timestamps, as `toISOString` writes them: `YYYY-MM-DDTHH:MM:SS.sssZ`.
+fn is_iso_time(t: &str) -> bool {
+    let b = t.as_bytes();
+    let num = |r: std::ops::Range<usize>| -> Option<u32> {
+        t.get(r)?.bytes().try_fold(0u32, |n, c| {
+            c.is_ascii_digit().then(|| n * 10 + (c - b'0') as u32)
+        })
+    };
+    b.len() == 24
+        && [
+            (4, b'-'),
+            (7, b'-'),
+            (10, b'T'),
+            (13, b':'),
+            (16, b':'),
+            (19, b'.'),
+            (23, b'Z'),
+        ]
+        .iter()
+        .all(|&(i, c)| b[i] == c)
+        && num(0..4).is_some()
+        && num(5..7).is_some_and(|m| (1..=12).contains(&m))
+        && num(8..10).is_some_and(|d| (1..=31).contains(&d))
+        && num(11..13).is_some_and(|h| h < 24)
+        && num(14..16).is_some_and(|m| m < 60)
+        && num(17..19).is_some_and(|s| s < 60)
+        && num(20..23).is_some()
+}
+
 /// SP12, A9: a highlight's Web Annotation JSON, as `fromW3C` reads it: its id, a
 /// CFI fragment selector, a text-quote selector, a colour and an anchor status. Its
 /// note is a record of its own (`note:`), so its `body` holds no text.
@@ -161,9 +190,11 @@ fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
         && o.get("id")
             .and_then(Value::as_str)
             .is_some_and(|id| id.strip_prefix("urn:uuid:") == Some(uuid))
-        && ["created", "modified", "linen:anchoredContentHash"]
+        && ["created", "modified"]
             .iter()
-            .all(|k| o.get(*k).is_some_and(Value::is_string))
+            .all(|k| o.get(*k).and_then(Value::as_str).is_some_and(is_iso_time))
+        && o.get("linen:anchoredContentHash")
+            .is_some_and(Value::is_string)
         && o.get("body")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty)
@@ -511,7 +542,7 @@ pub fn check_body(key: &Key, bytes: &[u8]) -> Result<Value, RecordError> {
                     .and_then(Value::as_array)
                     .is_some_and(|a| a.iter().all(Value::is_string))
         }
-        Kind::BookOpened => true,
+        Kind::BookOpened => o.is_empty(),
         Kind::BookFinished => o.get("finished").is_some_and(Value::is_boolean),
         Kind::Choice => false,
     };
@@ -772,7 +803,7 @@ mod tests {
         );
         assert!(body_of(Kind::Note, br#"{"text":"hello"}"#).is_ok());
         let anno = format!(
-            r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"c","modified":"m","body":[],
+            r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"2026-10-18T09:00:00.000Z","modified":"2026-10-18T09:00:00.000Z","body":[],
             "target":{{"source":"s","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
             {{"type":"TextQuoteSelector","exact":"e","prefix":"","suffix":""}}]}},
             "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"h"}}"#
@@ -792,6 +823,14 @@ mod tests {
             body_of(Kind::Annotation, shadowed.as_bytes()),
             Err(RecordError::Body),
             "the first FragmentSelector is the one read"
+        );
+        let undated = anno.replace(
+            r#""created":"2026-10-18T09:00:00.000Z""#,
+            r#""created":"invalid""#,
+        );
+        assert_eq!(
+            body_of(Kind::Annotation, undated.as_bytes()),
+            Err(RecordError::Body)
         );
         let purple = anno.replace("rose", "purple");
         assert_eq!(
