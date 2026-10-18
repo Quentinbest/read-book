@@ -212,8 +212,11 @@ fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
         && ["created", "modified"]
             .iter()
             .all(|k| o.get(*k).and_then(Value::as_str).is_some_and(is_iso_time))
+        // The book file's SHA-256 the anchors belong to, as `import` writes it.
         && o.get("linen:anchoredContentHash")
-            .is_some_and(Value::is_string)
+            .and_then(Value::as_str)
+            .and_then(Hash32::parse)
+            .is_some()
         && o.get("body")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty)
@@ -838,7 +841,7 @@ mod tests {
             r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"2026-10-18T09:00:00.000Z","modified":"2026-10-18T09:00:00.000Z","body":[],
             "target":{{"source":"s","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
             {{"type":"TextQuoteSelector","exact":"e","prefix":"","suffix":""}}]}},
-            "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"h"}}"#
+            "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"{H}"}}"#
         );
         assert!(body_of(Kind::Annotation, anno.as_bytes()).is_ok());
         assert_eq!(
@@ -897,6 +900,15 @@ mod tests {
         );
         assert_eq!(
             body_of(Kind::Place, br#"{"cfi":"","fraction":0.5}"#),
+            Err(RecordError::Body)
+        );
+        let unhashed = anno.replace(
+            &format!(r#""linen:anchoredContentHash":"{H}""#),
+            r#""linen:anchoredContentHash":"""#,
+        );
+        assert_ne!(unhashed, anno);
+        assert_eq!(
+            body_of(Kind::Annotation, unhashed.as_bytes()),
             Err(RecordError::Body)
         );
         let purple = anno.replace("rose", "purple");
