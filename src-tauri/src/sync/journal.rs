@@ -28,6 +28,8 @@ pub enum JournalError {
     NoLibrary(Id16),
     #[error("the device store's last sequence ({0}) is behind the library's")]
     StoreBehind(u64),
+    #[error("{0} waits for the reader to choose between versions")]
+    Conflicted(Key),
 }
 
 pub type Result<T> = std::result::Result<T, JournalError>;
@@ -310,6 +312,18 @@ pub fn record_local(
     // Only what was applied: a version still waiting (for its body, a book or a
     // guard) was never seen by the reader, so nothing may claim to descend from it.
     let record = record_of(conn, lib, key, Which::Applied)?;
+    // SY13: when this device's own version is one the reader hasn't chosen yet (a
+    // conflict head that isn't shown), an ordinary edit would have to descend from it
+    // (SP11) and so settle the conflict without the reader. It waits instead: the
+    // reader's choice (Stage 5) settles it, descending from every head.
+    if let Some(Outcome::Conflict { shown, all }) = record.outcome(&HashSet::new()) {
+        let own_hidden = all
+            .iter()
+            .any(|h| h.version.device == lib.device && h.id() != shown.id());
+        if own_hidden {
+            return Err(JournalError::Conflicted(key.clone()));
+        }
+    }
     // SY10: after everything it descends from, whatever the system clock says.
     for p in record.versions() {
         observe(conn, lib, p.version.clock, wall_ms)?;
@@ -698,6 +712,44 @@ mod tests {
         let mut named: Vec<DeviceId> = edit.history.iter().map(|e| e.device).collect();
         named.sort();
         assert_eq!(named, vec![Id16([2; 16]), Id16([3; 16])]);
+    }
+
+    #[test]
+    fn an_edit_cant_settle_a_conflict_holding_this_devices_hidden_version() {
+        let (store, lib) = setup();
+        let c = store.conn();
+        let note = "note:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+        let k = key(note);
+        let ours = record_local(
+            c,
+            &lib,
+            &k,
+            LocalContent::Body(br#"{"text":"ours"}"#.to_vec()),
+            100,
+        )
+        .unwrap();
+        take_unsent(c, &lib, 0).unwrap();
+        let other = Id16([2; 16]);
+        let v = json!({
+            "format": 1, "key": note, "device": other.to_string(), "clock": [200u64, 0],
+            "history": [], "body": { "hash": Hash32([2; 32]).to_string(), "size": 3 },
+        });
+        let Checked::Version(v) = check_version(v, other).unwrap() else {
+            panic!()
+        };
+        store_remote(c, &lib, &Placed { version: v, seq: 1 }).unwrap();
+        c.execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
+        // Theirs is shown (changed last); ours is hidden: an edit must wait (SY13).
+        let r = record_local(
+            c,
+            &lib,
+            &k,
+            LocalContent::Body(br#"{"text":"edit"}"#.to_vec()),
+            300,
+        );
+        assert!(matches!(r, Err(JournalError::Conflicted(_))));
+        let _ = ours;
     }
 
     #[test]
