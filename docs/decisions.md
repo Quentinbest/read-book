@@ -290,6 +290,22 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-17 (sync Stage 1, #92)
+
+The owner asked for Stage 1 (“Work on issue #92”) and, when asked, chose to start it now and approved all seven of its open items as recommended (2026-10-17). Each item's text is in `docs/pending-approvals.md`.
+
+| What | Approved |
+|---|---|
+| When sync is built | Stage 1 is built now. The wait for a second platform (2026-10-14) applies to shipping sync, that is Stage 6 and sync in release builds, not to building the core. |
+| A change and a deletion made apart (102, SY13, SY20) | A conflict the reader decides, only when the other device changed the thing after the last sync it shared with the deleting device; otherwise the deletion applies. Nothing deleted comes back without the reader's choice. |
+| Merge rules (105, SY12, SY14, SY16) | Newest wins for the place (even earlier in the book), each setting, last opened and finished; adding a book is never undone by a merge; two updated files imported apart: the newest import wins. |
+| Safety values (106, SY10, SY17, SY24–SY28) | As listed in item 106. They stay marked (prov.) in the plan and PROVISIONAL in the code: approving them settles the rules, and the numbers can be tuned. |
+| Encryption (108) | None in this plan; decided again before any provider other than the two folders. |
+| One storage at a time (109, SY29) | One storage per library; switching keeps the old copy and joins the new storage as a first sync. |
+| Trusting and removing devices (110, SY34) | Signed changes; enrollment by a short code confirmed on an enrolled device, or by the recovery code; Remove needs the recovery code and replaces it. |
+| A deletion's week on a device back late (111, SY17) | **(a).** Other devices' reports never shorten this device's Restore; a device back late offers it for its own week, labelled with the reported age. |
+| Not decided by this | The protocol document (`docs/sync-protocol.md`) and its items 113 and 114 wait for the owner's review; no Stage 1 code is written before it. Items 98–101, 103, 104 and 107 (Stages 2–5) stay open. |
+
 ## Approved 2026-10-17 (the sync device ID, item 112)
 
 | What | Approved |
