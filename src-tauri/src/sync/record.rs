@@ -191,12 +191,18 @@ fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
         .filter(|t| s(t, "source"))
         .and_then(|t| t.get("selector"))
         .and_then(Value::as_array);
-    let has = |kind: &str, fields: &[&str]| {
-        // The first selector of that type is the one `fromW3C` reads.
+    // The first selector of a type is the one `fromW3C` reads. Its `anchor` field
+    // must be non-empty: an empty CFI or quote can't place the highlight.
+    let has = |kind: &str, anchor: &str, fields: &[&str]| {
         selectors.is_some_and(|sel| {
             sel.iter()
                 .find(|x| x.get("type").and_then(Value::as_str) == Some(kind))
-                .is_some_and(|x| fields.iter().all(|f| s(x, f)))
+                .is_some_and(|x| {
+                    fields.iter().all(|f| s(x, f))
+                        && x.get(anchor)
+                            .and_then(Value::as_str)
+                            .is_some_and(|v| !v.is_empty())
+                })
         })
     };
     o.get("type").and_then(Value::as_str) == Some("Annotation")
@@ -211,8 +217,8 @@ fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
         && o.get("body")
             .and_then(Value::as_array)
             .is_some_and(Vec::is_empty)
-        && has("FragmentSelector", &["value"])
-        && has("TextQuoteSelector", &["exact", "prefix", "suffix"])
+        && has("FragmentSelector", "value", &["value"])
+        && has("TextQuoteSelector", "exact", &["exact", "prefix", "suffix"])
         && matches!(
             o.get("linen:color").and_then(Value::as_str),
             Some("yellow" | "green" | "blue" | "rose")
@@ -858,6 +864,18 @@ mod tests {
                 body_of(Kind::Annotation, t.as_bytes()).is_ok(),
                 ok,
                 "{date}"
+            );
+        }
+        for (from, to) in [
+            (r#""value":"epubcfi(/6/4)""#, r#""value":"""#),
+            (r#""exact":"e""#, r#""exact":"""#),
+        ] {
+            let empty = anno.replace(from, to);
+            assert_ne!(empty, anno);
+            assert_eq!(
+                body_of(Kind::Annotation, empty.as_bytes()),
+                Err(RecordError::Body),
+                "{to}"
             );
         }
         let purple = anno.replace("rose", "purple");
