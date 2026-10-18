@@ -139,6 +139,68 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (ext_id, name)
     );
     "#,
+    // 6: Sync Stage 1b (SY7, SY9, SY29; docs/sync-protocol.md SP11, SP15): the sync
+    // journal. Nothing here is written until the reader sets sync up (SY6). Bodies are
+    // kept by plain hash (SP4); versions keep their exact JSON, unknown fields and all.
+    r#"
+    CREATE TABLE sync_libraries (
+        library TEXT PRIMARY KEY,           -- SP1: the library's ID
+        storage TEXT NOT NULL,              -- the storage it lives in (SY29)
+        state TEXT NOT NULL DEFAULT 'on',   -- 'on' | 'off' | 'paused' (SY27, SY29)
+        active INTEGER NOT NULL DEFAULT 0,  -- the one library syncing now (item 109)
+        clock_ms INTEGER NOT NULL DEFAULT 0,
+        clock_n INTEGER NOT NULL DEFAULT 0,
+        joined_at INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX sync_libraries_active ON sync_libraries(active) WHERE active = 1;
+
+    CREATE TABLE sync_versions (
+        library TEXT NOT NULL REFERENCES sync_libraries(library),
+        key TEXT NOT NULL,
+        device TEXT NOT NULL,
+        seq INTEGER,                        -- NULL: a local change not yet published (SY7)
+        hash TEXT NOT NULL,                 -- SP11
+        raw TEXT NOT NULL,                  -- the version as written or received (SY9)
+        applied INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE UNIQUE INDEX sync_versions_published
+        ON sync_versions(library, device, seq, key) WHERE seq IS NOT NULL;
+    CREATE UNIQUE INDEX sync_versions_unsent
+        ON sync_versions(library, key) WHERE seq IS NULL;
+    CREATE INDEX sync_versions_key ON sync_versions(library, key);
+
+    CREATE TABLE sync_bodies (
+        hash TEXT PRIMARY KEY,              -- plain SHA-256 of the body (SP4)
+        body BLOB NOT NULL
+    );
+
+    CREATE TABLE sync_books (
+        library TEXT NOT NULL,
+        sync_id TEXT NOT NULL,              -- SY8
+        book_id TEXT,                       -- the local book, NULL once it is purged
+        PRIMARY KEY (library, sync_id)
+    );
+    CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
+
+    CREATE TABLE sync_seen (
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        seq INTEGER NOT NULL,               -- what this device has applied of it (SP29)
+        hash TEXT NOT NULL,
+        PRIMARY KEY (library, device)
+    );
+
+    CREATE TABLE sync_aside (
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        hash TEXT NOT NULL,                 -- repeats of the same are counted once (SY28)
+        reason TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        raw BLOB NOT NULL,
+        first_at INTEGER NOT NULL,
+        PRIMARY KEY (library, device, hash)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
