@@ -93,6 +93,15 @@ impl Key {
         &self.0
     }
 
+    pub fn kind(&self) -> Kind {
+        Key::parse(&self.0).map(|(_, k)| k).unwrap_or(Kind::Choice)
+    }
+
+    /// The book or annotation UUID a key names, if any.
+    fn subject(&self) -> Option<&str> {
+        self.0.split(':').nth(1)
+    }
+
     /// SP17: the 16-byte key hash a spine keeps beside each version hash: the
     /// first 16 bytes of plain `H(key)`.
     pub fn spine_hash(&self) -> [u8; 16] {
@@ -131,7 +140,7 @@ fn is_seq(s: &str) -> bool {
 /// SP12, A9: a highlight's Web Annotation JSON, as `fromW3C` reads it: its id, a
 /// CFI fragment selector, a text-quote selector, a colour and an anchor status. Its
 /// note is a record of its own (`note:`), so its `body` holds no text.
-fn is_annotation(o: &Map<String, Value>) -> bool {
+fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
     let s = |v: &Value, k: &str| v.get(k).is_some_and(Value::is_string);
     let selectors = o
         .get("target")
@@ -149,7 +158,7 @@ fn is_annotation(o: &Map<String, Value>) -> bool {
     o.get("type").and_then(Value::as_str) == Some("Annotation")
         && o.get("id")
             .and_then(Value::as_str)
-            .is_some_and(|id| id.strip_prefix("urn:uuid:").is_some_and(is_uuid))
+            .is_some_and(|id| id.strip_prefix("urn:uuid:") == Some(uuid))
         && ["created", "modified", "linen:anchoredContentHash"]
             .iter()
             .all(|k| o.get(*k).is_some_and(Value::is_string))
@@ -451,7 +460,11 @@ pub fn check_version(raw: Value, writer: DeviceId) -> Result<Checked, RecordErro
 
 /// SY28: check a body's bytes for its type, after its plain hash has matched.
 /// A body that fails is set aside like a version that fails.
-pub fn check_body(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
+/// A body's own IDs must be its key's (SY9): an annotation's `id` and a book's
+/// `syncId` name the record they belong to.
+pub fn check_body(key: &Key, bytes: &[u8]) -> Result<Value, RecordError> {
+    let kind = key.kind();
+    let subject = key.subject().unwrap_or_default();
     if bytes.len() as u64 > kind.body_limit() {
         return Err(RecordError::TooLarge);
     }
@@ -466,13 +479,13 @@ pub fn check_body(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
                     .is_some_and(|f| (0.0..=1.0).contains(&f))
                 && o.get("chapter").map_or(true, Value::is_string)
         }
-        Kind::Annotation => is_annotation(o),
+        Kind::Annotation => is_annotation(o, subject),
         Kind::Note => str_field("text"),
         // Settings are stored as strings. Each key's own schema (SY15, SY28) comes
         // with the list of keys that sync (item 103, Stage 3).
         Kind::Setting | Kind::BookSetting => o.get("value").is_some_and(Value::is_string),
         Kind::Book => {
-            o.get("syncId").and_then(Value::as_str).is_some_and(is_uuid)
+            o.get("syncId").and_then(Value::as_str) == Some(subject)
                 && o.get("aliases")
                     .and_then(Value::as_array)
                     .is_some_and(|a| a.iter().all(|x| x.as_str().is_some_and(is_uuid)))
@@ -534,6 +547,20 @@ mod tests {
             }
         }
         v
+    }
+
+    fn body_of(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
+        let key = match kind {
+            Kind::Place => format!("place:{BOOK}"),
+            Kind::Annotation => format!("annotation:{BOOK}"),
+            Kind::Note => format!("note:{BOOK}"),
+            Kind::Setting => "setting:readingPace".to_string(),
+            Kind::Book => format!("book:{BOOK}"),
+            Kind::BookFile => format!("bookFile:{BOOK}"),
+            Kind::BookFinished => format!("bookRead:{BOOK}:finished"),
+            _ => unreachable!(),
+        };
+        check_body(&Key::parse(&key).unwrap().0, bytes)
     }
 
     fn check(v: Value) -> Result<Checked, RecordError> {
@@ -720,65 +747,75 @@ mod tests {
 
     #[test]
     fn bodies_are_checked_for_their_type() {
-        assert!(check_body(
+        assert!(body_of(
             Kind::Place,
             br#"{"cfi":"epubcfi(/6/4!/4)","fraction":0.25,"chapter":"I"}"#
         )
         .is_ok());
         assert_eq!(
-            check_body(Kind::Place, br#"{"cfi":"x","fraction":1.5}"#),
+            body_of(Kind::Place, br#"{"cfi":"x","fraction":1.5}"#),
             Err(RecordError::Body)
         );
-        assert!(check_body(Kind::Note, br#"{"text":"hello"}"#).is_ok());
+        assert!(body_of(Kind::Note, br#"{"text":"hello"}"#).is_ok());
         let anno = format!(
             r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"c","modified":"m","body":[],
             "target":{{"source":"s","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
             {{"type":"TextQuoteSelector","exact":"e","prefix":"","suffix":""}}]}},
             "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"h"}}"#
         );
-        assert!(check_body(Kind::Annotation, anno.as_bytes()).is_ok());
+        assert!(body_of(Kind::Annotation, anno.as_bytes()).is_ok());
         assert_eq!(
-            check_body(Kind::Annotation, b"{}"),
+            body_of(Kind::Annotation, b"{}"),
             Err(RecordError::Body),
             "A9: anchors and a colour"
         );
         let purple = anno.replace("rose", "purple");
         assert_eq!(
-            check_body(Kind::Annotation, purple.as_bytes()),
+            body_of(Kind::Annotation, purple.as_bytes()),
             Err(RecordError::Body)
         );
         assert_eq!(
-            check_body(Kind::Note, br#"{"text":"a","text":"b"}"#),
+            body_of(Kind::Note, br#"{"text":"a","text":"b"}"#),
             Err(RecordError::Json(json::JsonError::DuplicateKey))
         );
         // A setting value that isn't even JSON (`readingPace` = `{`) is set aside (Stage 1 check).
         assert_eq!(
-            check_body(Kind::Setting, b"{"),
+            body_of(Kind::Setting, b"{"),
             Err(RecordError::Json(json::JsonError::Syntax))
         );
-        assert!(check_body(Kind::BookFinished, br#"{"finished":true}"#).is_ok());
-        assert!(check_body(Kind::Setting, br#"{"value":"18"}"#).is_ok());
+        assert!(body_of(Kind::BookFinished, br#"{"finished":true}"#).is_ok());
+        assert!(body_of(Kind::Setting, br#"{"value":"18"}"#).is_ok());
         assert_eq!(
-            check_body(Kind::Setting, br#"{"value":{}}"#),
+            body_of(Kind::Setting, br#"{"value":{}}"#),
             Err(RecordError::Body)
         );
         let file = format!(
             r#"{{"hash":"{H}","size":1,"title":"T","authors":[],"language":"en","identifier":null,"layout":"reflowable"}}"#
         );
-        assert!(check_body(Kind::BookFile, file.as_bytes()).is_ok());
+        assert!(body_of(Kind::BookFile, file.as_bytes()).is_ok());
         let partial = format!(r#"{{"hash":"{H}","size":1,"title":"T","authors":[]}}"#);
         assert_eq!(
-            check_body(Kind::BookFile, partial.as_bytes()),
+            body_of(Kind::BookFile, partial.as_bytes()),
             Err(RecordError::Body),
             "SP12: every field a file determines"
         );
         // A 9 MB note is over its limit (SY28).
         let big = format!(r#"{{"text":"{}"}}"#, "x".repeat(9 * MB as usize));
         assert_eq!(
-            check_body(Kind::Note, big.as_bytes()),
+            body_of(Kind::Note, big.as_bytes()),
             Err(RecordError::TooLarge)
         );
         let book = format!(r#"{{"syncId":"{BOOK}","aliases":["{BOOK}"]}}"#);
-        assert!(check_body(Kind::Book, book.as_bytes()).is_ok());
+        assert!(body_of(Kind::Book, book.as_bytes()).is_ok());
+        // SY9: a body's own IDs must be its key's.
+        let other = "11111111-1111-4111-8111-111111111111";
+        assert_eq!(
+            body_of(Kind::Book, book.replace(BOOK, other).as_bytes()),
+            Err(RecordError::Body)
+        );
+        assert_eq!(
+            body_of(Kind::Annotation, anno.replace(BOOK, other).as_bytes()),
+            Err(RecordError::Body)
+        );
     }
 }
