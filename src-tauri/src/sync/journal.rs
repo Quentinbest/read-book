@@ -83,7 +83,7 @@ pub fn join(conn: &Connection, lib: &Library, storage: &str, now_ms: i64) -> Res
         params![lib.id.to_string(), storage, lib.device.to_string(), now_ms],
     )?;
     tx.commit()?;
-    set_device(conn, lib, false, u64::MAX, now_ms as u64)
+    set_device(conn, lib, false, None, now_ms as u64)
 }
 
 /// SY7, SP28: at each start, this device's ID in the library, from its device store.
@@ -92,7 +92,8 @@ pub fn join(conn: &Connection, lib: &Library, storage: &str, now_ms: i64) -> Res
 /// re-authored under the new identity, with the old identity's versions kept as
 /// their ancestry; with `fresh_clock` (SY10: rotating because this clock ran ahead)
 /// the clock starts again from the system clock and they are stamped afresh.
-/// `old_last_seq` is the last sequence the old identity signed (its device store):
+/// `old_last_seq` is the last sequence the old identity signed (its device store),
+/// or `None` when there is nothing to recover (a join):
 /// a change numbered after it but never signed (a crash in between) can never be
 /// signed now, so its versions go back to unsent and are re-authored with the rest,
 /// unless a later local edit to the same record already replaces them.
@@ -100,7 +101,7 @@ pub fn set_device(
     conn: &Connection,
     lib: &Library,
     fresh_clock: bool,
-    old_last_seq: u64,
+    old_last_seq: Option<u64>,
     wall_ms: u64,
 ) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
@@ -129,16 +130,18 @@ pub fn set_device(
     }
     // Numbered by the old identity but never signed: back to unsent, or dropped
     // where a later unsent edit to the same record replaces them.
-    tx.execute(
-        "DELETE FROM sync_versions
-         WHERE library = ?1 AND device = ?2 AND seq > ?3
-           AND key IN (SELECT key FROM sync_versions WHERE library = ?1 AND seq IS NULL)",
-        params![lib.id.to_string(), stored, old_last_seq as i64],
-    )?;
-    tx.execute(
-        "UPDATE sync_versions SET seq = NULL WHERE library = ?1 AND device = ?2 AND seq > ?3",
-        params![lib.id.to_string(), stored, old_last_seq as i64],
-    )?;
+    if let Some(last) = old_last_seq {
+        tx.execute(
+            "DELETE FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND seq > ?3
+               AND key IN (SELECT key FROM sync_versions WHERE library = ?1 AND seq IS NULL)",
+            params![lib.id.to_string(), stored, last as i64],
+        )?;
+        tx.execute(
+            "UPDATE sync_versions SET seq = NULL WHERE library = ?1 AND device = ?2 AND seq > ?3",
+            params![lib.id.to_string(), stored, last as i64],
+        )?;
+    }
     let pending: Vec<(i64, String)> = tx
         .prepare("SELECT rowid, raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid")?
         .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -147,12 +150,34 @@ pub fn set_device(
     for (rowid, raw) in pending {
         let mut v: Value = serde_json::from_str(&raw).map_err(|_| RecordError::NotAnObject)?;
         v["device"] = json!(lib.device.to_string());
-        // No ancestor may be a version the old identity never signed.
-        if let Some(h) = v["history"].as_array_mut() {
-            h.retain(|e| {
-                !(e["d"].as_str() == Some(stored.as_str())
-                    && e["s"].as_u64().is_some_and(|s| s > old_last_seq))
-            });
+        // No ancestor may be a version the old identity never signed: such an entry
+        // falls back to the old identity's latest signed version of the record (SP11).
+        if let Some(last) = old_last_seq {
+            let key = v["key"].as_str().unwrap_or_default().to_owned();
+            let unsigned = |e: &Value| {
+                e["d"].as_str() == Some(stored.as_str())
+                    && e["s"].as_u64().is_some_and(|s| s > last)
+            };
+            if v["history"]
+                .as_array()
+                .is_some_and(|h| h.iter().any(unsigned))
+            {
+                let signed: Option<(i64, String)> = tx
+                    .query_row(
+                        "SELECT seq, hash FROM sync_versions
+                         WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq <= ?4
+                         ORDER BY seq DESC LIMIT 1",
+                        params![lib.id.to_string(), stored, key, last as i64],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .optional()?;
+                if let Some(h) = v["history"].as_array_mut() {
+                    h.retain(|e| !unsigned(e));
+                    if let Some((s, hash)) = signed {
+                        h.push(json!({ "d": stored, "s": s, "h": hash }));
+                    }
+                }
+            }
         }
         if fresh_clock {
             // The fresh clock still sorts after every applied ancestor from another
@@ -680,7 +705,7 @@ mod tests {
         let c = store.conn();
         c.execute("UPDATE sync_libraries SET state = 'paused'", [])
             .unwrap();
-        set_device(c, &lib, false, 0, 0).unwrap();
+        set_device(c, &lib, false, None, 0).unwrap();
         assert!(
             active(c).unwrap().is_none(),
             "a paused library stays paused across a start"
@@ -713,7 +738,7 @@ mod tests {
             id: lib.id,
             device: Id16([9; 16]),
         };
-        set_device(c, &rotated, true, 0, 1_000).unwrap();
+        set_device(c, &rotated, true, Some(0), 1_000).unwrap();
         let left = unsent(c, &rotated).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(
@@ -824,7 +849,7 @@ mod tests {
             device: Id16([9; 16]),
         };
         // The old identity's device store had signed only change 0: nothing.
-        set_device(c, &rotated, false, 0, 1300).unwrap();
+        set_device(c, &rotated, false, Some(0), 1300).unwrap();
         let left = unsent(c, &rotated).unwrap();
         let keys: Vec<&str> = left.iter().map(|v| v.key.as_str()).collect();
         assert_eq!(
@@ -837,6 +862,58 @@ mod tests {
             left.iter()
                 .all(|v| v.history.iter().all(|e| e.device != lib.device)),
             "no unsigned ancestor"
+        );
+    }
+
+    #[test]
+    fn a_pruned_ancestor_falls_back_to_the_last_signed_one() {
+        let (store, lib) = setup();
+        let c = store.conn();
+        let note = "note:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+        let k = key(note);
+        let v1 = record_local(
+            c,
+            &lib,
+            &k,
+            LocalContent::Body(br#"{"text":"1"}"#.to_vec()),
+            1000,
+        )
+        .unwrap();
+        take_unsent(c, &lib, 0).unwrap(); // signed: 1
+        record_local(
+            c,
+            &lib,
+            &k,
+            LocalContent::Body(br#"{"text":"2"}"#.to_vec()),
+            1100,
+        )
+        .unwrap();
+        take_unsent(c, &lib, 1).unwrap(); // numbered 2, never signed
+        record_local(
+            c,
+            &lib,
+            &k,
+            LocalContent::Body(br#"{"text":"3"}"#.to_vec()),
+            1200,
+        )
+        .unwrap();
+        let rotated = Library {
+            id: lib.id,
+            device: Id16([9; 16]),
+        };
+        set_device(c, &rotated, false, Some(1), 1300).unwrap();
+        let left = unsent(c, &rotated).unwrap();
+        assert_eq!(left.len(), 1);
+        let old: Vec<(u64, Hash32)> = left[0]
+            .history
+            .iter()
+            .filter(|e| e.device == lib.device)
+            .map(|e| (e.seq, e.hash))
+            .collect();
+        assert_eq!(
+            old,
+            vec![(1, v1.hash)],
+            "descends from the signed version 1"
         );
     }
 
