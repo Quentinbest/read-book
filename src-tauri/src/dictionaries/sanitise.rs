@@ -427,6 +427,8 @@ mod tests {
             r#"<svg><animateMotion path="M0 0" /><animateTransform attributeName="transform" /><animateColor to="red" /><set attributeName="href" to="javascript:alert(2)"/></svg>"#,
             // RUSTSEC-2021-0157 (ammonia < 4.2.3): quoted url() in a style attribute.
             r#"<p style='background:url("http://canary/quoted")'>q</p><p style="background:url('javascript:alert(3)')">j</p>"#,
+            // RUSTSEC-2026-0373 (ammonia < 4.2.4): url() matched case-sensitively.
+            r#"<p style="background:URL(http://canary/upper)">u</p><p style="background:Url('javascript:alert(4)')">v</p>"#,
         ];
         for h in hostile {
             let out = sanitise_html(h, G, "Audio isn't available");
