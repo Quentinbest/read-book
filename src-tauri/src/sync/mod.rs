@@ -6,11 +6,14 @@
 //! here opens a file in iCloud Drive or Google Drive, and nothing is wired into the
 //! app yet (Stage 2 adds the providers, Stage 3 turns sync on).
 
+pub mod a9;
+pub mod apply;
 pub mod clock;
 pub mod identity;
 pub mod ids;
 pub mod journal;
 pub mod json;
+pub mod local;
 pub mod merge;
 pub mod record;
 pub mod retention;

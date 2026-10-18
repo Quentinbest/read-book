@@ -1,0 +1,614 @@
+//! SY12, SY13, SY14, SY21, SY28, SP11: other devices' versions, merged and applied.
+//!
+//! A batch is one device's change, in sequence order. Receiving it checks every
+//! version (SY28), keeps the good ones, and applies what each touched record now
+//! comes to, all in one transaction: a kill leaves either the whole batch or none of
+//! it (plan §6.3). Applying writes the library's tables directly, never through the
+//! journal, so it is never sent back (SY12). A version whose body, book or highlight
+//! hasn't arrived waits; nothing missing ever deletes anything (SY21).
+//!
+//! Stage 1b exchanges batches in memory; Stage 1c gives them their signed change-file
+//! form (SP14) and Stage 2 their storage.
+
+use super::a9;
+use super::ids::{identity_hash, DeviceId, Hash32};
+use super::journal::{self, JournalError, Library, Which};
+use super::merge::{reader_decides, Outcome, Placed};
+use super::record::{check_body, check_version, Checked, Content, Key, Kind, Version};
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::Value;
+use std::collections::HashSet;
+
+type Result<T> = std::result::Result<T, JournalError>;
+
+/// One device's change: its versions, in order, and the bodies they name.
+#[derive(Clone, Debug)]
+pub struct Batch {
+    pub device: DeviceId,
+    pub seq: u64,
+    /// The change's payload hash (SP5); a stand-in until Stage 1c signs changes.
+    pub hash: Hash32,
+    pub versions: Vec<Value>,
+    pub bodies: Vec<Vec<u8>>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Received {
+    /// Kept, and `applied` records changed in the library.
+    Applied { applied: usize, set_aside: usize },
+    /// Already received.
+    Repeat,
+    /// A gap before it: it waits for the changes in between (SP14).
+    Waits,
+}
+
+fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
+    let s: Option<i64> = conn.query_row(
+        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+        params![lib.id.to_string(), lib.device.to_string()],
+        |r| r.get(0),
+    )?;
+    Ok(s.unwrap_or(0) as u64)
+}
+
+/// SY7, SP15: number this device's unsent versions as its next change.
+pub fn publish(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
+    let Some((seq, unsent)) = journal::take_unsent(conn, lib)? else {
+        return Ok(None);
+    };
+    let mut bodies = Vec::new();
+    for v in &unsent {
+        if let Content::Body { hash, .. } = &v.content {
+            if let Some(b) = journal::body(conn, hash)? {
+                bodies.push(b);
+            }
+        }
+    }
+    let versions: Vec<Value> = unsent.iter().map(|v| v.raw.clone()).collect();
+    let hash = identity_hash(Value::Array(versions.clone()).to_string().as_bytes());
+    Ok(Some(Batch {
+        device: lib.device,
+        seq,
+        hash,
+        versions,
+        bodies,
+    }))
+}
+
+fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
+    let s: Option<i64> = conn
+        .query_row(
+            "SELECT seq FROM sync_seen WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), device.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(s.unwrap_or(0) as u64)
+}
+
+fn set_aside(
+    conn: &Connection,
+    lib: &Library,
+    device: DeviceId,
+    raw: &[u8],
+    reason: &str,
+    now_ms: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO sync_aside (library, device, hash, reason, size, raw, first_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        params![
+            lib.id.to_string(),
+            device.to_string(),
+            identity_hash(raw).to_string(),
+            reason,
+            raw.len() as i64,
+            raw,
+            now_ms
+        ],
+    )?;
+    Ok(())
+}
+
+/// SY28, SP14: receive one device's change, in order, and apply what it changed.
+pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
+    let have = seen(conn, lib, batch.device)?;
+    if batch.seq <= have {
+        return Ok(Received::Repeat);
+    }
+    if batch.seq != have + 1 {
+        return Ok(Received::Waits);
+    }
+    let tx = conn.unchecked_transaction()?;
+    let mut keys = Vec::new();
+    let mut aside = 0;
+    let mut named = HashSet::new();
+    for raw in &batch.versions {
+        match check_version(raw.clone(), batch.device) {
+            Ok(Checked::Version(v)) => {
+                if let Content::Body { hash, .. } = &v.content {
+                    named.insert(*hash);
+                }
+                keys.push(v.key.clone());
+                journal::store_remote(
+                    &tx,
+                    lib,
+                    &Placed {
+                        version: v,
+                        seq: batch.seq,
+                    },
+                )?;
+            }
+            // SY9: a newer format is kept aside whole, and passed on.
+            Ok(Checked::NewerFormat(_)) => {
+                set_aside(
+                    &tx,
+                    lib,
+                    batch.device,
+                    raw.to_string().as_bytes(),
+                    "newer format",
+                    now_ms,
+                )?;
+                aside += 1;
+            }
+            Err(e) => {
+                set_aside(
+                    &tx,
+                    lib,
+                    batch.device,
+                    raw.to_string().as_bytes(),
+                    &e.to_string(),
+                    now_ms,
+                )?;
+                aside += 1;
+            }
+        }
+    }
+    // Only bodies a version in the change names are kept; their type is checked
+    // when they are applied.
+    for b in &batch.bodies {
+        if named.contains(&identity_hash(b)) {
+            journal::put_body(&tx, b)?;
+        }
+    }
+    tx.execute(
+        "INSERT INTO sync_seen (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(library, device) DO UPDATE SET seq = excluded.seq, hash = excluded.hash",
+        params![
+            lib.id.to_string(),
+            batch.device.to_string(),
+            batch.seq as i64,
+            batch.hash.to_string()
+        ],
+    )?;
+    let mut applied = 0;
+    for k in keys {
+        if apply_key(&tx, lib, &k, now_ms)? {
+            applied += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(Received::Applied {
+        applied,
+        set_aside: aside,
+    })
+}
+
+/// Apply what still waits: bodies or books that have arrived since.
+pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
+    let keys: Vec<String> = conn
+        .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
+        .query_map([lib.id.to_string()], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    let tx = conn.unchecked_transaction()?;
+    let mut n = 0;
+    for k in keys {
+        if let Some((key, _)) = Key::parse(&k) {
+            if apply_key(&tx, lib, &key, now_ms)? {
+                n += 1;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
+fn local_book(conn: &Connection, lib: &Library, sync_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?2 AND book_id IS NOT NULL",
+            params![lib.id.to_string(), sync_id],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
+fn subject(key: &Key) -> &str {
+    key.as_str().split(':').nth(1).unwrap_or_default()
+}
+
+/// Writes one version's state into the library. `false` when it must wait.
+fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
+    let ms = v.clock.ms() as i64;
+    let body = match &v.content {
+        Content::Body { hash, .. } => match journal::body(conn, hash)? {
+            Some(bytes) => match check_body(&v.key, &bytes) {
+                Ok(b) => Some(b),
+                Err(e) => {
+                    // SY28: a body that fails is set aside, never applied.
+                    set_aside(conn, lib, v.device, &bytes, &e.to_string(), ms)?;
+                    return Ok(false);
+                }
+            },
+            None => return Ok(false),
+        },
+        Content::Deleted { .. } => None,
+        Content::Inline(_) => return Ok(false),
+    };
+    match v.kind {
+        Kind::Place | Kind::BookOpened | Kind::BookFinished => {
+            let Some(book) = local_book(conn, lib, subject(&v.key))? else {
+                return Ok(false);
+            };
+            match (v.kind, &body) {
+                (Kind::Place, Some(b)) => {
+                    conn.execute(
+                        "INSERT INTO positions (book_id, cfi, fraction, updated_at, chapter_label)
+                         VALUES (?1, ?2, ?3, ?4, ?5)
+                         ON CONFLICT(book_id) DO UPDATE SET cfi = excluded.cfi, fraction = excluded.fraction,
+                         updated_at = excluded.updated_at, chapter_label = excluded.chapter_label",
+                        params![book, b["cfi"].as_str(), b["fraction"].as_f64(), ms, b["chapter"].as_str()],
+                    )?;
+                }
+                (Kind::Place, None) => {
+                    conn.execute("DELETE FROM positions WHERE book_id = ?1", [&book])?;
+                }
+                (Kind::BookOpened, Some(_)) => {
+                    conn.execute(
+                        "UPDATE books SET opened_at = ?2 WHERE id = ?1",
+                        params![book, ms],
+                    )?;
+                }
+                (Kind::BookFinished, Some(b)) => {
+                    let at = b["finished"].as_bool().unwrap_or(false).then_some(ms);
+                    conn.execute(
+                        "UPDATE books SET finished_at = ?2 WHERE id = ?1",
+                        params![book, at],
+                    )?;
+                }
+                _ => {}
+            }
+        }
+        Kind::Annotation => match &body {
+            Some(b) => {
+                let Some(book) = a9::book_of(b).map(str::to_owned) else {
+                    return Ok(false);
+                };
+                let Some(local) = local_book(conn, lib, &book)? else {
+                    return Ok(false);
+                };
+                let Some(a) = a9::row_of(b, &local) else {
+                    return Ok(false);
+                };
+                conn.execute(
+                    "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
+                         quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, NULL, ?11)
+                     ON CONFLICT(id) DO UPDATE SET anchored_content_hash = excluded.anchored_content_hash,
+                         color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
+                         quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
+                         updated_at = excluded.updated_at, deleted_at = NULL, anchor_status = excluded.anchor_status",
+                    params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
+                        a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status],
+                )?;
+            }
+            None => {
+                conn.execute(
+                    "UPDATE annotations SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                    params![subject(&v.key), ms],
+                )?;
+            }
+        },
+        Kind::Note => {
+            let text = body
+                .as_ref()
+                .and_then(|b| b["text"].as_str().map(str::to_owned));
+            let n = conn.execute(
+                "UPDATE annotations SET note = ?2 WHERE id = ?1",
+                params![subject(&v.key), text],
+            )?;
+            if n == 0 {
+                return Ok(false); // its highlight hasn't arrived
+            }
+        }
+        // Settings (item 103), books and their files (Stage 4) and choices (Stage 5)
+        // aren't applied yet; they wait.
+        _ => return Ok(false),
+    }
+    Ok(true)
+}
+
+fn mark_applied(conn: &Connection, lib: &Library, p: &Placed) -> Result<()> {
+    conn.execute(
+        "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+        params![lib.id.to_string(), p.version.device.to_string(), p.seq as i64, p.version.key.as_str()],
+    )?;
+    Ok(())
+}
+
+/// What one record comes to now, written into the library. `true` if it changed.
+fn apply_key(conn: &Connection, lib: &Library, key: &Key, _now_ms: i64) -> Result<bool> {
+    let mut record = journal::record_of(conn, lib, key, Which::All)?;
+    // A local change not yet published counts as this device's next version.
+    let next = own_seq(conn, lib)? + 1;
+    if let Some(v) = journal::unsent(conn, lib)?
+        .into_iter()
+        .find(|v| &v.key == key)
+    {
+        record.add(Placed {
+            version: v,
+            seq: next,
+        });
+    }
+    let (winner, heads) = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => (p, vec![p]),
+        Some(Outcome::Conflict { shown, all }) => (shown, all),
+        None => return Ok(false),
+    };
+    let changed = if winner.version.device == lib.device {
+        false // the library already holds this device's own state
+    } else if write(conn, lib, &winner.version)? {
+        true
+    } else {
+        return Ok(false);
+    };
+    // What the library now shows, and everything it descends from, has been seen.
+    // For newest-wins records the losing heads are superseded too; for those the
+    // reader decides, they stay unapplied, waiting in the conflict (SY13).
+    let newest_wins = !reader_decides(winner.version.kind);
+    for p in record.versions() {
+        if winner.descends_from(p) || (newest_wins && heads.iter().any(|h| h.descends_from(p))) {
+            mark_applied(conn, lib, p)?;
+        }
+    }
+    Ok(changed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{AnnotationRow, Store};
+    use crate::sync::ids::Id16;
+    use crate::sync::local;
+
+    const LIB: Id16 = Id16([7; 16]);
+    const SYNC_BOOK: &str = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+    const ANNO: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
+    const HASH: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+
+    /// A device with one book, joined to the library. The book is matched to the
+    /// same sync ID on every device, as Stage 4's book records will do.
+    fn device(n: u8, book: &str) -> (Store, Library) {
+        let store = Store::open_in_memory().unwrap();
+        let lib = Library {
+            id: LIB,
+            device: Id16([n; 16]),
+        };
+        let c = store.conn();
+        c.execute(
+            "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+             VALUES (?1, ?2, 'x.epub', 'Moby-Dick', 'package', 0)",
+            params![book, format!("{HASH}{n}")],
+        )
+        .unwrap();
+        journal::join(c, &lib, "icloud-drive", 0).unwrap();
+        c.execute(
+            "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, ?3)",
+            params![LIB.to_string(), SYNC_BOOK, book],
+        )
+        .unwrap();
+        (store, lib)
+    }
+
+    fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
+        let batch = publish(from.conn(), fl).unwrap()?;
+        Some(receive(to.conn(), tl, &batch, 0).unwrap())
+    }
+
+    fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
+        AnnotationRow {
+            id: ANNO.into(),
+            book_id: book.into(),
+            anchored_content_hash: HASH.into(),
+            color: "yellow".into(),
+            cfi_range: "epubcfi(/6/4!/4/2,/1:0,/1:4)".into(),
+            quote_exact: "Call".into(),
+            quote_prefix: "".into(),
+            quote_suffix: " me".into(),
+            note: note.map(str::to_owned),
+            created_at: 1_760_000_000_000,
+            updated_at: at,
+            anchor_status: "anchored".into(),
+        }
+    }
+
+    fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
+        s.annotations(book).unwrap().first().map(|a| a.note.clone())
+    }
+
+    #[test]
+    fn a_place_arrives_and_isnt_sent_back() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/14!/4/2/1:0)", 0.31, Some("Loomings"))
+            .unwrap();
+        assert!(matches!(
+            send(&a, &la, &b, &lb),
+            Some(Received::Applied {
+                applied: 2,
+                set_aside: 0
+            })
+        ));
+        assert_eq!(
+            b.position("book-b").unwrap(),
+            Some(("epubcfi(/6/14!/4/2/1:0)".into(), 0.31))
+        );
+        // SY12: applying a remote place is not a local change.
+        assert!(publish(b.conn(), &lb).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_highlight_and_its_note_arrive_and_an_edit_comes_back() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("Ishmael"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert_eq!(note_of(&b, "book-b"), Some(Some("Ishmael".into())));
+        b.save_annotation(&highlight(
+            "book-b",
+            Some("Ishmael, again"),
+            1_760_000_002_000,
+        ))
+        .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        assert_eq!(note_of(&a, "book-a"), Some(Some("Ishmael, again".into())));
+    }
+
+    #[test]
+    fn notes_changed_apart_keep_both_and_show_the_latest_on_both() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a", Some("from A"), 1_760_000_002_000))
+            .unwrap();
+        b.save_annotation(&highlight("book-b", Some("from B"), 1_760_000_003_000))
+            .unwrap();
+        let ba = publish(a.conn(), &la).unwrap().unwrap();
+        let bb = publish(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, 0).unwrap();
+        receive(a.conn(), &la, &bb, 0).unwrap();
+        // SY13: both devices show the same one, and keep both versions for the reader.
+        assert_eq!(note_of(&a, "book-a"), note_of(&b, "book-b"));
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        for (s, l) in [(&a, &la), (&b, &lb)] {
+            let r = journal::record_of(s.conn(), l, &key, Which::All).unwrap();
+            assert!(
+                matches!(r.outcome(&HashSet::new()), Some(Outcome::Conflict { all, .. }) if all.len() == 2)
+            );
+        }
+    }
+
+    #[test]
+    fn a_deletion_and_a_change_made_apart_stay_deleted_until_the_reader_chooses() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        let mut changed = highlight("book-b", None, 1_760_000_003_000);
+        changed.color = "rose".into();
+        b.save_annotation(&changed).unwrap();
+        let ba = publish(a.conn(), &la).unwrap().unwrap();
+        let bb = publish(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, 0).unwrap();
+        receive(a.conn(), &la, &bb, 0).unwrap();
+        // Item 102: deleted on both, the change waiting in the conflict.
+        assert!(a.annotations("book-a").unwrap().is_empty());
+        assert!(b.annotations("book-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_newest_place_wins_on_both_devices() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        b.save_position("book-b", "epubcfi(/6/20)", 0.6, None)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a.save_position("book-a", "epubcfi(/6/10)", 0.2, None)
+            .unwrap();
+        let ba = publish(a.conn(), &la).unwrap().unwrap();
+        let bb = publish(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, 0).unwrap();
+        receive(a.conn(), &la, &bb, 0).unwrap();
+        // SY12, item 105: the later one, even though it is earlier in the book.
+        assert_eq!(a.position("book-a").unwrap().unwrap().0, "epubcfi(/6/10)");
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/10)");
+    }
+
+    #[test]
+    fn gaps_wait_repeats_change_nothing_and_bad_versions_are_set_aside() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let first = publish(a.conn(), &la).unwrap().unwrap();
+        a.save_position("book-a", "epubcfi(/6/4)", 0.2, None)
+            .unwrap();
+        let second = publish(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(receive(b.conn(), &lb, &second, 0).unwrap(), Received::Waits);
+        assert!(b.position("book-b").unwrap().is_none());
+        receive(b.conn(), &lb, &first, 0).unwrap();
+        assert_eq!(receive(b.conn(), &lb, &first, 0).unwrap(), Received::Repeat);
+        let mut forged = second.clone();
+        forged
+            .versions
+            .push(serde_json::json!({ "format": 1, "key": "place:x" }));
+        assert!(matches!(
+            receive(b.conn(), &lb, &forged, 0).unwrap(),
+            Received::Applied { set_aside: 1, .. }
+        ));
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/4)");
+    }
+
+    #[test]
+    fn a_failure_while_applying_leaves_nothing_half_done() {
+        // Plan §6.3: a batch is applied in one transaction, all or nothing.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish(a.conn(), &la).unwrap().unwrap();
+        b.conn().execute_batch("DROP TABLE positions").unwrap();
+        assert!(receive(b.conn(), &lb, &batch, 0).is_err());
+        let kept: i64 = b
+            .conn()
+            .query_row("SELECT COUNT(*) FROM sync_versions", [], |r| r.get(0))
+            .unwrap();
+        let seen: i64 = b
+            .conn()
+            .query_row("SELECT COUNT(*) FROM sync_seen", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!((kept, seen), (0, 0));
+    }
+
+    #[test]
+    fn joining_publishes_the_whole_library() {
+        // SY29: what this device had becomes its own new changes.
+        let (mut a, la) = device(1, "book-a");
+        journal::set_device(a.conn(), &la, false, 0).unwrap();
+        a.conn().execute("DELETE FROM sync_libraries", []).unwrap();
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        a.save_annotation(&highlight("book-a", Some("kept"), 1_760_000_001_000))
+            .unwrap();
+        assert!(
+            journal::unsent(a.conn(), &la).unwrap().is_empty(),
+            "nothing before a join (SY6)"
+        );
+        journal::join(a.conn(), &la, "icloud-drive", 0).unwrap();
+        assert_eq!(local::publish_library(a.conn(), 1_000).unwrap(), 2);
+        let keys: HashSet<String> = journal::unsent(a.conn(), &la)
+            .unwrap()
+            .iter()
+            .map(|v| v.key.as_str().to_owned())
+            .collect();
+        assert!(keys.iter().any(|k| k.starts_with("place:")));
+        assert!(
+            keys.contains(&format!("annotation:{ANNO}")) && keys.contains(&format!("note:{ANNO}"))
+        );
+    }
+}
