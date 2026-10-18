@@ -139,6 +139,17 @@ fn is_seq(s: &str) -> bool {
             .is_ok_and(|n| (1..=json::MAX_SAFE_INTEGER).contains(&n))
 }
 
+/// The days in a month of the proleptic Gregorian calendar `toISOString` uses.
+fn days_in(year: u32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if (year % 4 == 0 && year % 100 != 0) || year % 400 == 0 => 29,
+        2 => 28,
+        _ => 0,
+    }
+}
+
 /// A9's timestamps, as `toISOString` writes them: `YYYY-MM-DDTHH:MM:SS.sssZ`.
 fn is_iso_time(t: &str) -> bool {
     let b = t.as_bytes();
@@ -161,7 +172,9 @@ fn is_iso_time(t: &str) -> bool {
         .all(|&(i, c)| b[i] == c)
         && num(0..4).is_some()
         && num(5..7).is_some_and(|m| (1..=12).contains(&m))
-        && num(8..10).is_some_and(|d| (1..=31).contains(&d))
+        && num(8..10).is_some_and(|d| {
+            (1..=days_in(num(0..4).unwrap_or(0), num(5..7).unwrap_or(0))).contains(&d)
+        })
         && num(11..13).is_some_and(|h| h < 24)
         && num(14..16).is_some_and(|m| m < 60)
         && num(17..19).is_some_and(|s| s < 60)
@@ -832,6 +845,21 @@ mod tests {
             body_of(Kind::Annotation, undated.as_bytes()),
             Err(RecordError::Body)
         );
+        for (date, ok) in [
+            ("2026-02-31", false),
+            ("2026-02-28", true),
+            ("2024-02-29", true),
+            ("1900-02-29", false),
+            ("2000-02-29", true),
+            ("2026-04-31", false),
+        ] {
+            let t = anno.replace("2026-10-18", date);
+            assert_eq!(
+                body_of(Kind::Annotation, t.as_bytes()).is_ok(),
+                ok,
+                "{date}"
+            );
+        }
         let purple = anno.replace("rose", "purple");
         assert_eq!(
             body_of(Kind::Annotation, purple.as_bytes()),
