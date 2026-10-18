@@ -51,9 +51,10 @@ fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
     Ok(s.unwrap_or(0) as u64)
 }
 
-/// SY7, SP15: number this device's unsent versions as its next change.
-pub fn publish(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
-    let Some((seq, unsent)) = journal::take_unsent(conn, lib)? else {
+/// SY7, SP15: number this device's unsent versions as its next change, after
+/// `last_seq`, the last sequence its device store says it signed (SP28).
+pub fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result<Option<Batch>> {
+    let Some((seq, unsent)) = journal::take_unsent(conn, lib, last_seq)? else {
         return Ok(None);
     };
     let mut bodies = Vec::new();
@@ -125,6 +126,22 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut named = HashSet::new();
     for raw in &batch.versions {
         match check_version(raw.clone(), batch.device) {
+            // SY10: more than 24 hours ahead of this clock: set aside, never applied
+            // and never observed, until the clock catches up.
+            Ok(Checked::Version(v))
+                if v.clock.ms().saturating_sub(now_ms.max(0) as u64)
+                    > super::clock::SET_ASIDE_MS =>
+            {
+                set_aside(
+                    &tx,
+                    lib,
+                    batch.device,
+                    raw.to_string().as_bytes(),
+                    "clock ahead",
+                    now_ms,
+                )?;
+                aside += 1;
+            }
             Ok(Checked::Version(v)) => {
                 if let Content::Body { hash, .. } = &v.content {
                     named.insert(*hash);
@@ -337,7 +354,7 @@ fn mark_applied(conn: &Connection, lib: &Library, p: &Placed) -> Result<()> {
 }
 
 /// What one record comes to now, written into the library. `true` if it changed.
-fn apply_key(conn: &Connection, lib: &Library, key: &Key, _now_ms: i64) -> Result<bool> {
+fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<bool> {
     let mut record = journal::record_of(conn, lib, key, Which::All)?;
     // A local change not yet published counts as this device's next version.
     let next = own_seq(conn, lib)? + 1;
@@ -358,6 +375,8 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, _now_ms: i64) -> Resul
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version)? {
+        // SY10: a change made after this one sorts after it.
+        journal::observe(conn, lib, winner.version.clock, now_ms.max(0) as u64)?;
         true
     } else {
         return Ok(false);
@@ -401,7 +420,7 @@ mod tests {
             params![book, format!("{HASH}{n}")],
         )
         .unwrap();
-        journal::join(c, &lib, "icloud-drive", 0).unwrap();
+        journal::join(c, &lib, "icloud-drive", crate::store::now_ms()).unwrap();
         c.execute(
             "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, ?3)",
             params![LIB.to_string(), SYNC_BOOK, book],
@@ -410,9 +429,14 @@ mod tests {
         (store, lib)
     }
 
+    /// The tests stand in for the device store with the library's own count.
+    fn publish_next(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
+        publish(conn, lib, own_seq(conn, lib)?)
+    }
+
     fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
-        let batch = publish(from.conn(), fl).unwrap()?;
-        Some(receive(to.conn(), tl, &batch, 0).unwrap())
+        let batch = publish_next(from.conn(), fl).unwrap()?;
+        Some(receive(to.conn(), tl, &batch, crate::store::now_ms()).unwrap())
     }
 
     fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
@@ -454,7 +478,7 @@ mod tests {
             Some(("epubcfi(/6/14!/4/2/1:0)".into(), 0.31))
         );
         // SY12: applying a remote place is not a local change.
-        assert!(publish(b.conn(), &lb).unwrap().is_none());
+        assert!(publish_next(b.conn(), &lb).unwrap().is_none());
     }
 
     #[test]
@@ -486,10 +510,10 @@ mod tests {
             .unwrap();
         b.save_annotation(&highlight("book-b", Some("from B"), 1_760_000_003_000))
             .unwrap();
-        let ba = publish(a.conn(), &la).unwrap().unwrap();
-        let bb = publish(b.conn(), &lb).unwrap().unwrap();
-        receive(b.conn(), &lb, &ba, 0).unwrap();
-        receive(a.conn(), &la, &bb, 0).unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
         // SY13: both devices show the same one, and keep both versions for the reader.
         assert_eq!(note_of(&a, "book-a"), note_of(&b, "book-b"));
         let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
@@ -512,10 +536,10 @@ mod tests {
         let mut changed = highlight("book-b", None, 1_760_000_003_000);
         changed.color = "rose".into();
         b.save_annotation(&changed).unwrap();
-        let ba = publish(a.conn(), &la).unwrap().unwrap();
-        let bb = publish(b.conn(), &lb).unwrap().unwrap();
-        receive(b.conn(), &lb, &ba, 0).unwrap();
-        receive(a.conn(), &la, &bb, 0).unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
         // Item 102: deleted on both, the change waiting in the conflict.
         assert!(a.annotations("book-a").unwrap().is_empty());
         assert!(b.annotations("book-b").unwrap().is_empty());
@@ -530,10 +554,10 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_millis(5));
         a.save_position("book-a", "epubcfi(/6/10)", 0.2, None)
             .unwrap();
-        let ba = publish(a.conn(), &la).unwrap().unwrap();
-        let bb = publish(b.conn(), &lb).unwrap().unwrap();
-        receive(b.conn(), &lb, &ba, 0).unwrap();
-        receive(a.conn(), &la, &bb, 0).unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
         // SY12, item 105: the later one, even though it is earlier in the book.
         assert_eq!(a.position("book-a").unwrap().unwrap().0, "epubcfi(/6/10)");
         assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/10)");
@@ -545,23 +569,49 @@ mod tests {
         let (b, lb) = device(2, "book-b");
         a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
             .unwrap();
-        let first = publish(a.conn(), &la).unwrap().unwrap();
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
         a.save_position("book-a", "epubcfi(/6/4)", 0.2, None)
             .unwrap();
-        let second = publish(a.conn(), &la).unwrap().unwrap();
-        assert_eq!(receive(b.conn(), &lb, &second, 0).unwrap(), Received::Waits);
+        let second = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &second, crate::store::now_ms()).unwrap(),
+            Received::Waits
+        );
         assert!(b.position("book-b").unwrap().is_none());
-        receive(b.conn(), &lb, &first, 0).unwrap();
-        assert_eq!(receive(b.conn(), &lb, &first, 0).unwrap(), Received::Repeat);
+        receive(b.conn(), &lb, &first, crate::store::now_ms()).unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &first, crate::store::now_ms()).unwrap(),
+            Received::Repeat
+        );
         let mut forged = second.clone();
         forged
             .versions
             .push(serde_json::json!({ "format": 1, "key": "place:x" }));
         assert!(matches!(
-            receive(b.conn(), &lb, &forged, 0).unwrap(),
+            receive(b.conn(), &lb, &forged, crate::store::now_ms()).unwrap(),
             Received::Applied { set_aside: 1, .. }
         ));
         assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/4)");
+    }
+
+    #[test]
+    fn a_version_more_than_a_day_ahead_is_set_aside() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        // Received by a device whose clock reads two days earlier.
+        let two_days = 2 * 24 * 60 * 60 * 1000;
+        let early = crate::store::now_ms() - two_days;
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, early).unwrap(),
+            Received::Applied {
+                applied: 0,
+                set_aside: 2
+            }
+        ));
+        assert!(b.position("book-b").unwrap().is_none());
     }
 
     #[test]
@@ -571,9 +621,9 @@ mod tests {
         let (b, lb) = device(2, "book-b");
         a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
             .unwrap();
-        let batch = publish(a.conn(), &la).unwrap().unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
         b.conn().execute_batch("DROP TABLE positions").unwrap();
-        assert!(receive(b.conn(), &lb, &batch, 0).is_err());
+        assert!(receive(b.conn(), &lb, &batch, crate::store::now_ms()).is_err());
         let kept: i64 = b
             .conn()
             .query_row("SELECT COUNT(*) FROM sync_versions", [], |r| r.get(0))
@@ -599,7 +649,7 @@ mod tests {
             journal::unsent(a.conn(), &la).unwrap().is_empty(),
             "nothing before a join (SY6)"
         );
-        journal::join(a.conn(), &la, "icloud-drive", 0).unwrap();
+        journal::join(a.conn(), &la, "icloud-drive", crate::store::now_ms()).unwrap();
         assert_eq!(local::publish_library(a.conn(), 1_000).unwrap(), 2);
         let keys: HashSet<String> = journal::unsent(a.conn(), &la)
             .unwrap()
