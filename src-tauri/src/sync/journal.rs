@@ -106,20 +106,33 @@ fn check(raw: &str, device: DeviceId) -> Result<Version> {
     }
 }
 
-/// Every version of `key` this device holds with a sequence: its own published ones
+/// Which of a record's versions to load.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Which {
+    /// Every version held, for merging.
+    All,
+    /// Only those applied to the library: what the reader can have seen.
+    Applied,
+}
+
+/// The versions of `key` this device holds with a sequence: its own published ones
 /// and those received from others. Unsent local versions aren't in it.
-pub fn record_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Record> {
+pub fn record_of(conn: &Connection, lib: &Library, key: &Key, which: Which) -> Result<Record> {
     let mut stmt = conn.prepare(
         "SELECT device, seq, raw FROM sync_versions
-         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL",
+         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL AND (?3 = 0 OR applied = 1)",
     )?;
-    let rows = stmt.query_map(params![lib.id.to_string(), key.as_str()], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, String>(2)?,
-        ))
-    })?;
+    let applied_only = which == Which::Applied;
+    let rows = stmt.query_map(
+        params![lib.id.to_string(), key.as_str(), applied_only],
+        |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        },
+    )?;
     let mut record = Record::default();
     for row in rows {
         let (device, seq, raw) = row?;
@@ -188,7 +201,9 @@ pub fn record_local(
     wall_ms: u64,
 ) -> Result<Version> {
     let clock = tick(conn, lib, wall_ms)?;
-    let record = record_of(conn, lib, key)?;
+    // Only what was applied: a version still waiting (for its body, a book or a
+    // guard) was never seen by the reader, so nothing may claim to descend from it.
+    let record = record_of(conn, lib, key, Which::Applied)?;
     let history: Vec<Value> = history_for(&record, lib.device)
         .iter()
         .map(|e| json!({ "d": e.device.to_string(), "s": e.seq, "h": e.hash.to_string() }))
@@ -249,14 +264,26 @@ pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
     rows.map(|raw| check(&raw?, lib.device)).collect()
 }
 
-/// SP15: once the change file numbered `seq` holding these keys is signed and kept,
-/// the versions in it take that sequence.
-pub fn mark_published(conn: &Connection, lib: &Library, keys: &[Key], seq: u64) -> Result<()> {
+/// SP15: once the change file numbered `seq` holding these versions is signed and
+/// kept, they take that sequence. Each is named by its hash, so an edit made since
+/// (which replaced the unsent row) stays unsent and goes in a later change.
+pub fn mark_published(
+    conn: &Connection,
+    lib: &Library,
+    versions: &[(Key, Hash32)],
+    seq: u64,
+) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
-    for key in keys {
+    for (key, hash) in versions {
         tx.execute(
-            "UPDATE sync_versions SET seq = ?3 WHERE library = ?1 AND key = ?2 AND seq IS NULL",
-            params![lib.id.to_string(), key.as_str(), seq as i64],
+            "UPDATE sync_versions SET seq = ?3
+             WHERE library = ?1 AND key = ?2 AND hash = ?4 AND seq IS NULL",
+            params![
+                lib.id.to_string(),
+                key.as_str(),
+                seq as i64,
+                hash.to_string()
+            ],
         )?;
     }
     tx.commit()?;
@@ -349,7 +376,7 @@ mod tests {
         let k = key(PLACE);
         // Publish one of our own, then receive another device's that descends from it.
         let ours = record_local(c, &lib, &k, place(1), 1000).unwrap();
-        mark_published(c, &lib, std::slice::from_ref(&k), 1).unwrap();
+        mark_published(c, &lib, &[(k.clone(), ours.hash)], 1).unwrap();
         let other = Id16([2; 16]);
         let theirs = json!({
             "format": 1, "key": PLACE, "device": other.to_string(), "clock": [2000, 0],
@@ -368,12 +395,37 @@ mod tests {
             !store_remote(c, &lib, &placed).unwrap(),
             "a repeat changes nothing"
         );
+        // Not yet applied: a local edit can't descend from it.
+        let early = record_local(c, &lib, &k, place(2), 2500).unwrap();
+        assert!(
+            early.history.iter().all(|e| e.device != other),
+            "not seen, not descended from"
+        );
+        c.execute(
+            "UPDATE sync_versions SET applied = 1 WHERE device = ?1",
+            [other.to_string()],
+        )
+        .unwrap();
         // Our next edit names both: theirs, and our own previous version (SP11).
         let next = record_local(c, &lib, &k, place(3), 3000).unwrap();
         let mut h: Vec<(DeviceId, u64)> = next.history.iter().map(|e| (e.device, e.seq)).collect();
         h.sort();
         assert_eq!(h, vec![(lib.device, 1), (other, 4)]);
         assert!(next.clock > theirs.clock, "after what it saw");
+    }
+
+    #[test]
+    fn an_edit_made_while_publishing_stays_unsent() {
+        let (store, lib) = setup();
+        let c = store.conn();
+        let k = key(PLACE);
+        let signed = record_local(c, &lib, &k, place(1), 1000).unwrap();
+        // The reader edits again after the change file was signed, before it is marked.
+        let newer = record_local(c, &lib, &k, place(2), 1100).unwrap();
+        mark_published(c, &lib, &[(k.clone(), signed.hash)], 1).unwrap();
+        let left = unsent(c, &lib).unwrap();
+        assert_eq!(left.len(), 1);
+        assert_eq!(left[0].hash, newer.hash, "the newer edit still goes out");
     }
 
     #[test]
@@ -395,6 +447,8 @@ mod tests {
         };
         store_remote(c, &lib, &mk(2, 100, 1)).unwrap();
         store_remote(c, &lib, &mk(3, 200, 2)).unwrap();
+        c.execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
         let edit = record_local(
             c,
             &lib,
