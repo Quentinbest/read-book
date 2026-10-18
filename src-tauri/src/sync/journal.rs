@@ -51,31 +51,38 @@ pub enum LocalContent {
     Inline(Value),
 }
 
-/// SY29: join a library in a storage, making it the active one. Nothing else is
-/// written to the sync tables before this.
-pub fn join(conn: &Connection, library: Id16, storage: &str, now_ms: i64) -> Result<()> {
+/// SY29: join a library in a storage as `lib.device`, making it the active one.
+/// Nothing else is written to the sync tables before this. The device ID kept here
+/// is a copy of the device store's (SP28), set again at each start.
+pub fn join(conn: &Connection, lib: &Library, storage: &str, now_ms: i64) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     tx.execute("UPDATE sync_libraries SET active = 0 WHERE active = 1", [])?;
     tx.execute(
-        "INSERT INTO sync_libraries (library, storage, state, active, joined_at)
-         VALUES (?1, ?2, 'on', 1, ?3)
-         ON CONFLICT(library) DO UPDATE SET active = 1, state = 'on'",
-        params![library.to_string(), storage, now_ms],
+        "INSERT INTO sync_libraries (library, storage, device, state, active, joined_at)
+         VALUES (?1, ?2, ?3, 'on', 1, ?4)
+         ON CONFLICT(library) DO UPDATE SET active = 1, state = 'on', device = ?3",
+        params![lib.id.to_string(), storage, lib.device.to_string(), now_ms],
     )?;
     tx.commit()?;
     Ok(())
 }
 
-/// The library sync is on for, if any (item 109: one at a time).
-pub fn active(conn: &Connection) -> Result<Option<Id16>> {
-    let id: Option<String> = conn
+/// The library sync is on for, and this device's ID in it, if any (item 109: one
+/// at a time).
+pub fn active(conn: &Connection) -> Result<Option<Library>> {
+    let row: Option<(String, String)> = conn
         .query_row(
-            "SELECT library FROM sync_libraries WHERE active = 1 AND state = 'on'",
+            "SELECT library, device FROM sync_libraries WHERE active = 1 AND state = 'on'",
             [],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
         .optional()?;
-    Ok(id.and_then(|s| Id16::parse(&s)))
+    Ok(row.and_then(|(l, d)| {
+        Some(Library {
+            id: Id16::parse(&l)?,
+            device: Id16::parse(&d)?,
+        })
+    }))
 }
 
 /// Keeps a body by its plain hash; the same bytes are kept once.
@@ -321,7 +328,7 @@ mod tests {
             id: Id16([7; 16]),
             device: Id16([1; 16]),
         };
-        join(store.conn(), lib.id, "icloud-drive", 0).unwrap();
+        join(store.conn(), &lib, "icloud-drive", 0).unwrap();
         (store, lib)
     }
 
@@ -336,7 +343,7 @@ mod tests {
     #[test]
     fn nothing_is_journalled_before_a_library_is_joined() {
         let store = Store::open_in_memory().unwrap();
-        assert_eq!(active(store.conn()).unwrap(), None);
+        assert!(active(store.conn()).unwrap().is_none());
         let lib = Library {
             id: Id16([7; 16]),
             device: Id16([1; 16]),
@@ -469,9 +476,16 @@ mod tests {
     fn joining_another_library_makes_it_the_only_active_one() {
         let (store, lib) = setup();
         let c = store.conn();
-        join(c, Id16([8; 16]), "google-drive", 10).unwrap();
-        assert_eq!(active(c).unwrap(), Some(Id16([8; 16])));
-        join(c, lib.id, "icloud-drive", 20).unwrap();
-        assert_eq!(active(c).unwrap(), Some(lib.id));
+        let other = Library {
+            id: Id16([8; 16]),
+            device: Id16([3; 16]),
+        };
+        join(c, &other, "google-drive", 10).unwrap();
+        assert_eq!(
+            active(c).unwrap().map(|l| (l.id, l.device)),
+            Some((other.id, other.device))
+        );
+        join(c, &lib, "icloud-drive", 20).unwrap();
+        assert_eq!(active(c).unwrap().map(|l| l.id), Some(lib.id));
     }
 }

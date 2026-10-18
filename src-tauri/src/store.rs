@@ -146,6 +146,7 @@ pub const MIGRATIONS: &[&str] = &[
     CREATE TABLE sync_libraries (
         library TEXT PRIMARY KEY,           -- SP1: the library's ID
         storage TEXT NOT NULL,              -- the storage it lives in (SY29)
+        device TEXT NOT NULL,               -- this device's ID there, from its device store (SP28)
         state TEXT NOT NULL DEFAULT 'on',   -- 'on' | 'off' | 'paused' (SY27, SY29)
         active INTEGER NOT NULL DEFAULT 0,  -- the one library syncing now (item 109)
         clock_ms INTEGER NOT NULL DEFAULT 0,

@@ -25,7 +25,7 @@ CREATE TABLE dictionaries (id TEXT PRIMARY KEY, name TEXT NOT NULL, title TEXT N
 
 CREATE TABLE extension_secrets (ext_id TEXT NOT NULL, name TEXT NOT NULL, host TEXT NOT NULL, label TEXT NOT NULL DEFAULT '', saved_at INTEGER NOT NULL, PRIMARY KEY (ext_id, name));
 
-CREATE TABLE sync_libraries (library TEXT PRIMARY KEY, storage TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'on', active INTEGER NOT NULL DEFAULT 0, clock_ms INTEGER NOT NULL DEFAULT 0, clock_n INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL);
+CREATE TABLE sync_libraries (library TEXT PRIMARY KEY, storage TEXT NOT NULL, device TEXT NOT NULL, state TEXT NOT NULL DEFAULT 'on', active INTEGER NOT NULL DEFAULT 0, clock_ms INTEGER NOT NULL DEFAULT 0, clock_n INTEGER NOT NULL DEFAULT 0, joined_at INTEGER NOT NULL);
 CREATE UNIQUE INDEX sync_libraries_active ON sync_libraries(active) WHERE active = 1;
 CREATE TABLE sync_versions (library TEXT NOT NULL REFERENCES sync_libraries(library), key TEXT NOT NULL, device TEXT NOT NULL, seq INTEGER, hash TEXT NOT NULL, raw TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0);
 CREATE UNIQUE INDEX sync_versions_published ON sync_versions(library, device, seq, key) WHERE seq IS NOT NULL;
@@ -52,7 +52,7 @@ INSERT INTO search_text VALUES ('b1', 'hash-1', 0, 'Call me Ishmael.');
 INSERT INTO search_text VALUES ('b1', 'hash-1', 1, 'Some years ago…');
 INSERT INTO dictionaries VALUES ('d1', 'oald', 'Learner''s Dictionary', 'hash-d1', '0123456789abcdef0123456789abcdef', 0, 1, 1200, 3, 4000, 4000);
 INSERT INTO extension_secrets VALUES ('org.example.explain', 'deepseek', 'api.deepseek.com', 'API key', 5000);
-INSERT INTO sync_libraries VALUES ('00112233445566778899aabbccddeeff', 'icloud-drive', 'on', 1, 1760702400123, 2, 6000);
+INSERT INTO sync_libraries VALUES ('00112233445566778899aabbccddeeff', 'icloud-drive', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'on', 1, 1760702400123, 2, 6000);
 INSERT INTO sync_versions VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa', '{"format":1}', 1);
 INSERT INTO sync_bodies VALUES ('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', X'616263');
 INSERT INTO sync_books VALUES ('00112233445566778899aabbccddeeff', '7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'b1');
