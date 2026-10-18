@@ -17,6 +17,13 @@ const TABLES: &[&str] = &[
     "search_text",
     "dictionaries",
     "extension_secrets",
+    "sync_libraries",
+    "sync_versions",
+    "sync_bodies",
+    "sync_books",
+    "sync_changes",
+    "sync_seen",
+    "sync_aside",
 ];
 
 fn dump(conn: &Connection, table: &str) -> Vec<Vec<String>> {

@@ -9,6 +9,7 @@
 pub mod clock;
 pub mod identity;
 pub mod ids;
+pub mod journal;
 pub mod json;
 pub mod merge;
 pub mod record;
