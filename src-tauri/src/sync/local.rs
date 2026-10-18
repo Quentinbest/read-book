@@ -166,15 +166,13 @@ pub fn on_annotation(
         return Ok(());
     };
     let book = sync_id(conn, &lib, &after.book_id)?;
-    let changed = before.map_or(true, |b| {
-        AnnotationRow {
-            note: None,
-            ..b.clone()
-        } != AnnotationRow {
-            note: None,
-            ..after.clone()
-        }
-    });
+    // SY9: the highlight's own fields, not its note nor the time a note edit stamps.
+    let own = |a: &AnnotationRow| AnnotationRow {
+        note: None,
+        updated_at: 0,
+        ..a.clone()
+    };
+    let changed = before.map_or(true, |b| own(b) != own(after));
     if changed {
         let body = a9::body_of(after, &book).to_string().into_bytes();
         record(

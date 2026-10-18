@@ -53,11 +53,11 @@ pub enum Received {
 pub const ASIDE_ITEMS: i64 = 1000;
 pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
 
-/// SY10, SY28: whether keeping one more item of `extra_bytes` from one device
-/// would pass what this device keeps of it unapplied. Everything kept and not
-/// applied counts: set-aside items, and versions pending, waiting (for ancestry, a
-/// clock ahead, a book or a highlight) or excluded, with the real size of the bodies
-/// they name. So no path keeps more of a device than the budget, whatever it sends.
+/// SY10, SY28: whether keeping one more item of `extra_bytes` from one device would
+/// pass what this device keeps of it set aside: set-aside items, and versions waiting
+/// for their ancestry or a clock ahead, or excluded for their body (`applied` −1,
+/// −2, −4), with the real size of the bodies they name. Valid versions waiting only
+/// for a book or a highlight are held to `pending_full` instead, after applying.
 fn aside_full(
     conn: &Connection,
     lib: &Library,
@@ -73,12 +73,34 @@ fn aside_full(
         "SELECT COUNT(*), SUM(length(v.raw) + COALESCE(length(b.body), 0))
          FROM sync_versions v
          LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
-         WHERE v.library = ?1 AND v.device = ?2 AND v.applied != 1",
+         WHERE v.library = ?1 AND v.device = ?2 AND v.applied IN (-1, -2, -4)",
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     Ok(n + m + 1 > ASIDE_ITEMS
         || bytes.unwrap_or(0) + held.unwrap_or(0) + extra_bytes > ASIDE_BYTES)
+}
+
+/// SY2, SY28 (prov.): valid versions of one device still pending (`applied = 0`,
+/// waiting for a book, a highlight or the reader) are held to this many bytes,
+/// bodies included. Checked after a change is applied, so versions that apply in it
+/// aren't charged: a large first sync passes.
+#[cfg(not(test))]
+pub const PENDING_BYTES: i64 = 256 * 1024 * 1024;
+/// Smaller in tests, so the limit can be reached quickly.
+#[cfg(test)]
+pub const PENDING_BYTES: i64 = 1024 * 1024;
+
+fn pending_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
+    let held: Option<i64> = conn.query_row(
+        "SELECT SUM(length(v.raw) + COALESCE(length(b.body), 0))
+         FROM sync_versions v
+         LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
+         WHERE v.library = ?1 AND v.device = ?2 AND v.applied = 0",
+        params![lib.id.to_string(), device.to_string()],
+        |r| r.get(0),
+    )?;
+    Ok(held.unwrap_or(0) > PENDING_BYTES)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -452,6 +474,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             applied += 1;
         }
     }
+    if pending_full(&tx, lib, batch.device)? {
+        return Ok(Received::Stopped); // rolls the change back
+    }
     tx.commit()?;
     Ok(Received::Applied {
         applied,
@@ -714,7 +739,12 @@ fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
                 None => return Ok(false), // its highlight hasn't arrived
                 // SY28: a note over its limit stays on this device, unsynced; nothing
                 // from another device replaces it.
-                Some(Some(n)) if n.len() as u64 > Kind::Note.body_limit() => return Ok(false),
+                Some(Some(n))
+                    if serde_json::json!({ "text": n }).to_string().len() as u64
+                        > Kind::Note.body_limit() =>
+                {
+                    return Ok(false)
+                }
                 Some(_) => {}
             }
             conn.execute(
@@ -756,6 +786,19 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
         Some(Outcome::Conflict { shown, all }) => (shown, all),
         None => return Ok(false),
     };
+    // SY13, #109: this device's unsent edit, now hidden in a conflict, is held for the
+    // reader's choice rather than left to be replaced by the next edit.
+    if let Some(Outcome::Conflict { .. }) = record.outcome(&HashSet::new()) {
+        let hidden_unsent = heads
+            .iter()
+            .any(|h| h.version.device == lib.device && h.seq == next && h.id() != winner.id());
+        if hidden_unsent {
+            conn.execute(
+                "UPDATE sync_versions SET applied = -3 WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+                params![lib.id.to_string(), key.as_str()],
+            )?;
+        }
+    }
     if journal::held(conn, lib, key)? {
         // #109: an edit is held for the reader's choice; nothing overwrites it.
         return Ok(false);
@@ -1465,12 +1508,14 @@ mod tests {
 
     #[test]
     fn versions_waiting_for_a_highlight_count_against_the_budget() {
-        // A device sending notes for highlights that never come is stopped.
+        // A device sending notes for highlights that never come is stopped once what
+        // waits passes the pending budget (PENDING_BYTES).
         let (b, lb) = device(2, "book-b");
         let other = Id16([4; 16]);
+        let big = "x".repeat(200 * 1024);
         let mut stopped = false;
-        for seq in 1..=(ASIDE_ITEMS as u64 + 1) {
-            let text = format!(r#"{{"text":"{seq}"}}"#).into_bytes();
+        for seq in 1..=20u64 {
+            let text = format!(r#"{{"text":"{big}{seq}"}}"#).into_bytes();
             let id = uuid::Uuid::new_v4();
             let v = serde_json::json!({
                 "format": 1, "key": format!("note:{id}"), "device": other.to_string(),
@@ -1491,6 +1536,48 @@ mod tests {
             }
         }
         assert!(stopped);
+    }
+
+    #[test]
+    fn a_large_first_sync_isnt_charged_to_the_set_aside_budget() {
+        // 600 highlights with notes, in one change, all applied.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        for i in 0..600 {
+            let mut h = highlight("book-a", Some("n"), 1_760_000_001_000);
+            h.id = uuid::Uuid::new_v4().to_string();
+            h.quote_exact = format!("q{i}");
+            a.save_annotation(&h).unwrap();
+        }
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert!(batch.versions.len() > ASIDE_ITEMS as usize);
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Applied { .. }
+        ));
+        assert_eq!(b.annotations("book-b").unwrap().len(), 600);
+    }
+
+    #[test]
+    fn an_unsent_edit_hidden_by_a_remote_conflict_is_held() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        // A edits and doesn't publish yet; B's later edit arrives and is shown.
+        a.save_annotation(&highlight("book-a", Some("A's unsent"), 1_760_000_001_000))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        b.save_annotation(&highlight("book-b", Some("B's"), 1_760_000_001_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        assert!(
+            journal::held(a.conn(), &la, &key).unwrap(),
+            "held for the reader, not lost"
+        );
+        assert_eq!(note_of(&a, "book-a"), Some(Some("A's unsent".into())));
     }
 
     #[test]
