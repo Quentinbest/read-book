@@ -155,14 +155,16 @@ pub fn cover_tint(title: &str) -> String {
     TINTS[(h as usize) % TINTS.len()].to_string()
 }
 
+/// B3-guard: a title with case and spacing ignored. Sync matches books by it too (SY8).
+pub fn fold_title(s: &str) -> String {
+    s.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn same_title(a: &str, b: &str) -> bool {
-    let norm = |s: &str| {
-        s.split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ")
-            .to_lowercase()
-    };
-    norm(a) == norm(b)
+    fold_title(a) == fold_title(b)
 }
 
 fn file_stem_title(path: &Path) -> String {

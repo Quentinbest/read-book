@@ -7,6 +7,9 @@
 //! app yet (Stage 2 adds the providers, Stage 3 turns sync on).
 
 pub mod clock;
+pub mod identity;
 pub mod ids;
 pub mod json;
+pub mod merge;
 pub mod record;
+pub mod retention;
