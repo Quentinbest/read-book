@@ -1,0 +1,12 @@
+//! Sync across devices (`docs/sync-plan.md`, SY1–SY34), in the byte-level form
+//! `docs/sync-protocol.md` gives it (SP1–SP37).
+//!
+//! Stage 1 builds the core as pure code, with no storage, network or UI: these
+//! modules read and check what other devices wrote, and decide what it means. Nothing
+//! here opens a file in iCloud Drive or Google Drive, and nothing is wired into the
+//! app yet (Stage 2 adds the providers, Stage 3 turns sync on).
+
+pub mod clock;
+pub mod ids;
+pub mod json;
+pub mod record;
