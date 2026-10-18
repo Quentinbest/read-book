@@ -232,12 +232,16 @@ fn history_for(record: &Record, device: DeviceId) -> Vec<Entry> {
             *slot = (e.seq, e.hash);
         }
     };
-    let base = match record.outcome(&HashSet::new()) {
-        Some(Outcome::Settled(p)) => Some(p),
-        Some(Outcome::Conflict { shown, .. }) => Some(shown),
-        None => None,
+    // Settled: every head (equal contents, or the newest of those that aren't read
+    // by the reader), so none stays concurrent with the edit. In a conflict, only the
+    // one shown: the others wait for the reader (SY13).
+    let ignored = HashSet::new();
+    let base: Vec<&Placed> = match record.outcome(&ignored) {
+        Some(Outcome::Settled(_)) => record.heads(&ignored),
+        Some(Outcome::Conflict { shown, .. }) => vec![shown],
+        None => vec![],
     };
-    if let Some(p) = base {
+    for p in base {
         take(p.id());
         p.version.history.iter().copied().for_each(&mut take);
     }
@@ -662,6 +666,38 @@ mod tests {
         assert!(left[0].clock < ahead.clock, "with a fresh clock");
         assert!(left[0].clock > good.clock, "still after its good ancestor");
         assert_eq!(active(c).unwrap().map(|l| l.device), Some(rotated.device));
+    }
+
+    #[test]
+    fn an_edit_after_equal_contents_descends_from_both() {
+        // Two devices wrote the same note apart: settled, and an edit after it names both.
+        let (store, lib) = setup();
+        let c = store.conn();
+        let note = "note:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+        for (d, ms) in [(2u8, 100u64), (3, 200)] {
+            let v = json!({
+                "format": 1, "key": note, "device": Id16([d; 16]).to_string(),
+                "clock": [ms, 0], "history": [],
+                "body": { "hash": Hash32([1; 32]).to_string(), "size": 3 },
+            });
+            let Checked::Version(v) = check_version(v, Id16([d; 16])).unwrap() else {
+                panic!()
+            };
+            store_remote(c, &lib, &Placed { version: v, seq: 1 }).unwrap();
+        }
+        c.execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
+        let edit = record_local(
+            c,
+            &lib,
+            &key(note),
+            LocalContent::Body(br#"{"text":"mine"}"#.to_vec()),
+            300,
+        )
+        .unwrap();
+        let mut named: Vec<DeviceId> = edit.history.iter().map(|e| e.device).collect();
+        named.sort();
+        assert_eq!(named, vec![Id16([2; 16]), Id16([3; 16])]);
     }
 
     #[test]
