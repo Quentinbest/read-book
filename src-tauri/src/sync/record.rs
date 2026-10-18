@@ -119,7 +119,9 @@ impl fmt::Display for Key {
 }
 
 fn is_uuid(s: &str) -> bool {
-    uuid::Uuid::parse_str(s).is_ok_and(|u| u.get_version_num() == 4 && u.to_string() == s)
+    uuid::Uuid::parse_str(s).is_ok_and(|u| {
+        u.get_version_num() == 4 && u.get_variant() == uuid::Variant::RFC4122 && u.to_string() == s
+    })
 }
 
 fn is_setting_name(s: &str) -> bool {
@@ -201,6 +203,8 @@ fn is_book_identity(v: &Value) -> bool {
         })
         && o.get("idTitle")
             .is_some_and(|t| t.is_null() || t.as_str().and_then(Hash32::parse).is_some())
+        // At least one way to match a copy that turns up later (SY8).
+        && (o["hashes"].as_array().is_some_and(|a| !a.is_empty()) || !o["idTitle"].is_null())
 }
 
 /// SP12: each kind of choice key takes its own choices and fields.
@@ -592,6 +596,7 @@ mod tests {
             "setting:".into(),
             format!("setting:{}", "x".repeat(65)),
             "highlight:x".into(),
+            "book:11111111-1111-4111-0111-111111111111".into(),
             format!("choice:{D}.9999999999999999.{H}"),
         ] {
             assert!(Key::parse(&k).is_none(), "{k}");
@@ -701,6 +706,13 @@ mod tests {
             Err(RecordError::Field("deleted"))
         );
         let malformed = json!({ "covers": [], "identity": { "hashes": ["x"], "idTitle": null } });
+        let empty = json!({ "covers": [], "identity": { "hashes": [], "idTitle": null } });
+        assert_eq!(
+            check(note(
+                json!({ "key": book_key, "body": null, "deleted": empty })
+            )),
+            Err(RecordError::Field("deleted"))
+        );
         assert_eq!(
             check(note(
                 json!({ "key": book_key, "body": null, "deleted": malformed })
