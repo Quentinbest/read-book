@@ -66,24 +66,41 @@ pub fn sync_id(conn: &Connection, lib: &Library, book_id: &str) -> Result<String
 }
 
 /// SP13: a tombstone's causal frontier: for each device, the latest change of it
-/// this device has applied. Changes are applied in order, so everything of that
-/// device up to there was seen, and anything later wasn't.
+/// whose every version this device has applied (or settled past). A change received
+/// but still waiting (for its body, book, ancestry or clock) wasn't seen by the
+/// reader, so the frontier stops before it and a deletion stays in conflict with it
+/// (SY13).
 pub fn covers(conn: &Connection, lib: &Library) -> Result<Vec<Entry>> {
-    let mut stmt = conn.prepare("SELECT device, seq, hash FROM sync_seen WHERE library = ?1")?;
-    let rows = stmt.query_map([lib.id.to_string()], |r| {
-        Ok((
-            r.get::<_, String>(0)?,
-            r.get::<_, i64>(1)?,
-            r.get::<_, String>(2)?,
-        ))
-    })?;
+    let rows: Vec<(String, i64)> = conn
+        .prepare("SELECT device, seq FROM sync_seen WHERE library = ?1")?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
     let mut out = Vec::new();
-    for row in rows {
-        let (d, s, h) = row?;
-        if let (Some(device), Some(hash)) = (Id16::parse(&d), super::ids::Hash32::parse(&h)) {
+    for (d, seen) in rows {
+        let pending: Option<i64> = conn.query_row(
+            "SELECT MIN(seq) FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND applied IN (0, -1, -2)",
+            params![lib.id.to_string(), d],
+            |r| r.get(0),
+        )?;
+        let upto = pending.map_or(seen, |p| (p - 1).min(seen));
+        if upto < 1 {
+            continue;
+        }
+        let hash: Option<String> = conn
+            .query_row(
+                "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
+                params![lib.id.to_string(), d, upto],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let (Some(device), Some(hash)) = (
+            Id16::parse(&d),
+            hash.as_deref().and_then(super::ids::Hash32::parse),
+        ) {
             out.push(Entry {
                 device,
-                seq: s as u64,
+                seq: upto as u64,
                 hash,
             });
         }

@@ -53,9 +53,15 @@ pub enum Received {
 pub const ASIDE_ITEMS: i64 = 1000;
 pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
 
-/// SY10, SY28: what is kept aside from one device: set-aside items, and versions
-/// held for a clock ahead (`applied = -2`) with the bodies they name.
-fn aside_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
+/// SY10, SY28: whether keeping one more item of `extra_bytes` aside from one device
+/// would pass its budget: set-aside items, and versions held for a clock ahead
+/// (`applied = -2`) with the bodies they name, the candidate included.
+fn aside_full(
+    conn: &Connection,
+    lib: &Library,
+    device: DeviceId,
+    extra_bytes: i64,
+) -> Result<bool> {
     let (n, bytes): (i64, Option<i64>) = conn.query_row(
         "SELECT COUNT(*), SUM(size) FROM sync_aside WHERE library = ?1 AND device = ?2",
         params![lib.id.to_string(), device.to_string()],
@@ -67,7 +73,8 @@ fn aside_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    Ok(n + m >= ASIDE_ITEMS || bytes.unwrap_or(0) + held.unwrap_or(0) >= ASIDE_BYTES)
+    Ok(n + m + 1 > ASIDE_ITEMS
+        || bytes.unwrap_or(0) + held.unwrap_or(0) + extra_bytes > ASIDE_BYTES)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -148,7 +155,9 @@ impl Chains for JournalChains<'_> {
             .flatten();
         match row {
             // Still waiting itself (its ancestry, or a clock ahead): unresolved.
-            Some((_, applied)) if applied < 0 => Lookup::Unknown,
+            // Waiting itself (its ancestry, or a clock ahead): unresolved. A version
+            // excluded for its body (-4) is still in its writer's chain.
+            Some((_, applied)) if applied < 0 && applied != -4 => Lookup::Unknown,
             Some((h, _)) => Hash32::parse(&h).map_or(Lookup::Absent, Lookup::Present),
             None => Lookup::Absent,
         }
@@ -194,7 +203,7 @@ impl Chains for JournalChains<'_> {
             .ok()
             .flatten();
         match row {
-            Some((_, _, applied)) if applied < 0 => Prior::Unknown,
+            Some((_, _, applied)) if applied < 0 && applied != -4 => Prior::Unknown,
             Some((s, h, _)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
             None => Prior::None,
         }
@@ -253,7 +262,7 @@ fn set_aside(
     reason: &str,
     now_ms: i64,
 ) -> Result<bool> {
-    if aside_full(conn, lib, device)? {
+    if aside_full(conn, lib, device, raw.len() as i64)? {
         return Ok(false);
     }
     conn.execute(
@@ -281,7 +290,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     if batch.seq != have + 1 {
         return Ok(Received::Waits);
     }
-    if aside_full(conn, lib, batch.device)? {
+    if aside_full(conn, lib, batch.device, 0)? {
         return Ok(Received::Stopped);
     }
     let tx = conn.unchecked_transaction()?;
@@ -293,10 +302,14 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             // SY10: more than 24 hours ahead of this clock: kept with its place in the
             // chain (`applied = -2`) but never merged, applied or observed until the
             // clock catches up; then it is checked like any other.
-            Ok(Checked::Version(_)) if aside_full(&tx, lib, batch.device)? => {
-                return Ok(Received::Stopped);
-            }
             Ok(Checked::Version(v)) if too_far_ahead(&v, now_ms) => {
+                let body = match &v.content {
+                    Content::Body { size, .. } => *size as i64,
+                    _ => 0,
+                };
+                if aside_full(&tx, lib, batch.device, raw.to_string().len() as i64 + body)? {
+                    return Ok(Received::Stopped);
+                }
                 let placed = Placed {
                     version: v,
                     seq: batch.seq,
@@ -1253,6 +1266,78 @@ mod tests {
         assert_eq!(seq, 1);
         assert!(again.iter().all(|v| v.key != note));
         assert!(journal::held(s.conn(), &lib, &note).unwrap());
+    }
+
+    #[test]
+    fn a_deletion_doesnt_cover_a_change_still_waiting_to_apply() {
+        // SY13: B's note edit arrives at A but waits (here: its body is missing).
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        b.save_annotation(&highlight("book-b", Some("B's edit"), 1_760_000_002_000))
+            .unwrap();
+        let mut from_b = publish_next(b.conn(), &lb).unwrap().unwrap();
+        from_b.bodies.clear();
+        receive(a.conn(), &la, &from_b, crate::store::now_ms()).unwrap();
+        let frontier = crate::sync::local::covers(a.conn(), &la).unwrap();
+        assert!(
+            frontier.iter().all(|e| e.device != lb.device),
+            "B's waiting change isn't covered: {frontier:?}"
+        );
+    }
+
+    #[test]
+    fn a_body_that_would_pass_the_budget_isnt_kept() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        // 16 MB less a little already kept aside from A.
+        b.conn()
+            .execute(
+                "INSERT INTO sync_aside (library, device, hash, reason, size, raw, first_at) VALUES (?1, ?2, 'x', 'x', ?3, X'00', 0)",
+                params![LIB.to_string(), la.device.to_string(), ASIDE_BYTES - 10],
+            )
+            .unwrap();
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        let two_days = 2 * 24 * 60 * 60 * 1000;
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms() - two_days).unwrap(),
+            Received::Stopped
+        );
+    }
+
+    #[test]
+    fn a_version_excluded_for_its_body_is_still_in_its_writers_chain() {
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let h = Hash32([3; 32]);
+        b.conn()
+            .execute(
+                "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied) VALUES (?1, ?2, ?3, 1, ?4, '{}', -4)",
+                params![LIB.to_string(), format!("note:{ANNO}"), other.to_string(), h.to_string()],
+            )
+            .unwrap();
+        b.conn()
+            .execute(
+                "INSERT INTO sync_seen (library, device, seq, hash) VALUES (?1, ?2, 1, ?3)",
+                params![LIB.to_string(), other.to_string(), h.to_string()],
+            )
+            .unwrap();
+        let chains = JournalChains {
+            conn: b.conn(),
+            lib: &lb,
+        };
+        assert_eq!(
+            chains.version_at(other, 1, &format!("note:{ANNO}")),
+            Lookup::Present(h)
+        );
+        assert_eq!(
+            chains.prior_version(other, &format!("note:{ANNO}"), 2),
+            Prior::At(1, h)
+        );
     }
 
     #[test]
