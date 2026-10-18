@@ -1220,7 +1220,7 @@ mod tests {
     fn joining_publishes_the_whole_library() {
         // SY29: what this device had becomes its own new changes.
         let (mut a, la) = device(1, "book-a");
-        journal::set_device(a.conn(), &la, false, 0).unwrap();
+        journal::set_device(a.conn(), &la, false, u64::MAX, 0).unwrap();
         a.conn().execute("DELETE FROM sync_libraries", []).unwrap();
         a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
             .unwrap();
