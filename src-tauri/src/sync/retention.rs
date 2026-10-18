@@ -75,7 +75,9 @@ impl Vouched {
             self.total_ms += wall_ms - self.last_wall_ms;
         }
         self.last_mono_ms = Some(mono_ms);
-        self.last_wall_ms = wall_ms;
+        // Keep the wall clock's high-water mark: a clock set back and later put
+        // right must not have the gap counted twice.
+        self.last_wall_ms = self.last_wall_ms.max(wall_ms);
     }
 
     /// The clock was corrected and is clear again (SY10).
@@ -177,6 +179,9 @@ mod tests {
         assert_eq!(v.now(), 3 * DAY, "two days off, counted by the wall clock");
         // A wall clock set back across a restart adds nothing.
         v.restart(5, 1_000_000, false, false);
+        assert_eq!(v.now(), 3 * DAY);
+        // Put right again after another reboot: still nothing is counted twice.
+        v.restart(5, 1_000_000 + 3 * DAY, false, false);
         assert_eq!(v.now(), 3 * DAY);
     }
 
