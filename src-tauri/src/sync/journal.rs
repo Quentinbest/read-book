@@ -264,11 +264,13 @@ pub enum Which {
 }
 
 /// The versions of `key` this device holds with a sequence: its own published ones
-/// and those received from others. Unsent local versions aren't in it.
+/// and those received from others. Unsent local versions aren't in it, nor are
+/// received ones still waiting for their ancestry to be checked (`applied = -1`).
 pub fn record_of(conn: &Connection, lib: &Library, key: &Key, which: Which) -> Result<Record> {
     let mut stmt = conn.prepare(
         "SELECT device, seq, raw FROM sync_versions
-         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL AND (?3 = 0 OR applied = 1)",
+         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL
+           AND ((?3 = 0 AND applied >= 0) OR applied = 1)",
     )?;
     let applied_only = which == Which::Applied;
     let rows = stmt.query_map(

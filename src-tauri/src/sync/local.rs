@@ -19,6 +19,24 @@ fn key(s: String) -> Key {
     Key::parse(&s).expect("keys built here take SY9's forms").0
 }
 
+/// SY28: a body over its type's limit stays on this device. It isn't journalled,
+/// and the local save goes ahead (Stage 3's Settings › Sync names it).
+fn record(
+    conn: &Connection,
+    lib: &Library,
+    k: Key,
+    content: LocalContent,
+    now_ms: u64,
+) -> Result<()> {
+    if let LocalContent::Body(b) = &content {
+        if b.len() as u64 > k.kind().body_limit() {
+            return Ok(());
+        }
+    }
+    journal::record_local(conn, lib, &k, content, now_ms)?;
+    Ok(())
+}
+
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never
 /// leave the device; records name sync IDs.
 pub fn sync_id(conn: &Connection, lib: &Library, book_id: &str) -> Result<String> {
@@ -95,17 +113,17 @@ pub fn on_position(
         return Ok(());
     };
     let id = sync_id(conn, &lib, book_id)?;
-    journal::record_local(
+    record(
         conn,
         &lib,
-        &key(format!("place:{id}")),
+        key(format!("place:{id}")),
         LocalContent::Body(place_body(cfi, fraction, chapter)),
         now_ms,
     )?;
-    journal::record_local(
+    record(
         conn,
         &lib,
-        &key(format!("bookRead:{id}:opened")),
+        key(format!("bookRead:{id}:opened")),
         LocalContent::Body(b"{}".to_vec()),
         now_ms,
     )?;
@@ -135,10 +153,10 @@ pub fn on_annotation(
     });
     if changed {
         let body = a9::body_of(after, &book).to_string().into_bytes();
-        journal::record_local(
+        record(
             conn,
             &lib,
-            &key(format!("annotation:{}", after.id)),
+            key(format!("annotation:{}", after.id)),
             LocalContent::Body(body),
             now_ms,
         )?;
@@ -146,10 +164,10 @@ pub fn on_annotation(
     let was = before.and_then(|b| live_note(&b.note));
     match (was, live_note(&after.note)) {
         (old, Some(new)) if old != Some(new) => {
-            journal::record_local(
+            record(
                 conn,
                 &lib,
-                &key(format!("note:{}", after.id)),
+                key(format!("note:{}", after.id)),
                 LocalContent::Body(note_body(new)),
                 now_ms,
             )?;
@@ -157,10 +175,10 @@ pub fn on_annotation(
         // SY9: emptying a note is a deletion, kept for the week and restorable.
         (Some(_), None) => {
             let covers = covers(conn, &lib)?;
-            journal::record_local(
+            record(
                 conn,
                 &lib,
-                &key(format!("note:{}", after.id)),
+                key(format!("note:{}", after.id)),
                 LocalContent::Deleted {
                     covers,
                     identity: None,
@@ -180,10 +198,10 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         return Ok(());
     };
     let covers = covers(conn, &lib)?;
-    journal::record_local(
+    record(
         conn,
         &lib,
-        &key(format!("annotation:{}", row.id)),
+        key(format!("annotation:{}", row.id)),
         LocalContent::Deleted {
             covers: covers.clone(),
             identity: None,
@@ -191,10 +209,10 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         now_ms,
     )?;
     if live_note(&row.note).is_some() {
-        journal::record_local(
+        record(
             conn,
             &lib,
-            &key(format!("note:{}", row.id)),
+            key(format!("note:{}", row.id)),
             LocalContent::Deleted {
                 covers,
                 identity: None,

@@ -13,7 +13,10 @@
 use super::a9;
 use super::ids::{identity_hash, DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, Which};
-use super::merge::{reader_decides, Outcome, Placed};
+use super::merge::{
+    check_frontier, check_history, reader_decides, Chains, HistoryCheck, Lookup, Outcome, Placed,
+    Prior,
+};
 use super::record::{check_body, check_version, Checked, Content, Key, Kind, Version};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
@@ -67,6 +70,15 @@ pub fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result<Option
     }
     let versions: Vec<Value> = unsent.iter().map(|v| v.raw.clone()).collect();
     let hash = identity_hash(Value::Array(versions.clone()).to_string().as_bytes());
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_changes (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            lib.id.to_string(),
+            lib.device.to_string(),
+            seq as i64,
+            hash.to_string()
+        ],
+    )?;
     Ok(Some(Batch {
         device: lib.device,
         seq,
@@ -74,6 +86,101 @@ pub fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result<Option
         versions,
         bodies,
     }))
+}
+
+/// SP11, SP13: the device chains as this journal holds them.
+struct JournalChains<'a> {
+    conn: &'a Connection,
+    lib: &'a Library,
+}
+
+impl JournalChains<'_> {
+    /// How far this device holds `device`'s chain.
+    fn held(&self, device: DeviceId) -> u64 {
+        if device == self.lib.device {
+            own_seq(self.conn, self.lib).unwrap_or(0)
+        } else {
+            seen(self.conn, self.lib, device).unwrap_or(0)
+        }
+    }
+}
+
+impl Chains for JournalChains<'_> {
+    fn version_at(&self, device: DeviceId, seq: u64, key: &str) -> Lookup {
+        if self.held(device) < seq {
+            return Lookup::Unknown;
+        }
+        let hash: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT hash FROM sync_versions
+                 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4 AND applied >= 0",
+                params![self.lib.id.to_string(), device.to_string(), seq as i64, key],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        match hash.as_deref().and_then(Hash32::parse) {
+            Some(h) => Lookup::Present(h),
+            None => Lookup::Absent,
+        }
+    }
+
+    fn change_at(&self, device: DeviceId, seq: u64) -> Lookup {
+        let hash: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
+                params![self.lib.id.to_string(), device.to_string(), seq as i64],
+                |r| r.get(0),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        match hash.as_deref().and_then(Hash32::parse) {
+            Some(h) => Lookup::Present(h),
+            None if self.held(device) >= seq => Lookup::Absent,
+            None => Lookup::Unknown,
+        }
+    }
+
+    fn prior_version(&self, device: DeviceId, key: &str, before: u64) -> Prior {
+        if self.held(device) + 1 < before {
+            return Prior::Unknown;
+        }
+        let row: Option<(i64, String)> = self
+            .conn
+            .query_row(
+                "SELECT seq, hash FROM sync_versions
+                 WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4 AND applied >= 0
+                 ORDER BY seq DESC LIMIT 1",
+                params![
+                    self.lib.id.to_string(),
+                    device.to_string(),
+                    key,
+                    before as i64
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        match row {
+            Some((s, h)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
+            None => Prior::None,
+        }
+    }
+}
+
+/// SY9, SP11, SP13: a version's history and frontier against the chains held.
+fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
+    let chains = JournalChains { conn, lib };
+    match (check_history(p, &chains), check_frontier(p, &chains)) {
+        (HistoryCheck::False, _) | (_, HistoryCheck::False) => HistoryCheck::False,
+        (HistoryCheck::Wait, _) | (_, HistoryCheck::Wait) => HistoryCheck::Wait,
+        _ => HistoryCheck::Ok,
+    }
 }
 
 fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
@@ -143,18 +250,45 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                 aside += 1;
             }
             Ok(Checked::Version(v)) => {
-                if let Content::Body { hash, .. } = &v.content {
+                let placed = Placed {
+                    version: v,
+                    seq: batch.seq,
+                };
+                match ancestry(&tx, lib, &placed) {
+                    // SY9: a forged or future ancestor is refused.
+                    HistoryCheck::False => {
+                        set_aside(
+                            &tx,
+                            lib,
+                            batch.device,
+                            raw.to_string().as_bytes(),
+                            "false ancestry",
+                            now_ms,
+                        )?;
+                        aside += 1;
+                        continue;
+                    }
+                    HistoryCheck::Wait => {
+                        journal::store_remote(&tx, lib, &placed)?;
+                        tx.execute(
+                            "UPDATE sync_versions SET applied = -1
+                             WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+                            params![
+                                lib.id.to_string(),
+                                batch.device.to_string(),
+                                batch.seq as i64,
+                                placed.version.key.as_str()
+                            ],
+                        )?;
+                    }
+                    HistoryCheck::Ok => {
+                        keys.push(placed.version.key.clone());
+                        journal::store_remote(&tx, lib, &placed)?;
+                    }
+                }
+                if let Content::Body { hash, .. } = &placed.version.content {
                     named.insert(*hash);
                 }
-                keys.push(v.key.clone());
-                journal::store_remote(
-                    &tx,
-                    lib,
-                    &Placed {
-                        version: v,
-                        seq: batch.seq,
-                    },
-                )?;
             }
             // SY9: a newer format is kept aside whole, and passed on.
             Ok(Checked::NewerFormat(_)) => {
@@ -189,6 +323,15 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         }
     }
     tx.execute(
+        "INSERT OR REPLACE INTO sync_changes (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            lib.id.to_string(),
+            batch.device.to_string(),
+            batch.seq as i64,
+            batch.hash.to_string()
+        ],
+    )?;
+    tx.execute(
         "INSERT INTO sync_seen (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)
          ON CONFLICT(library, device) DO UPDATE SET seq = excluded.seq, hash = excluded.hash",
         params![
@@ -198,6 +341,8 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             batch.hash.to_string()
         ],
     )?;
+    // Versions that waited for their ancestry may resolve now.
+    keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     let mut applied = 0;
     for k in keys {
         if apply_key(&tx, lib, &k, now_ms)? {
@@ -209,6 +354,50 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         applied,
         set_aside: aside,
     })
+}
+
+/// Versions waiting for their ancestry, checked again: those that resolve join the
+/// merge, those found false are set aside. Returns the keys that joined.
+fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key>> {
+    let waiting: Vec<(i64, String, i64, String)> = conn
+        .prepare(
+            "SELECT rowid, device, seq, raw FROM sync_versions WHERE library = ?1 AND applied = -1",
+        )?
+        .query_map([lib.id.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    let mut joined = Vec::new();
+    for (rowid, device, seq, raw) in waiting {
+        let Some(device) = super::ids::Id16::parse(&device) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let Ok(Checked::Version(v)) = check_version(value, device) else {
+            continue;
+        };
+        let placed = Placed {
+            version: v,
+            seq: seq as u64,
+        };
+        match ancestry(conn, lib, &placed) {
+            HistoryCheck::Ok => {
+                conn.execute(
+                    "UPDATE sync_versions SET applied = 0 WHERE rowid = ?1",
+                    [rowid],
+                )?;
+                joined.push(placed.version.key);
+            }
+            HistoryCheck::False => {
+                set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
+                conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
+            }
+            HistoryCheck::Wait => {}
+        }
+    }
+    Ok(joined)
 }
 
 /// Apply what still waits: bodies or books that have arrived since.
@@ -612,6 +801,130 @@ mod tests {
             }
         ));
         assert!(b.position("book-b").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_version_claiming_an_edit_its_writer_never_saw_is_refused() {
+        // SY9: B's version names a change of A's that A's chain shows never existed.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        send(&a, &la, &c, &lc).unwrap();
+        c.save_position("book-c", "epubcfi(/6/4)", 0.2, None)
+            .unwrap();
+        let mut forged = publish_next(c.conn(), &lc).unwrap().unwrap();
+        for v in &mut forged.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("place:")) {
+                let wrong = Hash32([9; 32]).to_string();
+                v["history"] =
+                    serde_json::json!([{ "d": la.device.to_string(), "s": 1, "h": wrong }]);
+            }
+        }
+        // B holds A's change 1 first, so the false entry can be checked.
+        let first = {
+            a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+                .unwrap();
+            publish_next(a.conn(), &la).unwrap().unwrap()
+        };
+        let _ = first;
+        let a1: Batch = {
+            let rows: Vec<String> = a
+                .conn()
+                .prepare("SELECT raw FROM sync_versions WHERE seq = 1")
+                .unwrap()
+                .query_map([], |r| r.get(0))
+                .unwrap()
+                .map(|r| r.unwrap())
+                .collect();
+            let hash: String = a
+                .conn()
+                .query_row("SELECT hash FROM sync_changes WHERE seq = 1", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            let bodies = rows
+                .iter()
+                .filter_map(|r| {
+                    let v: Value = serde_json::from_str(r).unwrap();
+                    let h = Hash32::parse(v["body"]["hash"].as_str()?)?;
+                    journal::body(a.conn(), &h).unwrap()
+                })
+                .collect();
+            Batch {
+                device: la.device,
+                seq: 1,
+                hash: Hash32::parse(&hash).unwrap(),
+                versions: rows
+                    .iter()
+                    .map(|r| serde_json::from_str(r).unwrap())
+                    .collect(),
+                bodies,
+            }
+        };
+        receive(b.conn(), &lb, &a1, crate::store::now_ms()).unwrap();
+        let got = receive(b.conn(), &lb, &forged, crate::store::now_ms()).unwrap();
+        assert!(
+            matches!(got, Received::Applied { set_aside: 1, .. }),
+            "{got:?}"
+        );
+        assert_eq!(
+            b.position("book-b").unwrap().unwrap().0,
+            "epubcfi(/6/2)",
+            "A's place stands"
+        );
+    }
+
+    #[test]
+    fn a_version_whose_ancestor_hasnt_arrived_waits_then_applies() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let from_a = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(c.conn(), &lc, &from_a, crate::store::now_ms()).unwrap();
+        c.save_annotation(&highlight("book-c", Some("second"), 1_760_000_002_000))
+            .unwrap();
+        let from_c = publish_next(c.conn(), &lc).unwrap().unwrap();
+        // B gets C's edit first: it names A's version, which B doesn't hold yet.
+        receive(b.conn(), &lb, &from_c, crate::store::now_ms()).unwrap();
+        assert!(
+            b.annotations("book-b").unwrap().is_empty(),
+            "waits for its ancestry"
+        );
+        receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
+        assert_eq!(
+            note_of(&b, "book-b"),
+            Some(Some("second".into())),
+            "then applies"
+        );
+    }
+
+    #[test]
+    fn a_note_over_its_limit_is_saved_but_stays_on_this_device() {
+        // SY28: the local save goes ahead; only the note isn't journalled.
+        let (mut a, la) = device(1, "book-a");
+        let long = "x".repeat(5 * 1024 * 1024);
+        a.save_annotation(&highlight("book-a", Some(&long), 1_760_000_001_000))
+            .unwrap();
+        assert_eq!(
+            a.annotations("book-a").unwrap()[0]
+                .note
+                .as_deref()
+                .map(str::len),
+            Some(long.len())
+        );
+        let keys: Vec<String> = journal::unsent(a.conn(), &la)
+            .unwrap()
+            .iter()
+            .map(|v| v.key.as_str().to_owned())
+            .collect();
+        assert!(
+            keys.iter().any(|k| k.starts_with("annotation:"))
+                && !keys.iter().any(|k| k.starts_with("note:"))
+        );
     }
 
     #[test]
