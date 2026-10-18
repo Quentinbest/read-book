@@ -43,6 +43,23 @@ pub enum Received {
     Repeat,
     /// A gap before it: it waits for the changes in between (SP14).
     Waits,
+    /// SY28: this device has set aside as much from that one as it keeps, so it
+    /// stops receiving from it; nothing of the change is kept.
+    Stopped,
+}
+
+/// SY28 (prov., item 106): what is kept set aside from one device before this one
+/// stops receiving from it.
+pub const ASIDE_ITEMS: i64 = 1000;
+pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
+
+fn aside_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
+    let (n, bytes): (i64, Option<i64>) = conn.query_row(
+        "SELECT COUNT(*), SUM(size) FROM sync_aside WHERE library = ?1 AND device = ?2",
+        params![lib.id.to_string(), device.to_string()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    Ok(n >= ASIDE_ITEMS || bytes.unwrap_or(0) >= ASIDE_BYTES)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -218,6 +235,8 @@ fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
     Ok(s.unwrap_or(0) as u64)
 }
 
+/// SY28: keeps a set-aside item, counted once. `false` when that device's budget
+/// is spent: nothing more of it is kept, and receiving from it stops.
 fn set_aside(
     conn: &Connection,
     lib: &Library,
@@ -225,7 +244,10 @@ fn set_aside(
     raw: &[u8],
     reason: &str,
     now_ms: i64,
-) -> Result<()> {
+) -> Result<bool> {
+    if aside_full(conn, lib, device)? {
+        return Ok(false);
+    }
     conn.execute(
         "INSERT OR IGNORE INTO sync_aside (library, device, hash, reason, size, raw, first_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -239,7 +261,7 @@ fn set_aside(
             now_ms
         ],
     )?;
-    Ok(())
+    Ok(true)
 }
 
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
@@ -250,6 +272,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     }
     if batch.seq != have + 1 {
         return Ok(Received::Waits);
+    }
+    if aside_full(conn, lib, batch.device)? {
+        return Ok(Received::Stopped);
     }
     let tx = conn.unchecked_transaction()?;
     let mut keys = Vec::new();
@@ -280,14 +305,16 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                 match ancestry(&tx, lib, &placed) {
                     // SY9: a forged or future ancestor is refused.
                     HistoryCheck::False => {
-                        set_aside(
+                        if !set_aside(
                             &tx,
                             lib,
                             batch.device,
                             raw.to_string().as_bytes(),
                             "false ancestry",
                             now_ms,
-                        )?;
+                        )? {
+                            return Ok(Received::Stopped);
+                        }
                         aside += 1;
                         continue;
                     }
@@ -315,25 +342,29 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             }
             // SY9: a newer format is kept aside whole, and passed on.
             Ok(Checked::NewerFormat(_)) => {
-                set_aside(
+                if !set_aside(
                     &tx,
                     lib,
                     batch.device,
                     raw.to_string().as_bytes(),
                     "newer format",
                     now_ms,
-                )?;
+                )? {
+                    return Ok(Received::Stopped);
+                }
                 aside += 1;
             }
             Err(e) => {
-                set_aside(
+                if !set_aside(
                     &tx,
                     lib,
                     batch.device,
                     raw.to_string().as_bytes(),
                     &e.to_string(),
                     now_ms,
-                )?;
+                )? {
+                    return Ok(Received::Stopped);
+                }
                 aside += 1;
             }
         }
@@ -433,6 +464,43 @@ fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<
     Ok(joined)
 }
 
+/// SY13: note versions made apart from a highlight's deletion, outside its causal
+/// frontier. The highlight stays deleted (item 102) and the note's text is kept on
+/// the row; these are what Stage 5's “Changed on two devices” lists for the reader.
+pub fn dependent_conflicts(
+    conn: &Connection,
+    lib: &Library,
+    annotation_id: &str,
+) -> Result<Vec<Placed>> {
+    let Some((akey, _)) = Key::parse(&format!("annotation:{annotation_id}")) else {
+        return Ok(vec![]);
+    };
+    let Some((nkey, _)) = Key::parse(&format!("note:{annotation_id}")) else {
+        return Ok(vec![]);
+    };
+    let ignored = HashSet::new();
+    let annotation = journal::record_of(conn, lib, &akey, Which::All)?;
+    // The deletion shown in the library: settled, or shown while a change made
+    // apart to the highlight itself waits too.
+    let (Some(Outcome::Settled(tombstone))
+    | Some(Outcome::Conflict {
+        shown: tombstone, ..
+    })) = annotation.outcome(&ignored)
+    else {
+        return Ok(vec![]);
+    };
+    if !tombstone.is_deleted() {
+        return Ok(vec![]);
+    }
+    let notes = journal::record_of(conn, lib, &nkey, Which::All)?;
+    Ok(notes
+        .heads(&ignored)
+        .into_iter()
+        .filter(|n| !n.is_deleted() && super::merge::outside_frontier(tombstone, n))
+        .cloned()
+        .collect())
+}
+
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
     {
@@ -479,8 +547,14 @@ fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
             Some(bytes) => match check_body(&v.key, &bytes) {
                 Ok(b) => Some(b),
                 Err(e) => {
-                    // SY28: a body that fails is set aside, never applied.
+                    // SY28: a body that fails is set aside and its version taken out
+                    // of merging (`applied = -4`), never applied.
                     set_aside(conn, lib, v.device, &bytes, &e.to_string(), ms)?;
+                    conn.execute(
+                        "UPDATE sync_versions SET applied = -4
+                         WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
+                        params![lib.id.to_string(), v.device.to_string(), v.key.as_str(), v.hash.to_string()],
+                    )?;
                     return Ok(false);
                 }
             },
@@ -599,6 +673,10 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
         Some(Outcome::Conflict { shown, all }) => (shown, all),
         None => return Ok(false),
     };
+    if journal::held(conn, lib, key)? {
+        // #109: an edit is held for the reader's choice; nothing overwrites it.
+        return Ok(false);
+    }
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version)? {
@@ -1025,6 +1103,96 @@ mod tests {
             apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap(),
             0
         );
+    }
+
+    #[test]
+    fn a_note_added_apart_to_a_deleted_highlight_is_a_conflict_for_the_reader() {
+        // SY13: B adds the first note while A deletes the highlight, apart.
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        b.save_annotation(&highlight(
+            "book-b",
+            Some("a first note"),
+            1_760_000_001_000, // only the note changes
+        ))
+        .unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
+        for (s, l) in [(&a, &la), (&b, &lb)] {
+            assert_eq!(
+                dependent_conflicts(s.conn(), l, ANNO).unwrap().len(),
+                1,
+                "the note waits for the reader"
+            );
+        }
+    }
+
+    #[test]
+    fn an_edit_held_in_a_conflict_isnt_published_or_overwritten() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A's"), 1_760_000_002_000))
+            .unwrap();
+        b.save_annotation(&highlight("book-b", Some("B's later"), 1_760_000_003_000))
+            .unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        // On A, B's later version is shown and A's own is hidden: A's next edit is held.
+        a.save_annotation(&highlight(
+            "book-a",
+            Some("A edits again"),
+            1_760_000_004_000,
+        ))
+        .unwrap();
+        assert_eq!(note_of(&a, "book-a"), Some(Some("A edits again".into())));
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        assert!(journal::held(a.conn(), &la, &key).unwrap());
+        assert!(
+            journal::unsent(a.conn(), &la)
+                .unwrap()
+                .iter()
+                .all(|v| v.key != key),
+            "not published"
+        );
+        // Something else arriving for that note doesn't overwrite the held edit.
+        b.save_annotation(&highlight("book-b", Some("B again"), 1_760_000_005_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        assert_eq!(note_of(&a, "book-a"), Some(Some("A edits again".into())));
+    }
+
+    #[test]
+    fn receiving_stops_once_a_devices_set_aside_budget_is_spent() {
+        // SY28: at most 1,000 items or 16 MB set aside from one device.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        for i in 0..ASIDE_ITEMS {
+            b.conn()
+                .execute(
+                    "INSERT INTO sync_aside (library, device, hash, reason, size, raw, first_at) VALUES (?1, ?2, ?3, 'x', 1, X'00', 0)",
+                    params![LIB.to_string(), la.device.to_string(), format!("{i:064}")],
+                )
+                .unwrap();
+        }
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Stopped
+        );
+        assert!(b.position("book-b").unwrap().is_none());
     }
 
     #[test]

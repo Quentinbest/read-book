@@ -33,10 +33,13 @@ fn record(
             return Ok(());
         }
     }
-    match journal::record_local(conn, lib, &k, content, now_ms) {
+    match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
         // SY13: this device's own version waits in a conflict the reader hasn't
-        // decided; the save goes ahead and the reader's choice settles it (#109).
-        Err(JournalError::Conflicted(_)) => Ok(()),
+        // decided. The save goes ahead, and the edit is held as the reader's
+        // candidate choice, never lost and never published without it (#109).
+        Err(JournalError::Conflicted(_)) => {
+            journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ())
+        }
         other => other.map(|_| ()),
     }
 }

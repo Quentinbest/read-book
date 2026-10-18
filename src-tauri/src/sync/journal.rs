@@ -450,10 +450,96 @@ pub fn record_local(
     Ok(version)
 }
 
+/// SY13, #109: an edit made while this device's own version waits, unshown, in a
+/// conflict. It is kept as the reader's candidate choice (`applied = -3`): it
+/// descends from every head, as a choice does, but it is not published and not
+/// merged until the reader confirms it (Stage 5). A later edit to the same record
+/// replaces it.
+pub fn hold_local(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    content: LocalContent,
+    wall_ms: u64,
+) -> Result<Version> {
+    let record = record_of(conn, lib, key, Which::Applied)?;
+    for p in record.versions() {
+        observe(conn, lib, p.version.clock, wall_ms)?;
+    }
+    let clock = tick(conn, lib, wall_ms)?;
+    let mut latest: BTreeMap<DeviceId, (u64, Hash32)> = BTreeMap::new();
+    for h in record.heads(&HashSet::new()) {
+        for e in std::iter::once(h.id()).chain(h.version.history.iter().copied()) {
+            let slot = latest.entry(e.device).or_insert((0, e.hash));
+            if e.seq > slot.0 {
+                *slot = (e.seq, e.hash);
+            }
+        }
+    }
+    let history: Vec<Value> = latest
+        .iter()
+        .map(|(d, (s, h))| json!({ "d": d.to_string(), "s": s, "h": h.to_string() }))
+        .collect();
+    let mut v = json!({
+        "format": FORMAT, "key": key.as_str(), "device": lib.device.to_string(),
+        "clock": clock, "history": history,
+    });
+    match content {
+        LocalContent::Body(bytes) => {
+            let hash = put_body(conn, &bytes)?;
+            v["body"] = json!({ "hash": hash.to_string(), "size": bytes.len() });
+        }
+        LocalContent::Deleted { covers, identity } => {
+            let covers: Vec<Value> = covers
+                .iter()
+                .map(|e| json!({ "d": e.device.to_string(), "s": e.seq, "h": e.hash.to_string() }))
+                .collect();
+            let mut d = json!({ "covers": covers });
+            if let Some(id) = identity {
+                d["identity"] = id;
+            }
+            v["deleted"] = d;
+        }
+        LocalContent::Inline(i) => v["inline"] = i,
+    }
+    let Checked::Version(version) = check_version(v.clone(), lib.device)? else {
+        unreachable!("this Linen writes its own format")
+    };
+    conn.execute(
+        "DELETE FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    conn.execute(
+        "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+         VALUES (?1, ?2, ?3, NULL, ?4, ?5, -3)",
+        params![
+            lib.id.to_string(),
+            key.as_str(),
+            lib.device.to_string(),
+            version.hash.to_string(),
+            v.to_string()
+        ],
+    )?;
+    Ok(version)
+}
+
+/// Whether an edit to `key` is held for the reader's choice (`hold_local`).
+pub fn held(conn: &Connection, lib: &Library, key: &Key) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2 AND applied = -3",
+            params![lib.id.to_string(), key.as_str()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
 /// The local versions waiting to be published (SY7), oldest key first.
 pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
     let mut stmt = conn.prepare(
-        "SELECT raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid",
+        "SELECT raw FROM sync_versions
+         WHERE library = ?1 AND seq IS NULL AND applied != -3 ORDER BY rowid",
     )?;
     let rows = stmt.query_map([lib.id.to_string()], |r| r.get::<_, String>(0))?;
     rows.map(|raw| check(&raw?, lib.device)).collect()
