@@ -30,6 +30,8 @@ pub enum JournalError {
     StoreBehind(u64),
     #[error("{0} waits for the reader to choose between versions")]
     Conflicted(Key),
+    #[error("library {0} lives in another storage")]
+    OtherStorage(Id16),
 }
 
 pub type Result<T> = std::result::Result<T, JournalError>;
@@ -61,6 +63,18 @@ pub enum LocalContent {
 /// tables before a join.
 pub fn join(conn: &Connection, lib: &Library, storage: &str, now_ms: i64) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
+    // SY29: each storage holds its own library, with its own ID, members and naming
+    // key, so switching storage joins a different library; one library never moves.
+    let existing: Option<String> = tx
+        .query_row(
+            "SELECT storage FROM sync_libraries WHERE library = ?1",
+            [lib.id.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if existing.is_some_and(|s| s != storage) {
+        return Err(JournalError::OtherStorage(lib.id));
+    }
     tx.execute("UPDATE sync_libraries SET active = 0 WHERE active = 1", [])?;
     tx.execute(
         "INSERT INTO sync_libraries (library, storage, device, state, active, joined_at)
@@ -793,6 +807,10 @@ mod tests {
     fn joining_another_library_makes_it_the_only_active_one() {
         let (store, lib) = setup();
         let c = store.conn();
+        assert!(matches!(
+            join(c, &lib, "google-drive", 5),
+            Err(JournalError::OtherStorage(_))
+        ));
         let other = Library {
             id: Id16([8; 16]),
             device: Id16([3; 16]),
