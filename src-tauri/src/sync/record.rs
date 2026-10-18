@@ -150,11 +150,11 @@ fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
         .and_then(|t| t.get("selector"))
         .and_then(Value::as_array);
     let has = |kind: &str, fields: &[&str]| {
+        // The first selector of that type is the one `fromW3C` reads.
         selectors.is_some_and(|sel| {
-            sel.iter().any(|x| {
-                x.get("type").and_then(Value::as_str) == Some(kind)
-                    && fields.iter().all(|f| s(x, f))
-            })
+            sel.iter()
+                .find(|x| x.get("type").and_then(Value::as_str) == Some(kind))
+                .is_some_and(|x| fields.iter().all(|f| s(x, f)))
         })
     };
     o.get("type").and_then(Value::as_str) == Some("Annotation")
@@ -234,7 +234,9 @@ fn is_choice_body(key: &str, v: &Value) -> bool {
                             .and_then(Value::as_str)
                             .and_then(Id16::parse)
                             .is_some()
-                            && c.get("q").and_then(Value::as_u64).is_some()
+                            && c.get("q")
+                                .and_then(Value::as_u64)
+                                .is_some_and(|q| (1..=json::MAX_SAFE_INTEGER).contains(&q))
                     })
                 })
         }
@@ -780,6 +782,16 @@ mod tests {
             body_of(Kind::Annotation, b"{}"),
             Err(RecordError::Body),
             "A9: anchors and a colour"
+        );
+        let shadowed = anno.replace(
+            r#"[{"type":"FragmentSelector""#,
+            r#"[{"type":"FragmentSelector","conformsTo":"x"},{"type":"FragmentSelector""#,
+        );
+        assert_ne!(shadowed, anno);
+        assert_eq!(
+            body_of(Kind::Annotation, shadowed.as_bytes()),
+            Err(RecordError::Body),
+            "the first FragmentSelector is the one read"
         );
         let purple = anno.replace("rose", "purple");
         assert_eq!(
