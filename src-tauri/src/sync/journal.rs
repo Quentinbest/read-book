@@ -26,6 +26,8 @@ pub enum JournalError {
     Record(#[from] RecordError),
     #[error("library {0} isn't set up for sync")]
     NoLibrary(Id16),
+    #[error("the device store's last sequence ({0}) is behind the library's")]
+    StoreBehind(u64),
 }
 
 pub type Result<T> = std::result::Result<T, JournalError>;
@@ -257,6 +259,31 @@ fn tick(conn: &Connection, lib: &Library, wall_ms: u64) -> Result<Hlc> {
     Ok(now)
 }
 
+/// SY10: a remote version applied moves this device's clock to its reading, so a
+/// change made after it always sorts after it. (A version far enough ahead to be set
+/// aside is never applied, and so never observed.)
+pub fn observe(conn: &Connection, lib: &Library, remote: Hlc, wall_ms: u64) -> Result<()> {
+    let (ms, n) = clock_of(conn, lib)?;
+    let mut clock = Clock::new(Hlc(ms as u64, n as u16));
+    clock.observe(remote, wall_ms);
+    let now = clock.last();
+    conn.execute(
+        "UPDATE sync_libraries SET clock_ms = ?2, clock_n = ?3 WHERE library = ?1",
+        params![lib.id.to_string(), now.ms() as i64, now.n() as i64],
+    )?;
+    Ok(())
+}
+
+fn clock_of(conn: &Connection, lib: &Library) -> Result<(i64, i64)> {
+    conn.query_row(
+        "SELECT clock_ms, clock_n FROM sync_libraries WHERE library = ?1",
+        [lib.id.to_string()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+    .optional()?
+    .ok_or(JournalError::NoLibrary(lib.id))
+}
+
 /// SY7: journal a local change to `key`, replacing an earlier unsent one. Call it in
 /// the same transaction as the change itself, so the two can't part.
 pub fn record_local(
@@ -266,10 +293,14 @@ pub fn record_local(
     content: LocalContent,
     wall_ms: u64,
 ) -> Result<Version> {
-    let clock = tick(conn, lib, wall_ms)?;
     // Only what was applied: a version still waiting (for its body, a book or a
     // guard) was never seen by the reader, so nothing may claim to descend from it.
     let record = record_of(conn, lib, key, Which::Applied)?;
+    // SY10: after everything it descends from, whatever the system clock says.
+    for p in record.versions() {
+        observe(conn, lib, p.version.clock, wall_ms)?;
+    }
+    let clock = tick(conn, lib, wall_ms)?;
     let history: Vec<Value> = history_for(&record, lib.device)
         .iter()
         .map(|e| json!({ "d": e.device.to_string(), "s": e.seq, "h": e.hash.to_string() }))
@@ -331,23 +362,35 @@ pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
 }
 
 /// SY7, SP15: number every unsent version as this device's next change, in one
-/// transaction, and return the sequence and the versions in it. From then on the
+/// transaction, and return the sequence and the versions in it. `last_seq` is the
+/// last sequence this device signed, from its device store (SP28): only it knows
+/// changes that held no version (a reservation, a hold) or whose rows were compacted,
+/// so only it can say which sequence is next. From then on the
 /// change's content is fixed by these rows: signing it (Stage 1c) is deterministic,
 /// so after a crash the same file is signed again, never a different one for the
 /// same sequence. A local edit made afterwards is a new unsent version that
 /// descends from these (SP11).
-pub fn take_unsent(conn: &Connection, lib: &Library) -> Result<Option<(u64, Vec<Version>)>> {
+pub fn take_unsent(
+    conn: &Connection,
+    lib: &Library,
+    last_seq: u64,
+) -> Result<Option<(u64, Vec<Version>)>> {
     let tx = conn.unchecked_transaction()?;
     let versions = unsent(&tx, lib)?;
     if versions.is_empty() {
         return Ok(None);
     }
-    let last: Option<i64> = tx.query_row(
+    let journalled: Option<i64> = tx.query_row(
         "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
         params![lib.id.to_string(), lib.device.to_string()],
         |r| r.get(0),
     )?;
-    let seq = last.unwrap_or(0) as u64 + 1;
+    if journalled.unwrap_or(0) as u64 > last_seq {
+        // The library holds a later change of ours than the device store: a store
+        // rolled back. SY7's start check rotates before anything is published.
+        return Err(JournalError::StoreBehind(last_seq));
+    }
+    let seq = last_seq + 1;
     tx.execute(
         "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL",
         params![lib.id.to_string(), seq as i64],
@@ -443,7 +486,9 @@ mod tests {
         // Publish one of our own, then receive another device's that descends from it.
         let ours = record_local(c, &lib, &k, place(1), 1000).unwrap();
         assert_eq!(
-            take_unsent(c, &lib).unwrap().map(|(s, v)| (s, v[0].hash)),
+            take_unsent(c, &lib, 0)
+                .unwrap()
+                .map(|(s, v)| (s, v[0].hash)),
             Some((1, ours.hash))
         );
         let other = Id16([2; 16]);
@@ -481,6 +526,31 @@ mod tests {
         h.sort();
         assert_eq!(h, vec![(lib.device, 1), (other, 4)]);
         assert!(next.clock > theirs.clock, "after what it saw");
+        // Even when theirs was ahead of this system clock (under SY10's 24 hours).
+        let ahead = json!({
+            "format": 1, "key": PLACE, "device": other.to_string(), "clock": [10_000_000u64, 0],
+            "history": [{ "d": lib.device.to_string(), "s": 1, "h": ours.hash.to_string() }],
+            "body": { "hash": Hash32([6; 32]).to_string(), "size": 3 },
+        });
+        let Checked::Version(ahead) = check_version(ahead, other).unwrap() else {
+            panic!()
+        };
+        store_remote(
+            c,
+            &lib,
+            &Placed {
+                version: ahead.clone(),
+                seq: 5,
+            },
+        )
+        .unwrap();
+        c.execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
+        let later = record_local(c, &lib, &k, place(4), 3500).unwrap();
+        assert!(
+            later.clock > ahead.clock,
+            "a local edit sorts after what it saw"
+        );
     }
 
     #[test]
@@ -489,7 +559,7 @@ mod tests {
         let c = store.conn();
         let k = key(PLACE);
         let first = record_local(c, &lib, &k, place(1), 1000).unwrap();
-        let (seq, taken) = take_unsent(c, &lib).unwrap().unwrap();
+        let (seq, taken) = take_unsent(c, &lib, 0).unwrap().unwrap();
         assert_eq!((seq, taken[0].hash), (1, first.hash));
         // The reader edits again: it waits for the next change and names the first (SP11).
         let newer = record_local(c, &lib, &k, place(2), 1100).unwrap();
@@ -497,9 +567,16 @@ mod tests {
             .history
             .iter()
             .any(|e| e.device == lib.device && e.seq == 1 && e.hash == first.hash));
-        let (seq, taken) = take_unsent(c, &lib).unwrap().unwrap();
-        assert_eq!((seq, taken.len(), taken[0].hash), (2, 1, newer.hash));
-        assert!(take_unsent(c, &lib).unwrap().is_none());
+        // The device store says change 2 held only a hold: the next is 3, not 2.
+        let (seq, taken) = take_unsent(c, &lib, 2).unwrap().unwrap();
+        assert_eq!((seq, taken.len(), taken[0].hash), (3, 1, newer.hash));
+        assert!(take_unsent(c, &lib, 3).unwrap().is_none());
+        // A store behind the library is refused, never reused (SP15).
+        record_local(c, &lib, &k, place(3), 1200).unwrap();
+        assert!(matches!(
+            take_unsent(c, &lib, 1),
+            Err(JournalError::StoreBehind(1))
+        ));
     }
 
     #[test]

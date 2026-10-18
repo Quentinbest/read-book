@@ -210,6 +210,11 @@ impl Record {
         true
     }
 
+    /// Every version held, in a fixed order.
+    pub fn versions(&self) -> impl Iterator<Item = &Placed> {
+        self.versions.values()
+    }
+
     /// The latest version `device` wrote of this record, by sequence.
     pub fn latest_of(&self, device: super::ids::DeviceId) -> Option<&Placed> {
         self.versions
