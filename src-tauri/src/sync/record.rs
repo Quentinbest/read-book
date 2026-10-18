@@ -120,8 +120,52 @@ fn is_setting_name(s: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'-' || b == b'_')
 }
 
+/// SP1: a sequence from 1 to 2^53 − 1, written without leading zeros.
 fn is_seq(s: &str) -> bool {
-    !s.is_empty() && s.len() <= 16 && s.bytes().all(|b| b.is_ascii_digit()) && !s.starts_with('0')
+    !s.starts_with('0')
+        && s.bytes().all(|b| b.is_ascii_digit())
+        && s.parse::<u64>()
+            .is_ok_and(|n| (1..=json::MAX_SAFE_INTEGER).contains(&n))
+}
+
+/// SP12, A9: a highlight's Web Annotation JSON, as `fromW3C` reads it: its id, a
+/// CFI fragment selector, a text-quote selector, a colour and an anchor status. Its
+/// note is a record of its own (`note:`), so its `body` holds no text.
+fn is_annotation(o: &Map<String, Value>) -> bool {
+    let s = |v: &Value, k: &str| v.get(k).is_some_and(Value::is_string);
+    let selectors = o
+        .get("target")
+        .filter(|t| s(t, "source"))
+        .and_then(|t| t.get("selector"))
+        .and_then(Value::as_array);
+    let has = |kind: &str, fields: &[&str]| {
+        selectors.is_some_and(|sel| {
+            sel.iter().any(|x| {
+                x.get("type").and_then(Value::as_str) == Some(kind)
+                    && fields.iter().all(|f| s(x, f))
+            })
+        })
+    };
+    o.get("type").and_then(Value::as_str) == Some("Annotation")
+        && o.get("id")
+            .and_then(Value::as_str)
+            .is_some_and(|id| id.strip_prefix("urn:uuid:").is_some_and(is_uuid))
+        && ["created", "modified", "linen:anchoredContentHash"]
+            .iter()
+            .all(|k| o.get(*k).is_some_and(Value::is_string))
+        && o.get("body")
+            .and_then(Value::as_array)
+            .is_some_and(Vec::is_empty)
+        && has("FragmentSelector", &["value"])
+        && has("TextQuoteSelector", &["exact", "prefix", "suffix"])
+        && matches!(
+            o.get("linen:color").and_then(Value::as_str),
+            Some("yellow" | "green" | "blue" | "rose")
+        )
+        && matches!(
+            o.get("linen:anchorStatus").and_then(Value::as_str),
+            Some("anchored" | "reanchor" | "unplaced")
+        )
 }
 
 /// SP12's choice keys: `‹d›.‹s›.‹h›`, `obj.‹name›`, `hold.‹d›.‹s›.‹i›`,
@@ -422,7 +466,7 @@ pub fn check_body(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
                     .is_some_and(|f| (0.0..=1.0).contains(&f))
                 && o.get("chapter").map_or(true, Value::is_string)
         }
-        Kind::Annotation => true,
+        Kind::Annotation => is_annotation(o),
         Kind::Note => str_field("text"),
         // Settings are stored as strings. Each key's own schema (SY15, SY28) comes
         // with the list of keys that sync (item 103, Stage 3).
@@ -521,6 +565,7 @@ mod tests {
             "setting:".into(),
             format!("setting:{}", "x".repeat(65)),
             "highlight:x".into(),
+            format!("choice:{D}.9999999999999999.{H}"),
         ] {
             assert!(Key::parse(&k).is_none(), "{k}");
         }
@@ -685,6 +730,23 @@ mod tests {
             Err(RecordError::Body)
         );
         assert!(check_body(Kind::Note, br#"{"text":"hello"}"#).is_ok());
+        let anno = format!(
+            r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"c","modified":"m","body":[],
+            "target":{{"source":"s","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
+            {{"type":"TextQuoteSelector","exact":"e","prefix":"","suffix":""}}]}},
+            "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"h"}}"#
+        );
+        assert!(check_body(Kind::Annotation, anno.as_bytes()).is_ok());
+        assert_eq!(
+            check_body(Kind::Annotation, b"{}"),
+            Err(RecordError::Body),
+            "A9: anchors and a colour"
+        );
+        let purple = anno.replace("rose", "purple");
+        assert_eq!(
+            check_body(Kind::Annotation, purple.as_bytes()),
+            Err(RecordError::Body)
+        );
         assert_eq!(
             check_body(Kind::Note, br#"{"text":"a","text":"b"}"#),
             Err(RecordError::Json(json::JsonError::DuplicateKey))
