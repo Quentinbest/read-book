@@ -597,7 +597,8 @@ pub fn take_unsent(
     }
     let seq = last_seq + 1;
     tx.execute(
-        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL",
+        // Exactly the rows `unsent` chose: never an edit held for the reader (#109).
+        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL AND applied != -3",
         params![lib.id.to_string(), seq as i64],
     )?;
     tx.commit()?;

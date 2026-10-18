@@ -53,13 +53,21 @@ pub enum Received {
 pub const ASIDE_ITEMS: i64 = 1000;
 pub const ASIDE_BYTES: i64 = 16 * 1024 * 1024;
 
+/// SY10, SY28: what is kept aside from one device: set-aside items, and versions
+/// held for a clock ahead (`applied = -2`) with the bodies they name.
 fn aside_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
     let (n, bytes): (i64, Option<i64>) = conn.query_row(
         "SELECT COUNT(*), SUM(size) FROM sync_aside WHERE library = ?1 AND device = ?2",
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    Ok(n >= ASIDE_ITEMS || bytes.unwrap_or(0) >= ASIDE_BYTES)
+    let (m, held): (i64, Option<i64>) = conn.query_row(
+        "SELECT COUNT(*), SUM(length(raw) + COALESCE(json_extract(raw, '$.body.size'), 0))
+         FROM sync_versions WHERE library = ?1 AND device = ?2 AND applied = -2",
+        params![lib.id.to_string(), device.to_string()],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    Ok(n + m >= ASIDE_ITEMS || bytes.unwrap_or(0) + held.unwrap_or(0) >= ASIDE_BYTES)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -285,6 +293,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             // SY10: more than 24 hours ahead of this clock: kept with its place in the
             // chain (`applied = -2`) but never merged, applied or observed until the
             // clock catches up; then it is checked like any other.
+            Ok(Checked::Version(_)) if aside_full(&tx, lib, batch.device)? => {
+                return Ok(Received::Stopped);
+            }
             Ok(Checked::Version(v)) if too_far_ahead(&v, now_ms) => {
                 let placed = Placed {
                     version: v,
@@ -1196,6 +1207,55 @@ mod tests {
     }
 
     #[test]
+    fn clock_ahead_versions_count_against_the_budget() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        // 1,000 versions already held from A for a clock ahead (SY10).
+        for i in 0..ASIDE_ITEMS {
+            b.conn()
+                .execute(
+                    "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                     VALUES (?1, 'place:x', ?2, ?3, 'h', '{}', -2)",
+                    params![LIB.to_string(), la.device.to_string(), i + 1],
+                )
+                .unwrap();
+        }
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Stopped
+        );
+    }
+
+    #[test]
+    fn a_held_edit_isnt_numbered_with_other_changes() {
+        let (_, la) = device(1, "book-a");
+        let (mut s, _) = device(1, "book-a2");
+        let _ = la;
+        let lib = journal::active(s.conn()).unwrap().unwrap();
+        let note = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        journal::hold_local(
+            s.conn(),
+            &lib,
+            &note,
+            journal::LocalContent::Body(br#"{"text":"held"}"#.to_vec()),
+            1000,
+        )
+        .unwrap();
+        s.save_position("book-a2", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let (_, taken) = journal::take_unsent(s.conn(), &lib, 0).unwrap().unwrap();
+        assert!(taken.iter().all(|v| v.key != note));
+        // A crash replay of change 1 doesn't pick it up either.
+        let (seq, again) = journal::take_unsent(s.conn(), &lib, 0).unwrap().unwrap();
+        assert_eq!(seq, 1);
+        assert!(again.iter().all(|v| v.key != note));
+        assert!(journal::held(s.conn(), &lib, &note).unwrap());
+    }
+
+    #[test]
     fn a_failure_while_applying_leaves_nothing_half_done() {
         // Plan §6.3: a batch is applied in one transaction, all or nothing.
         let (mut a, la) = device(1, "book-a");
@@ -1220,7 +1280,7 @@ mod tests {
     fn joining_publishes_the_whole_library() {
         // SY29: what this device had becomes its own new changes.
         let (mut a, la) = device(1, "book-a");
-        journal::set_device(a.conn(), &la, false, u64::MAX, 0).unwrap();
+        journal::set_device(a.conn(), &la, false, None, 0).unwrap();
         a.conn().execute("DELETE FROM sync_libraries", []).unwrap();
         a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
             .unwrap();
