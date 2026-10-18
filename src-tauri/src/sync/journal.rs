@@ -51,18 +51,77 @@ pub enum LocalContent {
     Inline(Value),
 }
 
-/// SY29: join a library in a storage as `lib.device`, making it the active one.
-/// Nothing else is written to the sync tables before this. The device ID kept here
-/// is a copy of the device store's (SP28), set again at each start.
+/// SY29: join a library in a storage as `lib.device`, making it the active one and
+/// turning sync on. Only the reader's own join, or Resume, calls this; a start calls
+/// `set_device`, which leaves the state as it is. Nothing else is written to the sync
+/// tables before a join.
 pub fn join(conn: &Connection, lib: &Library, storage: &str, now_ms: i64) -> Result<()> {
     let tx = conn.unchecked_transaction()?;
     tx.execute("UPDATE sync_libraries SET active = 0 WHERE active = 1", [])?;
     tx.execute(
         "INSERT INTO sync_libraries (library, storage, device, state, active, joined_at)
          VALUES (?1, ?2, ?3, 'on', 1, ?4)
-         ON CONFLICT(library) DO UPDATE SET active = 1, state = 'on', device = ?3",
+         ON CONFLICT(library) DO UPDATE SET active = 1, state = 'on'",
         params![lib.id.to_string(), storage, lib.device.to_string(), now_ms],
     )?;
+    tx.commit()?;
+    set_device(conn, lib, false, now_ms as u64)
+}
+
+/// SY7, SP28: at each start, this device's ID in the library, from its device store.
+/// The library's state (on, off, paused) is left as it is. When the ID changed (a
+/// rotation, or enrolling as a new device), the local versions not yet published are
+/// re-authored under the new identity, with the old identity's versions kept as
+/// their ancestry; with `fresh_clock` (SY10: rotating because this clock ran ahead)
+/// the clock starts again from the system clock and they are stamped afresh.
+pub fn set_device(conn: &Connection, lib: &Library, fresh_clock: bool, wall_ms: u64) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let stored: Option<String> = tx
+        .query_row(
+            "SELECT device FROM sync_libraries WHERE library = ?1",
+            [lib.id.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(stored) = stored else {
+        return Err(JournalError::NoLibrary(lib.id));
+    };
+    if stored == lib.device.to_string() {
+        return Ok(());
+    }
+    tx.execute(
+        "UPDATE sync_libraries SET device = ?2 WHERE library = ?1",
+        params![lib.id.to_string(), lib.device.to_string()],
+    )?;
+    if fresh_clock {
+        tx.execute(
+            "UPDATE sync_libraries SET clock_ms = 0, clock_n = 0 WHERE library = ?1",
+            [lib.id.to_string()],
+        )?;
+    }
+    let pending: Vec<(i64, String)> = tx
+        .prepare("SELECT rowid, raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid")?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    for (rowid, raw) in pending {
+        let mut v: Value = serde_json::from_str(&raw).map_err(|_| RecordError::NotAnObject)?;
+        v["device"] = json!(lib.device.to_string());
+        if fresh_clock {
+            v["clock"] = json!(tick(&tx, lib, wall_ms)?);
+        }
+        let Checked::Version(version) = check_version(v.clone(), lib.device)? else {
+            unreachable!("this Linen wrote it")
+        };
+        tx.execute(
+            "UPDATE sync_versions SET device = ?2, hash = ?3, raw = ?4 WHERE rowid = ?1",
+            params![
+                rowid,
+                lib.device.to_string(),
+                version.hash.to_string(),
+                v.to_string()
+            ],
+        )?;
+    }
     tx.commit()?;
     Ok(())
 }
@@ -271,30 +330,30 @@ pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
     rows.map(|raw| check(&raw?, lib.device)).collect()
 }
 
-/// SP15: once the change file numbered `seq` holding these versions is signed and
-/// kept, they take that sequence. Each is named by its hash, so an edit made since
-/// (which replaced the unsent row) stays unsent and goes in a later change.
-pub fn mark_published(
-    conn: &Connection,
-    lib: &Library,
-    versions: &[(Key, Hash32)],
-    seq: u64,
-) -> Result<()> {
+/// SY7, SP15: number every unsent version as this device's next change, in one
+/// transaction, and return the sequence and the versions in it. From then on the
+/// change's content is fixed by these rows: signing it (Stage 1c) is deterministic,
+/// so after a crash the same file is signed again, never a different one for the
+/// same sequence. A local edit made afterwards is a new unsent version that
+/// descends from these (SP11).
+pub fn take_unsent(conn: &Connection, lib: &Library) -> Result<Option<(u64, Vec<Version>)>> {
     let tx = conn.unchecked_transaction()?;
-    for (key, hash) in versions {
-        tx.execute(
-            "UPDATE sync_versions SET seq = ?3
-             WHERE library = ?1 AND key = ?2 AND hash = ?4 AND seq IS NULL",
-            params![
-                lib.id.to_string(),
-                key.as_str(),
-                seq as i64,
-                hash.to_string()
-            ],
-        )?;
+    let versions = unsent(&tx, lib)?;
+    if versions.is_empty() {
+        return Ok(None);
     }
+    let last: Option<i64> = tx.query_row(
+        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+        params![lib.id.to_string(), lib.device.to_string()],
+        |r| r.get(0),
+    )?;
+    let seq = last.unwrap_or(0) as u64 + 1;
+    tx.execute(
+        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL",
+        params![lib.id.to_string(), seq as i64],
+    )?;
     tx.commit()?;
-    Ok(())
+    Ok(Some((seq, versions)))
 }
 
 /// Keeps a checked remote version; a repeat delivery changes nothing. Returns whether
@@ -383,7 +442,10 @@ mod tests {
         let k = key(PLACE);
         // Publish one of our own, then receive another device's that descends from it.
         let ours = record_local(c, &lib, &k, place(1), 1000).unwrap();
-        mark_published(c, &lib, &[(k.clone(), ours.hash)], 1).unwrap();
+        assert_eq!(
+            take_unsent(c, &lib).unwrap().map(|(s, v)| (s, v[0].hash)),
+            Some((1, ours.hash))
+        );
         let other = Id16([2; 16]);
         let theirs = json!({
             "format": 1, "key": PLACE, "device": other.to_string(), "clock": [2000, 0],
@@ -422,17 +484,52 @@ mod tests {
     }
 
     #[test]
-    fn an_edit_made_while_publishing_stays_unsent() {
+    fn an_edit_made_after_numbering_goes_in_the_next_change() {
         let (store, lib) = setup();
         let c = store.conn();
         let k = key(PLACE);
-        let signed = record_local(c, &lib, &k, place(1), 1000).unwrap();
-        // The reader edits again after the change file was signed, before it is marked.
+        let first = record_local(c, &lib, &k, place(1), 1000).unwrap();
+        let (seq, taken) = take_unsent(c, &lib).unwrap().unwrap();
+        assert_eq!((seq, taken[0].hash), (1, first.hash));
+        // The reader edits again: it waits for the next change and names the first (SP11).
         let newer = record_local(c, &lib, &k, place(2), 1100).unwrap();
-        mark_published(c, &lib, &[(k.clone(), signed.hash)], 1).unwrap();
-        let left = unsent(c, &lib).unwrap();
+        assert!(newer
+            .history
+            .iter()
+            .any(|e| e.device == lib.device && e.seq == 1 && e.hash == first.hash));
+        let (seq, taken) = take_unsent(c, &lib).unwrap().unwrap();
+        assert_eq!((seq, taken.len(), taken[0].hash), (2, 1, newer.hash));
+        assert!(take_unsent(c, &lib).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_start_keeps_the_state_and_a_rotation_reauthors_unsent_versions() {
+        let (store, lib) = setup();
+        let c = store.conn();
+        c.execute("UPDATE sync_libraries SET state = 'paused'", [])
+            .unwrap();
+        set_device(c, &lib, false, 0).unwrap();
+        assert!(
+            active(c).unwrap().is_none(),
+            "a paused library stays paused across a start"
+        );
+        c.execute("UPDATE sync_libraries SET state = 'on'", [])
+            .unwrap();
+        // An edit far in the future, then a rotation for the clock (SY10).
+        let ahead = record_local(c, &lib, &key(PLACE), place(1), 9_000_000_000_000).unwrap();
+        let rotated = Library {
+            id: lib.id,
+            device: Id16([9; 16]),
+        };
+        set_device(c, &rotated, true, 1_000).unwrap();
+        let left = unsent(c, &rotated).unwrap();
         assert_eq!(left.len(), 1);
-        assert_eq!(left[0].hash, newer.hash, "the newer edit still goes out");
+        assert_eq!(
+            left[0].device, rotated.device,
+            "published under the new identity (SY7)"
+        );
+        assert!(left[0].clock < ahead.clock, "with a fresh clock");
+        assert_eq!(active(c).unwrap().map(|l| l.device), Some(rotated.device));
     }
 
     #[test]
