@@ -33,8 +33,12 @@ fn record(
             return Ok(());
         }
     }
-    journal::record_local(conn, lib, &k, content, now_ms)?;
-    Ok(())
+    match journal::record_local(conn, lib, &k, content, now_ms) {
+        // SY13: this device's own version waits in a conflict the reader hasn't
+        // decided; the save goes ahead and the reader's choice settles it (#109).
+        Err(JournalError::Conflicted(_)) => Ok(()),
+        other => other.map(|_| ()),
+    }
 }
 
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never

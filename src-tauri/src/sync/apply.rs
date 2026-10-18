@@ -110,19 +110,21 @@ impl Chains for JournalChains<'_> {
         if self.held(device) < seq {
             return Lookup::Unknown;
         }
-        let hash: Option<String> = self
+        let row: Option<(String, i64)> = self
             .conn
             .query_row(
-                "SELECT hash FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4 AND applied >= 0",
+                "SELECT hash, applied FROM sync_versions
+                 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
                 params![self.lib.id.to_string(), device.to_string(), seq as i64, key],
-                |r| r.get(0),
+                |r| Ok((r.get(0)?, r.get(1)?)),
             )
             .optional()
             .ok()
             .flatten();
-        match hash.as_deref().and_then(Hash32::parse) {
-            Some(h) => Lookup::Present(h),
+        match row {
+            // Still waiting itself (its ancestry, or a clock ahead): unresolved.
+            Some((_, applied)) if applied < 0 => Lookup::Unknown,
+            Some((h, _)) => Hash32::parse(&h).map_or(Lookup::Absent, Lookup::Present),
             None => Lookup::Absent,
         }
     }
@@ -149,11 +151,11 @@ impl Chains for JournalChains<'_> {
         if self.held(device) + 1 < before {
             return Prior::Unknown;
         }
-        let row: Option<(i64, String)> = self
+        let row: Option<(i64, String, i64)> = self
             .conn
             .query_row(
-                "SELECT seq, hash FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4 AND applied >= 0
+                "SELECT seq, hash, applied FROM sync_versions
+                 WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4
                  ORDER BY seq DESC LIMIT 1",
                 params![
                     self.lib.id.to_string(),
@@ -161,16 +163,38 @@ impl Chains for JournalChains<'_> {
                     key,
                     before as i64
                 ],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()
             .ok()
             .flatten();
         match row {
-            Some((s, h)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
+            Some((_, _, applied)) if applied < 0 => Prior::Unknown,
+            Some((s, h, _)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
             None => Prior::None,
         }
     }
+}
+
+fn too_far_ahead(v: &Version, now_ms: i64) -> bool {
+    v.clock.ms().saturating_sub(now_ms.max(0) as u64) > super::clock::SET_ASIDE_MS
+}
+
+/// A received version kept but not merged: -1 waits for its ancestry, -2 for this
+/// clock to catch up with it.
+fn set_waiting(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Result<()> {
+    conn.execute(
+        "UPDATE sync_versions SET applied = ?5
+         WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+        params![
+            lib.id.to_string(),
+            p.version.device.to_string(),
+            p.seq as i64,
+            p.version.key.as_str(),
+            state
+        ],
+    )?;
+    Ok(())
 }
 
 /// SY9, SP11, SP13: a version's history and frontier against the chains held.
@@ -233,20 +257,19 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut named = HashSet::new();
     for raw in &batch.versions {
         match check_version(raw.clone(), batch.device) {
-            // SY10: more than 24 hours ahead of this clock: set aside, never applied
-            // and never observed, until the clock catches up.
-            Ok(Checked::Version(v))
-                if v.clock.ms().saturating_sub(now_ms.max(0) as u64)
-                    > super::clock::SET_ASIDE_MS =>
-            {
-                set_aside(
-                    &tx,
-                    lib,
-                    batch.device,
-                    raw.to_string().as_bytes(),
-                    "clock ahead",
-                    now_ms,
-                )?;
+            // SY10: more than 24 hours ahead of this clock: kept with its place in the
+            // chain (`applied = -2`) but never merged, applied or observed until the
+            // clock catches up; then it is checked like any other.
+            Ok(Checked::Version(v)) if too_far_ahead(&v, now_ms) => {
+                let placed = Placed {
+                    version: v,
+                    seq: batch.seq,
+                };
+                journal::store_remote(&tx, lib, &placed)?;
+                set_waiting(&tx, lib, &placed, -2)?;
+                if let Content::Body { hash, .. } = &placed.version.content {
+                    named.insert(*hash);
+                }
                 aside += 1;
             }
             Ok(Checked::Version(v)) => {
@@ -361,7 +384,8 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
 fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key>> {
     let waiting: Vec<(i64, String, i64, String)> = conn
         .prepare(
-            "SELECT rowid, device, seq, raw FROM sync_versions WHERE library = ?1 AND applied = -1",
+            "SELECT rowid, device, seq, raw FROM sync_versions
+             WHERE library = ?1 AND applied IN (-1, -2) ORDER BY seq",
         )?
         .query_map([lib.id.to_string()], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
@@ -382,6 +406,9 @@ fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<
             version: v,
             seq: seq as u64,
         };
+        if too_far_ahead(&placed.version, now_ms) {
+            continue;
+        }
         match ancestry(conn, lib, &placed) {
             HistoryCheck::Ok => {
                 conn.execute(
@@ -394,14 +421,25 @@ fn recheck_waiting(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<
                 set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
                 conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
             }
-            HistoryCheck::Wait => {}
+            HistoryCheck::Wait => {
+                set_waiting(conn, lib, &placed, -1)?;
+            }
         }
+    }
+    // One version resolving can resolve the next of its chain: again until settled.
+    if !joined.is_empty() {
+        joined.extend(recheck_waiting(conn, lib, now_ms)?);
     }
     Ok(joined)
 }
 
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
+    {
+        let tx = conn.unchecked_transaction()?;
+        recheck_waiting(&tx, lib, now_ms)?;
+        tx.commit()?;
+    }
     let keys: Vec<String> = conn
         .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
         .query_map([lib.id.to_string()], |r| r.get(0))?
@@ -557,7 +595,7 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
         });
     }
     let (winner, heads) = match record.outcome(&HashSet::new()) {
-        Some(Outcome::Settled(p)) => (p, vec![p]),
+        Some(Outcome::Settled(p)) => (p, record.heads(&HashSet::new())),
         Some(Outcome::Conflict { shown, all }) => (shown, all),
         None => return Ok(false),
     };
@@ -924,6 +962,68 @@ mod tests {
         assert!(
             keys.iter().any(|k| k.starts_with("annotation:"))
                 && !keys.iter().any(|k| k.starts_with("note:"))
+        );
+    }
+
+    #[test]
+    fn a_version_set_aside_for_its_clock_applies_once_the_clock_catches_up() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        let two_days = 2 * 24 * 60 * 60 * 1000;
+        receive(b.conn(), &lb, &batch, crate::store::now_ms() - two_days).unwrap();
+        assert!(b.position("book-b").unwrap().is_none());
+        // SY10: applied once this clock catches up.
+        assert!(apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap() >= 1);
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/2)");
+    }
+
+    #[test]
+    fn a_successor_of_a_waiting_version_waits_too_and_both_apply_later() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("from A"), 1_760_000_001_000))
+            .unwrap();
+        let from_a = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(c.conn(), &lc, &from_a, crate::store::now_ms()).unwrap();
+        c.save_annotation(&highlight("book-c", Some("C one"), 1_760_000_002_000))
+            .unwrap();
+        let c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        c.save_annotation(&highlight("book-c", Some("C two"), 1_760_000_003_000))
+            .unwrap();
+        let c2 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        receive(b.conn(), &lb, &c1, crate::store::now_ms()).unwrap();
+        let got = receive(b.conn(), &lb, &c2, crate::store::now_ms()).unwrap();
+        assert!(
+            matches!(got, Received::Applied { set_aside: 0, .. }),
+            "waits, isn't refused: {got:?}"
+        );
+        receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
+        assert_eq!(note_of(&b, "book-b"), Some(Some("C two".into())));
+    }
+
+    #[test]
+    fn a_newest_wins_record_settles_once() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        b.save_position("book-b", "epubcfi(/6/20)", 0.6, None)
+            .unwrap();
+        a.save_position("book-a", "epubcfi(/6/10)", 0.2, None)
+            .unwrap();
+        let ba = publish_next(a.conn(), &la).unwrap().unwrap();
+        let bb = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(b.conn(), &lb, &ba, crate::store::now_ms()).unwrap();
+        receive(a.conn(), &la, &bb, crate::store::now_ms()).unwrap();
+        assert_eq!(
+            apply_pending(a.conn(), &la, crate::store::now_ms()).unwrap(),
+            0
+        );
+        assert_eq!(
+            apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap(),
+            0
         );
     }
 
