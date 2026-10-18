@@ -76,6 +76,48 @@ fn parse_hex<const N: usize>(s: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
+/// SP3: unpadded base64url, decoded strictly: only the URL-safe alphabet, no
+/// padding, and zero trailing bits, so every byte string has exactly one spelling.
+pub fn b64url_decode(s: &str) -> Option<Vec<u8>> {
+    let val = |c: u8| -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            _ => return None,
+        } as u32)
+    };
+    if s.len() % 4 == 1 {
+        return None;
+    }
+    let mut out = Vec::with_capacity(s.len() * 3 / 4);
+    for chunk in s.as_bytes().chunks(4) {
+        let mut acc = 0u32;
+        for &c in chunk {
+            acc = acc << 6 | val(c)?;
+        }
+        match chunk.len() {
+            4 => out.extend_from_slice(&[(acc >> 16) as u8, (acc >> 8) as u8, acc as u8]),
+            3 => {
+                if acc & 0b11 != 0 {
+                    return None;
+                }
+                out.extend_from_slice(&[(acc >> 10) as u8, (acc >> 2) as u8]);
+            }
+            2 => {
+                if acc & 0b1111 != 0 {
+                    return None;
+                }
+                out.push((acc >> 4) as u8);
+            }
+            _ => return None,
+        }
+    }
+    Some(out)
+}
+
 impl Hash32 {
     pub fn parse(s: &str) -> Option<Self> {
         parse_hex::<32>(s).map(Hash32)
@@ -125,6 +167,25 @@ mod tests {
         assert!(Id16::parse(&s.to_uppercase()).is_none());
         assert!(Id16::parse("00ff").is_none());
         assert!(Id16::parse("zz".repeat(16).as_str()).is_none());
+    }
+
+    #[test]
+    fn base64url_is_decoded_strictly() {
+        assert_eq!(b64url_decode("").unwrap(), b"");
+        assert_eq!(b64url_decode("Zg").unwrap(), b"f");
+        assert_eq!(b64url_decode("Zm8").unwrap(), b"fo");
+        assert_eq!(b64url_decode("Zm9v").unwrap(), b"foo");
+        assert_eq!(b64url_decode("-_8").unwrap(), [0xfb, 0xff]);
+        assert!(b64url_decode("Zh").is_none(), "non-zero trailing bits");
+        assert!(b64url_decode("Zg==").is_none(), "no padding");
+        assert!(
+            b64url_decode("Z+8/").is_none(),
+            "only the URL-safe alphabet"
+        );
+        assert!(b64url_decode("Z").is_none());
+        // A 64-byte signature is 86 characters; its last one carries 4 zero bits.
+        assert_eq!(b64url_decode(&"A".repeat(86)).unwrap().len(), 64);
+        assert!(b64url_decode(&format!("{}B", "A".repeat(85))).is_none());
     }
 
     #[test]

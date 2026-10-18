@@ -6,7 +6,7 @@
 //! in a newer major format is kept aside whole and passed on unchanged (SY9).
 
 use super::clock::{Hlc, MAX_MS};
-use super::ids::{derived_hash, identity_hash, DeviceId, Hash32, Id16};
+use super::ids::{b64url_decode, derived_hash, identity_hash, DeviceId, Hash32, Id16};
 use super::json::{self, Numbers};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -269,11 +269,10 @@ fn is_choice_body(key: &str, v: &Value) -> bool {
             .is_some()
     };
     let sig = |k: &str| {
-        o.get(k).and_then(Value::as_str).is_some_and(|s| {
-            s.len() == 86
-                && s.bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
-        })
+        o.get(k)
+            .and_then(Value::as_str)
+            .and_then(b64url_decode)
+            .is_some_and(|b| b.len() == 64)
     };
     match target.split('.').next().unwrap_or_default() {
         "obj" => {
@@ -785,6 +784,14 @@ mod tests {
             json!({ "key": late, "body": null, "inline": { "choice": "discard-all", "removal": H, "head": H, "code": sig } }),
         );
         assert!(check(full).is_ok());
+        let padbits = note(
+            json!({ "key": late, "body": null, "inline": { "choice": "discard-all", "removal": H, "head": H, "code": format!("{}B", "A".repeat(85)) } }),
+        );
+        assert_eq!(
+            check(padbits),
+            Err(RecordError::Field("inline")),
+            "not a 64-byte signature"
+        );
         let keep = note(
             json!({ "key": format!("choice:{D}.12.{H}"), "body": null, "inline": { "choice": "keep" } }),
         );
