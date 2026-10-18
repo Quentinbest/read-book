@@ -21,6 +21,7 @@ const TABLES: &[&str] = &[
     "sync_versions",
     "sync_bodies",
     "sync_books",
+    "sync_changes",
     "sync_seen",
     "sync_aside",
 ];

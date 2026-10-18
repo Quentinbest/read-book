@@ -34,6 +34,7 @@ CREATE INDEX sync_versions_key ON sync_versions(library, key);
 CREATE TABLE sync_bodies (hash TEXT PRIMARY KEY, body BLOB NOT NULL);
 CREATE TABLE sync_books (library TEXT NOT NULL, sync_id TEXT NOT NULL, book_id TEXT, PRIMARY KEY (library, sync_id));
 CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
+CREATE TABLE sync_changes (library TEXT NOT NULL, device TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, PRIMARY KEY (library, device, seq));
 CREATE TABLE sync_seen (library TEXT NOT NULL, device TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, PRIMARY KEY (library, device));
 CREATE TABLE sync_aside (library TEXT NOT NULL, device TEXT NOT NULL, hash TEXT NOT NULL, reason TEXT NOT NULL, size INTEGER NOT NULL, raw BLOB NOT NULL, first_at INTEGER NOT NULL, PRIMARY KEY (library, device, hash));
 
@@ -56,5 +57,6 @@ INSERT INTO sync_libraries VALUES ('00112233445566778899aabbccddeeff', 'icloud-d
 INSERT INTO sync_versions VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa', '{"format":1}', 1);
 INSERT INTO sync_bodies VALUES ('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad', X'616263');
 INSERT INTO sync_books VALUES ('00112233445566778899aabbccddeeff', '7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'b1');
+INSERT INTO sync_changes VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa');
 INSERT INTO sync_seen VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa');
 INSERT INTO sync_aside VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'bb', 'format', 3, X'7B7D', 6100);

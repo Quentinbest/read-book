@@ -183,6 +183,14 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
 
+    CREATE TABLE sync_changes (
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        hash TEXT NOT NULL,                 -- the change's payload hash, for frontiers (SP13)
+        PRIMARY KEY (library, device, seq)
+    );
+
     CREATE TABLE sync_seen (
         library TEXT NOT NULL,
         device TEXT NOT NULL,
