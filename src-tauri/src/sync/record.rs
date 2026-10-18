@@ -526,16 +526,22 @@ pub fn check_body(key: &Key, bytes: &[u8]) -> Result<Value, RecordError> {
     let v = json::parse(bytes, Numbers::Any)?;
     let o = v.as_object().ok_or(RecordError::Body)?;
     let str_field = |k: &str| o.get(k).is_some_and(Value::is_string);
+    let filled = |k: &str| {
+        o.get(k)
+            .and_then(Value::as_str)
+            .is_some_and(|v| !v.trim().is_empty())
+    };
     let ok = match kind {
         Kind::Place => {
-            str_field("cfi")
+            filled("cfi")
                 && o.get("fraction")
                     .and_then(Value::as_f64)
                     .is_some_and(|f| (0.0..=1.0).contains(&f))
                 && o.get("chapter").map_or(true, Value::is_string)
         }
         Kind::Annotation => is_annotation(o, subject),
-        Kind::Note => str_field("text"),
+        // SY9: emptying a note is a deletion, sent as a tombstone, never as blank text.
+        Kind::Note => filled("text"),
         // Settings are stored as strings. Each key's own schema (SY15, SY28) comes
         // with the list of keys that sync (item 103, Stage 3).
         Kind::Setting | Kind::BookSetting => o.get("value").is_some_and(Value::is_string),
@@ -885,6 +891,14 @@ mod tests {
                 "{to}"
             );
         }
+        assert_eq!(
+            body_of(Kind::Note, br#"{"text":"  "}"#),
+            Err(RecordError::Body)
+        );
+        assert_eq!(
+            body_of(Kind::Place, br#"{"cfi":"","fraction":0.5}"#),
+            Err(RecordError::Body)
+        );
         let purple = anno.replace("rose", "purple");
         assert_eq!(
             body_of(Kind::Annotation, purple.as_bytes()),
