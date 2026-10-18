@@ -78,7 +78,22 @@ pub enum Lookup {
 
 /// What each device's chain holds, as far as this device has read it.
 pub trait Chains {
+    /// The hash of the version of `key` that `device`'s change `seq` holds.
     fn version_at(&self, device: super::ids::DeviceId, seq: u64, key: &str) -> Lookup;
+    /// The payload hash of `device`'s change file `seq`, or its spine entry's (SP13).
+    fn change_at(&self, device: super::ids::DeviceId, seq: u64) -> Lookup;
+    /// `device`'s latest version of `key` in a change before `before` (SP11).
+    fn prior_version(&self, device: super::ids::DeviceId, key: &str, before: u64) -> Prior;
+}
+
+/// A writer's previous version of a key, as its chain shows it.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Prior {
+    /// The chain before this change isn't all here yet.
+    Unknown,
+    /// The writer had no earlier version of this key.
+    None,
+    At(u64, Hash32),
 }
 
 /// SY9, SP11: whether a version's history can be trusted yet.
@@ -92,12 +107,45 @@ pub enum HistoryCheck {
 }
 
 /// SP11: every history entry must name, in that device's chain, a version of the
-/// same key with that hash. So a device can't claim to descend from an edit it never
-/// saw, and drop it.
-pub fn check_history(v: &Version, chains: &impl Chains) -> HistoryCheck {
+/// same key with that hash, so a device can't claim to descend from an edit it never
+/// saw and drop it; and the writer's own previous version of the key, if it had
+/// one, must be named exactly, since one device's versions of a key form a line.
+pub fn check_history(p: &Placed, chains: &impl Chains) -> HistoryCheck {
+    let v = &p.version;
     let mut wait = false;
     for e in &v.history {
         match chains.version_at(e.device, e.seq, v.key.as_str()) {
+            Lookup::Present(h) if h == e.hash => {}
+            Lookup::Unknown => wait = true,
+            _ => return HistoryCheck::False,
+        }
+    }
+    let own = v.history.iter().find(|e| e.device == v.device);
+    match chains.prior_version(v.device, v.key.as_str(), p.seq) {
+        Prior::Unknown => wait = true,
+        Prior::None if own.is_some() => return HistoryCheck::False,
+        Prior::None => {}
+        Prior::At(s, h) if own.is_some_and(|e| e.seq == s && e.hash == h) => {}
+        Prior::At(..) => return HistoryCheck::False,
+    }
+    if wait {
+        HistoryCheck::Wait
+    } else {
+        HistoryCheck::Ok
+    }
+}
+
+/// SP13: a tombstone's `covers` entries, each checked against the named chain: the
+/// change file at that sequence must have that payload hash. One that can't be
+/// checked yet waits; one that is false is refused (SY13, SY18). Only a checked
+/// frontier may be compared with `outside_frontier`.
+pub fn check_frontier(tombstone: &Placed, chains: &impl Chains) -> HistoryCheck {
+    let Content::Deleted { covers, .. } = &tombstone.version.content else {
+        return HistoryCheck::Ok;
+    };
+    let mut wait = false;
+    for e in covers {
+        match chains.change_at(e.device, e.seq) {
             Lookup::Present(h) if h == e.hash => {}
             Lookup::Unknown => wait = true,
             _ => return HistoryCheck::False,
@@ -410,30 +458,71 @@ mod tests {
                 None => Lookup::Absent,
             }
         }
+        // The tests' tombstones name changes by a zero hash.
+        fn change_at(&self, d: Id16, s: u64) -> Lookup {
+            match self.0.iter().any(|p| p.version.device == d && p.seq == s) {
+                true => Lookup::Present(Hash32([0; 32])),
+                false if s > 5 => Lookup::Unknown,
+                false => Lookup::Absent,
+            }
+        }
+        fn prior_version(&self, d: Id16, key: &str, before: u64) -> Prior {
+            self.0
+                .iter()
+                .filter(|p| {
+                    p.version.device == d && p.version.key.as_str() == key && p.seq < before
+                })
+                .max_by_key(|p| p.seq)
+                .map_or(Prior::None, |p| Prior::At(p.seq, p.version.hash))
+        }
     }
 
     #[test]
     fn history_entries_are_checked_against_the_named_chain() {
         let a = edit(NOTE, 1, 1, 100, &[], 1);
         let b = edit(NOTE, 2, 1, 200, &[&a], 2);
-        assert_eq!(
-            check_history(&b.version, &Fake(vec![a.clone()])),
-            HistoryCheck::Ok
-        );
+        assert_eq!(check_history(&b, &Fake(vec![a.clone()])), HistoryCheck::Ok);
         // SY9: an ancestor the named chain shows never existed is refused.
-        assert_eq!(
-            check_history(&b.version, &Fake(vec![])),
-            HistoryCheck::False
-        );
+        assert_eq!(check_history(&b, &Fake(vec![])), HistoryCheck::False);
         let other_key = edit(PLACE, 1, 1, 100, &[], 1);
         assert_eq!(
-            check_history(&b.version, &Fake(vec![other_key])),
+            check_history(&b, &Fake(vec![other_key])),
             HistoryCheck::False
         );
         // One it can't check yet waits.
         let far = edit(NOTE, 1, 9, 100, &[], 1);
         let c = edit(NOTE, 2, 1, 200, &[&far], 2);
-        assert_eq!(check_history(&c.version, &Fake(vec![])), HistoryCheck::Wait);
+        assert_eq!(check_history(&c, &Fake(vec![])), HistoryCheck::Wait);
+        // SP11: a later version that leaves out its writer's previous one is refused.
+        let a2 = edit(NOTE, 1, 2, 300, &[], 3);
+        assert_eq!(
+            check_history(&a2, &Fake(vec![a.clone()])),
+            HistoryCheck::False
+        );
+        let a2 = edit(NOTE, 1, 2, 300, &[&a], 3);
+        assert_eq!(check_history(&a2, &Fake(vec![a.clone()])), HistoryCheck::Ok);
+    }
+
+    #[test]
+    fn tombstone_frontiers_are_checked_against_the_named_chains() {
+        let a = edit(NOTE, 1, 1, 100, &[], 1);
+        let b = edit(NOTE, 2, 1, 200, &[&a], 2);
+        let del = delete(NOTE, 1, 2, 300, &[&a, &b]);
+        assert_eq!(
+            check_frontier(&del, &Fake(vec![a.clone(), b.clone()])),
+            HistoryCheck::Ok
+        );
+        // A fabricated entry the named chain doesn't hold is refused, so it can't
+        // hide a change made apart.
+        assert_eq!(
+            check_frontier(&del, &Fake(vec![a.clone()])),
+            HistoryCheck::False
+        );
+        let forged = delete(NOTE, 1, 2, 300, &[&a, &edit(NOTE, 2, 9, 200, &[&a], 2)]);
+        assert_eq!(
+            check_frontier(&forged, &Fake(vec![a, b])),
+            HistoryCheck::Wait
+        );
     }
 
     /// A small seeded generator, so the order-independence check is repeatable.

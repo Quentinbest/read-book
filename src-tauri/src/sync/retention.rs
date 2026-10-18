@@ -59,11 +59,17 @@ impl Vouched {
         self.last_wall_ms = wall_ms;
     }
 
-    /// Across a restart: the wall clock counts only if it can be vouched for and
-    /// moved forward; otherwise the time away isn't counted.
-    pub fn restart(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool) {
+    /// Across a restart. Within one boot the monotonic clock (which runs from boot)
+    /// still measures, and the wall clock is checked against it as while running,
+    /// so a clock moved while Linen was closed is caught. After a reboot, the wall
+    /// clock counts only if it can be vouched for and moved forward.
+    pub fn restart(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool, same_boot: bool) {
         if clock_ahead {
             self.untrusted_wall = true;
+        }
+        if same_boot && self.last_mono_ms.is_some() {
+            self.tick(mono_ms, wall_ms);
+            return;
         }
         if !self.untrusted_wall && wall_ms > self.last_wall_ms {
             self.total_ms += wall_ms - self.last_wall_ms;
@@ -167,10 +173,10 @@ mod tests {
         v.tick(0, 1_000_000);
         v.tick(DAY, 1_000_000 + DAY);
         assert_eq!(v.now(), DAY);
-        v.restart(5, 1_000_000 + 3 * DAY, false);
+        v.restart(5, 1_000_000 + 3 * DAY, false, false);
         assert_eq!(v.now(), 3 * DAY, "two days off, counted by the wall clock");
         // A wall clock set back across a restart adds nothing.
-        v.restart(5, 1_000_000, false);
+        v.restart(5, 1_000_000, false, false);
         assert_eq!(v.now(), 3 * DAY);
     }
 
@@ -181,7 +187,7 @@ mod tests {
         v.tick(1_000, 8 * DAY); // wall jumped 8 days in one second of running
         assert!(!v.publishes_ages());
         assert_eq!(v.now(), 1_000, "only the monotonic second counts");
-        v.restart(0, 20 * DAY, false);
+        v.restart(0, 20 * DAY, false, false);
         assert_eq!(
             v.now(),
             1_000,
@@ -189,8 +195,20 @@ mod tests {
         );
         v.clear();
         let mut w = Vouched::new(0);
-        w.restart(0, DAY, true);
+        w.restart(0, DAY, true, false);
         assert!(!w.publishes_ages() && w.now() == 0);
+    }
+
+    #[test]
+    fn a_clock_moved_while_linen_was_closed_is_caught_within_one_boot() {
+        // One-device library: closing Linen, moving the clock 8 days on and
+        // reopening without a reboot must not end the week.
+        let mut v = Vouched::new(0);
+        v.tick(0, 0);
+        v.tick(1_000, 1_000);
+        v.restart(2_000, 8 * DAY, false, true);
+        assert_eq!(v.now(), 2_000, "only the monotonic time counts");
+        assert!(!v.publishes_ages());
     }
 
     #[test]
