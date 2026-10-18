@@ -6,7 +6,7 @@
 //! in a newer major format is kept aside whole and passed on unchanged (SY9).
 
 use super::clock::{Hlc, MAX_MS};
-use super::ids::{derived_hash, DeviceId, Hash32, Id16};
+use super::ids::{derived_hash, identity_hash, DeviceId, Hash32, Id16};
 use super::json::{self, Numbers};
 use serde_json::{Map, Value};
 use std::collections::HashSet;
@@ -93,9 +93,10 @@ impl Key {
         &self.0
     }
 
-    /// SP17: the 16-byte key hash a spine keeps beside each version hash.
+    /// SP17: the 16-byte key hash a spine keeps beside each version hash: the
+    /// first 16 bytes of plain `H(key)`.
     pub fn spine_hash(&self) -> [u8; 16] {
-        let h = derived_hash("linen-sync/key/v1", &[], &[self.0.as_bytes()]);
+        let h = identity_hash(self.0.as_bytes());
         let mut out = [0u8; 16];
         out.copy_from_slice(&h.0[..16]);
         out
@@ -134,6 +135,70 @@ fn is_choice_target(s: &str) -> bool {
         ["hold" | "reserve", d, seq, i] => Id16::parse(d).is_some() && is_seq(seq) && index(i),
         [d, seq, h] => Id16::parse(d).is_some() && is_seq(seq) && Hash32::parse(h).is_some(),
         _ => false,
+    }
+}
+
+/// SP13: `{ "hashes": [plain file hashes], "idTitle": hash or null }`.
+fn is_book_identity(v: &Value) -> bool {
+    let Some(o) = v.as_object() else { return false };
+    o.len() == 2
+        && o.get("hashes").and_then(Value::as_array).is_some_and(|a| {
+            a.iter()
+                .all(|h| h.as_str().and_then(Hash32::parse).is_some())
+        })
+        && o.get("idTitle")
+            .is_some_and(|t| t.is_null() || t.as_str().and_then(Hash32::parse).is_some())
+}
+
+/// SP12: each kind of choice key takes its own choices and fields.
+fn is_choice_body(key: &str, v: &Value) -> bool {
+    let Some(o) = v.as_object() else { return false };
+    let target = key.strip_prefix("choice:").unwrap_or_default();
+    let choice = o.get("choice").and_then(Value::as_str).unwrap_or_default();
+    let hash = |k: &str| {
+        o.get(k)
+            .and_then(Value::as_str)
+            .and_then(Hash32::parse)
+            .is_some()
+    };
+    let sig = |k: &str| {
+        o.get(k).and_then(Value::as_str).is_some_and(|s| {
+            s.len() == 86
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
+    };
+    match target.split('.').next().unwrap_or_default() {
+        "obj" => {
+            choice == "try-again"
+                && o.get("clears").and_then(Value::as_array).is_some_and(|a| {
+                    a.iter().all(|c| {
+                        c.get("d")
+                            .and_then(Value::as_str)
+                            .and_then(Id16::parse)
+                            .is_some()
+                            && c.get("q").and_then(Value::as_u64).is_some()
+                    })
+                })
+        }
+        "hold" | "reserve" => choice == "stop-waiting",
+        "late" => choice == "discard-all" && hash("removal") && hash("head") && sig("code"),
+        // `‹d›.‹s›.‹h›`: a choice about one version. A Keep names its replacement.
+        _ => match choice {
+            "keep" => o.get("version").is_some_and(|e| {
+                e.get("d")
+                    .and_then(Value::as_str)
+                    .and_then(Id16::parse)
+                    .is_some()
+                    && e.get("s").and_then(Value::as_u64).is_some_and(|s| s >= 1)
+                    && e.get("h")
+                        .and_then(Value::as_str)
+                        .and_then(Hash32::parse)
+                        .is_some()
+            }),
+            "discard" | "wrong-clock" | "stop-waiting" => true,
+            _ => false,
+        },
     }
 }
 
@@ -308,8 +373,11 @@ pub fn check_version(raw: Value, writer: DeviceId) -> Result<Checked, RecordErro
                 "deleted",
             )?;
             let identity = d.get("identity").cloned();
-            if identity.is_some() && kind != Kind::Book {
-                return Err(RecordError::Field("deleted"));
+            // SP13: a book's tombstone always carries its identity; nothing else does.
+            match (&identity, kind) {
+                (Some(id), Kind::Book) if is_book_identity(id) => {}
+                (None, k) if k != Kind::Book => {}
+                _ => return Err(RecordError::Field("deleted")),
             }
             Content::Deleted { covers, identity }
         }
@@ -317,9 +385,7 @@ pub fn check_version(raw: Value, writer: DeviceId) -> Result<Checked, RecordErro
             if kind != Kind::Choice {
                 return Err(RecordError::InlineNotAllowed);
             }
-            if json::canonical(i).len() > MAX_INLINE_BYTES
-                || !i.get("choice").is_some_and(Value::is_string)
-            {
+            if json::canonical(i).len() > MAX_INLINE_BYTES || !is_choice_body(key.as_str(), i) {
                 return Err(RecordError::Field("inline"));
             }
             Content::Inline(i.clone())
@@ -358,7 +424,9 @@ pub fn check_body(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
         }
         Kind::Annotation => true,
         Kind::Note => str_field("text"),
-        Kind::Setting | Kind::BookSetting => o.contains_key("value"),
+        // Settings are stored as strings. Each key's own schema (SY15, SY28) comes
+        // with the list of keys that sync (item 103, Stage 3).
+        Kind::Setting | Kind::BookSetting => o.get("value").is_some_and(Value::is_string),
         Kind::Book => {
             o.get("syncId").and_then(Value::as_str).is_some_and(is_uuid)
                 && o.get("aliases")
@@ -372,6 +440,10 @@ pub fn check_body(kind: Kind, bytes: &[u8]) -> Result<Value, RecordError> {
                 .is_some()
                 && o.get("size").and_then(Value::as_u64).is_some()
                 && str_field("title")
+                && str_field("layout")
+                && ["language", "identifier"]
+                    .iter()
+                    .all(|k| o.get(*k).is_some_and(|v| v.is_string() || v.is_null()))
                 && o.get("authors")
                     .and_then(Value::as_array)
                     .is_some_and(|a| a.iter().all(Value::is_string))
@@ -543,6 +615,52 @@ mod tests {
         // Only a book's tombstone carries an identity (SP13).
         let bad = note(json!({ "body": null, "deleted": { "covers": [], "identity": {} } }));
         assert_eq!(check(bad), Err(RecordError::Field("deleted")));
+        let book_key = format!("book:{BOOK}");
+        let good = json!({ "covers": [], "identity": { "hashes": [H], "idTitle": null } });
+        assert!(check(note(
+            json!({ "key": book_key, "body": null, "deleted": good })
+        ))
+        .is_ok());
+        let missing = json!({ "covers": [] });
+        assert_eq!(
+            check(note(
+                json!({ "key": book_key, "body": null, "deleted": missing })
+            )),
+            Err(RecordError::Field("deleted"))
+        );
+        let malformed = json!({ "covers": [], "identity": { "hashes": ["x"], "idTitle": null } });
+        assert_eq!(
+            check(note(
+                json!({ "key": book_key, "body": null, "deleted": malformed })
+            )),
+            Err(RecordError::Field("deleted"))
+        );
+        // SP12: each choice key takes its own body.
+        let late = format!("choice:late.{D}.5");
+        let bare =
+            note(json!({ "key": late, "body": null, "inline": { "choice": "discard-all" } }));
+        assert_eq!(
+            check(bare),
+            Err(RecordError::Field("inline")),
+            "Discard all needs its removal, head and code"
+        );
+        let sig = "A".repeat(86);
+        let full = note(
+            json!({ "key": late, "body": null, "inline": { "choice": "discard-all", "removal": H, "head": H, "code": sig } }),
+        );
+        assert!(check(full).is_ok());
+        let keep = note(
+            json!({ "key": format!("choice:{D}.12.{H}"), "body": null, "inline": { "choice": "keep" } }),
+        );
+        assert_eq!(
+            check(keep),
+            Err(RecordError::Field("inline")),
+            "a Keep names its replacement"
+        );
+        let wrong = note(
+            json!({ "key": format!("choice:hold.{D}.3.0"), "body": null, "inline": { "choice": "discard" } }),
+        );
+        assert_eq!(check(wrong), Err(RecordError::Field("inline")));
         let choice = note(
             json!({ "key": format!("choice:{D}.12.{H}"), "body": null, "inline": { "choice": "discard" } }),
         );
@@ -577,6 +695,21 @@ mod tests {
             Err(RecordError::Json(json::JsonError::Syntax))
         );
         assert!(check_body(Kind::BookFinished, br#"{"finished":true}"#).is_ok());
+        assert!(check_body(Kind::Setting, br#"{"value":"18"}"#).is_ok());
+        assert_eq!(
+            check_body(Kind::Setting, br#"{"value":{}}"#),
+            Err(RecordError::Body)
+        );
+        let file = format!(
+            r#"{{"hash":"{H}","size":1,"title":"T","authors":[],"language":"en","identifier":null,"layout":"reflowable"}}"#
+        );
+        assert!(check_body(Kind::BookFile, file.as_bytes()).is_ok());
+        let partial = format!(r#"{{"hash":"{H}","size":1,"title":"T","authors":[]}}"#);
+        assert_eq!(
+            check_body(Kind::BookFile, partial.as_bytes()),
+            Err(RecordError::Body),
+            "SP12: every field a file determines"
+        );
         // A 9 MB note is over its limit (SY28).
         let big = format!(r#"{{"text":"{}"}}"#, "x".repeat(9 * MB as usize));
         assert_eq!(
