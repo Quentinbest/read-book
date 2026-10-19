@@ -264,11 +264,17 @@ pub enum Which {
 }
 
 /// The versions of `key` this device holds with a sequence: its own published ones
-/// and those received from others. Unsent local versions aren't in it.
+/// and those received from others. Unsent local versions aren't in it, nor are
+/// received ones still waiting for their ancestry to be checked (`applied = -1`).
+/// The states of `sync_versions.applied`: 1 applied; 2 applied and superseded (a
+/// version applied here descends from it, so it is never a head again and isn't
+/// loaded to merge); 0 pending; −1 waiting for its ancestry; −2 its clock too far
+/// ahead; −3 a local edit held for the reader (#109); −4 excluded for its body.
 pub fn record_of(conn: &Connection, lib: &Library, key: &Key, which: Which) -> Result<Record> {
     let mut stmt = conn.prepare(
         "SELECT device, seq, raw FROM sync_versions
-         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL AND (?3 = 0 OR applied = 1)",
+         WHERE library = ?1 AND key = ?2 AND seq IS NOT NULL
+           AND ((?3 = 0 AND applied = 0) OR applied = 1)",
     )?;
     let applied_only = which == Which::Applied;
     let rows = stmt.query_map(
@@ -448,10 +454,156 @@ pub fn record_local(
     Ok(version)
 }
 
+/// SY13, #109: an edit made while this device's own version waits, unshown, in a
+/// conflict. It is kept as the reader's candidate choice (`applied = -3`): it
+/// descends from every head, as a choice does, but it is not published and not
+/// merged until the reader confirms it (Stage 5). A later edit to the same record
+/// replaces it.
+pub fn hold_local(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    content: LocalContent,
+    wall_ms: u64,
+) -> Result<Version> {
+    // SY13: every head in the conflict, those still unapplied (hidden) included;
+    // never one waiting for its ancestry, a clock or a bad body (not loaded).
+    let record = record_of(conn, lib, key, Which::All)?;
+    // SY10: only what was applied moves the clock, so a hidden head whose body
+    // hasn't arrived (or proved good) doesn't. The held edit is still after every
+    // head by descent, which is what settles a record the reader decides (SY13).
+    for p in record_of(conn, lib, key, Which::Applied)?.versions() {
+        observe(conn, lib, p.version.clock, wall_ms)?;
+    }
+    let clock = tick(conn, lib, wall_ms)?;
+    let mut latest: BTreeMap<DeviceId, (u64, Hash32)> = BTreeMap::new();
+    for h in record.heads(&HashSet::new()) {
+        for e in std::iter::once(h.id()).chain(h.version.history.iter().copied()) {
+            let slot = latest.entry(e.device).or_insert((0, e.hash));
+            if e.seq > slot.0 {
+                *slot = (e.seq, e.hash);
+            }
+        }
+    }
+    let history: Vec<Value> = latest
+        .iter()
+        .map(|(d, (s, h))| json!({ "d": d.to_string(), "s": s, "h": h.to_string() }))
+        .collect();
+    let mut v = json!({
+        "format": FORMAT, "key": key.as_str(), "device": lib.device.to_string(),
+        "clock": clock, "history": history,
+    });
+    match content {
+        LocalContent::Body(bytes) => {
+            let hash = put_body(conn, &bytes)?;
+            v["body"] = json!({ "hash": hash.to_string(), "size": bytes.len() });
+        }
+        LocalContent::Deleted { covers, identity } => {
+            let covers: Vec<Value> = covers
+                .iter()
+                .map(|e| json!({ "d": e.device.to_string(), "s": e.seq, "h": e.hash.to_string() }))
+                .collect();
+            let mut d = json!({ "covers": covers });
+            if let Some(id) = identity {
+                d["identity"] = id;
+            }
+            v["deleted"] = d;
+        }
+        LocalContent::Inline(i) => v["inline"] = i,
+    }
+    let Checked::Version(version) = check_version(v.clone(), lib.device)? else {
+        unreachable!("this Linen writes its own format")
+    };
+    conn.execute(
+        "DELETE FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    conn.execute(
+        "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+         VALUES (?1, ?2, ?3, NULL, ?4, ?5, -3)",
+        params![
+            lib.id.to_string(),
+            key.as_str(),
+            lib.device.to_string(),
+            version.hash.to_string(),
+            v.to_string()
+        ],
+    )?;
+    Ok(version)
+}
+
+/// Whether an edit to `key` is held for the reader's choice (`hold_local`).
+pub fn held(conn: &Connection, lib: &Library, key: &Key) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2 AND applied = -3",
+            params![lib.id.to_string(), key.as_str()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
 /// The local versions waiting to be published (SY7), oldest key first.
+/// Whether a body is kept here.
+pub fn has_body(conn: &Connection, hash: &Hash32) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sync_bodies WHERE hash = ?1",
+            [hash.to_string()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// Deletes a body no version names any more (`sync_versions_body`, migration 7).
+pub fn drop_body_if_unnamed(conn: &Connection, hash: &Hash32) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_bodies WHERE hash = ?1 AND NOT EXISTS
+         (SELECT 1 FROM sync_versions WHERE json_extract(raw, '$.body.hash') = ?1)",
+        [hash.to_string()],
+    )?;
+    Ok(())
+}
+
+/// SY28: this device's unsent versions of one key are dropped, held or not: a later
+/// local value, over its limit, replaced them and stays on this device.
+pub fn drop_unsent(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
+    let hashes: Vec<String> = conn
+        .prepare(
+            "SELECT json_extract(raw, '$.body.hash') FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND seq IS NULL AND json_extract(raw, '$.body.hash') IS NOT NULL",
+        )?
+        .query_map(params![lib.id.to_string(), key.as_str()], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    conn.execute(
+        "DELETE FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    for h in hashes.iter().filter_map(|h| Hash32::parse(h)) {
+        drop_body_if_unnamed(conn, &h)?;
+    }
+    Ok(())
+}
+
+/// This device's unsent version of one key, if any (not one held, #109).
+pub fn unsent_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Version>> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND seq IS NULL AND applied != -3",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    raw.map(|r| check(&r, lib.device)).transpose()
+}
+
 pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
     let mut stmt = conn.prepare(
-        "SELECT raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid",
+        "SELECT raw FROM sync_versions
+         WHERE library = ?1 AND seq IS NULL AND applied != -3 ORDER BY rowid",
     )?;
     let rows = stmt.query_map([lib.id.to_string()], |r| r.get::<_, String>(0))?;
     rows.map(|raw| check(&raw?, lib.device)).collect()
@@ -474,7 +626,7 @@ pub fn take_unsent(
     let tx = conn.unchecked_transaction()?;
     let journalled = tx
         .query_row(
-            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL",
             params![lib.id.to_string(), lib.device.to_string()],
             |r| r.get::<_, Option<i64>>(0),
         )?
@@ -509,7 +661,8 @@ pub fn take_unsent(
     }
     let seq = last_seq + 1;
     tx.execute(
-        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL",
+        // Exactly the rows `unsent` chose: never an edit held for the reader (#109).
+        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL AND applied != -3",
         params![lib.id.to_string(), seq as i64],
     )?;
     tx.commit()?;

@@ -210,6 +210,20 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device, hash)
     );
     "#,
+    // 7: SY28: versions found by the body they name, so a body is kept or dropped
+    // with one indexed look-up, not a scan of the journal
+    // and the devices this one has stopped receiving from
+    r#"
+    CREATE INDEX sync_versions_body ON sync_versions(json_extract(raw, '$.body.hash'));
+
+    CREATE TABLE sync_stopped (             -- SY28: until the reader's Remove (Stage 3)
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (library, device)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -218,6 +232,8 @@ pub enum StoreError {
     Sqlite(#[from] rusqlite::Error),
     #[error("database schema version {0} is newer than this app ({1})")]
     TooNew(i64, i64),
+    #[error(transparent)]
+    Sync(#[from] crate::sync::journal::JournalError),
 }
 
 pub type Result<T> = std::result::Result<T, StoreError>;
@@ -283,6 +299,40 @@ pub struct DictionaryRow {
     pub resources: i64,
     pub added_at: i64,
     pub updated_at: i64,
+}
+
+/// One annotation row, and whether it is marked deleted.
+pub(crate) fn annotation_row(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<(AnnotationRow, bool)>> {
+    conn
+        .query_row(
+            "SELECT id, book_id, anchored_content_hash, color, cfi_range, quote_exact, quote_prefix,
+                    quote_suffix, note, created_at, updated_at, anchor_status, deleted_at IS NOT NULL
+             FROM annotations WHERE id = ?1",
+            [id],
+            |r| {
+                Ok((
+                    AnnotationRow {
+                        id: r.get(0)?,
+                        book_id: r.get(1)?,
+                        anchored_content_hash: r.get(2)?,
+                        color: r.get(3)?,
+                        cfi_range: r.get(4)?,
+                        quote_exact: r.get(5)?,
+                        quote_prefix: r.get(6)?,
+                        quote_suffix: r.get(7)?,
+                        note: r.get(8)?,
+                        created_at: r.get(9)?,
+                        updated_at: r.get(10)?,
+                        anchor_status: r.get(11)?,
+                    },
+                    r.get(12)?,
+                ))
+            },
+        )
+        .optional()
 }
 
 pub fn now_ms() -> i64 {
@@ -421,6 +471,15 @@ impl Store {
             "UPDATE books SET opened_at = ?2 WHERE id = ?1",
             params![book_id, now_ms()],
         )?;
+        // SY7, SY12: journalled with the write, when a library is joined.
+        crate::sync::local::on_position(
+            &tx,
+            book_id,
+            cfi,
+            fraction,
+            chapter_label,
+            now_ms() as u64,
+        )?;
         tx.commit()?;
         Ok(())
     }
@@ -492,11 +551,15 @@ impl Store {
 
     /// Insert or update an annotation; saving a deleted one restores it (Undo, A7).
     pub fn save_annotation(&mut self, a: &AnnotationRow) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let before = annotation_row(&tx, &a.id)?;
+        tx.execute(
             "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                  quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12)
-             ON CONFLICT(id) DO UPDATE SET anchored_content_hash = excluded.anchored_content_hash,
+             ON CONFLICT(id) DO UPDATE SET book_id = excluded.book_id,
+                 created_at = excluded.created_at,
+                 anchored_content_hash = excluded.anchored_content_hash,
                  color = excluded.color, cfi_range = excluded.cfi_range,
                  quote_exact = excluded.quote_exact, quote_prefix = excluded.quote_prefix,
                  quote_suffix = excluded.quote_suffix, note = excluded.note,
@@ -517,23 +580,40 @@ impl Store {
                 a.anchor_status
             ],
         )?;
+        // SY7, SY13: a deleted row brought back by a save counts as new.
+        let before = before.filter(|(_, deleted)| !deleted).map(|(row, _)| row);
+        crate::sync::local::on_annotation(&tx, before.as_ref(), a, now_ms() as u64)?;
+        tx.commit()?;
         Ok(())
     }
 
     /// A7: delete at once; the row stays (marked deleted) so Undo can restore it exactly.
     pub fn delete_annotation(&mut self, id: &str) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let before = annotation_row(&tx, id)?;
+        tx.execute(
             "UPDATE annotations SET deleted_at = ?2 WHERE id = ?1",
             params![id, now_ms()],
         )?;
+        if let Some((row, false)) = before {
+            crate::sync::local::on_annotation_deleted(&tx, &row, now_ms() as u64)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
+    /// A7's Undo; SY19: the restored highlight comes back on every device.
     pub fn restore_annotation(&mut self, id: &str) -> Result<()> {
-        self.conn.execute(
+        let tx = self.conn.transaction()?;
+        let before = annotation_row(&tx, id)?;
+        tx.execute(
             "UPDATE annotations SET deleted_at = NULL WHERE id = ?1",
             [id],
         )?;
+        if let Some((row, true)) = before {
+            crate::sync::local::on_annotation_restored(&tx, &row, now_ms() as u64)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
