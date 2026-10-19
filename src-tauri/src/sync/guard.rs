@@ -43,7 +43,8 @@ pub struct Counts {
     pub added: i64,
     pub changed: i64,
     pub place_books: i64,
-    /// The most bytes of highlights and notes added to one book.
+    /// The most bytes of highlights and notes added to one book (rewrites count
+    /// what they grow by).
     pub book_bytes: i64,
 }
 
@@ -192,7 +193,8 @@ fn counts(conn: &Connection, lib: &Library, since: i64) -> Result<Counts> {
     )?;
     let book_bytes: Option<i64> = conn.query_row(
         "SELECT MAX(n) FROM (SELECT SUM(bytes) AS n FROM sync_counted
-         WHERE library = ?1 AND at > ?2 AND approved = 0 AND kind = 'notes' AND what = 'added'
+         WHERE library = ?1 AND at > ?2 AND approved = 0 AND kind = 'notes'
+           AND what IN ('added', 'changed')
          GROUP BY book)",
         params![id, since],
         |r| r.get(0),
@@ -504,10 +506,11 @@ pub(crate) fn applied(
             return Ok(());
         }
     }
-    let bytes = if what == "added" {
-        after.map_or(0, |a| a.len() as i64)
-    } else {
-        0
+    // Bytes a record brings: all of an added one, what a rewrite grows by.
+    let bytes = match (what, &before, &after) {
+        ("added", _, Some(a)) => a.len() as i64,
+        ("changed", Some(b), Some(a)) => (a.len() as i64 - b.len() as i64).max(0),
+        _ => 0,
     };
     // A deleted highlight hides its note with it, whether or not a note tombstone
     // comes too: the note counts with the highlight, and a note tombstone for a
@@ -1808,6 +1811,49 @@ mod tests {
         receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
         answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
         assert!(!crate::sync::apply::receive_body(b.conn(), &lb, &late).unwrap());
+    }
+
+    #[test]
+    fn notes_rewritten_larger_count_their_growth() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let mut h = highlight("book-a", Some(&"x".repeat(100 * 1024)), 1_760_000_002_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        a.save_annotation(&h).unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        let grown = counts(b.conn(), &lb, now).unwrap().book_bytes;
+        assert!(grown > 100 * 1024 - 100, "{grown}");
+    }
+
+    #[test]
+    fn a_restored_highlight_keeps_the_readers_unsent_note() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // B's reader edits the note (not sent yet); A's unpaired deletion hides it,
+        // then A's restore arrives without a note version.
+        let mut mine = highlight("book-b", Some("B's newest"), 1_760_000_002_000);
+        mine.id = ids[0].clone();
+        mine.quote_exact = "q0".into();
+        b.save_annotation(&mine).unwrap();
+        let mut gone = delete(&mut a, &la, &ids);
+        gone.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("B's newest"));
     }
 
     #[test]

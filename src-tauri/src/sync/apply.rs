@@ -998,6 +998,26 @@ fn shown_note(conn: &Connection, lib: &Library, id: &str) -> Result<Option<Strin
     let Some((key, _)) = Key::parse(&format!("note:{id}")) else {
         return Ok(None);
     };
+    // The reader's own edit not yet sent (or held for a choice) is the newest.
+    let local: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(Ok(Checked::Version(v))) = local
+        .as_deref()
+        .and_then(|r| serde_json::from_str::<Value>(r).ok())
+        .map(|v| check_version(v, lib.device))
+    {
+        return Ok(match &v.content {
+            Content::Body { hash, .. } => journal::body(conn, hash)?
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .and_then(|b| b["text"].as_str().map(str::to_owned)),
+            _ => None,
+        });
+    }
     let record = journal::record_of(conn, lib, &key, Which::Applied)?;
     let shown = match record.outcome(&HashSet::new()) {
         Some(Outcome::Settled(p)) => p,
