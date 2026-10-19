@@ -133,6 +133,10 @@ pub const PENDING_BYTES: i64 = 256 * 1024 * 1024;
 pub const PENDING_BYTES: i64 = 1024 * 1024;
 
 fn pending_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
+    Ok(pending_used(conn, lib, device)? > PENDING_BYTES)
+}
+
+fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i64> {
     let held: Option<i64> = conn.query_row(
         "SELECT SUM(length(v.raw) + COALESCE(length(b.body), 0))
          FROM sync_versions v
@@ -141,7 +145,45 @@ fn pending_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bo
         params![lib.id.to_string(), device.to_string()],
         |r| r.get(0),
     )?;
-    Ok(held.unwrap_or(0) > PENDING_BYTES)
+    Ok(held.unwrap_or(0))
+}
+
+/// SY28: a body that arrives after the versions naming it (fetched on its own,
+/// Stage 2). It is kept only if a version still waiting names it at its size, and
+/// only while every such version's device has room for it: in the pending budget
+/// for a version pending, in the set-aside budget for one waiting for its ancestry
+/// or a clock ahead. `false` when it isn't kept. Applying it is `apply_pending`'s.
+pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
+    let hash = identity_hash(bytes);
+    let len = bytes.len() as i64;
+    let waiting: Vec<(String, i64)> = conn
+        .prepare(
+            "SELECT DISTINCT device, applied FROM sync_versions
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+               AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3",
+        )?
+        .query_map(params![lib.id.to_string(), hash.to_string(), len], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    if waiting.is_empty() || journal::body(conn, &hash)?.is_some() {
+        return Ok(false);
+    }
+    for (device, state) in &waiting {
+        let Some(device) = super::ids::Id16::parse(device) else {
+            return Ok(false);
+        };
+        let full = if *state == 0 {
+            pending_used(conn, lib, device)? + len > PENDING_BYTES
+        } else {
+            aside_full(conn, lib, device, 0, len)?
+        };
+        if full {
+            return Ok(false);
+        }
+    }
+    journal::put_body(conn, bytes)?;
+    Ok(true)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -1531,6 +1573,7 @@ mod tests {
         }
         let bodies = std::mem::take(&mut batch.bodies);
         receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        // Stored directly: `receive_body` would refuse it for its size already.
         for body in &bodies {
             journal::put_body(b.conn(), body).unwrap();
         }
@@ -1617,6 +1660,8 @@ mod tests {
             bodies: vec![],
         };
         receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        // Stored directly (as a body another version also names would be): the
+        // tests' pending budget is too small for `receive_body` to take 4 MB.
         for body in &bodies {
             journal::put_body(b.conn(), body).unwrap();
         }
@@ -1679,6 +1724,40 @@ mod tests {
         let record = journal::record_of(a.conn(), &la, &key, Which::All).unwrap();
         assert_eq!(record.versions().count(), 1, "only the head is loaded");
         assert_eq!(a.position("book-a").unwrap().unwrap().0, "epubcfi(/6/60)");
+    }
+
+    #[test]
+    fn a_late_body_is_kept_only_within_its_devices_budget() {
+        // Two notes waiting for a highlight that never comes; the tests' pending
+        // budget is 1 MB, so the first 600 KB body is kept and the second isn't.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let mut versions = Vec::new();
+        let mut bodies = Vec::new();
+        for i in 0..2u8 {
+            let text = format!(r#"{{"text":"{i}{}"}}"#, "x".repeat(600 * 1024)).into_bytes();
+            versions.push(serde_json::json!({
+                "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                "device": other.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+            }));
+            bodies.push(text);
+        }
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        assert!(!receive_body(b.conn(), &lb, b"{\"text\":\"unnamed\"}").unwrap());
+        assert!(receive_body(b.conn(), &lb, &bodies[0]).unwrap());
+        assert!(
+            !receive_body(b.conn(), &lb, &bodies[1]).unwrap(),
+            "over the pending budget"
+        );
+        assert!(pending_used(b.conn(), &lb, other).unwrap() <= PENDING_BYTES);
     }
 
     #[test]
