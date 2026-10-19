@@ -12,7 +12,7 @@
 //! Stage 3 and Stage 1b.3's backups.
 
 use super::apply::{self, Tally};
-use super::ids::DeviceId;
+use super::ids::{DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, LocalContent, Which};
 use super::merge::{Outcome, Placed};
 use super::record::{Content, Key, Kind};
@@ -71,6 +71,7 @@ struct Question {
     approved: bool,
     device: Option<String>,
     seq: Option<i64>,
+    hash: Option<String>,
     answered_at: Option<i64>,
     totals_asked_at: Option<i64>,
 }
@@ -78,7 +79,7 @@ struct Question {
 fn question(conn: &Connection, lib: &Library) -> Result<Option<Question>> {
     Ok(conn
         .query_row(
-            "SELECT asking, approved, device, seq, answered_at, totals_asked_at
+            "SELECT asking, approved, device, seq, answered_at, totals_asked_at, hash
              FROM sync_question WHERE library = ?1",
             [lib.id.to_string()],
             |r| {
@@ -89,6 +90,7 @@ fn question(conn: &Connection, lib: &Library) -> Result<Option<Question>> {
                     seq: r.get(3)?,
                     answered_at: r.get(4)?,
                     totals_asked_at: r.get(5)?,
+                    hash: r.get(6)?,
                 })
             },
         )
@@ -132,12 +134,25 @@ pub(crate) enum Gate {
     Approved,
 }
 
-/// Whether a change from `from` (a device's change, or `None` for a pass over
-/// pending versions) may be applied now.
+/// A version, as an approval names it: its writer, sequence and key.
+pub(crate) type VersionId = (String, u64, String);
+
+pub(crate) fn version_id(p: &Placed) -> VersionId {
+    (
+        p.version.device.to_string(),
+        p.seq,
+        p.version.key.as_str().to_owned(),
+    )
+}
+
+/// Whether a change from `from` (a device's change, by device, sequence and hash,
+/// or `None` for a pass over pending versions) may be applied now. An approval is
+/// for the change the reader was shown: another change at the same sequence (a
+/// different hash) isn't covered.
 pub(crate) fn gate(
     conn: &Connection,
     lib: &Library,
-    from: Option<(DeviceId, u64)>,
+    from: Option<(DeviceId, u64, Hash32)>,
 ) -> Result<Gate> {
     let Some(q) = question(conn, lib)? else {
         return Ok(Gate::Open);
@@ -146,8 +161,10 @@ pub(crate) fn gate(
         return Ok(Gate::Open);
     }
     let same = match from {
-        Some((d, s)) => {
-            q.device.as_deref() == Some(d.to_string().as_str()) && q.seq == Some(s as i64)
+        Some((d, s, h)) => {
+            q.device.as_deref() == Some(d.to_string().as_str())
+                && q.seq == Some(s as i64)
+                && q.hash.as_deref() == Some(h.to_string().as_str())
         }
         None => q.device.is_none(),
     };
@@ -210,57 +227,54 @@ pub(crate) fn over(
     Ok((weekly && total.over()).then_some((total, true)))
 }
 
-/// SY26: the question is open; `from` is the change that waits for it, or for a
-/// pass over pending versions, `keys` are the records it would have applied: an
-/// approval lets through those and no others.
+/// SY26: the question is open. `from` is the change that waits for it (`None` for
+/// a pass over pending versions), and `versions` are the versions that would have
+/// been applied and were counted: an approval lets through those and no others.
 pub(crate) fn ask(
     conn: &Connection,
     lib: &Library,
-    from: Option<(DeviceId, u64)>,
-    keys: &[Key],
+    from: Option<(DeviceId, u64, Hash32)>,
+    versions: &[VersionId],
     counts: &Counts,
     totals: bool,
     now_ms: i64,
 ) -> Result<()> {
     let counts = serde_json::to_string(counts).expect("counts serialize");
-    let keys = serde_json::to_string(&keys.iter().map(Key::as_str).collect::<Vec<_>>())
-        .expect("keys serialize");
+    let versions = serde_json::to_string(versions).expect("versions serialize");
     conn.execute(
-        "INSERT INTO sync_question (library, asking, approved, asked_at, device, seq, counts, totals_asked_at, keys)
-         VALUES (?1, 1, 0, ?2, ?3, ?4, ?5, CASE WHEN ?6 THEN ?2 END, ?7)
+        "INSERT INTO sync_question
+             (library, asking, approved, asked_at, device, seq, hash, counts, totals_asked_at, versions)
+         VALUES (?1, 1, 0, ?2, ?3, ?4, ?5, ?6, CASE WHEN ?7 THEN ?2 END, ?8)
          ON CONFLICT(library) DO UPDATE SET asking = 1, approved = 0, asked_at = ?2, device = ?3,
-             seq = ?4, counts = ?5,
-             totals_asked_at = CASE WHEN ?6 THEN ?2 ELSE totals_asked_at END, keys = ?7",
+             seq = ?4, hash = ?5, counts = ?6,
+             totals_asked_at = CASE WHEN ?7 THEN ?2 ELSE totals_asked_at END, versions = ?8",
         params![
             lib.id.to_string(),
             now_ms,
-            from.map(|(d, _)| d.to_string()),
-            from.map(|(_, s)| s as i64),
+            from.map(|(d, _, _)| d.to_string()),
+            from.map(|(_, s, _)| s as i64),
+            from.map(|(_, _, h)| h.to_string()),
             counts,
             totals,
-            keys
+            versions
         ],
     )?;
     Ok(())
 }
 
-/// The records an approved pass over pending versions may apply.
-pub(crate) fn approved_keys(conn: &Connection, lib: &Library) -> Result<Vec<Key>> {
-    let keys: Option<Option<String>> = conn
+/// The versions the open question counted, which an approval lets through.
+pub(crate) fn approved_versions(conn: &Connection, lib: &Library) -> Result<HashSet<VersionId>> {
+    let versions: Option<Option<String>> = conn
         .query_row(
-            "SELECT keys FROM sync_question WHERE library = ?1",
+            "SELECT versions FROM sync_question WHERE library = ?1",
             [lib.id.to_string()],
             |r| r.get(0),
         )
         .optional()?;
-    let keys: Vec<String> = keys
+    Ok(versions
         .flatten()
-        .and_then(|k| serde_json::from_str(&k).ok())
-        .unwrap_or_default();
-    Ok(keys
-        .iter()
-        .filter_map(|k| Key::parse(k).map(|(k, _)| k))
-        .collect())
+        .and_then(|v| serde_json::from_str(&v).ok())
+        .unwrap_or_default())
 }
 
 /// The change the reader let through has been applied: the question is closed.
@@ -360,11 +374,32 @@ pub(crate) fn applied(
         Content::Body { hash, .. } => journal::body(conn, hash)?,
         _ => None,
     };
+    let since = question(conn, lib)?
+        .and_then(|q| q.answered_at)
+        .unwrap_or(0);
     let what = match (&before, &after) {
         (None, Some(_)) => "added",
         (Some(_), None) => "deleted",
         (Some(b), Some(a)) if b != a => "changed",
-        _ => return Ok(()),
+        _ => {
+            // The same content from another version: nothing to count, but the
+            // record's entry moves on to it, so Stop syncing still knows it.
+            if !approved {
+                conn.execute(
+                    "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5
+                     WHERE library = ?1 AND key = ?2 AND at > ?6",
+                    params![
+                        lib.id.to_string(),
+                        p.version.key.as_str(),
+                        p.version.device.to_string(),
+                        p.seq as i64,
+                        p.version.hash.to_string(),
+                        since
+                    ],
+                )?;
+            }
+            return Ok(());
+        }
     };
     let subject = p.version.key.as_str().split(':').nth(1).unwrap_or_default();
     let (kind, book): (&str, Option<String>) = match p.version.kind {
@@ -386,11 +421,13 @@ pub(crate) fn applied(
     // change (kept), and the last change (moved on). So the journal holds what Stop
     // syncing needs however long the counting runs, bounded by the records changed.
     // What the reader let through is kept as of the answer, outside the window Stop
-    // syncing puts back.
-    let since = question(conn, lib)?
-        .and_then(|q| q.answered_at)
-        .unwrap_or(0);
-    let at = if approved { since } else { now_ms };
+    // syncing puts back; anything else strictly after it, even in the same
+    // millisecond.
+    let at = if approved {
+        since
+    } else {
+        now_ms.max(since + 1)
+    };
     let moved = if approved {
         0
     } else {
@@ -403,7 +440,7 @@ pub(crate) fn applied(
                 p.version.device.to_string(),
                 p.seq as i64,
                 p.version.hash.to_string(),
-                now_ms,
+                at,
                 since
             ],
         )?
@@ -446,15 +483,7 @@ pub(crate) fn applied(
     conn.execute(
         "INSERT INTO sync_counted (library, at, what, kind, book, bytes, approved)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            lib.id.to_string(),
-            now_ms,
-            what,
-            kind,
-            book,
-            bytes,
-            approved
-        ],
+        params![lib.id.to_string(), at, what, kind, book, bytes, approved],
     )?;
     Ok(())
 }
@@ -555,6 +584,7 @@ mod tests {
     use crate::store::Store;
     use crate::sync::apply::tests::{device, highlight, publish_next, ANNO};
     use crate::sync::apply::{apply_pending, receive, Batch, Received};
+    use crate::sync::ids::Id16;
 
     const HOUR: i64 = 60 * 60 * 1000;
 
@@ -1054,38 +1084,16 @@ mod tests {
 
     #[test]
     fn what_resolves_with_an_approved_change_is_counted() {
+        let (b, lb, a2, _) = resolving_on_retry(1);
         let now = crate::store::now_ms();
-        let (mut a, la) = device(1, "book-a");
-        let (b, lb) = device(2, "book-b");
-        let (mut c, lc) = device(3, "book-c");
-        let ids = highlights(&mut a, "book-a", 31);
-        let a1 = publish_next(a.conn(), &la).unwrap().unwrap();
-        let_through(&b, &lb, &a1, now);
-        let_through(&c, &lc, &a1, now);
-        b.conn()
-            .execute("UPDATE sync_question SET answered_at = ?1", [now])
-            .unwrap();
-        // A deletes 30 (past 50 records) and rewrites the last one's note.
-        let mut h = highlight("book-a", Some("A's"), 1_760_000_002_000);
-        h.id = ids[30].clone();
-        h.quote_exact = "q30".into();
-        a.save_annotation(&h).unwrap();
-        let a2 = delete(&mut a, &la, &ids[..30]);
-        let_through(&c, &lc, &a2, now);
-        // C rewrites that note after A: at B it waits for A's change.
-        let mut h = highlight("book-c", Some("C's"), 1_760_000_003_000);
-        h.id = ids[30].clone();
-        h.quote_exact = "q30".into();
-        c.save_annotation(&h).unwrap();
-        let c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
-        receive(b.conn(), &lb, &c1, now + HOUR).unwrap();
         assert_eq!(
             receive(b.conn(), &lb, &a2, now + HOUR).unwrap(),
             Received::Asks
         );
         answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        // Two days on, C's note is due and resolves with A's change.
         assert!(matches!(
-            receive(b.conn(), &lb, &a2, now + 2 * HOUR).unwrap(),
+            receive(b.conn(), &lb, &a2, now + 2 * DAY_MS).unwrap(),
             Received::Applied { .. }
         ));
         let counted: i64 = b
@@ -1098,8 +1106,154 @@ mod tests {
             .unwrap();
         assert_eq!(
             counted, 1,
-            "C's note, which resolved with A's change, is counted"
+            "C's note wasn't in the question, so it is counted"
         );
+    }
+
+    #[test]
+    fn a_second_question_lets_through_what_resolved_on_the_retry() {
+        let (b, lb, a2, ids) = resolving_on_retry(51);
+        let now = crate::store::now_ms();
+        assert_eq!(
+            receive(b.conn(), &lb, &a2, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        // C's 51 rewrites resolve on the retry: past 50, asked again.
+        let later = now + 2 * DAY_MS;
+        assert_eq!(receive(b.conn(), &lb, &a2, later).unwrap(), Received::Asks);
+        assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.changed), Some(51));
+        answer(b.conn(), &lb, Answer::Apply, later).unwrap();
+        assert!(matches!(
+            receive(b.conn(), &lb, &a2, later + 1).unwrap(),
+            Received::Applied { .. }
+        ));
+        let rows = b.annotations("book-b").unwrap();
+        let rewritten = rows
+            .iter()
+            .filter(|r| ids.contains(&r.id) && r.note.as_deref() == Some("C's"))
+            .count();
+        assert_eq!(rewritten, 51);
+    }
+
+    /// A's 30 deletions (past 50 records) reach B after C's rewrite of `n` other
+    /// notes, written more than a day ahead, which descend from A's change: those
+    /// resolve only once both A's change is applied and their clock is due.
+    /// Returns B, A's change and the rewritten highlights.
+    fn resolving_on_retry(n: usize) -> (Store, Library, Batch, Vec<String>) {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        let ids = highlights(&mut a, "book-a", 30 + n);
+        let a1 = publish_next(a.conn(), &la).unwrap().unwrap();
+        let_through(&b, &lb, &a1, now);
+        let_through(&c, &lc, &a1, now);
+        b.conn()
+            .execute("UPDATE sync_question SET answered_at = ?1", [now])
+            .unwrap();
+        // A also touches the notes C will rewrite, so C's rewrites descend from A's
+        // change.
+        for (i, id) in ids[30..].iter().enumerate() {
+            let mut h = highlight("book-a", Some(&format!("A's {i}")), 1_760_000_002_000);
+            h.id = id.clone();
+            h.quote_exact = format!("q{}", 30 + i);
+            a.save_annotation(&h).unwrap();
+        }
+        let a2 = delete(&mut a, &la, &ids[..30]);
+        let_through(&c, &lc, &a2, now);
+        for (i, id) in ids[30..].iter().enumerate() {
+            let mut h = highlight("book-c", Some("C's"), 1_760_000_003_000);
+            h.id = id.clone();
+            h.quote_exact = format!("q{}", 30 + i);
+            c.save_annotation(&h).unwrap();
+        }
+        let mut c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        for v in &mut c1.versions {
+            v["clock"] = serde_json::json!([now as u64 + 30 * HOUR as u64, 0]);
+        }
+        receive(b.conn(), &lb, &c1, now + HOUR).unwrap();
+        let mut rewritten = ids[30..].to_vec();
+        rewritten.sort();
+        (b, lb, a2, rewritten)
+    }
+
+    #[test]
+    fn an_approval_is_for_the_change_the_reader_was_shown() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(30, now);
+        let batch = delete(&mut a, &la, &ids);
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        // Another change at the same sequence isn't covered by the approval.
+        let mut other = batch.clone();
+        other.hash = super::super::ids::Hash32([0xee; 32]);
+        assert_eq!(
+            receive(b.conn(), &lb, &other, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap(),
+            Received::Applied { .. }
+        ));
+    }
+
+    #[test]
+    fn a_change_in_the_answers_millisecond_is_in_the_new_window() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(10, now);
+        // Applied in the same millisecond as the last answer.
+        let batch = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &batch, now).unwrap();
+        assert!(b.annotations("book-b").unwrap().is_empty());
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 1).unwrap();
+        assert_eq!(b.annotations("book-b").unwrap().len(), 10, "put back");
+    }
+
+    #[test]
+    fn stop_syncing_follows_a_later_version_of_the_same_content() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let a2 = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &a2, now + HOUR).unwrap();
+        // C deletes the note again, after A: the same content (a tombstone).
+        let c = Id16([3; 16]);
+        let key = format!("note:{}", ids[0]);
+        let (raw, hash): (String, String) = b
+            .conn()
+            .query_row(
+                "SELECT raw, hash FROM sync_versions
+                 WHERE key = ?1 AND device = ?2 AND json_extract(raw, '$.deleted') IS NOT NULL",
+                params![key, la.device.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let seq: i64 = b
+            .conn()
+            .query_row(
+                "SELECT seq FROM sync_versions WHERE key = ?1 AND hash = ?2",
+                params![key, hash],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        v["device"] = serde_json::json!(c.to_string());
+        v["clock"] = serde_json::json!([now as u64 + 60_000, 0]);
+        v["history"] = serde_json::json!([{ "d": la.device.to_string(), "s": seq, "h": hash }]);
+        let c1 = Batch {
+            device: c,
+            seq: 1,
+            hash: super::super::ids::Hash32([3; 32]),
+            versions: vec![v],
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &c1, now + 2 * HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("note 0"), "the note is put back");
     }
 
     #[test]

@@ -255,10 +255,11 @@ pub const MIGRATIONS: &[&str] = &[
         asked_at INTEGER,
         device TEXT,                        -- the change that waits (NULL: a pass of pending ones)
         seq INTEGER,
+        hash TEXT,
         counts TEXT,
         answered_at INTEGER,
         totals_asked_at INTEGER,
-        keys TEXT                           -- a pass's records the approval lets through
+        versions TEXT                       -- the versions counted, which an approval lets through
     );
     "#,
 ];

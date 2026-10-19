@@ -105,7 +105,10 @@ pub(crate) struct Tally {
     /// device and sequence), or a pass's records. Anything else applied with it is
     /// counted as usual.
     approved_change: Option<(DeviceId, u64)>,
-    approved_keys: HashSet<String>,
+    approved_versions: HashSet<guard::VersionId>,
+    /// SY26: the remote versions applied and counted in this pass, which a
+    /// question names so that an approval lets exactly them through.
+    applied: Vec<guard::VersionId>,
 }
 
 impl Tally {
@@ -579,7 +582,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     }
     // SY26: while the reader is asked, nothing more is applied but the change
     // they let through.
-    let gate = guard::gate(conn, lib, Some((batch.device, batch.seq)))?;
+    let gate = guard::gate(conn, lib, Some((batch.device, batch.seq, batch.hash)))?;
     if gate == guard::Gate::Asking {
         return Ok(Received::Asks);
     }
@@ -736,10 +739,11 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut applied = 0;
     // SY26: what the reader let through is this change's own versions, not what
     // resolves with it.
-    let mut budget = Tally {
-        approved_change: (gate == guard::Gate::Approved).then_some((batch.device, batch.seq)),
-        ..Tally::default()
-    };
+    let mut budget = Tally::default();
+    if gate == guard::Gate::Approved {
+        budget.approved_change = Some((batch.device, batch.seq));
+        budget.approved_versions = guard::approved_versions(&tx, lib)?;
+    }
     for k in keys {
         // SY28: once a body of this device's has been dropped the change is rolled
         // back (below), so nothing more of it is worth applying.
@@ -773,8 +777,8 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         guard::ask(
             conn,
             lib,
-            Some((batch.device, batch.seq)),
-            &[],
+            Some((batch.device, batch.seq, batch.hash)),
+            &budget.applied,
             &counts,
             totals,
             now_ms,
@@ -931,8 +935,18 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     }
     // SY26: an approved pass applies the records the reader was asked about, and
     // nothing that became ready since.
+    let approved = if gate == guard::Gate::Approved {
+        guard::approved_versions(conn, lib)?
+    } else {
+        HashSet::new()
+    };
     let mut keys: Vec<Key> = if gate == guard::Gate::Approved {
-        guard::approved_keys(conn, lib)?
+        let mut keys: Vec<Key> = approved
+            .iter()
+            .filter_map(|(_, _, k)| Key::parse(k).map(|(k, _)| k))
+            .collect();
+        keys.dedup_by(|a, b| a.as_str() == b.as_str());
+        keys
     } else {
         let tx = conn.unchecked_transaction()?;
         recheck_waiting(&tx, lib, now_ms)?;
@@ -946,17 +960,12 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
             .collect()
     };
     in_dependency_order(&mut keys);
-    let asked = keys.clone();
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
     // excluded (`Tally`), so this needs no check of its own.
     let mut aside = Tally {
-        approved_keys: if gate == guard::Gate::Approved {
-            keys.iter().map(|k| k.as_str().to_owned()).collect()
-        } else {
-            HashSet::new()
-        },
+        approved_versions: approved,
         ..Tally::default()
     };
     for key in keys {
@@ -972,7 +981,7 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     // SY26: as for a change received.
     if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
         drop(tx);
-        guard::ask(conn, lib, None, &asked, &counts, totals, now_ms)?;
+        guard::ask(conn, lib, None, &aside.applied, &counts, totals, now_ms)?;
         return Ok(0);
     }
     if gate == guard::Gate::Approved {
@@ -1485,9 +1494,11 @@ fn apply_key(
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
         if let Some(before) = before {
-            let approved = aside.approved_keys.contains(key.as_str())
+            let id = guard::version_id(winner);
+            let approved = aside.approved_versions.contains(&id)
                 || aside.approved_change == Some((winner.version.device, winner.seq));
             guard::applied(conn, lib, winner, before, approved, now_ms)?;
+            aside.applied.push(id);
         }
         true
     } else {
