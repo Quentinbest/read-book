@@ -1628,6 +1628,43 @@ mod tests {
     }
 
     #[test]
+    fn stop_syncing_brings_back_a_note_an_unpaired_deletion_hid() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let mut batch = delete(&mut a, &la, &ids);
+        batch.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        assert!(b.annotations("book-b").unwrap().is_empty());
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("note 0"));
+    }
+
+    #[test]
+    fn stop_syncing_clears_a_first_opening_from_elsewhere() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        let opened = || -> Option<i64> {
+            b.conn()
+                .query_row("SELECT opened_at FROM books WHERE id = 'book-b'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert!(opened().is_some());
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        assert_eq!(opened(), None, "never opened here");
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);
