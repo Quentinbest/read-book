@@ -480,11 +480,31 @@ pub(crate) fn applied(
     } else {
         0
     };
-    conn.execute(
-        "INSERT INTO sync_counted (library, at, what, kind, book, bytes, approved)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![lib.id.to_string(), at, what, kind, book, bytes, approved],
-    )?;
+    // A deleted highlight hides its note with it, whether or not a note tombstone
+    // comes too: the note counts with the highlight, and a note tombstone for a
+    // highlight already deleted isn't counted again.
+    let mut items = 1;
+    if what == "deleted" {
+        let row: Option<(Option<String>, bool)> = conn
+            .query_row(
+                "SELECT note, deleted_at IS NOT NULL FROM annotations WHERE id = ?1",
+                [subject],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        match (p.version.kind, row) {
+            (Kind::Annotation, Some((Some(note), _))) if !note.trim().is_empty() => items = 2,
+            (Kind::Note, Some((_, true))) => return Ok(()),
+            _ => {}
+        }
+    }
+    for _ in 0..items {
+        conn.execute(
+            "INSERT INTO sync_counted (library, at, what, kind, book, bytes, approved)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![lib.id.to_string(), at, what, kind, book, bytes, approved],
+        )?;
+    }
     Ok(())
 }
 
@@ -1318,6 +1338,24 @@ mod tests {
         let rows = b.annotations("book-b").unwrap();
         let first = rows.iter().find(|r| r.id == ids[0]).unwrap();
         assert_eq!(first.note.as_deref(), Some("note 0"), "put back");
+    }
+
+    #[test]
+    fn a_highlight_deleted_without_its_note_tombstone_counts_its_note() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(30, now);
+        let mut batch = delete(&mut a, &la, &ids);
+        // Only the highlights' tombstones: their notes are hidden all the same.
+        batch.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.deleted), Some(60));
     }
 
     #[test]
