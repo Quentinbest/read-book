@@ -164,7 +164,7 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     let conn = &*tx;
     let other_size: Vec<(String, String)> = conn
         .prepare(
-            "SELECT device, raw FROM sync_versions
+            "SELECT device, raw FROM sync_versions INDEXED BY sync_versions_body
              WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') != ?3",
         )?
@@ -195,7 +195,7 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     // count it once stored.
     let waiting: Vec<(String, i64, i64)> = conn
         .prepare(
-            "SELECT device, applied, COUNT(*) FROM sync_versions
+            "SELECT device, applied, COUNT(*) FROM sync_versions INDEXED BY sync_versions_body
              WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3
              GROUP BY device, applied",
@@ -588,6 +588,11 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut applied = 0;
     let mut budget = Tally::default();
     for k in keys {
+        // SY28: once a body of this device's has been dropped the change is rolled
+        // back (below), so nothing more of it is worth applying.
+        if budget.dropped.contains(&batch.device) {
+            break;
+        }
         if apply_key(&tx, lib, &k, now_ms, &mut budget)? {
             applied += 1;
         }
@@ -1164,9 +1169,14 @@ fn apply_key(
         }
     }
     // SY10: every head accepted here has been seen, shown or not, so a change made
-    // after it sorts after it.
+    // after it sorts after it; one whose body hasn't arrived only once it has, and
+    // proved good (above), so a version that is later excluded never moves the clock.
     for h in &heads {
-        if h.version.device != lib.device {
+        let body_here = match &h.version.content {
+            Content::Body { hash, .. } => journal::has_body(conn, hash)?,
+            _ => true,
+        };
+        if h.version.device != lib.device && body_here {
             journal::observe(conn, lib, h.version.clock, now_ms.max(0) as u64)?;
         }
     }
@@ -2186,6 +2196,37 @@ mod tests {
         send(&a, &la, &b, &lb).unwrap();
         assert!(b.annotations("book-b").unwrap().is_empty());
         assert_eq!(b.annotations("book-b2").unwrap().len(), 1);
+        // And on the device that moved it.
+        assert!(a.annotations("book-a").unwrap().is_empty());
+        assert_eq!(a.annotations("book-a2").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_head_without_its_body_doesnt_move_the_clock_on() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        let mut h = highlight("book-b", None, 1_760_000_002_000);
+        h.color = "blue".into();
+        b.save_annotation(&h).unwrap();
+        let mut from_b = publish_next(b.conn(), &lb).unwrap().unwrap();
+        let ahead = crate::store::now_ms() as u64 + 60 * 60 * 1000;
+        for v in &mut from_b.versions {
+            v["clock"] = serde_json::json!([ahead, 0]);
+        }
+        from_b.bodies.clear();
+        receive(a.conn(), &la, &from_b, crate::store::now_ms()).unwrap();
+        let ms: i64 = a
+            .conn()
+            .query_row("SELECT clock_ms FROM sync_libraries", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            (ms as u64) < ahead,
+            "seen only once its body is here and good"
+        );
     }
 
     #[test]

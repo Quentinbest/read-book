@@ -210,6 +210,11 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device, hash)
     );
     "#,
+    // 7: SY28: versions found by the body they name, so a body is kept or dropped
+    // with one indexed look-up, not a scan of the journal
+    r#"
+    CREATE INDEX sync_versions_body ON sync_versions(json_extract(raw, '$.body.hash'));
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
@@ -543,7 +548,8 @@ impl Store {
             "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                  quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12)
-             ON CONFLICT(id) DO UPDATE SET anchored_content_hash = excluded.anchored_content_hash,
+             ON CONFLICT(id) DO UPDATE SET book_id = excluded.book_id,
+                 anchored_content_hash = excluded.anchored_content_hash,
                  color = excluded.color, cfi_range = excluded.cfi_range,
                  quote_exact = excluded.quote_exact, quote_prefix = excluded.quote_prefix,
                  quote_suffix = excluded.quote_suffix, note = excluded.note,

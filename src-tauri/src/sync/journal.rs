@@ -542,7 +542,19 @@ pub fn held(conn: &Connection, lib: &Library, key: &Key) -> Result<bool> {
 }
 
 /// The local versions waiting to be published (SY7), oldest key first.
-/// Deletes a body no version names any more.
+/// Whether a body is kept here.
+pub fn has_body(conn: &Connection, hash: &Hash32) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sync_bodies WHERE hash = ?1",
+            [hash.to_string()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+/// Deletes a body no version names any more (`sync_versions_body`, migration 7).
 pub fn drop_body_if_unnamed(conn: &Connection, hash: &Hash32) -> Result<()> {
     conn.execute(
         "DELETE FROM sync_bodies WHERE hash = ?1 AND NOT EXISTS
