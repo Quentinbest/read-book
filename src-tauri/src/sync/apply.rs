@@ -234,13 +234,21 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         }
         room |= !full;
     }
+    // A device with no room for the body is past its budget, whether the body is
+    // kept for another or not: it is stopped (SY28), and its versions naming the
+    // body are taken out of merging first (`applied = -4`, still in its chain), so
+    // the body kept for another never applies them.
+    for device in &full_ones {
+        conn.execute(
+            "UPDATE sync_versions INDEXED BY sync_versions_body SET applied = -4
+             WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+               AND json_extract(raw, '$.body.hash') = ?3",
+            params![lib.id.to_string(), device.to_string(), hash.to_string()],
+        )?;
+        stop(conn, lib, *device, "budget", crate::store::now_ms())?;
+    }
     if room {
         journal::put_body(conn, bytes)?;
-    }
-    // A device with no room for the body is past its budget, whether the body is
-    // kept for another or not: it is stopped (SY28).
-    for device in full_ones {
-        stop(conn, lib, device, "budget", crate::store::now_ms())?;
     }
     for device in &tally.dropped {
         stop(
@@ -1151,7 +1159,8 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
-                         updated_at = excluded.updated_at, deleted_at = NULL, anchor_status = excluded.anchor_status",
+                         updated_at = MAX(updated_at, excluded.updated_at), deleted_at = NULL,
+                         anchor_status = excluded.anchor_status",
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
                         a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status],
                 )?;
@@ -2399,6 +2408,15 @@ mod tests {
             "C is past its budget: stopped"
         );
         assert!(!stopped(b.conn(), &lb, a).unwrap());
+        let pending: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE device = ?1 AND applied = 0",
+                [c.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 0, "C's versions don't take A's body");
     }
 
     #[test]
@@ -2593,6 +2611,24 @@ mod tests {
         send(&a, &la, &b, &lb).unwrap();
         assert_eq!(a.annotations("book-a").unwrap()[0].created_at, h.created_at);
         assert_eq!(b.annotations("book-b").unwrap()[0].created_at, h.created_at);
+    }
+
+    #[test]
+    fn a_highlight_edit_doesnt_take_back_a_newer_note_time() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let noted = b.annotations("book-b").unwrap()[0].updated_at;
+        // A highlight version stamped earlier than the note B already applied.
+        let mut h = highlight("book-a", Some("first"), 1_760_000_000_500);
+        h.color = "blue".into();
+        a.save_annotation(&h).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.color, "blue");
+        assert!(row.updated_at >= noted, "{} < {noted}", row.updated_at);
     }
 
     #[test]
