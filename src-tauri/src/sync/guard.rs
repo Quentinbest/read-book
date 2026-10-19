@@ -508,6 +508,17 @@ pub(crate) fn applied(
     Ok(())
 }
 
+/// SY26: the reader changed `key` on this device. What other devices changed of it
+/// before isn't put back by Stop syncing (the reader's edit stays), so its undo
+/// entry ends; a later remote change starts a new one, from the reader's edit.
+pub(crate) fn changed_here(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_undo WHERE library = ?1 AND key = ?2",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    Ok(())
+}
+
 /// SY26: the undo journal keeps a week, and everything since the last answer (the
 /// counting that hasn't been answered yet); what was counted is needed only since
 /// the last answer.
@@ -1356,6 +1367,67 @@ mod tests {
             Received::Asks
         );
         assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.deleted), Some(60));
+    }
+
+    #[test]
+    fn stop_syncing_keeps_an_edit_the_reader_made_after_a_remote_change() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // A rewrites the note; B's reader edits it and publishes.
+        let mut h = highlight("book-a", Some("A's"), 1_760_000_002_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        a.save_annotation(&h).unwrap();
+        let a2 = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &a2, now + HOUR).unwrap();
+        let mut mine = h.clone();
+        mine.book_id = "book-b".into();
+        mine.note = Some("mine".into());
+        b.save_annotation(&mine).unwrap();
+        let b1 = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &b1, now + 2 * HOUR).unwrap();
+        // A sends a version with the reader's very text, after it.
+        let key = format!("note:{}", ids[0]);
+        let (raw, b_seq, b_hash): (String, i64, String) = b
+            .conn()
+            .query_row(
+                "SELECT raw, seq, hash FROM sync_versions WHERE key = ?1 AND device = ?2 AND seq IS NOT NULL",
+                params![key, lb.device.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        let (a_seq, a_hash): (i64, String) = b
+            .conn()
+            .query_row(
+                "SELECT seq, hash FROM sync_versions WHERE key = ?1 AND device = ?2 ORDER BY seq DESC",
+                params![key, la.device.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let mut v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        v["device"] = serde_json::json!(la.device.to_string());
+        v["clock"] = serde_json::json!([now as u64 + 3 * HOUR as u64, 0]);
+        v["history"] = serde_json::json!([
+            { "d": la.device.to_string(), "s": a_seq, "h": a_hash },
+            { "d": lb.device.to_string(), "s": b_seq, "h": b_hash },
+        ]);
+        let body = journal::body(
+            b.conn(),
+            &super::super::ids::Hash32::parse(v["body"]["hash"].as_str().unwrap()).unwrap(),
+        )
+        .unwrap()
+        .unwrap();
+        let a3 = Batch {
+            device: la.device,
+            seq: a2.seq + 1,
+            hash: super::super::ids::Hash32([0xa3; 32]),
+            versions: vec![v],
+            bodies: vec![body],
+        };
+        receive(b.conn(), &lb, &a3, now + 3 * HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 4 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("mine"));
     }
 
     #[test]
