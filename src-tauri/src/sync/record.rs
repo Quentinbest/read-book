@@ -379,6 +379,8 @@ pub enum RecordError {
     WrongDevice,
     #[error("two history entries for one device")]
     DuplicateHistory,
+    #[error("names more devices than a library has")]
+    TooManyDevices,
     #[error("its change file holds another version of its key")]
     DuplicateKey,
     #[error("holds more than one of body, deleted and inline, or none")]
@@ -400,8 +402,16 @@ fn hash_field(v: &Value, name: &'static str) -> Result<Hash32, RecordError> {
         .ok_or(RecordError::Field(name))
 }
 
+/// SY2 (prov., item 106): a library has at most this many devices in a pass, so a
+/// version's `history` or a tombstone's `covers` names no more. PROVISIONAL: Stage
+/// 1c refuses entries for devices that aren't members.
+pub const MAX_DEVICES: usize = 32;
+
 fn entries(v: &Value, name: &'static str) -> Result<Vec<Entry>, RecordError> {
     let list = v.as_array().ok_or(RecordError::Field(name))?;
+    if list.len() > MAX_DEVICES {
+        return Err(RecordError::TooManyDevices);
+    }
     let mut seen = HashSet::new();
     let mut out = Vec::with_capacity(list.len());
     for e in list {
@@ -708,6 +718,22 @@ mod tests {
                 json!({ "history": [{ "d": E, "s": 1, "h": H }, { "d": E, "s": 2, "h": H }] })
             )),
             Err(RecordError::DuplicateHistory)
+        );
+        let many = |n: u8| -> Vec<Value> {
+            (1..=n)
+                .map(|i| json!({ "d": Id16([i; 16]).to_string(), "s": 1, "h": H }))
+                .collect()
+        };
+        assert!(check(note(json!({ "history": many(32) }))).is_ok());
+        assert_eq!(
+            check(note(json!({ "history": many(33) }))),
+            Err(RecordError::TooManyDevices)
+        );
+        assert_eq!(
+            check(note(
+                json!({ "body": null, "deleted": { "covers": many(33) } })
+            )),
+            Err(RecordError::TooManyDevices)
         );
         assert_eq!(
             check(note(json!({ "history": [{ "d": E, "s": 0, "h": H }] }))),

@@ -156,27 +156,30 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
     let hash = identity_hash(bytes);
     let len = bytes.len() as i64;
-    let waiting: Vec<(String, i64)> = conn
+    // Each version naming it is charged for it, as `pending_used` and `aside_used`
+    // count it once stored.
+    let waiting: Vec<(String, i64, i64)> = conn
         .prepare(
-            "SELECT DISTINCT device, applied FROM sync_versions
+            "SELECT device, applied, COUNT(*) FROM sync_versions
              WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
-               AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3",
+               AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3
+             GROUP BY device, applied",
         )?
         .query_map(params![lib.id.to_string(), hash.to_string(), len], |r| {
-            Ok((r.get(0)?, r.get(1)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         })?
         .collect::<std::result::Result<_, _>>()?;
     if waiting.is_empty() || journal::body(conn, &hash)?.is_some() {
         return Ok(false);
     }
-    for (device, state) in &waiting {
+    for (device, state, refs) in &waiting {
         let Some(device) = super::ids::Id16::parse(device) else {
             return Ok(false);
         };
         let full = if *state == 0 {
-            pending_used(conn, lib, device)? + len > PENDING_BYTES
+            pending_used(conn, lib, device)? + len * refs > PENDING_BYTES
         } else {
-            aside_full(conn, lib, device, 0, len)?
+            aside_full(conn, lib, device, 0, len * refs)?
         };
         if full {
             return Ok(false);
@@ -1724,6 +1727,32 @@ mod tests {
         let record = journal::record_of(a.conn(), &la, &key, Which::All).unwrap();
         assert_eq!(record.versions().count(), 1, "only the head is loaded");
         assert_eq!(a.position("book-a").unwrap().unwrap().0, "epubcfi(/6/60)");
+    }
+
+    #[test]
+    fn a_late_body_is_charged_for_every_version_naming_it() {
+        // Two notes, one 600 KB body: 1.2 MB pending, over the tests' 1 MB budget.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(600 * 1024)).into_bytes();
+        let versions = (0..2u16)
+            .map(|i| {
+                serde_json::json!({
+                    "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                    "device": other.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                    "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+                })
+            })
+            .collect();
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        assert!(!receive_body(b.conn(), &lb, &text).unwrap());
     }
 
     #[test]
