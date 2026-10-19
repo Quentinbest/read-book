@@ -315,15 +315,33 @@ pub fn answer(conn: &Connection, lib: &Library, answer: Answer, now_ms: i64) -> 
     Ok(put_back)
 }
 
-/// What the library shows of `key` before a remote version replaces it: its body,
-/// or `None` when it shows nothing (never there, or deleted). This device's unsent
-/// edit counts, at sequence `next`.
+/// A version shown: its writer and hash.
+pub(crate) type Shown = (DeviceId, Hash32);
+
+/// What the library shows of `key` before a remote version replaces it: the
+/// version shown (its writer and hash), and its body, or `None` when it shows
+/// nothing (never there, or deleted). This device's unsent edit counts, at
+/// sequence `next`. A change is a different version becoming the one shown,
+/// whether new or one that lost before and wins now.
 pub(crate) fn before(
     conn: &Connection,
     lib: &Library,
     key: &Key,
     next: u64,
-) -> Result<Option<Vec<u8>>> {
+) -> Result<(Option<Shown>, Option<Vec<u8>>)> {
+    let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
+    if let Some(v) = journal::unsent_of(conn, lib, key)? {
+        record.add(Placed {
+            version: v,
+            seq: next,
+        });
+    }
+    let shown = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => Some(p),
+        Some(Outcome::Conflict { shown, .. }) => Some(shown),
+        None => None,
+    };
+    let id = shown.map(|p| (p.version.device, p.version.hash));
     // Last opened and finished: what a version sets is a time (its clock), which
     // its body doesn't hold; they are compared by the library's time.
     if let Some(column) = stamp_column(key.kind()) {
@@ -338,24 +356,13 @@ pub(crate) fn before(
             )
             .optional()?
             .flatten();
-        return Ok(at.map(stamp));
+        return Ok((id, at.map(stamp)));
     }
-    let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
-    if let Some(v) = journal::unsent_of(conn, lib, key)? {
-        record.add(Placed {
-            version: v,
-            seq: next,
-        });
-    }
-    let shown = match record.outcome(&HashSet::new()) {
-        Some(Outcome::Settled(p)) => p,
-        Some(Outcome::Conflict { shown, .. }) => shown,
-        None => return Ok(None),
+    let body = match shown.map(|p| &p.version.content) {
+        Some(Content::Body { hash, .. }) => journal::body(conn, hash)?,
+        _ => None,
     };
-    match &shown.version.content {
-        Content::Body { hash, .. } => journal::body(conn, hash),
-        _ => Ok(None),
-    }
+    Ok((id, body))
 }
 
 /// The library's column for a reading state, which a version sets to its time.
@@ -373,24 +380,6 @@ fn stamp(at: i64) -> Vec<u8> {
 
 fn subject_of(key: &Key) -> &str {
     key.as_str().split(':').nth(1).unwrap_or_default()
-}
-
-/// Whether a remote version hasn't been applied here yet (so applying it is a
-/// change to count, not a repeat).
-pub(crate) fn fresh(conn: &Connection, lib: &Library, p: &Placed) -> Result<bool> {
-    let applied: Option<i64> = conn
-        .query_row(
-            "SELECT applied FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
-            params![
-                lib.id.to_string(),
-                p.version.device.to_string(),
-                p.seq as i64,
-                p.version.key.as_str()
-            ],
-            |r| r.get(0),
-        )
-        .optional()?;
-    Ok(applied == Some(0))
 }
 
 /// A remote version has just been applied over `before`: the undo journal keeps
@@ -1714,6 +1703,93 @@ mod tests {
             &Key::parse(&format!("note:{}", ids[0])).unwrap().0
         )
         .unwrap());
+    }
+
+    #[test]
+    fn a_losing_place_that_wins_later_is_counted() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        // A's place is shown at B; X's older place arrives and loses.
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let a2 = publish_next(a.conn(), &la).unwrap().unwrap();
+        let place =
+            |v: &serde_json::Value| v["key"].as_str().is_some_and(|k| k.starts_with("place:"));
+        let shown = a2.versions.iter().find(|v| place(v)).unwrap().clone();
+        let x = Id16([5; 16]);
+        let lost_body = br#"{"cfi":"epubcfi(/6/40)","fraction":0.9}"#.to_vec();
+        let mut lost = shown.clone();
+        lost["device"] = serde_json::json!(x.to_string());
+        lost["clock"] = serde_json::json!([1_000, 0]);
+        lost["history"] = serde_json::json!([]);
+        lost["body"] = serde_json::json!({
+            "hash": super::super::ids::identity_hash(&lost_body).to_string(), "size": lost_body.len()
+        });
+        let x1 = Batch {
+            device: x,
+            seq: 1,
+            hash: super::super::ids::Hash32([5; 32]),
+            versions: vec![lost.clone()],
+            bodies: vec![lost_body],
+        };
+        receive(b.conn(), &lb, &a2, now + HOUR).unwrap();
+        receive(b.conn(), &lb, &x1, now + HOUR).unwrap();
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/2)");
+        // A's place is then superseded by an older-clocked descendant: X's wins.
+        let mut tomb = shown.clone();
+        tomb["clock"] = serde_json::json!([500, 0]);
+        tomb["history"] = serde_json::json!([{
+            "d": la.device.to_string(), "s": a2.seq,
+            "h": crate::sync::record::version_hash(&shown).to_string(),
+        }]);
+        tomb.as_object_mut().unwrap().remove("body");
+        tomb["deleted"] = serde_json::json!({ "covers": [] });
+        let a3 = Batch {
+            device: la.device,
+            seq: a2.seq + 1,
+            hash: super::super::ids::Hash32([6; 32]),
+            versions: vec![tomb],
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &a3, now + 2 * HOUR).unwrap();
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/40)");
+        let undo: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_undo WHERE key LIKE 'place:%' AND device = ?1",
+                [x.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(undo, 1, "X's place, shown now, is journalled");
+    }
+
+    #[test]
+    fn a_highlight_restored_elsewhere_takes_the_note_the_library_shows() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        // A's highlight tombstone alone (its note record stays live), then a restore.
+        let mut gone = delete(&mut a, &la, &ids);
+        gone.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(
+            row.note.as_deref(),
+            Some("note 0"),
+            "the note record is still live"
+        );
     }
 
     #[test]

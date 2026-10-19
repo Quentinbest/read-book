@@ -991,6 +991,27 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     Ok(n)
 }
 
+/// The text of the note the library shows for highlight `id`, if it shows one: a
+/// highlight brought back over a deleted row takes it, not the text kept on the
+/// row (SY19: a note deleted on its own stays deleted).
+fn shown_note(conn: &Connection, lib: &Library, id: &str) -> Result<Option<String>> {
+    let Some((key, _)) = Key::parse(&format!("note:{id}")) else {
+        return Ok(None);
+    };
+    let record = journal::record_of(conn, lib, &key, Which::Applied)?;
+    let shown = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => p,
+        Some(Outcome::Conflict { shown, .. }) => shown,
+        None => return Ok(None),
+    };
+    let Content::Body { hash, .. } = &shown.version.content else {
+        return Ok(None);
+    };
+    Ok(journal::body(conn, hash)?
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|b| b["text"].as_str().map(str::to_owned)))
+}
+
 fn local_book(conn: &Connection, lib: &Library, sync_id: &str) -> Result<Option<String>> {
     Ok(conn
         .query_row(
@@ -1336,12 +1357,12 @@ pub(crate) fn write(
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
                          updated_at = MAX(updated_at, excluded.updated_at),
-                         note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN NULL ELSE note END,
+                         note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN ?13 ELSE note END,
                          deleted_at = NULL, anchor_status = excluded.anchor_status",
                     // SY26: Stop syncing restores the highlight with the note it hid.
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
                         a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status,
-                        aside.restoring],
+                        aside.restoring, shown_note(conn, lib, &a.id)?],
                 )?;
             }
             None => {
@@ -1496,8 +1517,9 @@ fn apply_key(
     }
     // SY26: what a remote version replaces is kept in the undo journal, and the
     // change counted, the first time it is applied.
-    let before = if winner.version.device != lib.device && guard::fresh(conn, lib, winner)? {
-        Some(guard::before(conn, lib, key, next)?)
+    let before = if winner.version.device != lib.device {
+        let (shown, body) = guard::before(conn, lib, key, next)?;
+        (shown != Some((winner.version.device, winner.version.hash))).then_some(body)
     } else {
         None
     };
