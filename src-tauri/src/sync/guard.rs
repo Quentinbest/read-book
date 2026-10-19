@@ -567,7 +567,9 @@ fn revert(conn: &Connection, lib: &Library, since: i64, now_ms: i64) -> Result<u
         };
         match journal::record_local(conn, lib, &key, content, now_ms.max(0) as u64) {
             Ok(v) => {
-                if apply::write(conn, lib, &v, &mut Tally::default())? {
+                let mut restoring = Tally::default();
+                restoring.restoring = true;
+                if apply::write(conn, lib, &v, &mut restoring)? {
                     n += 1;
                 }
             }
@@ -1254,6 +1256,68 @@ mod tests {
         answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.note.as_deref(), Some("note 0"), "the note is put back");
+    }
+
+    #[test]
+    fn what_in_an_approved_change_wasnt_counted_is_counted_on_the_retry() {
+        // One change of A's: 30 deletions ready, and 51 rewrites written more than a
+        // day ahead. The question counts the deletions only.
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(81, now);
+        for (i, id) in ids[30..].iter().enumerate() {
+            let mut h = highlight("book-a", Some("rewritten"), 1_760_000_002_000);
+            h.id = id.clone();
+            h.quote_exact = format!("q{}", 30 + i);
+            a.save_annotation(&h).unwrap();
+        }
+        let mut batch = delete(&mut a, &la, &ids[..30]);
+        for v in &mut batch.versions {
+            if v.get("body").is_some() {
+                v["clock"] = serde_json::json!([now as u64 + 30 * HOUR as u64, 0]);
+            }
+        }
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.changed), Some(0));
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        // Two days on, the rewrites are due: counted, so asked again.
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now + 2 * DAY_MS).unwrap(),
+            Received::Asks
+        );
+        assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.changed), Some(51));
+    }
+
+    #[test]
+    fn stop_syncing_puts_back_notes_whatever_the_book_holds_meanwhile() {
+        // Within the window: B's notes on one highlight deleted, another highlight's
+        // note grown near the book's cap; putting back the first isn't held back
+        // by the second, which is put back too.
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(2, now);
+        let mut big = highlight("book-a", Some(&"x".repeat(400 * 1024)), 1_760_000_002_000);
+        big.id = ids[1].clone();
+        big.quote_exact = "q1".into();
+        a.save_annotation(&big).unwrap();
+        let mut gone = highlight("book-a", None, 1_760_000_002_000);
+        gone.id = ids[0].clone();
+        gone.quote_exact = "q0".into();
+        a.save_annotation(&gone).unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        // Pretend the book is full, as other devices' content might make it.
+        b.conn()
+            .execute(
+                "UPDATE annotations SET quote_prefix = ?1 WHERE id = ?2",
+                params!["p".repeat(120 * 1024), ids[1]],
+            )
+            .unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        let rows = b.annotations("book-b").unwrap();
+        let first = rows.iter().find(|r| r.id == ids[0]).unwrap();
+        assert_eq!(first.note.as_deref(), Some("note 0"), "put back");
     }
 
     #[test]

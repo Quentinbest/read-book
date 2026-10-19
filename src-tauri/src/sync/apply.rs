@@ -101,10 +101,11 @@ pub(crate) struct Tally {
     dropped: HashSet<DeviceId>,
     /// SY28: each book's live highlights and notes, in bytes, once read.
     books: std::collections::HashMap<String, i64>,
-    /// SY26: what the reader let through, which isn't counted again: a change (its
-    /// device and sequence), or a pass's records. Anything else applied with it is
-    /// counted as usual.
-    approved_change: Option<(DeviceId, u64)>,
+    /// SY26: putting back the reader's own earlier state (Stop syncing), which
+    /// SY28's per-book cap on other devices' content doesn't hold back.
+    pub(crate) restoring: bool,
+    /// SY26: the versions the reader let through (those the question counted),
+    /// which aren't counted again. Anything else applied with them is.
     approved_versions: HashSet<guard::VersionId>,
     /// SY26: the remote versions applied and counted in this pass, which a
     /// question names so that an approval lets exactly them through.
@@ -741,7 +742,6 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     // resolves with it.
     let mut budget = Tally::default();
     if gate == guard::Gate::Approved {
-        budget.approved_change = Some((batch.device, batch.seq));
         budget.approved_versions = guard::approved_versions(&tx, lib)?;
     }
     for k in keys {
@@ -1057,9 +1057,10 @@ impl Tally {
         note: i64,
     ) -> Result<bool> {
         let old = Self::live_bytes(conn, book, id)?;
+        let restoring = self.restoring;
         let total = self.book_total(conn, book)?;
         let next = *total - old + own + note;
-        if next > BOOK_NOTES_BYTES && next > *total {
+        if next > BOOK_NOTES_BYTES && next > *total && !restoring {
             return Ok(false);
         }
         *total = next;
@@ -1495,8 +1496,7 @@ fn apply_key(
     } else if write(conn, lib, &winner.version, aside)? {
         if let Some(before) = before {
             let id = guard::version_id(winner);
-            let approved = aside.approved_versions.contains(&id)
-                || aside.approved_change == Some((winner.version.device, winner.seq));
+            let approved = aside.approved_versions.contains(&id);
             guard::applied(conn, lib, winner, before, approved, now_ms)?;
             aside.applied.push(id);
         }
