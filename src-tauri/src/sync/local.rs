@@ -264,15 +264,23 @@ pub fn on_annotation_restored(conn: &Connection, row: &AnnotationRow, now_ms: u6
 /// tombstones, so nothing there is replaced wholesale. On a return, what it deleted
 /// meanwhile is published too.
 pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
-    if journal::active(conn)?.is_none() {
+    let Some(lib) = journal::active(conn)? else {
         return Ok(0);
-    }
+    };
     let mut n = 0;
     let places: Vec<(String, String, f64, Option<String>)> = conn
         .prepare("SELECT book_id, cfi, fraction, chapter_label FROM positions")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
         .collect::<std::result::Result<_, _>>()?;
     for (book, cfi, fraction, chapter) in places {
+        // A place the library already shows, unchanged (a return, nothing read here
+        // meanwhile), isn't versioned again: a new clock would let it pass a newer
+        // place from another device, and it wasn't opened again.
+        let k = key(format!("place:{}", sync_id(conn, &lib, &book)?));
+        let body = place_body(&cfi, fraction, chapter.as_deref());
+        if shown_body(conn, &lib, &k)? == Some(super::ids::identity_hash(&body)) {
+            continue;
+        }
         on_position(conn, &book, &cfi, fraction, chapter.as_deref(), now_ms)?;
         n += 1;
     }
@@ -299,7 +307,6 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
             }, r.get(12)?))
         })?
         .collect::<std::result::Result<_, _>>()?;
-    let lib = journal::active(conn)?.expect("checked above");
     for (a, deleted) in &rows {
         // On a return, what was deleted here meanwhile (a highlight, or its note)
         // and the library still shows is deleted there too; what it never had isn't
@@ -309,10 +316,12 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
                 on_annotation_deleted(conn, a, now_ms)?;
                 n += 1;
             }
-            continue;
+        } else {
+            on_annotation(conn, None, a, now_ms)?;
+            n += 1;
         }
-        on_annotation(conn, None, a, now_ms)?;
-        n += 1;
+        // A note cleared here (deleted with its highlight or not) that the library
+        // still shows.
         let note = key(format!("note:{}", a.id));
         if live_note(&a.note).is_none() && shows(conn, &lib, &note)? {
             let covers = covers(conn, &lib)?;
@@ -329,6 +338,20 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
         }
     }
     Ok(n)
+}
+
+/// The body hash of what the library shows of a record, if it shows one.
+fn shown_body(conn: &Connection, lib: &Library, k: &Key) -> Result<Option<super::ids::Hash32>> {
+    let record = journal::record_of(conn, lib, k, journal::Which::Applied)?;
+    let shown = match record.outcome(&std::collections::HashSet::new()) {
+        Some(Outcome::Settled(p)) => p,
+        Some(Outcome::Conflict { shown, .. }) => shown,
+        None => return Ok(None),
+    };
+    Ok(match &shown.version.content {
+        super::record::Content::Body { hash, .. } => Some(*hash),
+        _ => None,
+    })
 }
 
 /// Whether the library shows a record: what it has applied of it isn't deleted.

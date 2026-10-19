@@ -3017,6 +3017,53 @@ mod tests {
     }
 
     #[test]
+    fn returning_to_a_library_doesnt_version_an_unchanged_place_again() {
+        let (mut a, la) = device(1, "book-a");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        publish_next(a.conn(), &la).unwrap().unwrap();
+        let second = Library {
+            id: Id16([8; 16]),
+            device: la.device,
+        };
+        journal::join(a.conn(), &second, "google-drive", crate::store::now_ms()).unwrap();
+        journal::join(a.conn(), &la, "icloud-drive", crate::store::now_ms()).unwrap();
+        local::publish_library(a.conn(), crate::store::now_ms() as u64).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap();
+        assert!(
+            back.into_iter()
+                .flat_map(|b| b.versions)
+                .all(|v| !v["key"].as_str().unwrap().starts_with("place:")),
+            "nothing to say about a place unchanged"
+        );
+    }
+
+    #[test]
+    fn returning_publishes_a_note_cleared_before_its_highlight_was_deleted() {
+        let (mut a, la) = device(1, "book-a");
+        a.save_annotation(&highlight("book-a", Some("a note"), 1_760_000_001_000))
+            .unwrap();
+        publish_next(a.conn(), &la).unwrap().unwrap();
+        let second = Library {
+            id: Id16([8; 16]),
+            device: la.device,
+        };
+        journal::join(a.conn(), &second, "google-drive", crate::store::now_ms()).unwrap();
+        a.save_annotation(&highlight("book-a", None, 1_760_000_002_000))
+            .unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        journal::join(a.conn(), &la, "icloud-drive", crate::store::now_ms()).unwrap();
+        local::publish_library(a.conn(), crate::store::now_ms() as u64).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap().unwrap();
+        let note = back
+            .versions
+            .iter()
+            .find(|v| v["key"] == format!("note:{ANNO}"))
+            .expect("the cleared note is published");
+        assert!(note.get("deleted").is_some(), "{note}");
+    }
+
+    #[test]
     fn a_newest_wins_record_settles_once() {
         let (mut a, la) = device(1, "book-a");
         let (mut b, lb) = device(2, "book-b");
