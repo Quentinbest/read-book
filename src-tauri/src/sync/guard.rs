@@ -324,18 +324,21 @@ pub(crate) fn before(
     key: &Key,
     next: u64,
 ) -> Result<Option<Vec<u8>>> {
-    // Last opened: every version's body is `{}`; what it sets is the time.
-    if key.kind() == Kind::BookOpened {
+    // Last opened and finished: what a version sets is a time (its clock), which
+    // its body doesn't hold; they are compared by the library's time.
+    if let Some(column) = stamp_column(key.kind()) {
         let at: Option<i64> = conn
             .query_row(
-                "SELECT b.opened_at FROM sync_books s JOIN books b ON b.id = s.book_id
-                 WHERE s.library = ?1 AND s.sync_id = ?2",
+                &format!(
+                    "SELECT b.{column} FROM sync_books s JOIN books b ON b.id = s.book_id
+                     WHERE s.library = ?1 AND s.sync_id = ?2"
+                ),
                 params![lib.id.to_string(), subject_of(key)],
                 |r| r.get(0),
             )
             .optional()?
             .flatten();
-        return Ok(at.map(|t| serde_json::json!({ "at": t }).to_string().into_bytes()));
+        return Ok(at.map(stamp));
     }
     let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
     if let Some(v) = journal::unsent_of(conn, lib, key)? {
@@ -353,6 +356,19 @@ pub(crate) fn before(
         Content::Body { hash, .. } => journal::body(conn, hash),
         _ => Ok(None),
     }
+}
+
+/// The library's column for a reading state, which a version sets to its time.
+fn stamp_column(kind: Kind) -> Option<&'static str> {
+    match kind {
+        Kind::BookOpened => Some("opened_at"),
+        Kind::BookFinished => Some("finished_at"),
+        _ => None,
+    }
+}
+
+fn stamp(at: i64) -> Vec<u8> {
+    serde_json::json!({ "at": at }).to_string().into_bytes()
 }
 
 fn subject_of(key: &Key) -> &str {
@@ -387,13 +403,15 @@ pub(crate) fn applied(
     approved: bool,
     now_ms: i64,
 ) -> Result<()> {
-    let after = match &p.version.content {
-        Content::Body { .. } if p.version.kind == Kind::BookOpened => Some(
-            serde_json::json!({ "at": p.version.clock.ms() as i64 })
-                .to_string()
-                .into_bytes(),
-        ),
-        Content::Body { hash, .. } => journal::body(conn, hash)?,
+    let after = match (&p.version.content, p.version.kind) {
+        (Content::Body { .. }, Kind::BookOpened) => Some(stamp(p.version.clock.ms() as i64)),
+        (Content::Body { hash, .. }, Kind::BookFinished) => {
+            let finished = journal::body(conn, hash)?
+                .and_then(|b| serde_json::from_slice::<serde_json::Value>(&b).ok())
+                .is_some_and(|b| b["finished"] == true);
+            finished.then(|| stamp(p.version.clock.ms() as i64))
+        }
+        (Content::Body { hash, .. }, _) => journal::body(conn, hash)?,
         _ => None,
     };
     let since = question(conn, lib)?
@@ -610,25 +628,25 @@ fn revert(conn: &Connection, lib: &Library, since: i64, now_ms: i64) -> Result<u
         {
             continue;
         }
-        // Last opened is the time of a version, which a new version can't take back:
-        // it is put back here only, and sync (paused) sends nothing of it.
-        if key.kind() == Kind::BookOpened {
-            let at = e
-                .before
+        // A reading state is put back as a new version of its state (opened;
+        // finished or not), descending from the one undone. Its time is the
+        // version's own, so the earlier time is put back in this library after it;
+        // other devices get the state with the restoration's time.
+        let stamp_at = stamp_column(key.kind()).map(|_| {
+            e.before
                 .as_deref()
                 .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
-                .and_then(|v| v["at"].as_i64());
-            conn.execute(
-                "UPDATE books SET opened_at = ?2 WHERE id IN
-                 (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)",
-                params![lib.id.to_string(), at, subject_of(&key)],
-            )?;
-            n += 1;
-            continue;
-        }
-        let content = match e.before {
-            Some(body) => LocalContent::Body(body),
-            None => LocalContent::Deleted {
+                .and_then(|v| v["at"].as_i64())
+        });
+        let content = match (key.kind(), &e.before) {
+            (Kind::BookOpened, Some(_)) => LocalContent::Body(b"{}".to_vec()),
+            (Kind::BookFinished, before) => LocalContent::Body(
+                serde_json::json!({ "finished": before.is_some() })
+                    .to_string()
+                    .into_bytes(),
+            ),
+            (_, Some(body)) => LocalContent::Body(body.clone()),
+            (_, None) => LocalContent::Deleted {
                 covers: super::local::covers(conn, lib)?,
                 identity: None,
             },
@@ -639,6 +657,15 @@ fn revert(conn: &Connection, lib: &Library, since: i64, now_ms: i64) -> Result<u
                 restoring.restoring = true;
                 if apply::write(conn, lib, &v, &mut restoring)? {
                     n += 1;
+                }
+                if let (Some(column), Some(at)) = (stamp_column(key.kind()), stamp_at) {
+                    conn.execute(
+                        &format!(
+                            "UPDATE books SET {column} = ?2 WHERE id IN
+                             (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)"
+                        ),
+                        params![lib.id.to_string(), at, subject_of(&key)],
+                    )?;
                 }
             }
             Err(JournalError::Conflicted(_)) => continue,
@@ -1525,6 +1552,12 @@ mod tests {
         assert_eq!(counted, 1, "the reopening is counted");
         answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
         assert_eq!(opened(&b), was, "put back");
+        // As a new version of B's own, sent when the reader resumes.
+        assert!(journal::unsent(b.conn(), &lb).unwrap().iter().any(|v| v
+            .key
+            .as_str()
+            .starts_with("bookRead:")
+            && v.key.as_str().ends_with(":opened")));
     }
 
     #[test]
@@ -1548,6 +1581,50 @@ mod tests {
             row.note, None,
             "the note kept on B's deleted row stays hidden"
         );
+    }
+
+    #[test]
+    fn a_book_finished_again_elsewhere_is_counted() {
+        let now = crate::store::now_ms();
+        let (_a, la, b, lb, _) = shared(1, now);
+        let finished = |at: u64, seq: u64| Batch {
+            device: la.device,
+            seq,
+            hash: super::super::ids::Hash32([seq as u8; 32]),
+            versions: vec![serde_json::json!({
+                "format": 1,
+                "key": format!("bookRead:{}:finished", crate::sync::apply::tests::SYNC_BOOK),
+                "device": la.device.to_string(), "clock": [at, 0], "history": [],
+                "body": { "hash": super::super::ids::identity_hash(br#"{"finished":true}"#).to_string(), "size": 17 },
+            })],
+            bodies: vec![br#"{"finished":true}"#.to_vec()],
+        };
+        let first = finished(now as u64 + 1000, 2);
+        receive(b.conn(), &lb, &first, now + HOUR).unwrap();
+        // The reader answers after that: only the second finish is in the window.
+        b.conn()
+            .execute(
+                "UPDATE sync_question SET answered_at = ?1",
+                [now + HOUR + 1],
+            )
+            .unwrap();
+        let mut second = finished(now as u64 + 2000, 3);
+        second.versions[0]["history"] = serde_json::json!([{
+            "d": la.device.to_string(), "s": 2,
+            "h": crate::sync::record::version_hash(&first.versions[0]).to_string(),
+        }]);
+        receive(b.conn(), &lb, &second, now + 2 * HOUR).unwrap();
+        let in_window = |table: &str| -> i64 {
+            b.conn()
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM {table} WHERE at > ?1"),
+                    [now + HOUR + 1],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(in_window("sync_undo"), 1, "journalled");
+        assert_eq!(in_window("sync_counted"), 1, "counted");
     }
 
     #[test]
