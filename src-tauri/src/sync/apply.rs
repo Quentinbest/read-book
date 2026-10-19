@@ -91,8 +91,8 @@ fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64
 #[derive(Default)]
 struct Aside {
     used: std::collections::HashMap<DeviceId, (i64, i64)>,
-    /// A body was dropped for want of room.
-    dropped: bool,
+    /// The devices a body was dropped from for want of room.
+    dropped: HashSet<DeviceId>,
 }
 
 impl Aside {
@@ -113,7 +113,7 @@ impl Aside {
             }
         };
         if used.0 + items > ASIDE_ITEMS || used.1 + bytes > ASIDE_BYTES {
-            self.dropped = true;
+            self.dropped.insert(device);
             return Ok(false);
         }
         used.0 += items;
@@ -557,7 +557,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     // that device unapplied must fit both budgets; if not, the whole change is
     // rolled back (the transaction is dropped) and receiving from it stops. A change
     // file is bounded (SP8), so this is the only check needed, once per change.
-    if budget.dropped
+    // Only the device being received from: another's drop (a version of its that was
+    // waiting on this change) is committed with it.
+    if budget.dropped.contains(&batch.device)
         || aside_full(&tx, lib, batch.device, 0, 0)?
         || pending_full(&tx, lib, batch.device)?
     {
@@ -717,6 +719,32 @@ fn subject(key: &Key) -> &str {
     key.as_str().split(':').nth(1).unwrap_or_default()
 }
 
+/// SY28 (prov., item 106): a book's highlights and notes, in all. More waits for
+/// the reader (Stage 5), so no book becomes too large to open.
+#[cfg(not(test))]
+pub const BOOK_NOTES_BYTES: i64 = 64 * 1024 * 1024;
+#[cfg(test)]
+pub const BOOK_NOTES_BYTES: i64 = 512 * 1024;
+
+/// SY28: whether a book's live highlights and notes stay within `BOOK_NOTES_BYTES`
+/// when highlight `id` holds `own` bytes of its own fields and `note` bytes of note.
+fn book_fits(conn: &Connection, book: &str, id: &str, own: i64, note: i64) -> Result<bool> {
+    let others: Option<i64> = conn.query_row(
+        "SELECT SUM(length(CAST(cfi_range AS BLOB)) + length(CAST(quote_exact AS BLOB))
+                  + length(CAST(quote_prefix AS BLOB)) + length(CAST(quote_suffix AS BLOB))
+                  + COALESCE(length(CAST(note AS BLOB)), 0))
+         FROM annotations WHERE book_id = ?1 AND id != ?2 AND deleted_at IS NULL",
+        params![book, id],
+        |r| r.get(0),
+    )?;
+    Ok(others.unwrap_or(0) + own + note <= BOOK_NOTES_BYTES)
+}
+
+/// A highlight's own fields, in bytes, as `book_fits` counts them.
+fn own_bytes(a: &crate::store::AnnotationRow) -> i64 {
+    (a.cfi_range.len() + a.quote_exact.len() + a.quote_prefix.len() + a.quote_suffix.len()) as i64
+}
+
 /// A version's body, checked.
 enum Body {
     Ready(Value),
@@ -805,7 +833,7 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
     // SY28: a highlight over its limit stays on this device, unsynced; nothing from
     // another device replaces or deletes it.
     if v.kind == Kind::Annotation {
-        if let Some((row, _)) = crate::store::annotation_row(conn, subject(&v.key))? {
+        if let Some((row, false)) = crate::store::annotation_row(conn, subject(&v.key))? {
             let book = super::local::sync_id(conn, lib, &row.book_id)?;
             if a9::body_of(&row, &book).to_string().len() as u64 > Kind::Annotation.body_limit() {
                 return Ok(false);
@@ -857,6 +885,18 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
                 let Some(a) = a9::row_of(b, &local) else {
                     return Ok(false);
                 };
+                // SY28: the book's highlights and notes stay within their budget;
+                // this one waits otherwise. Its note, kept, counts.
+                let note: Option<String> = conn
+                    .query_row("SELECT note FROM annotations WHERE id = ?1", [&a.id], |r| {
+                        r.get(0)
+                    })
+                    .optional()?
+                    .flatten();
+                let note = note.map_or(0, |n| n.len() as i64);
+                if !book_fits(conn, &local, &a.id, own_bytes(&a), note)? {
+                    return Ok(false);
+                }
                 conn.execute(
                     "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                          quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
@@ -901,6 +941,13 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
                     return Ok(false)
                 }
                 Some(_) => {}
+            }
+            if let (Some(t), Some((row, _))) =
+                (&text, crate::store::annotation_row(conn, subject(&v.key))?)
+            {
+                if !book_fits(conn, &row.book_id, &row.id, own_bytes(&row), t.len() as i64)? {
+                    return Ok(false);
+                }
             }
             conn.execute(
                 "UPDATE annotations SET note = ?2 WHERE id = ?1",
@@ -1787,6 +1834,107 @@ mod tests {
             "over the pending budget"
         );
         assert!(pending_used(b.conn(), &lb, other).unwrap() <= PENDING_BYTES);
+    }
+
+    #[test]
+    fn a_books_highlights_past_its_budget_wait() {
+        // Three highlights of about 200 KB each; the tests' budget per book is 512 KB.
+        let (a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        for i in 0..3 {
+            let mut h = highlight("book-b", None, 1_760_000_001_000);
+            h.id = uuid::Uuid::new_v4().to_string();
+            h.quote_exact = format!("{i}{}", "q".repeat(200 * 1024));
+            b.save_annotation(&h).unwrap();
+        }
+        send(&b, &lb, &a, &la).unwrap();
+        assert_eq!(a.annotations("book-a").unwrap().len(), 2, "the third waits");
+        let waiting: i64 = a
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE applied = 0 AND key LIKE 'annotation:%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(waiting, 1);
+    }
+
+    #[test]
+    fn a_note_past_its_books_budget_waits() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let mut h = highlight("book-a", None, 1_760_000_001_000);
+        h.quote_exact = "q".repeat(400 * 1024);
+        a.save_annotation(&h).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        h.note = Some("n".repeat(200 * 1024));
+        h.updated_at = 1_760_000_002_000;
+        a.save_annotation(&h).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert_eq!(
+            note_of(&b, "book-b"),
+            Some(None),
+            "400 KB + 200 KB is over 512 KB"
+        );
+    }
+
+    #[test]
+    fn a_deleted_oversized_highlight_doesnt_block_a_restore() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        // B makes its copy oversized (kept on B), then deletes it.
+        let mut big = highlight("book-b", None, 1_760_000_002_000);
+        big.quote_exact = "x".repeat(5 * 1024 * 1024);
+        b.save_annotation(&big).unwrap();
+        b.delete_annotation(ANNO).unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        // A restores it with an ordinary edit; B takes it.
+        let mut h = highlight("book-a", None, 1_760_000_003_000);
+        h.color = "blue".into();
+        a.save_annotation(&h).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let shown = b.annotations("book-b").unwrap();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].color, "blue");
+    }
+
+    #[test]
+    fn a_full_peer_waiting_on_a_change_doesnt_stop_that_change() {
+        // C's note, waiting for A's change, has a bad body; C has no room left.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("from A"), 1_760_000_001_000))
+            .unwrap();
+        let from_a = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(c.conn(), &lc, &from_a, crate::store::now_ms()).unwrap();
+        c.save_annotation(&highlight("book-c", Some("C's"), 1_760_000_002_000))
+            .unwrap();
+        let mut c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        let bad = br#"{"not":"a note"}"#.to_vec();
+        for v in &mut c1.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("note:")) {
+                v["body"] = serde_json::json!({ "hash": identity_hash(&bad).to_string(), "size": bad.len() });
+            }
+        }
+        c1.bodies = vec![bad];
+        for i in 0..(ASIDE_ITEMS - 1) {
+            b.conn()
+                .execute(
+                    "INSERT INTO sync_aside (library, device, hash, reason, size, raw, first_at)
+                     VALUES (?1, ?2, ?3, 'x', 1, X'00', 0)",
+                    params![LIB.to_string(), lc.device.to_string(), format!("h{i}")],
+                )
+                .unwrap();
+        }
+        receive(b.conn(), &lb, &c1, crate::store::now_ms()).unwrap();
+        let got = receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
+        assert!(matches!(got, Received::Applied { .. }), "{got:?}");
+        assert_eq!(note_of(&b, "book-b"), Some(Some("from A".into())));
     }
 
     #[test]
