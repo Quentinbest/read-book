@@ -76,7 +76,7 @@ fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
     let (m, held): (i64, Option<i64>) = conn.query_row(
-        "SELECT COUNT(*), SUM(length(v.raw) + COALESCE(length(b.body), 0))
+        "SELECT COUNT(*), SUM(length(CAST(v.raw AS BLOB)) + COALESCE(length(b.body), 0))
          FROM sync_versions v
          LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
          WHERE v.library = ?1 AND v.device = ?2 AND v.applied IN (-1, -2, -4)",
@@ -140,7 +140,7 @@ fn pending_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bo
 
 fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i64> {
     let held: Option<i64> = conn.query_row(
-        "SELECT SUM(length(v.raw) + COALESCE(length(b.body), 0))
+        "SELECT SUM(length(CAST(v.raw AS BLOB)) + COALESCE(length(b.body), 0))
          FROM sync_versions v
          LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
          WHERE v.library = ?1 AND v.device = ?2 AND v.applied = 0",
@@ -206,10 +206,20 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         })?
         .collect::<std::result::Result<_, _>>()?;
     if waiting.is_empty() || journal::body(conn, &hash)?.is_some() {
+        for device in &tally.dropped {
+            stop(
+                conn,
+                lib,
+                *device,
+                "set-aside budget",
+                crate::store::now_ms(),
+            )?;
+        }
         tx.commit()?;
         return Ok(false);
     }
     let mut room = false;
+    let mut full_ones = Vec::new();
     for (device, state, refs) in &waiting {
         let Some(device) = super::ids::Id16::parse(device) else {
             continue;
@@ -219,10 +229,27 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         } else {
             aside_full(conn, lib, device, 0, len * refs)?
         };
+        if full {
+            full_ones.push(device);
+        }
         room |= !full;
     }
     if room {
         journal::put_body(conn, bytes)?;
+        // Kept for another, the body is charged to these too: they're past their
+        // budget, and stopped.
+        for device in full_ones {
+            stop(conn, lib, device, "budget", crate::store::now_ms())?;
+        }
+    }
+    for device in &tally.dropped {
+        stop(
+            conn,
+            lib,
+            *device,
+            "set-aside budget",
+            crate::store::now_ms(),
+        )?;
     }
     tx.commit()?;
     Ok(room)
@@ -230,7 +257,8 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
     let s: Option<i64> = conn.query_row(
-        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+        // `seq IS NOT NULL` lets the partial index `sync_versions_published` answer.
+        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL",
         params![lib.id.to_string(), lib.device.to_string()],
         |r| r.get(0),
     )?;
@@ -964,7 +992,7 @@ fn exclude(
     ];
     let raw: Option<i64> = conn
         .query_row(
-            "SELECT length(raw) FROM sync_versions
+            "SELECT length(CAST(raw AS BLOB)) FROM sync_versions
              WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
             row,
             |r| r.get(0),
@@ -974,9 +1002,27 @@ fn exclude(
         return Ok(());
     };
     let reason = hash.to_string();
-    // Two items: the version, still in its writer's chain, and the entry saying why.
-    let cost = raw + body_len + reason.len() as i64;
-    if aside.take(conn, lib, v.device, 2, cost)? {
+    // Two items: the version, still in its writer's chain, and the entry saying why,
+    // which is kept once however many versions name that body (SY28: repeats of the
+    // same are counted once).
+    let known: bool = conn
+        .query_row(
+            "SELECT 1 FROM sync_aside WHERE library = ?1 AND device = ?2 AND hash = ?3",
+            params![
+                lib.id.to_string(),
+                v.device.to_string(),
+                identity_hash(reason.as_bytes()).to_string()
+            ],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    let (items, cost) = if known {
+        (1, raw + body_len)
+    } else {
+        (2, raw + body_len + reason.len() as i64)
+    };
+    if aside.take(conn, lib, v.device, items, cost)? {
         set_aside(
             conn,
             lib,
@@ -2346,6 +2392,11 @@ mod tests {
             receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
         }
         assert!(receive_body(b.conn(), &lb, &text).unwrap(), "kept for A");
+        assert!(
+            stopped(b.conn(), &lb, c).unwrap(),
+            "C is past its budget: stopped"
+        );
+        assert!(!stopped(b.conn(), &lb, a).unwrap());
     }
 
     #[test]
@@ -2408,6 +2459,123 @@ mod tests {
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.note.as_deref(), Some("second"));
         assert!(row.updated_at > 1_760_000_001_000, "{}", row.updated_at);
+    }
+
+    #[test]
+    fn a_hidden_head_without_its_body_doesnt_move_the_clock_through_a_hold() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &first, crate::store::now_ms()).unwrap();
+        receive(c.conn(), &lc, &first, crate::store::now_ms()).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A's unsent"), 1_760_000_001_000))
+            .unwrap();
+        b.save_annotation(&highlight("book-b", Some("B's"), 1_760_000_001_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap(); // A's edit is held
+        c.save_annotation(&highlight("book-c", Some("C's"), 1_760_000_001_000))
+            .unwrap();
+        let mut from_c = publish_next(c.conn(), &lc).unwrap().unwrap();
+        let ahead = crate::store::now_ms() as u64 + 60 * 60 * 1000;
+        for v in &mut from_c.versions {
+            v["clock"] = serde_json::json!([ahead, 0]);
+        }
+        from_c.bodies.clear();
+        receive(a.conn(), &la, &from_c, crate::store::now_ms()).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A again"), 1_760_000_001_000))
+            .unwrap();
+        let ms: i64 = a
+            .conn()
+            .query_row("SELECT clock_ms FROM sync_libraries", [], |r| r.get(0))
+            .unwrap();
+        assert!(
+            (ms as u64) < ahead,
+            "C's clock isn't seen before its body is"
+        );
+    }
+
+    #[test]
+    fn a_late_body_dropping_a_version_stops_its_device() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        for v in &mut batch.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("place:")) {
+                v["body"]["size"] = serde_json::json!(3);
+            }
+        }
+        let bodies = std::mem::take(&mut batch.bodies);
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        // No room left for A's exclusion.
+        for i in 0..ASIDE_ITEMS {
+            b.conn()
+                .execute(
+                    "INSERT INTO sync_aside (library, device, hash, reason, size, raw, first_at)
+                     VALUES (?1, ?2, ?3, 'x', 1, X'00', 0)",
+                    params![LIB.to_string(), la.device.to_string(), format!("h{i}")],
+                )
+                .unwrap();
+        }
+        let place = bodies.iter().find(|x| x.starts_with(b"{\"cfi\"")).unwrap();
+        receive_body(b.conn(), &lb, place).unwrap();
+        assert!(stopped(b.conn(), &lb, la.device).unwrap());
+    }
+
+    #[test]
+    fn many_versions_naming_one_bad_body_are_counted_with_one_reason() {
+        // 600 notes naming one bad body: 600 excluded versions and one reason, 601
+        // items, under the budget of 1,000.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let bad = br#"{"not":"a note"}"#.to_vec();
+        let versions = (0..600u16)
+            .map(|i| {
+                serde_json::json!({
+                    "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                    "device": other.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                    "body": { "hash": identity_hash(&bad).to_string(), "size": bad.len() },
+                })
+            })
+            .collect();
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies: vec![bad],
+        };
+        let got = receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        assert!(matches!(got, Received::Applied { .. }), "{got:?}");
+        assert!(!stopped(b.conn(), &lb, other).unwrap());
+    }
+
+    #[test]
+    fn budgets_count_bytes_not_characters() {
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let raw = format!(r#"{{"x":"{}"}}"#, "😀".repeat(1000));
+        b.conn()
+            .execute(
+                "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied) VALUES (?1, 'place:x', ?2, 1, 'h', ?3, 0)",
+                params![LIB.to_string(), other.to_string(), raw],
+            )
+            .unwrap();
+        assert_eq!(
+            pending_used(b.conn(), &lb, other).unwrap(),
+            raw.len() as i64
+        );
+        b.conn()
+            .execute("UPDATE sync_versions SET applied = -1", [])
+            .unwrap();
+        assert_eq!(
+            aside_used(b.conn(), &lb, other).unwrap(),
+            (1, raw.len() as i64)
+        );
     }
 
     #[test]

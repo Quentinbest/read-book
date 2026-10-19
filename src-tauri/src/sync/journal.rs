@@ -469,7 +469,10 @@ pub fn hold_local(
     // SY13: every head in the conflict, those still unapplied (hidden) included;
     // never one waiting for its ancestry, a clock or a bad body (not loaded).
     let record = record_of(conn, lib, key, Which::All)?;
-    for p in record.versions() {
+    // SY10: only what was applied moves the clock, so a hidden head whose body
+    // hasn't arrived (or proved good) doesn't. The held edit is still after every
+    // head by descent, which is what settles a record the reader decides (SY13).
+    for p in record_of(conn, lib, key, Which::Applied)?.versions() {
         observe(conn, lib, p.version.clock, wall_ms)?;
     }
     let clock = tick(conn, lib, wall_ms)?;
@@ -623,7 +626,7 @@ pub fn take_unsent(
     let tx = conn.unchecked_transaction()?;
     let journalled = tx
         .query_row(
-            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2",
+            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL",
             params![lib.id.to_string(), lib.device.to_string()],
             |r| r.get::<_, Option<i64>>(0),
         )?
