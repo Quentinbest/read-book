@@ -152,7 +152,8 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 
 /// SY28: a body that arrives after the versions naming it (fetched on its own,
 /// Stage 2). It is kept only if a version still waiting names it at its size, and
-/// only while every such version's device has room for it: in the pending budget
+/// only while one such version's device has room for it (a device without room
+/// can't keep it from the others; it is over its budget and stopped): in the pending budget
 /// for a version pending, in the set-aside budget for one waiting for its ancestry
 /// or a clock ahead. `false` when it isn't kept. Applying it is `apply_pending`'s.
 /// A version that declared another size for it is excluded, as it would be had the
@@ -208,24 +209,23 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         tx.commit()?;
         return Ok(false);
     }
+    let mut room = false;
     for (device, state, refs) in &waiting {
         let Some(device) = super::ids::Id16::parse(device) else {
-            tx.commit()?;
-            return Ok(false);
+            continue;
         };
         let full = if *state == 0 {
             pending_used(conn, lib, device)? + len * refs > PENDING_BYTES
         } else {
             aside_full(conn, lib, device, 0, len * refs)?
         };
-        if full {
-            tx.commit()?;
-            return Ok(false);
-        }
+        room |= !full;
     }
-    journal::put_body(conn, bytes)?;
+    if room {
+        journal::put_body(conn, bytes)?;
+    }
     tx.commit()?;
-    Ok(true)
+    Ok(room)
 }
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
@@ -1072,6 +1072,16 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                 )?;
             }
             None => {
+                // SY28: a live highlight whose note is over its limit (kept here,
+                // unsynced) isn't deleted from another device, or the note goes too.
+                if let Some((row, false)) = crate::store::annotation_row(conn, subject(&v.key))? {
+                    let note = row
+                        .note
+                        .map_or(0, |n| serde_json::json!({ "text": n }).to_string().len());
+                    if note as u64 > Kind::Note.body_limit() {
+                        return Ok(false);
+                    }
+                }
                 aside.book_release(conn, subject(&v.key))?;
                 conn.execute(
                     "UPDATE annotations SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
@@ -2266,6 +2276,51 @@ mod tests {
             .starts_with("note:"));
         receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
         assert_eq!(note_of(&b, "book-b"), Some(Some("with a note".into())));
+    }
+
+    #[test]
+    fn a_full_device_doesnt_keep_a_late_body_from_another() {
+        // A's note and C's two copies name one 600 KB body; C has no room for it.
+        let (b, lb) = device(2, "book-b");
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(600 * 1024)).into_bytes();
+        let version = |d: Id16, i: u16| {
+            serde_json::json!({
+                "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                "device": d.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+            })
+        };
+        let (a, c) = (Id16([1; 16]), Id16([3; 16]));
+        for (d, n) in [(a, 1), (c, 2)] {
+            let batch = Batch {
+                device: d,
+                seq: 1,
+                hash: Hash32([n as u8; 32]),
+                versions: (0..n).map(|i| version(d, i)).collect(),
+                bodies: vec![],
+            };
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        }
+        assert!(receive_body(b.conn(), &lb, &text).unwrap(), "kept for A");
+    }
+
+    #[test]
+    fn a_highlight_with_an_oversized_note_isnt_deleted_from_another_device() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let long = "x".repeat(5 * 1024 * 1024);
+        b.save_annotation(&highlight("book-b", Some(&long), 1_760_000_002_000))
+            .unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert_eq!(
+            b.annotations("book-b").unwrap().len(),
+            1,
+            "SY28: stays, with its note"
+        );
     }
 
     #[test]
