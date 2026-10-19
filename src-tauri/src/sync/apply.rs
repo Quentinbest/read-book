@@ -174,9 +174,9 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 /// A version that declared another size for it is excluded, as it would be had the
 /// body come with it.
 pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
-    // SY26: while the reader is asked, no body arrives to make more ready; it is
-    // fetched again later.
-    if guard::asking(conn, lib)?.is_some() {
+    // SY26: while the reader is asked, or sync is paused, no body arrives to make
+    // more ready; it is fetched again later.
+    if guard::asking(conn, lib)?.is_some() || guard::paused(conn, lib)? {
         return Ok(false);
     }
     let hash = identity_hash(bytes);

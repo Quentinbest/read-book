@@ -1793,6 +1793,24 @@ mod tests {
     }
 
     #[test]
+    fn no_body_is_kept_while_sync_is_paused() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        let place = batch
+            .bodies
+            .iter()
+            .position(|x| x.starts_with(br#"{"cfi""#))
+            .unwrap();
+        let late = batch.bodies.remove(place);
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        assert!(!crate::sync::apply::receive_body(b.conn(), &lb, &late).unwrap());
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);
