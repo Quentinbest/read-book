@@ -236,11 +236,11 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     }
     if room {
         journal::put_body(conn, bytes)?;
-        // Kept for another, the body is charged to these too: they're past their
-        // budget, and stopped.
-        for device in full_ones {
-            stop(conn, lib, device, "budget", crate::store::now_ms())?;
-        }
+    }
+    // A device with no room for the body is past its budget, whether the body is
+    // kept for another or not: it is stopped (SY28).
+    for device in full_ones {
+        stop(conn, lib, device, "budget", crate::store::now_ms())?;
     }
     for device in &tally.dropped {
         stop(
@@ -2100,6 +2100,7 @@ mod tests {
             !receive_body(b.conn(), &lb, &bodies[1]).unwrap(),
             "over the pending budget"
         );
+        assert!(stopped(b.conn(), &lb, other).unwrap(), "and stopped");
         assert!(pending_used(b.conn(), &lb, other).unwrap() <= PENDING_BYTES);
     }
 
