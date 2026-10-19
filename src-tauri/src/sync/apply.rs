@@ -493,9 +493,11 @@ pub fn stopped(conn: &Connection, lib: &Library, device: DeviceId) -> Result<boo
         .is_some())
 }
 
-/// SY28: a body stored here is charged to every version naming it, so once it is
-/// stored, each other device naming it that is now past a budget is stopped, as its
-/// next change would be.
+/// SY28: a body stored here is charged to every version naming it, in any library
+/// (bodies are shared by all of them). So once one is stored, each other device
+/// naming it that is now past a budget is stopped, as its next change would be, and
+/// its versions naming the body are dropped, so they never apply it; the stop
+/// stands in for them. `except` is the device whose own change brought the body.
 fn stop_owners_past_budget(
     conn: &Connection,
     lib: &Library,
@@ -503,19 +505,37 @@ fn stop_owners_past_budget(
     except: Option<DeviceId>,
     now_ms: i64,
 ) -> Result<()> {
-    let owners: Vec<String> = conn
+    let owners: Vec<(String, String)> = conn
         .prepare(
-            "SELECT DISTINCT device FROM sync_versions INDEXED BY sync_versions_body
-             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4)
-               AND json_extract(raw, '$.body.hash') = ?2",
+            "SELECT DISTINCT library, device FROM sync_versions INDEXED BY sync_versions_body
+             WHERE seq IS NOT NULL AND applied IN (0, -1, -2, -4)
+               AND json_extract(raw, '$.body.hash') = ?1",
         )?
-        .query_map(params![lib.id.to_string(), hash.to_string()], |r| r.get(0))?
+        .query_map([hash.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
-    for device in owners.iter().filter_map(|d| super::ids::Id16::parse(d)) {
-        if Some(device) != except
-            && (aside_full(conn, lib, device, 0, 0)? || pending_full(conn, lib, device)?)
-        {
-            stop(conn, lib, device, "budget", now_ms)?;
+    for (library, device) in owners {
+        let (Some(id), Some(device)) = (
+            super::ids::Id16::parse(&library),
+            super::ids::Id16::parse(&device),
+        ) else {
+            continue;
+        };
+        if id == lib.id && Some(device) == except {
+            continue;
+        }
+        // The budgets are counted in that device's library.
+        let there = Library {
+            id,
+            device: lib.device,
+        };
+        if aside_full(conn, &there, device, 0, 0)? || pending_full(conn, &there, device)? {
+            conn.execute(
+                "DELETE FROM sync_versions INDEXED BY sync_versions_body
+                 WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4)
+                   AND json_extract(raw, '$.body.hash') = ?3",
+                params![library, device.to_string(), hash.to_string()],
+            )?;
+            stop(conn, &there, device, "budget", now_ms)?;
         }
     }
     Ok(())
@@ -1363,8 +1383,12 @@ fn apply_key(
             journal::observe(conn, lib, h.version.clock, now_ms.max(0) as u64)?;
         }
     }
-    if journal::held(conn, lib, key)? {
-        // #109: an edit is held for the reader's choice; nothing overwrites it.
+    // #109: an edit is held for the reader's choice; nothing overwrites it. But a
+    // deletion shown over it is applied: until the reader chooses, the thing stays
+    // deleted on every device (SY13), and the held edit keeps the changed version.
+    if journal::held(conn, lib, key)?
+        && !(winner.version.device != lib.device && winner.is_deleted())
+    {
         return Ok(false);
     }
     let changed = if winner.version.device == lib.device {
@@ -2800,6 +2824,15 @@ mod tests {
         assert!(matches!(got, Received::Applied { .. }), "{got:?}");
         assert!(stopped(r.conn(), &lr, b).unwrap());
         assert!(!stopped(r.conn(), &lr, c).unwrap());
+        let kept: i64 = r
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE device = ?1",
+                [b.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kept, 0, "B's versions never apply C's body");
     }
 
     #[test]
@@ -2838,6 +2871,68 @@ mod tests {
         assert!(receive_body(r.conn(), &lr, &text).unwrap(), "kept for C");
         assert!(stopped(r.conn(), &lr, b).unwrap());
         assert!(!stopped(r.conn(), &lr, c).unwrap());
+    }
+
+    #[test]
+    fn a_body_one_library_stores_stops_an_owner_in_another() {
+        let (r, lr) = device(2, "book-b");
+        let other_lib = Library {
+            id: Id16([8; 16]),
+            device: lr.device,
+        };
+        journal::join(r.conn(), &other_lib, "google-drive", crate::store::now_ms()).unwrap();
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(600 * 1024)).into_bytes();
+        let version = |d: Id16, i: u16| {
+            serde_json::json!({
+                "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                "device": d.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+            })
+        };
+        let (b, c) = (Id16([1; 16]), Id16([3; 16]));
+        // B's two references are in the other library.
+        let from_b = Batch {
+            device: b,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions: vec![version(b, 0), version(b, 1)],
+            bodies: vec![],
+        };
+        receive(r.conn(), &other_lib, &from_b, crate::store::now_ms()).unwrap();
+        let from_c = Batch {
+            device: c,
+            seq: 1,
+            hash: Hash32([3; 32]),
+            versions: vec![version(c, 0)],
+            bodies: vec![text.clone()],
+        };
+        receive(r.conn(), &lr, &from_c, crate::store::now_ms()).unwrap();
+        assert!(stopped(r.conn(), &other_lib, b).unwrap());
+    }
+
+    #[test]
+    fn a_deletion_shown_over_a_held_edit_is_applied() {
+        // SY13: A's unsent edit is held in a conflict with B's deletion; the
+        // highlight stays deleted until the reader chooses, and A's edit is kept.
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let mut h = highlight("book-a", Some("first"), 1_760_000_002_000);
+        h.color = "blue".into();
+        a.save_annotation(&h).unwrap();
+        b.delete_annotation(ANNO).unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        assert!(
+            a.annotations("book-a").unwrap().is_empty(),
+            "deleted until the reader chooses"
+        );
+        let key = Key::parse(&format!("annotation:{ANNO}")).unwrap().0;
+        assert!(
+            journal::held(a.conn(), &la, &key).unwrap(),
+            "A's edit is kept for the reader"
+        );
     }
 
     #[test]
