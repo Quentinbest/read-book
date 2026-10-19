@@ -301,26 +301,45 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
         .collect::<std::result::Result<_, _>>()?;
     let lib = journal::active(conn)?.expect("checked above");
     for (a, deleted) in &rows {
-        if !deleted {
-            on_annotation(conn, None, a, now_ms)?;
-            n += 1;
+        // On a return, what was deleted here meanwhile (a highlight, or its note)
+        // and the library still shows is deleted there too; what it never had isn't
+        // published.
+        if *deleted {
+            if shows(conn, &lib, &key(format!("annotation:{}", a.id)))? {
+                on_annotation_deleted(conn, a, now_ms)?;
+                n += 1;
+            }
             continue;
         }
-        // A highlight deleted here that this library still shows (a return to a
-        // library after deleting it elsewhere) is deleted there too; one it never
-        // had isn't published.
-        let k = key(format!("annotation:{}", a.id));
-        let shows = match journal::record_of(conn, &lib, &k, journal::Which::Applied)?
+        on_annotation(conn, None, a, now_ms)?;
+        n += 1;
+        let note = key(format!("note:{}", a.id));
+        if live_note(&a.note).is_none() && shows(conn, &lib, &note)? {
+            let covers = covers(conn, &lib)?;
+            record(
+                conn,
+                &lib,
+                note,
+                LocalContent::Deleted {
+                    covers,
+                    identity: None,
+                },
+                now_ms,
+            )?;
+        }
+    }
+    Ok(n)
+}
+
+/// Whether the library shows a record: what it has applied of it isn't deleted.
+fn shows(conn: &Connection, lib: &Library, k: &Key) -> Result<bool> {
+    Ok(
+        match journal::record_of(conn, lib, k, journal::Which::Applied)?
             .outcome(&std::collections::HashSet::new())
         {
             Some(Outcome::Settled(p)) => !p.is_deleted(),
             Some(Outcome::Conflict { shown, .. }) => !shown.is_deleted(),
             None => false,
-        };
-        if shows {
-            on_annotation_deleted(conn, a, now_ms)?;
-            n += 1;
-        }
-    }
-    Ok(n)
+        },
+    )
 }

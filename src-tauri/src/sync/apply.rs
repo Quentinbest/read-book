@@ -909,7 +909,9 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
 fn local_book(conn: &Connection, lib: &Library, sync_id: &str) -> Result<Option<String>> {
     Ok(conn
         .query_row(
-            "SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?2 AND book_id IS NOT NULL",
+            // SY21: a mapping to a book no longer here (purged) is a missing book.
+            "SELECT s.book_id FROM sync_books s JOIN books b ON b.id = s.book_id
+             WHERE s.library = ?1 AND s.sync_id = ?2",
             params![lib.id.to_string(), sync_id],
             |r| r.get(0),
         )
@@ -2958,6 +2960,60 @@ mod tests {
             .find(|v| v["key"] == format!("annotation:{ANNO}"))
             .expect("the deletion is published");
         assert!(tombstone.get("deleted").is_some(), "{tombstone}");
+    }
+
+    #[test]
+    fn returning_to_a_library_publishes_a_note_cleared_meanwhile() {
+        let (mut a, la) = device(1, "book-a");
+        a.save_annotation(&highlight("book-a", Some("a note"), 1_760_000_001_000))
+            .unwrap();
+        publish_next(a.conn(), &la).unwrap().unwrap();
+        let second = Library {
+            id: Id16([8; 16]),
+            device: la.device,
+        };
+        journal::join(a.conn(), &second, "google-drive", crate::store::now_ms()).unwrap();
+        a.save_annotation(&highlight("book-a", None, 1_760_000_002_000))
+            .unwrap();
+        journal::join(a.conn(), &la, "icloud-drive", crate::store::now_ms()).unwrap();
+        local::publish_library(a.conn(), crate::store::now_ms() as u64).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap().unwrap();
+        let note = back
+            .versions
+            .iter()
+            .find(|v| v["key"] == format!("note:{ANNO}"))
+            .expect("the cleared note is published");
+        assert!(note.get("deleted").is_some(), "{note}");
+    }
+
+    #[test]
+    fn a_book_purged_here_is_missing_not_an_error() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        b.conn()
+            .execute("DELETE FROM books WHERE id = 'book-b'", [])
+            .unwrap();
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        let got = send(&a, &la, &b, &lb).unwrap();
+        assert!(
+            matches!(got, Received::Applied { applied: 0, .. }),
+            "{got:?}"
+        );
+        let waiting: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE applied = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            waiting >= 3,
+            "the place, opened and the highlight wait for their book"
+        );
     }
 
     #[test]
