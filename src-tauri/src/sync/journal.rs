@@ -587,6 +587,16 @@ pub fn drop_unsent(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
     Ok(())
 }
 
+/// SY26: a held version becomes this device's ordinary unsent one, to be published:
+/// the reader's own decision (Stop syncing) settles the conflict it descends from.
+pub fn release_held(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
+    conn.execute(
+        "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND key = ?2 AND seq IS NULL AND applied = -3",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    Ok(())
+}
+
 /// This device's unsent version of one key, if any (not one held, #109).
 pub fn unsent_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Version>> {
     let raw: Option<String> = conn

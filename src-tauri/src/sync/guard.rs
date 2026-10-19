@@ -651,25 +651,29 @@ fn revert(conn: &Connection, lib: &Library, since: i64, now_ms: i64) -> Result<u
                 identity: None,
             },
         };
-        match journal::record_local(conn, lib, &key, content, now_ms.max(0) as u64) {
-            Ok(v) => {
-                let mut restoring = Tally::default();
-                restoring.restoring = true;
-                if apply::write(conn, lib, &v, &mut restoring)? {
-                    n += 1;
-                }
-                if let (Some(column), Some(at)) = (stamp_column(key.kind()), stamp_at) {
-                    conn.execute(
-                        &format!(
-                            "UPDATE books SET {column} = ?2 WHERE id IN
-                             (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)"
-                        ),
-                        params![lib.id.to_string(), at, subject_of(&key)],
-                    )?;
-                }
-            }
-            Err(JournalError::Conflicted(_)) => continue,
-            Err(err) => return Err(err),
+        // Where this device's own version waits hidden in a conflict, Stop syncing
+        // is the reader's decision that settles it: the version put back descends
+        // from every head, as a choice does, and is sent like any other.
+        let wall = now_ms.max(0) as u64;
+        let put = match journal::record_local(conn, lib, &key, content.clone(), wall) {
+            Err(JournalError::Conflicted(_)) => journal::hold_local(conn, lib, &key, content, wall)
+                .and_then(|v| journal::release_held(conn, lib, &key).map(|_| v)),
+            other => other,
+        };
+        let v = put?;
+        let mut restoring = Tally::default();
+        restoring.restoring = true;
+        if apply::write(conn, lib, &v, &mut restoring)? {
+            n += 1;
+        }
+        if let (Some(column), Some(at)) = (stamp_column(key.kind()), stamp_at) {
+            conn.execute(
+                &format!(
+                    "UPDATE books SET {column} = ?2 WHERE id IN
+                     (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)"
+                ),
+                params![lib.id.to_string(), at, subject_of(&key)],
+            )?;
         }
     }
     Ok(n)
@@ -1662,6 +1666,54 @@ mod tests {
         assert!(opened().is_some());
         answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
         assert_eq!(opened(), None, "never opened here");
+    }
+
+    #[test]
+    fn a_first_opening_undone_is_cleared_on_the_other_devices_too() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        // The reader resumes: B's restoration reaches A.
+        let back = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &back, now + 3 * HOUR).unwrap();
+        let opened: Option<i64> = a
+            .conn()
+            .query_row("SELECT opened_at FROM books WHERE id = 'book-a'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(opened, None);
+    }
+
+    #[test]
+    fn stop_syncing_settles_a_conflict_holding_this_devices_version() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // B edits the note and publishes; apart, A deletes the highlight.
+        let mut mine = highlight("book-b", Some("B's edit"), 1_760_000_002_000);
+        mine.id = ids[0].clone();
+        mine.quote_exact = "q0".into();
+        b.save_annotation(&mine).unwrap();
+        publish_next(b.conn(), &lb).unwrap().unwrap();
+        let gone = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        assert!(
+            b.annotations("book-b").unwrap().is_empty(),
+            "deleted until chosen"
+        );
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("B's edit"));
+        assert!(!journal::held(
+            b.conn(),
+            &lb,
+            &Key::parse(&format!("note:{}", ids[0])).unwrap().0
+        )
+        .unwrap());
     }
 
     #[test]

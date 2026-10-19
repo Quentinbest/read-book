@@ -1293,6 +1293,13 @@ pub(crate) fn write(
                         params![book, at],
                     )?;
                 }
+                // A reading state deleted (SY26's Stop syncing undoing a first one).
+                (Kind::BookOpened, None) => {
+                    conn.execute("UPDATE books SET opened_at = NULL WHERE id = ?1", [&book])?;
+                }
+                (Kind::BookFinished, None) => {
+                    conn.execute("UPDATE books SET finished_at = NULL WHERE id = ?1", [&book])?;
+                }
                 _ => {}
             }
         }
