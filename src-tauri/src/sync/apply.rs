@@ -1328,8 +1328,9 @@ pub(crate) fn write(
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
-                         updated_at = MAX(updated_at, excluded.updated_at), deleted_at = NULL,
-                         anchor_status = excluded.anchor_status",
+                         updated_at = MAX(updated_at, excluded.updated_at),
+                         note = CASE WHEN deleted_at IS NOT NULL THEN NULL ELSE note END,
+                         deleted_at = NULL, anchor_status = excluded.anchor_status",
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
                         a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status],
                 )?;

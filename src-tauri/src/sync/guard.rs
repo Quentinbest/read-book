@@ -324,6 +324,19 @@ pub(crate) fn before(
     key: &Key,
     next: u64,
 ) -> Result<Option<Vec<u8>>> {
+    // Last opened: every version's body is `{}`; what it sets is the time.
+    if key.kind() == Kind::BookOpened {
+        let at: Option<i64> = conn
+            .query_row(
+                "SELECT b.opened_at FROM sync_books s JOIN books b ON b.id = s.book_id
+                 WHERE s.library = ?1 AND s.sync_id = ?2",
+                params![lib.id.to_string(), subject_of(key)],
+                |r| r.get(0),
+            )
+            .optional()?
+            .flatten();
+        return Ok(at.map(|t| serde_json::json!({ "at": t }).to_string().into_bytes()));
+    }
     let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
     if let Some(v) = journal::unsent_of(conn, lib, key)? {
         record.add(Placed {
@@ -340,6 +353,10 @@ pub(crate) fn before(
         Content::Body { hash, .. } => journal::body(conn, hash),
         _ => Ok(None),
     }
+}
+
+fn subject_of(key: &Key) -> &str {
+    key.as_str().split(':').nth(1).unwrap_or_default()
 }
 
 /// Whether a remote version hasn't been applied here yet (so applying it is a
@@ -371,6 +388,11 @@ pub(crate) fn applied(
     now_ms: i64,
 ) -> Result<()> {
     let after = match &p.version.content {
+        Content::Body { .. } if p.version.kind == Kind::BookOpened => Some(
+            serde_json::json!({ "at": p.version.clock.ms() as i64 })
+                .to_string()
+                .into_bytes(),
+        ),
         Content::Body { hash, .. } => journal::body(conn, hash)?,
         _ => None,
     };
@@ -582,11 +604,26 @@ fn revert(conn: &Connection, lib: &Library, since: i64, now_ms: i64) -> Result<u
             Some(Outcome::Conflict { shown, .. }) => shown,
             None => continue,
         };
-        if shown.version.device.to_string() != e.device
-            || shown.version.hash.to_string() != e.hash
-            || journal::unsent_of(conn, lib, &key)?.is_some()
-            || journal::held(conn, lib, &key)?
+        // An edit the reader made after the change ended its entry (`changed_here`),
+        // so an unsent or held edit here came before it, and is what goes back.
+        if shown.version.device.to_string() != e.device || shown.version.hash.to_string() != e.hash
         {
+            continue;
+        }
+        // Last opened is the time of a version, which a new version can't take back:
+        // it is put back here only, and sync (paused) sends nothing of it.
+        if key.kind() == Kind::BookOpened {
+            let at = e
+                .before
+                .as_deref()
+                .and_then(|b| serde_json::from_slice::<serde_json::Value>(b).ok())
+                .and_then(|v| v["at"].as_i64());
+            conn.execute(
+                "UPDATE books SET opened_at = ?2 WHERE id IN
+                 (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)",
+                params![lib.id.to_string(), at, subject_of(&key)],
+            )?;
+            n += 1;
             continue;
         }
         let content = match e.before {
@@ -1428,6 +1465,89 @@ mod tests {
         answer(b.conn(), &lb, Answer::StopSyncing, now + 4 * HOUR).unwrap();
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.note.as_deref(), Some("mine"));
+    }
+
+    #[test]
+    fn stop_syncing_puts_back_a_local_place_a_remote_one_replaced() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, _) = shared(1, now);
+        b.save_position("book-b", "epubcfi(/6/8)", 0.4, None)
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/2)");
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        assert_eq!(b.position("book-b").unwrap().unwrap().0, "epubcfi(/6/8)");
+    }
+
+    #[test]
+    fn books_opened_elsewhere_are_counted_and_put_back() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &first, now + HOUR).unwrap();
+        // The reader answers after that: the window starts here.
+        b.conn()
+            .execute(
+                "UPDATE sync_question SET answered_at = ?1",
+                [now + HOUR + 1],
+            )
+            .unwrap();
+        let opened = |s: &Store| -> Option<i64> {
+            s.conn()
+                .query_row("SELECT opened_at FROM books WHERE id = 'book-b'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        let was = opened(&b);
+        assert!(was.is_some());
+        // The same place saved again: only the book's last opened changes.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let second = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &second, now + 2 * HOUR).unwrap();
+        assert_ne!(opened(&b), was);
+        let counted: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_counted WHERE kind = 'places' AND at > ?1",
+                [now + HOUR + 1],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(counted, 1, "the reopening is counted");
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
+        assert_eq!(opened(&b), was, "put back");
+    }
+
+    #[test]
+    fn a_highlight_restored_elsewhere_doesnt_bring_back_a_note_by_itself() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        // A brings the highlight back, but sends no note version with it.
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(
+            row.note, None,
+            "the note kept on B's deleted row stays hidden"
+        );
     }
 
     #[test]
