@@ -257,7 +257,8 @@ pub const MIGRATIONS: &[&str] = &[
         seq INTEGER,
         counts TEXT,
         answered_at INTEGER,
-        totals_asked_at INTEGER
+        totals_asked_at INTEGER,
+        keys TEXT                           -- a pass's records the approval lets through
     );
     "#,
 ];

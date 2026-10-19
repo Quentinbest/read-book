@@ -37,7 +37,7 @@ CREATE TABLE sync_undo (library TEXT NOT NULL, key TEXT NOT NULL, device TEXT NO
 CREATE INDEX sync_undo_at ON sync_undo(library, at);
 CREATE TABLE sync_counted (library TEXT NOT NULL, at INTEGER NOT NULL, what TEXT NOT NULL, kind TEXT NOT NULL, book TEXT, bytes INTEGER NOT NULL, approved INTEGER NOT NULL);
 CREATE INDEX sync_counted_at ON sync_counted(library, at);
-CREATE TABLE sync_question (library TEXT PRIMARY KEY, asking INTEGER NOT NULL, approved INTEGER NOT NULL, asked_at INTEGER, device TEXT, seq INTEGER, counts TEXT, answered_at INTEGER, totals_asked_at INTEGER);
+CREATE TABLE sync_question (library TEXT PRIMARY KEY, asking INTEGER NOT NULL, approved INTEGER NOT NULL, asked_at INTEGER, device TEXT, seq INTEGER, counts TEXT, answered_at INTEGER, totals_asked_at INTEGER, keys TEXT);
 CREATE TABLE sync_bodies (hash TEXT PRIMARY KEY, body BLOB NOT NULL);
 CREATE TABLE sync_books (library TEXT NOT NULL, sync_id TEXT NOT NULL, book_id TEXT, PRIMARY KEY (library, sync_id));
 CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
@@ -70,4 +70,4 @@ INSERT INTO sync_aside VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0
 INSERT INTO sync_stopped VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'budget', 6200);
 INSERT INTO sync_undo VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'cc', X'7B7D', 6300);
 INSERT INTO sync_counted VALUES ('00112233445566778899aabbccddeeff', 6300, 'changed', 'places', '7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 0, 0);
-INSERT INTO sync_question VALUES ('00112233445566778899aabbccddeeff', 0, 0, 6250, NULL, NULL, '{}', 6260, NULL);
+INSERT INTO sync_question VALUES ('00112233445566778899aabbccddeeff', 0, 0, 6250, NULL, NULL, '{}', 6260, NULL, NULL);

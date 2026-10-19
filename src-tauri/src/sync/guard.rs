@@ -210,32 +210,57 @@ pub(crate) fn over(
     Ok((weekly && total.over()).then_some((total, true)))
 }
 
-/// SY26: the question is open; `from` is the change that waits for it.
+/// SY26: the question is open; `from` is the change that waits for it, or for a
+/// pass over pending versions, `keys` are the records it would have applied: an
+/// approval lets through those and no others.
 pub(crate) fn ask(
     conn: &Connection,
     lib: &Library,
     from: Option<(DeviceId, u64)>,
+    keys: &[Key],
     counts: &Counts,
     totals: bool,
     now_ms: i64,
 ) -> Result<()> {
     let counts = serde_json::to_string(counts).expect("counts serialize");
+    let keys = serde_json::to_string(&keys.iter().map(Key::as_str).collect::<Vec<_>>())
+        .expect("keys serialize");
     conn.execute(
-        "INSERT INTO sync_question (library, asking, approved, asked_at, device, seq, counts, totals_asked_at)
-         VALUES (?1, 1, 0, ?2, ?3, ?4, ?5, CASE WHEN ?6 THEN ?2 END)
+        "INSERT INTO sync_question (library, asking, approved, asked_at, device, seq, counts, totals_asked_at, keys)
+         VALUES (?1, 1, 0, ?2, ?3, ?4, ?5, CASE WHEN ?6 THEN ?2 END, ?7)
          ON CONFLICT(library) DO UPDATE SET asking = 1, approved = 0, asked_at = ?2, device = ?3,
              seq = ?4, counts = ?5,
-             totals_asked_at = CASE WHEN ?6 THEN ?2 ELSE totals_asked_at END",
+             totals_asked_at = CASE WHEN ?6 THEN ?2 ELSE totals_asked_at END, keys = ?7",
         params![
             lib.id.to_string(),
             now_ms,
             from.map(|(d, _)| d.to_string()),
             from.map(|(_, s)| s as i64),
             counts,
-            totals
+            totals,
+            keys
         ],
     )?;
     Ok(())
+}
+
+/// The records an approved pass over pending versions may apply.
+pub(crate) fn approved_keys(conn: &Connection, lib: &Library) -> Result<Vec<Key>> {
+    let keys: Option<Option<String>> = conn
+        .query_row(
+            "SELECT keys FROM sync_question WHERE library = ?1",
+            [lib.id.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let keys: Vec<String> = keys
+        .flatten()
+        .and_then(|k| serde_json::from_str(&k).ok())
+        .unwrap_or_default();
+    Ok(keys
+        .iter()
+        .filter_map(|k| Key::parse(k).map(|(k, _)| k))
+        .collect())
 }
 
 /// The change the reader let through has been applied: the question is closed.
@@ -357,19 +382,54 @@ pub(crate) fn applied(
         Kind::Book | Kind::BookFile => ("books", Some(subject.to_owned())),
         Kind::Choice => return Ok(()),
     };
-    conn.execute(
-        "INSERT INTO sync_undo (library, key, device, seq, hash, before, at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+    // Since the last answer, one entry a record: what it was before the first
+    // change (kept), and the last change (moved on). So the journal holds what Stop
+    // syncing needs however long the counting runs, bounded by the records changed.
+    let since = question(conn, lib)?
+        .and_then(|q| q.answered_at)
+        .unwrap_or(0);
+    let moved = conn.execute(
+        "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6
+         WHERE library = ?1 AND key = ?2 AND at > ?7",
         params![
             lib.id.to_string(),
             p.version.key.as_str(),
             p.version.device.to_string(),
             p.seq as i64,
             p.version.hash.to_string(),
-            before,
-            now_ms
+            now_ms,
+            since
         ],
     )?;
+    if moved == 0 {
+        conn.execute(
+            "INSERT INTO sync_undo (library, key, device, seq, hash, before, at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                lib.id.to_string(),
+                p.version.key.as_str(),
+                p.version.device.to_string(),
+                p.seq as i64,
+                p.version.hash.to_string(),
+                before,
+                now_ms
+            ],
+        )?;
+    }
+    // Places count by book: one row a book a day is enough.
+    if kind == "places" {
+        let counted: bool = conn
+            .query_row(
+                "SELECT 1 FROM sync_counted WHERE library = ?1 AND kind = 'places' AND book = ?2 AND at > ?3",
+                params![lib.id.to_string(), book, since.max(now_ms - DAY_MS)],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if counted {
+            return Ok(());
+        }
+    }
     let bytes = if what == "added" {
         after.map_or(0, |a| a.len() as i64)
     } else {
@@ -391,15 +451,16 @@ pub(crate) fn applied(
     Ok(())
 }
 
-/// SY26: the undo journal keeps a week, and while a question is open, everything
-/// since the last answer; what was counted is needed only since the last answer.
+/// SY26: the undo journal keeps a week, and everything since the last answer (the
+/// counting that hasn't been answered yet); what was counted is needed only since
+/// the last answer.
 pub(crate) fn prune(conn: &Connection, lib: &Library, now_ms: i64) -> Result<()> {
-    let q = question(conn, lib)?;
-    let since = q.as_ref().and_then(|q| q.answered_at).unwrap_or(0);
-    let open = q.as_ref().is_some_and(|q| q.asking);
+    let since = question(conn, lib)?
+        .and_then(|q| q.answered_at)
+        .unwrap_or(0);
     conn.execute(
-        "DELETE FROM sync_undo WHERE library = ?1 AND at < ?2 AND NOT (?3 AND at > ?4)",
-        params![lib.id.to_string(), now_ms - WEEK_MS, open, since],
+        "DELETE FROM sync_undo WHERE library = ?1 AND at < ?2 AND at <= ?3",
+        params![lib.id.to_string(), now_ms - WEEK_MS, since],
     )?;
     conn.execute(
         "DELETE FROM sync_counted WHERE library = ?1 AND at <= ?2",
@@ -658,7 +719,7 @@ mod tests {
     }
 
     #[test]
-    fn the_undo_journal_keeps_a_week_and_an_open_question() {
+    fn the_undo_journal_keeps_a_week_and_what_no_answer_has_covered() {
         let now = crate::store::now_ms();
         let (mut a, la, b, lb, ids) = shared(10, now);
         let batch = delete(&mut a, &la, &ids[..5]);
@@ -668,21 +729,123 @@ mod tests {
                 .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get(0))
                 .unwrap()
         };
-        // 10 highlights and notes added, then 5 of each deleted.
+        // 10 highlights and notes added (answered), then 5 of each deleted.
         assert_eq!(rows(&b), 30);
         prune(b.conn(), &lb, now + 6 * DAY_MS).unwrap();
         assert_eq!(rows(&b), 30, "a week");
-        // An open question keeps what was changed since the last answer.
-        b.conn()
-            .execute("UPDATE sync_question SET asking = 1", [])
-            .unwrap();
+        // Past the week, what was changed since the last answer stays: the counting
+        // that hasn't been answered may still call for Stop syncing.
         prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
         assert_eq!(rows(&b), 10);
         b.conn()
-            .execute("UPDATE sync_question SET asking = 0", [])
+            .execute(
+                "UPDATE sync_question SET answered_at = ?1",
+                [now + 8 * DAY_MS],
+            )
             .unwrap();
         prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
         assert_eq!(rows(&b), 0);
+    }
+
+    #[test]
+    fn one_undo_entry_a_record_since_the_last_answer() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        for (i, text) in ["second", "third"].iter().enumerate() {
+            let mut h = highlight("book-a", Some(text), 1_760_000_002_000 + i as i64);
+            h.id = ids[0].clone();
+            h.quote_exact = "q0".into();
+            a.save_annotation(&h).unwrap();
+            let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+            receive(b.conn(), &lb, &batch, now + (i as i64 + 1) * HOUR).unwrap();
+        }
+        let before: Vec<Option<Vec<u8>>> = b
+            .conn()
+            .prepare("SELECT before FROM sync_undo WHERE key LIKE 'note:%' AND at > ?1")
+            .unwrap()
+            .query_map([now], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(before.len(), 1, "merged");
+        assert_eq!(
+            before[0].as_deref(),
+            Some(&br#"{"text":"note 0"}"#[..]),
+            "what it was first"
+        );
+    }
+
+    #[test]
+    fn a_books_place_is_counted_once_a_day() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        for i in 0..5 {
+            a.save_position("book-a", &format!("epubcfi(/6/{})", 2 * i + 2), 0.1, None)
+                .unwrap();
+            let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+            receive(b.conn(), &lb, &batch, now + (i + 1) * 60_000).unwrap();
+        }
+        let rows: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_counted WHERE kind = 'places' AND at > ?1",
+                [now],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 1);
+    }
+
+    #[test]
+    fn an_approved_pass_applies_only_what_the_reader_was_asked_about() {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        // B doesn't have the book yet: A's 110 highlights and notes wait.
+        b.conn().execute("DELETE FROM sync_books", []).unwrap();
+        highlights(&mut a, "book-a", 110);
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        // One note's body comes late.
+        let at = batch
+            .bodies
+            .iter()
+            .position(|b| b.starts_with(br#"{"text""#))
+            .unwrap();
+        let late = batch.bodies.remove(at);
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, now).unwrap(),
+            Received::Applied { applied: 0, .. }
+        ));
+        // A place written more than a day ahead (it waits for the clock) comes too.
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut ahead = publish_next(a.conn(), &la).unwrap().unwrap();
+        for v in &mut ahead.versions {
+            v["clock"] = serde_json::json!([now as u64 + 30 * HOUR as u64, 0]);
+        }
+        receive(b.conn(), &lb, &ahead, now).unwrap();
+        // The book arrives: 219 records would apply, past 200 added.
+        b.conn()
+            .execute(
+                "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, 'book-b')",
+                params![lb.id.to_string(), crate::sync::apply::tests::SYNC_BOOK],
+            )
+            .unwrap();
+        assert_eq!(apply_pending(b.conn(), &lb, now + HOUR).unwrap(), 0);
+        assert_eq!(asking(b.conn(), &lb).unwrap().map(|c| c.added), Some(219));
+        // No body arrives meanwhile to make more ready.
+        assert!(!crate::sync::apply::receive_body(b.conn(), &lb, &late).unwrap());
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        // Two days on, the place is due, but it wasn't in the question.
+        assert_eq!(apply_pending(b.conn(), &lb, now + 2 * DAY_MS).unwrap(), 219);
+        assert!(b.position("book-b").unwrap().is_none());
+        assert!(asking(b.conn(), &lb).unwrap().is_none());
+        assert!(crate::sync::apply::receive_body(b.conn(), &lb, &late).unwrap());
+        apply_pending(b.conn(), &lb, now + 2 * DAY_MS).unwrap();
+        assert!(
+            b.position("book-b").unwrap().is_some(),
+            "it applies in the next pass"
+        );
     }
 
     #[test]
@@ -802,7 +965,7 @@ mod tests {
         let (counts, totals) = over(b.conn(), &lb, 2 * DAY_MS + 1).unwrap().unwrap();
         assert!(totals);
         assert_eq!(counts.deleted, 60);
-        ask(b.conn(), &lb, None, &counts, totals, 2 * DAY_MS + 1).unwrap();
+        ask(b.conn(), &lb, None, &[], &counts, totals, 2 * DAY_MS + 1).unwrap();
         settle(b.conn(), &lb).unwrap(); // as if answered, without resetting the count
         deleted(4 * DAY_MS, 1);
         assert_eq!(

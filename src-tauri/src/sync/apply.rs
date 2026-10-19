@@ -167,6 +167,11 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 /// A version that declared another size for it is excluded, as it would be had the
 /// body come with it.
 pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
+    // SY26: while the reader is asked, no body arrives to make more ready; it is
+    // fetched again later.
+    if guard::asking(conn, lib)?.is_some() {
+        return Ok(false);
+    }
     let hash = identity_hash(bytes);
     let len = bytes.len() as i64;
     let tx = conn.unchecked_transaction()?;
@@ -764,6 +769,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             conn,
             lib,
             Some((batch.device, batch.seq)),
+            &[],
             &counts,
             totals,
             now_ms,
@@ -915,20 +921,24 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     if guard::paused(conn, lib)? || gate == guard::Gate::Asking {
         return Ok(0);
     }
-    {
+    // SY26: an approved pass applies the records the reader was asked about, and
+    // nothing that became ready since.
+    let mut keys: Vec<Key> = if gate == guard::Gate::Approved {
+        guard::approved_keys(conn, lib)?
+    } else {
         let tx = conn.unchecked_transaction()?;
         recheck_waiting(&tx, lib, now_ms)?;
         tx.commit()?;
-    }
-    let keys: Vec<String> = conn
-        .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
-        .query_map([lib.id.to_string()], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
-    let mut keys: Vec<Key> = keys
-        .iter()
-        .filter_map(|k| Key::parse(k).map(|(k, _)| k))
-        .collect();
+        let keys: Vec<String> = conn
+            .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
+            .query_map([lib.id.to_string()], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        keys.iter()
+            .filter_map(|k| Key::parse(k).map(|(k, _)| k))
+            .collect()
+    };
     in_dependency_order(&mut keys);
+    let asked = keys.clone();
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
@@ -952,7 +962,7 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
         guard::settle(&tx, lib)?;
     } else if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
         drop(tx);
-        guard::ask(conn, lib, None, &counts, totals, now_ms)?;
+        guard::ask(conn, lib, None, &asked, &counts, totals, now_ms)?;
         return Ok(0);
     }
     tx.commit()?;
