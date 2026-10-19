@@ -918,6 +918,20 @@ impl Tally {
             return Ok(false);
         }
         *total = next;
+        // A highlight moving here from another book no longer counts there.
+        let from: Option<String> = conn
+            .query_row(
+                "SELECT book_id FROM annotations WHERE id = ?1 AND deleted_at IS NULL AND book_id != ?2",
+                params![id, book],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(from) = from {
+            if self.books.contains_key(&from) {
+                let moved = Self::live_bytes(conn, &from, id)?;
+                *self.book_total(conn, &from)? -= moved;
+            }
+        }
         Ok(true)
     }
 
@@ -2682,6 +2696,37 @@ mod tests {
         assert_eq!(states, vec![-2, -2, -2, -1, -1, -1]);
         assert!(!receive_body(b.conn(), &lb, &text).unwrap());
         assert!(stopped(b.conn(), &lb, other).unwrap());
+    }
+
+    #[test]
+    fn a_highlight_moving_books_leaves_its_old_books_total() {
+        let (mut a, _) = device(1, "book-a");
+        a.conn()
+            .execute(
+                "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                 VALUES ('book-a2', 'h2', 'y.epub', 'Typee', 'package', 0)",
+                [],
+            )
+            .unwrap();
+        let one = highlight("book-a", None, 1_760_000_001_000);
+        let mut two = one.clone();
+        two.id = uuid::Uuid::new_v4().to_string();
+        a.save_annotation(&one).unwrap();
+        a.save_annotation(&two).unwrap();
+        let mut tally = Tally::default();
+        let bytes = own_bytes(&one);
+        // One counted (caching book-a's total), then two moved to book-a2.
+        assert!(tally
+            .book_take(a.conn(), "book-a", &one.id, bytes, 0)
+            .unwrap());
+        assert!(tally
+            .book_take(a.conn(), "book-a2", &two.id, bytes, 0)
+            .unwrap());
+        assert_eq!(
+            tally.books["book-a"], bytes,
+            "two no longer counts in book-a"
+        );
+        assert_eq!(tally.books["book-a2"], bytes);
     }
 
     #[test]
