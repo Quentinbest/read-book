@@ -11,6 +11,7 @@
 //! form (SP14) and Stage 2 their storage.
 
 use super::a9;
+use super::guard;
 use super::ids::{identity_hash, DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, Which};
 use super::merge::{
@@ -46,6 +47,11 @@ pub enum Received {
     /// SY28: this device has set aside as much from that one as it keeps, so it
     /// stops receiving from it; nothing of the change is kept.
     Stopped,
+    /// SY26: the reader is asked first; nothing of the change is kept until they
+    /// answer (`guard::answer`).
+    Asks,
+    /// SY26, SY27: sync is paused; nothing is received until the reader resumes.
+    Paused,
 }
 
 /// SY28 (prov., item 106): what is kept set aside from one device before this one
@@ -89,12 +95,14 @@ fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64
 /// SY28: what each device has set aside, read once per transaction and kept up to
 /// date as bodies are excluded, so excluding many costs one count, not one each.
 #[derive(Default)]
-struct Tally {
+pub(crate) struct Tally {
     used: std::collections::HashMap<DeviceId, (i64, i64)>,
     /// The devices a body was dropped from for want of room.
     dropped: HashSet<DeviceId>,
     /// SY28: each book's live highlights and notes, in bytes, once read.
     books: std::collections::HashMap<String, i64>,
+    /// SY26: this is the change the reader let through; it isn't counted again.
+    approved: bool,
 }
 
 impl Tally {
@@ -543,6 +551,9 @@ fn stop_owners_past_budget(
 
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
+    if guard::paused(conn, lib)? {
+        return Ok(Received::Paused);
+    }
     if stopped(conn, lib, batch.device)? {
         return Ok(Received::Stopped);
     }
@@ -558,6 +569,13 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         stop(conn, lib, batch.device, "set-aside budget", now_ms)?;
         return Ok(Received::Stopped);
     }
+    // SY26: while the reader is asked, nothing more is applied but the change
+    // they let through.
+    let gate = guard::gate(conn, lib, Some((batch.device, batch.seq)))?;
+    if gate == guard::Gate::Asking {
+        return Ok(Received::Asks);
+    }
+    guard::prune(conn, lib, now_ms)?;
     let tx = conn.unchecked_transaction()?;
     let mut keys = Vec::new();
     let mut aside = 0;
@@ -708,7 +726,10 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     in_dependency_order(&mut keys);
     let mut applied = 0;
-    let mut budget = Tally::default();
+    let mut budget = Tally {
+        approved: gate == guard::Gate::Approved,
+        ..Tally::default()
+    };
     for k in keys {
         // SY28: once a body of this device's has been dropped the change is rolled
         // back (below), so nothing more of it is worth applying.
@@ -732,6 +753,22 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         drop(tx); // rolls the change back
         stop(conn, lib, batch.device, "budget", now_ms)?;
         return Ok(Received::Stopped);
+    }
+    // SY26: a change that would take what other devices changed past a threshold
+    // isn't applied (it is rolled back) until the reader answers.
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
+    } else if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+        drop(tx);
+        guard::ask(
+            conn,
+            lib,
+            Some((batch.device, batch.seq)),
+            &counts,
+            totals,
+            now_ms,
+        )?;
+        return Ok(Received::Asks);
     }
     // Another device whose waiting version was dropped here is stopped with it, and
     // so is one that a body this change brought puts past a budget.
@@ -873,6 +910,11 @@ fn in_dependency_order(keys: &mut Vec<Key>) {
 
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
+    // SY26, SY27: nothing is applied while sync is paused or the reader is asked.
+    let gate = guard::gate(conn, lib, None)?;
+    if guard::paused(conn, lib)? || gate == guard::Gate::Asking {
+        return Ok(0);
+    }
     {
         let tx = conn.unchecked_transaction()?;
         recheck_waiting(&tx, lib, now_ms)?;
@@ -891,7 +933,10 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
     // excluded (`Tally`), so this needs no check of its own.
-    let mut aside = Tally::default();
+    let mut aside = Tally {
+        approved: gate == guard::Gate::Approved,
+        ..Tally::default()
+    };
     for key in keys {
         if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
             n += 1;
@@ -901,6 +946,14 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     // chain, now missing that version, isn't received further.
     for device in &aside.dropped {
         stop(&tx, lib, *device, "set-aside budget", now_ms)?;
+    }
+    // SY26: as for a change received.
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
+    } else if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+        drop(tx);
+        guard::ask(conn, lib, None, &counts, totals, now_ms)?;
+        return Ok(0);
     }
     tx.commit()?;
     Ok(n)
@@ -1134,7 +1187,12 @@ fn exclude(
 }
 
 /// Writes one version's state into the library. `false` when it must wait.
-fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Result<bool> {
+pub(crate) fn write(
+    conn: &Connection,
+    lib: &Library,
+    v: &Version,
+    aside: &mut Tally,
+) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
         Content::Body { .. } => match checked_body(conn, lib, v, aside)? {
@@ -1393,9 +1451,19 @@ fn apply_key(
     {
         return Ok(false);
     }
+    // SY26: what a remote version replaces is kept in the undo journal, and the
+    // change counted, the first time it is applied.
+    let before = if winner.version.device != lib.device && guard::fresh(conn, lib, winner)? {
+        Some(guard::before(conn, lib, key, next)?)
+    } else {
+        None
+    };
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
+        if let Some(before) = before {
+            guard::applied(conn, lib, winner, before, aside.approved, now_ms)?;
+        }
         true
     } else {
         return Ok(false);
@@ -1426,20 +1494,21 @@ fn apply_key(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::store::{AnnotationRow, Store};
     use crate::sync::ids::Id16;
     use crate::sync::local;
 
-    const LIB: Id16 = Id16([7; 16]);
-    const SYNC_BOOK: &str = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
-    const ANNO: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
-    const HASH: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    pub(crate) const LIB: Id16 = Id16([7; 16]);
+    pub(crate) const SYNC_BOOK: &str = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+    pub(crate) const ANNO: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
+    pub(crate) const HASH: &str =
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
     /// A device with one book, joined to the library. The book is matched to the
     /// same sync ID on every device, as Stage 4's book records will do.
-    fn device(n: u8, book: &str) -> (Store, Library) {
+    pub(crate) fn device(n: u8, book: &str) -> (Store, Library) {
         let store = Store::open_in_memory().unwrap();
         let lib = Library {
             id: LIB,
@@ -1462,16 +1531,16 @@ mod tests {
     }
 
     /// The tests stand in for the device store with the library's own count.
-    fn publish_next(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
+    pub(crate) fn publish_next(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
         publish(conn, lib, own_seq(conn, lib)?)
     }
 
-    fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
+    pub(crate) fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
         let batch = publish_next(from.conn(), fl).unwrap()?;
         Some(receive(to.conn(), tl, &batch, crate::store::now_ms()).unwrap())
     }
 
-    fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
+    pub(crate) fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
         AnnotationRow {
             id: ANNO.into(),
             book_id: book.into(),
@@ -1488,7 +1557,7 @@ mod tests {
         }
     }
 
-    fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
+    pub(crate) fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
         s.annotations(book).unwrap().first().map(|a| a.note.clone())
     }
 
@@ -3405,8 +3474,12 @@ mod tests {
         }
         let batch = publish_next(a.conn(), &la).unwrap().unwrap();
         assert!(batch.versions.len() > ASIDE_ITEMS as usize);
+        // SY26: 600 added is past 200, so the reader is asked first.
+        let now = crate::store::now_ms();
+        assert_eq!(receive(b.conn(), &lb, &batch, now).unwrap(), Received::Asks);
+        guard::answer(b.conn(), &lb, guard::Answer::Apply, now).unwrap();
         assert!(matches!(
-            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            receive(b.conn(), &lb, &batch, now).unwrap(),
             Received::Applied { .. }
         ));
         assert_eq!(b.annotations("book-b").unwrap().len(), 600);

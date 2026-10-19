@@ -9,6 +9,7 @@
 pub mod a9;
 pub mod apply;
 pub mod clock;
+pub mod guard;
 pub mod identity;
 pub mod ids;
 pub mod journal;
