@@ -633,8 +633,16 @@ fn subject(key: &Key) -> &str {
 fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
-        Content::Body { hash, .. } => match journal::body(conn, hash)? {
-            Some(bytes) => match check_body(&v.key, &bytes) {
+        Content::Body { hash, size } => match journal::body(conn, hash)? {
+            // SY28: a body must be the size its version declares, also when it
+            // arrives after its version.
+            Some(bytes) => match check_body(&v.key, &bytes).and_then(|b| {
+                if bytes.len() as u64 == *size {
+                    Ok(b)
+                } else {
+                    Err(super::record::RecordError::Field("body"))
+                }
+            }) {
                 Ok(b) => Some(b),
                 Err(e) => {
                     // SY28: a body that fails is set aside and its version taken out
@@ -662,6 +670,16 @@ fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
         Content::Deleted { .. } => None,
         Content::Inline(_) => return Ok(false),
     };
+    // SY28: a highlight over its limit stays on this device, unsynced; nothing from
+    // another device replaces or deletes it.
+    if v.kind == Kind::Annotation {
+        if let Some((row, _)) = crate::store::annotation_row(conn, subject(&v.key))? {
+            let book = super::local::sync_id(conn, lib, &row.book_id)?;
+            if a9::body_of(&row, &book).to_string().len() as u64 > Kind::Annotation.body_limit() {
+                return Ok(false);
+            }
+        }
+    }
     match v.kind {
         Kind::Place | Kind::BookOpened | Kind::BookFinished => {
             let Some(book) = local_book(conn, lib, subject(&v.key))? else {
@@ -777,10 +795,7 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
     let mut record = journal::record_of(conn, lib, key, Which::All)?;
     // A local change not yet published counts as this device's next version.
     let next = own_seq(conn, lib)? + 1;
-    if let Some(v) = journal::unsent(conn, lib)?
-        .into_iter()
-        .find(|v| &v.key == key)
-    {
+    if let Some(v) = journal::unsent_of(conn, lib, key)? {
         record.add(Placed {
             version: v,
             seq: next,
@@ -804,6 +819,13 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
             )?;
         }
     }
+    // SY10: every head accepted here has been seen, shown or not, so a change made
+    // after it sorts after it.
+    for h in &heads {
+        if h.version.device != lib.device {
+            journal::observe(conn, lib, h.version.clock, now_ms.max(0) as u64)?;
+        }
+    }
     if journal::held(conn, lib, key)? {
         // #109: an edit is held for the reader's choice; nothing overwrites it.
         return Ok(false);
@@ -811,8 +833,6 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version)? {
-        // SY10: a change made after this one sorts after it.
-        journal::observe(conn, lib, winner.version.clock, now_ms.max(0) as u64)?;
         true
     } else {
         return Ok(false);
@@ -1325,6 +1345,70 @@ mod tests {
             receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
             Received::Applied { set_aside: 2, .. }
         ));
+        assert!(b.position("book-b").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_hidden_head_still_moves_the_clock_on() {
+        // SY10: A's deletion is shown over B's later edit; B's clock is still seen.
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        let mut h = highlight("book-b", None, 1_760_000_002_000);
+        h.color = "blue".into();
+        b.save_annotation(&h).unwrap();
+        let mut from_b = publish_next(b.conn(), &lb).unwrap().unwrap();
+        let ahead = crate::store::now_ms() as u64 + 60 * 60 * 1000;
+        for v in &mut from_b.versions {
+            v["clock"] = serde_json::json!([ahead, 0]);
+        }
+        receive(a.conn(), &la, &from_b, crate::store::now_ms()).unwrap();
+        let ms: i64 = a
+            .conn()
+            .query_row("SELECT clock_ms FROM sync_libraries", [], |r| r.get(0))
+            .unwrap();
+        assert!(ms as u64 >= ahead, "{ms} < {ahead}");
+    }
+
+    #[test]
+    fn an_oversized_local_highlight_isnt_replaced_from_another_device() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        let mut big = highlight("book-a", None, 1_760_000_001_000);
+        big.quote_exact = "x".repeat(5 * 1024 * 1024);
+        a.save_annotation(&big).unwrap();
+        b.save_annotation(&highlight("book-b", None, 1_760_000_002_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        let kept = a.annotations("book-a").unwrap();
+        assert_eq!(
+            kept[0].quote_exact.len(),
+            big.quote_exact.len(),
+            "SY28: stays"
+        );
+    }
+
+    #[test]
+    fn a_body_arriving_late_is_held_to_its_declared_size() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        for v in &mut batch.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("place:")) {
+                v["body"]["size"] = serde_json::json!(3);
+            }
+        }
+        let bodies = std::mem::take(&mut batch.bodies);
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        for body in &bodies {
+            journal::put_body(b.conn(), body).unwrap();
+        }
+        apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap();
         assert!(b.position("book-b").unwrap().is_none());
     }
 

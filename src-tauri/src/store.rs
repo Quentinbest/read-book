@@ -288,8 +288,11 @@ pub struct DictionaryRow {
 }
 
 /// One annotation row, and whether it is marked deleted.
-fn annotation_row(conn: &Connection, id: &str) -> Result<Option<(AnnotationRow, bool)>> {
-    Ok(conn
+pub(crate) fn annotation_row(
+    conn: &Connection,
+    id: &str,
+) -> rusqlite::Result<Option<(AnnotationRow, bool)>> {
+    conn
         .query_row(
             "SELECT id, book_id, anchored_content_hash, color, cfi_range, quote_exact, quote_prefix,
                     quote_suffix, note, created_at, updated_at, anchor_status, deleted_at IS NOT NULL
@@ -315,7 +318,7 @@ fn annotation_row(conn: &Connection, id: &str) -> Result<Option<(AnnotationRow, 
                 ))
             },
         )
-        .optional()?)
+        .optional()
 }
 
 pub fn now_ms() -> i64 {

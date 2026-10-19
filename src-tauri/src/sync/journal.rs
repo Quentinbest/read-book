@@ -536,6 +536,19 @@ pub fn held(conn: &Connection, lib: &Library, key: &Key) -> Result<bool> {
 }
 
 /// The local versions waiting to be published (SY7), oldest key first.
+/// This device's unsent version of one key, if any (not one held, #109).
+pub fn unsent_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Version>> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND seq IS NULL AND applied != -3",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    raw.map(|r| check(&r, lib.device)).transpose()
+}
+
 pub fn unsent(conn: &Connection, lib: &Library) -> Result<Vec<Version>> {
     let mut stmt = conn.prepare(
         "SELECT raw FROM sync_versions
