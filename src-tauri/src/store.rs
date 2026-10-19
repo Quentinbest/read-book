@@ -212,8 +212,17 @@ pub const MIGRATIONS: &[&str] = &[
     "#,
     // 7: SY28: versions found by the body they name, so a body is kept or dropped
     // with one indexed look-up, not a scan of the journal
+    // and the devices this one has stopped receiving from
     r#"
     CREATE INDEX sync_versions_body ON sync_versions(json_extract(raw, '$.body.hash'));
+
+    CREATE TABLE sync_stopped (             -- SY28: until the reader's Remove (Stage 3)
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        PRIMARY KEY (library, device)
+    );
     "#,
 ];
 

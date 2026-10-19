@@ -429,8 +429,38 @@ fn set_aside(
     Ok(())
 }
 
+/// SY28: this device stops receiving from `device`, for good until the reader's
+/// Remove (Stage 3), which Settings › Sync offers by naming it.
+fn stop(
+    conn: &Connection,
+    lib: &Library,
+    device: DeviceId,
+    reason: &str,
+    now_ms: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO sync_stopped (library, device, reason, at) VALUES (?1, ?2, ?3, ?4)",
+        params![lib.id.to_string(), device.to_string(), reason, now_ms],
+    )?;
+    Ok(())
+}
+
+pub fn stopped(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sync_stopped WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), device.to_string()],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
+    if stopped(conn, lib, batch.device)? {
+        return Ok(Received::Stopped);
+    }
     let have = seen(conn, lib, batch.device)?;
     if batch.seq <= have {
         return Ok(Received::Repeat);
@@ -440,6 +470,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     }
     // SY28: nothing more is received from a device whose budget is spent.
     if aside_full(conn, lib, batch.device, 1, 0)? {
+        stop(conn, lib, batch.device, "set-aside budget", now_ms)?;
         return Ok(Received::Stopped);
     }
     let tx = conn.unchecked_transaction()?;
@@ -608,6 +639,8 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         || aside_full(&tx, lib, batch.device, 0, 0)?
         || pending_full(&tx, lib, batch.device)?
     {
+        drop(tx); // rolls the change back
+        stop(conn, lib, batch.device, "budget", now_ms)?;
         return Ok(Received::Stopped);
     }
     tx.commit()?;
@@ -765,6 +798,11 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
         if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
             n += 1;
         }
+    }
+    // SY28: a device a body was dropped from for want of room is stopped, so its
+    // chain, now missing that version, isn't received further.
+    for device in &aside.dropped {
+        stop(&tx, lib, *device, "set-aside budget", now_ms)?;
     }
     tx.commit()?;
     Ok(n)
@@ -1121,9 +1159,11 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                     return Ok(false);
                 }
             }
+            // The highlight shows as changed when its note does, as on the device
+            // that wrote it.
             conn.execute(
-                "UPDATE annotations SET note = ?2 WHERE id = ?1",
-                params![subject(&v.key), text],
+                "UPDATE annotations SET note = ?2, updated_at = MAX(updated_at, ?3) WHERE id = ?1",
+                params![subject(&v.key), text, ms],
             )?;
         }
         // Settings (item 103), books and their files (Stage 4) and choices (Stage 5)
@@ -1907,6 +1947,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(left, 0, "every bad version is out of merging");
+        assert!(
+            stopped(b.conn(), &lb, other).unwrap(),
+            "SY28: and receiving from it stops"
+        );
     }
 
     #[test]
@@ -2321,6 +2365,49 @@ mod tests {
             1,
             "SY28: stays, with its note"
         );
+    }
+
+    #[test]
+    fn a_change_past_the_budget_stops_its_device_for_good() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        b.conn()
+            .execute(
+                "INSERT INTO sync_aside (library, device, hash, reason, size, raw, first_at) VALUES (?1, ?2, 'x', 'x', ?3, X'00', 0)",
+                params![LIB.to_string(), la.device.to_string(), ASIDE_BYTES - 10],
+            )
+            .unwrap();
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        let two_days = 2 * 24 * 60 * 60 * 1000;
+        let now = crate::store::now_ms();
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now - two_days).unwrap(),
+            Received::Stopped
+        );
+        // The set-aside entry is gone; the device is still stopped.
+        b.conn().execute("DELETE FROM sync_aside", []).unwrap();
+        assert!(stopped(b.conn(), &lb, la.device).unwrap());
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now).unwrap(),
+            Received::Stopped
+        );
+    }
+
+    #[test]
+    fn a_remote_note_marks_its_highlight_changed() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a", Some("second"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("second"));
+        assert!(row.updated_at > 1_760_000_001_000, "{}", row.updated_at);
     }
 
     #[test]

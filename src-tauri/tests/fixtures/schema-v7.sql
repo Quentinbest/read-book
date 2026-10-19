@@ -32,6 +32,7 @@ CREATE UNIQUE INDEX sync_versions_published ON sync_versions(library, device, se
 CREATE UNIQUE INDEX sync_versions_unsent ON sync_versions(library, key) WHERE seq IS NULL;
 CREATE INDEX sync_versions_key ON sync_versions(library, key);
 CREATE INDEX sync_versions_body ON sync_versions(json_extract(raw, '$.body.hash'));
+CREATE TABLE sync_stopped (library TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (library, device));
 CREATE TABLE sync_bodies (hash TEXT PRIMARY KEY, body BLOB NOT NULL);
 CREATE TABLE sync_books (library TEXT NOT NULL, sync_id TEXT NOT NULL, book_id TEXT, PRIMARY KEY (library, sync_id));
 CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
@@ -61,3 +62,4 @@ INSERT INTO sync_books VALUES ('00112233445566778899aabbccddeeff', '7c1e1d2a-3b4
 INSERT INTO sync_changes VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa');
 INSERT INTO sync_seen VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa');
 INSERT INTO sync_aside VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'bb', 'format', 3, X'7B7D', 6100);
+INSERT INTO sync_stopped VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'budget', 6200);
