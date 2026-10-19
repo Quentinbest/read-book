@@ -8,6 +8,7 @@
 use super::a9;
 use super::ids::Id16;
 use super::journal::{self, JournalError, Library, LocalContent};
+use super::merge::Outcome;
 use super::record::{Entry, Key};
 use crate::store::AnnotationRow;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -260,7 +261,8 @@ pub fn on_annotation_restored(conn: &Connection, row: &AnnotationRow, now_ms: u6
 
 /// SY29: on joining a library, this device publishes its whole current library as
 /// its own new changes: independent additions, never older than that library's
-/// tombstones, so nothing there is replaced wholesale.
+/// tombstones, so nothing there is replaced wholesale. On a return, what it deleted
+/// meanwhile is published too.
 pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
     if journal::active(conn)?.is_none() {
         return Ok(0);
@@ -274,14 +276,14 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
         on_position(conn, &book, &cfi, fraction, chapter.as_deref(), now_ms)?;
         n += 1;
     }
-    let rows: Vec<AnnotationRow> = conn
+    let rows: Vec<(AnnotationRow, bool)> = conn
         .prepare(
             "SELECT id, book_id, anchored_content_hash, color, cfi_range, quote_exact, quote_prefix,
-                    quote_suffix, note, created_at, updated_at, anchor_status
-             FROM annotations WHERE deleted_at IS NULL",
+                    quote_suffix, note, created_at, updated_at, anchor_status, deleted_at IS NOT NULL
+             FROM annotations",
         )?
         .query_map([], |r| {
-            Ok(AnnotationRow {
+            Ok((AnnotationRow {
                 id: r.get(0)?,
                 book_id: r.get(1)?,
                 anchored_content_hash: r.get(2)?,
@@ -294,12 +296,31 @@ pub fn publish_library(conn: &Connection, now_ms: u64) -> Result<usize> {
                 created_at: r.get(9)?,
                 updated_at: r.get(10)?,
                 anchor_status: r.get(11)?,
-            })
+            }, r.get(12)?))
         })?
         .collect::<std::result::Result<_, _>>()?;
-    for a in &rows {
-        on_annotation(conn, None, a, now_ms)?;
-        n += 1;
+    let lib = journal::active(conn)?.expect("checked above");
+    for (a, deleted) in &rows {
+        if !deleted {
+            on_annotation(conn, None, a, now_ms)?;
+            n += 1;
+            continue;
+        }
+        // A highlight deleted here that this library still shows (a return to a
+        // library after deleting it elsewhere) is deleted there too; one it never
+        // had isn't published.
+        let k = key(format!("annotation:{}", a.id));
+        let shows = match journal::record_of(conn, &lib, &k, journal::Which::Applied)?
+            .outcome(&std::collections::HashSet::new())
+        {
+            Some(Outcome::Settled(p)) => !p.is_deleted(),
+            Some(Outcome::Conflict { shown, .. }) => !shown.is_deleted(),
+            None => false,
+        };
+        if shows {
+            on_annotation_deleted(conn, a, now_ms)?;
+            n += 1;
+        }
     }
     Ok(n)
 }

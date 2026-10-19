@@ -2936,6 +2936,31 @@ mod tests {
     }
 
     #[test]
+    fn returning_to_a_library_publishes_what_was_deleted_meanwhile() {
+        // SY29: a highlight published to the first library, deleted while joined to
+        // a second, is deleted in the first when the device returns.
+        let (mut a, la) = device(1, "book-a");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        publish_next(a.conn(), &la).unwrap().unwrap();
+        let second = Library {
+            id: Id16([8; 16]),
+            device: la.device,
+        };
+        journal::join(a.conn(), &second, "google-drive", crate::store::now_ms()).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        journal::join(a.conn(), &la, "icloud-drive", crate::store::now_ms()).unwrap();
+        local::publish_library(a.conn(), crate::store::now_ms() as u64).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap().unwrap();
+        let tombstone = back
+            .versions
+            .iter()
+            .find(|v| v["key"] == format!("annotation:{ANNO}"))
+            .expect("the deletion is published");
+        assert!(tombstone.get("deleted").is_some(), "{tombstone}");
+    }
+
+    #[test]
     fn a_newest_wins_record_settles_once() {
         let (mut a, la) = device(1, "book-a");
         let (mut b, lb) = device(2, "book-b");
