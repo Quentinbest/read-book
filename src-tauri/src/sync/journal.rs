@@ -536,6 +536,36 @@ pub fn held(conn: &Connection, lib: &Library, key: &Key) -> Result<bool> {
 }
 
 /// The local versions waiting to be published (SY7), oldest key first.
+/// Deletes a body no version names any more.
+pub fn drop_body_if_unnamed(conn: &Connection, hash: &Hash32) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_bodies WHERE hash = ?1 AND NOT EXISTS
+         (SELECT 1 FROM sync_versions WHERE json_extract(raw, '$.body.hash') = ?1)",
+        [hash.to_string()],
+    )?;
+    Ok(())
+}
+
+/// SY28: this device's unsent versions of one key are dropped, held or not: a later
+/// local value, over its limit, replaced them and stays on this device.
+pub fn drop_unsent(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
+    let hashes: Vec<String> = conn
+        .prepare(
+            "SELECT json_extract(raw, '$.body.hash') FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND seq IS NULL AND json_extract(raw, '$.body.hash') IS NOT NULL",
+        )?
+        .query_map(params![lib.id.to_string(), key.as_str()], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    conn.execute(
+        "DELETE FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    for h in hashes.iter().filter_map(|h| Hash32::parse(h)) {
+        drop_body_if_unnamed(conn, &h)?;
+    }
+    Ok(())
+}
+
 /// This device's unsent version of one key, if any (not one held, #109).
 pub fn unsent_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Version>> {
     let raw: Option<String> = conn

@@ -30,7 +30,8 @@ fn record(
 ) -> Result<()> {
     if let LocalContent::Body(b) = &content {
         if b.len() as u64 > k.kind().body_limit() {
-            return Ok(());
+            // An earlier unsent value is superseded here and isn't published.
+            return journal::drop_unsent(conn, lib, &k);
         }
     }
     match journal::record_local(conn, lib, &k, content.clone(), now_ms) {

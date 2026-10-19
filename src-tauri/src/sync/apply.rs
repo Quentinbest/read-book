@@ -65,6 +65,11 @@ fn aside_full(
     extra_items: i64,
     extra_bytes: i64,
 ) -> Result<bool> {
+    let (items, bytes) = aside_used(conn, lib, device)?;
+    Ok(items + extra_items > ASIDE_ITEMS || bytes + extra_bytes > ASIDE_BYTES)
+}
+
+fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64, i64)> {
     let (n, bytes): (i64, Option<i64>) = conn.query_row(
         "SELECT COUNT(*), SUM(size) FROM sync_aside WHERE library = ?1 AND device = ?2",
         params![lib.id.to_string(), device.to_string()],
@@ -78,8 +83,43 @@ fn aside_full(
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    Ok(n + m + extra_items > ASIDE_ITEMS
-        || bytes.unwrap_or(0) + held.unwrap_or(0) + extra_bytes > ASIDE_BYTES)
+    Ok((n + m, bytes.unwrap_or(0) + held.unwrap_or(0)))
+}
+
+/// SY28: what each device has set aside, read once per transaction and kept up to
+/// date as bodies are excluded, so excluding many costs one count, not one each.
+#[derive(Default)]
+struct Aside {
+    used: std::collections::HashMap<DeviceId, (i64, i64)>,
+    /// A body was dropped for want of room.
+    dropped: bool,
+}
+
+impl Aside {
+    /// Takes room for `items` and `bytes` of `device`'s; `false` when there isn't.
+    fn take(
+        &mut self,
+        conn: &Connection,
+        lib: &Library,
+        device: DeviceId,
+        items: i64,
+        bytes: i64,
+    ) -> Result<bool> {
+        let used = match self.used.get_mut(&device) {
+            Some(u) => u,
+            None => {
+                let u = aside_used(conn, lib, device)?;
+                self.used.entry(device).or_insert(u)
+            }
+        };
+        if used.0 + items > ASIDE_ITEMS || used.1 + bytes > ASIDE_BYTES {
+            self.dropped = true;
+            return Ok(false);
+        }
+        used.0 += items;
+        used.1 += bytes;
+        Ok(true)
+    }
 }
 
 /// SY2, SY28 (prov.): valid versions of one device still pending (`applied = 0`,
@@ -462,8 +502,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     // Versions that waited for their ancestry may resolve now.
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     let mut applied = 0;
+    let mut budget = Aside::default();
     for k in keys {
-        if apply_key(&tx, lib, &k, now_ms)? {
+        if apply_key(&tx, lib, &k, now_ms, &mut budget)? {
             applied += 1;
         }
     }
@@ -471,7 +512,10 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     // that device unapplied must fit both budgets; if not, the whole change is
     // rolled back (the transaction is dropped) and receiving from it stops. A change
     // file is bounded (SP8), so this is the only check needed, once per change.
-    if aside_full(&tx, lib, batch.device, 0, 0)? || pending_full(&tx, lib, batch.device)? {
+    if budget.dropped
+        || aside_full(&tx, lib, batch.device, 0, 0)?
+        || pending_full(&tx, lib, batch.device)?
+    {
         return Ok(Received::Stopped);
     }
     tx.commit()?;
@@ -539,11 +583,7 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
                 conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
                 // Its body goes too, unless another version still names it.
                 if let Content::Body { hash, .. } = &placed.version.content {
-                    conn.execute(
-                        "DELETE FROM sync_bodies WHERE hash = ?1 AND NOT EXISTS
-                         (SELECT 1 FROM sync_versions WHERE json_extract(raw, '$.body.hash') = ?1)",
-                        [hash.to_string()],
-                    )?;
+                    journal::drop_body_if_unnamed(conn, hash)?;
                 }
             }
             HistoryCheck::Wait => {
@@ -604,9 +644,12 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
         .collect::<std::result::Result<_, _>>()?;
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
+    // SY28: bodies excluded here are held to each device's budget as they are
+    // excluded (`Aside`), so this needs no check of its own.
+    let mut aside = Aside::default();
     for k in keys {
         if let Some((key, _)) = Key::parse(&k) {
-            if apply_key(&tx, lib, &key, now_ms)? {
+            if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
                 n += 1;
             }
         }
@@ -629,43 +672,87 @@ fn subject(key: &Key) -> &str {
     key.as_str().split(':').nth(1).unwrap_or_default()
 }
 
+/// A version's body, checked.
+enum Body {
+    Ready(Value),
+    Missing,
+    Excluded,
+}
+
+/// SY28: a remote version's body, checked against its type and the size its version
+/// declares (also when it arrives after its version). One that fails is excluded:
+/// taken out of merging and never applied, and kept (`applied = -4`, with a small
+/// set-aside entry saying why) while its device's budget has room, or else dropped.
+fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Result<Body> {
+    let Content::Body { hash, size } = &v.content else {
+        return Ok(Body::Missing);
+    };
+    let Some(bytes) = journal::body(conn, hash)? else {
+        return Ok(Body::Missing);
+    };
+    let checked = check_body(&v.key, &bytes).and_then(|b| {
+        if bytes.len() as u64 == *size {
+            Ok(b)
+        } else {
+            Err(super::record::RecordError::Field("body"))
+        }
+    });
+    let e = match checked {
+        Ok(b) => return Ok(Body::Ready(b)),
+        Err(e) => e,
+    };
+    let row = params![
+        lib.id.to_string(),
+        v.device.to_string(),
+        v.key.as_str(),
+        v.hash.to_string()
+    ];
+    let raw: Option<i64> = conn
+        .query_row(
+            "SELECT length(raw) FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
+            row,
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(raw) = raw else {
+        return Ok(Body::Excluded);
+    };
+    let reason = hash.to_string();
+    // Two items: the version, still in its writer's chain, and the entry saying why.
+    let cost = raw + bytes.len() as i64 + reason.len() as i64;
+    if aside.take(conn, lib, v.device, 2, cost)? {
+        set_aside(
+            conn,
+            lib,
+            v.device,
+            reason.as_bytes(),
+            &e.to_string(),
+            v.clock.ms() as i64,
+        )?;
+        conn.execute(
+            "UPDATE sync_versions SET applied = -4
+             WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
+            row,
+        )?;
+    } else {
+        conn.execute(
+            "DELETE FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
+            row,
+        )?;
+        journal::drop_body_if_unnamed(conn, hash)?;
+    }
+    Ok(Body::Excluded)
+}
+
 /// Writes one version's state into the library. `false` when it must wait.
-fn write(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
+fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
-        Content::Body { hash, size } => match journal::body(conn, hash)? {
-            // SY28: a body must be the size its version declares, also when it
-            // arrives after its version.
-            Some(bytes) => match check_body(&v.key, &bytes).and_then(|b| {
-                if bytes.len() as u64 == *size {
-                    Ok(b)
-                } else {
-                    Err(super::record::RecordError::Field("body"))
-                }
-            }) {
-                Ok(b) => Some(b),
-                Err(e) => {
-                    // SY28: a body that fails is set aside and its version taken out
-                    // of merging (`applied = -4`), never applied.
-                    // The body stays counted under its version (see `aside_full`); the
-                    // aside entry only records why.
-                    set_aside(
-                        conn,
-                        lib,
-                        v.device,
-                        hash.to_string().as_bytes(),
-                        &e.to_string(),
-                        ms,
-                    )?;
-                    conn.execute(
-                        "UPDATE sync_versions SET applied = -4
-                         WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4 AND seq IS NOT NULL",
-                        params![lib.id.to_string(), v.device.to_string(), v.key.as_str(), v.hash.to_string()],
-                    )?;
-                    return Ok(false);
-                }
-            },
-            None => return Ok(false),
+        Content::Body { .. } => match checked_body(conn, lib, v, aside)? {
+            Body::Ready(b) => Some(b),
+            Body::Missing | Body::Excluded => return Ok(false),
         },
         Content::Deleted { .. } => None,
         Content::Inline(_) => return Ok(false),
@@ -791,8 +878,37 @@ fn mark_applied(conn: &Connection, lib: &Library, p: &Placed) -> Result<()> {
 }
 
 /// What one record comes to now, written into the library. `true` if it changed.
-fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<bool> {
+fn apply_key(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    now_ms: i64,
+    aside: &mut Aside,
+) -> Result<bool> {
+    // SY28: a version whose body fails is excluded before anything is merged or its
+    // clock observed, so it is never a head, shown or hidden.
+    let unapplied: HashSet<(String, i64)> = conn
+        .prepare(
+            "SELECT device, seq FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND applied = 0 AND seq IS NOT NULL",
+        )?
+        .query_map(params![lib.id.to_string(), key.as_str()], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
     let mut record = journal::record_of(conn, lib, key, Which::All)?;
+    let mut excluded = false;
+    for p in record.versions() {
+        if p.version.device != lib.device
+            && unapplied.contains(&(p.version.device.to_string(), p.seq as i64))
+            && matches!(checked_body(conn, lib, &p.version, aside)?, Body::Excluded)
+        {
+            excluded = true;
+        }
+    }
+    if excluded {
+        record = journal::record_of(conn, lib, key, Which::All)?;
+    }
     // A local change not yet published counts as this device's next version.
     let next = own_seq(conn, lib)? + 1;
     if let Some(v) = journal::unsent_of(conn, lib, key)? {
@@ -832,7 +948,7 @@ fn apply_key(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result
     }
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
-    } else if write(conn, lib, &winner.version)? {
+    } else if write(conn, lib, &winner.version, aside)? {
         true
     } else {
         return Ok(false);
@@ -1410,6 +1526,105 @@ mod tests {
         }
         apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap();
         assert!(b.position("book-b").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_bad_hidden_head_is_excluded_before_its_clock_is_seen() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        let mut h = highlight("book-b", None, 1_760_000_002_000);
+        h.color = "blue".into();
+        b.save_annotation(&h).unwrap();
+        let mut from_b = publish_next(b.conn(), &lb).unwrap().unwrap();
+        let ahead = crate::store::now_ms() as u64 + 60 * 60 * 1000;
+        let bad = br#"{"not":"a highlight"}"#.to_vec();
+        for v in &mut from_b.versions {
+            v["clock"] = serde_json::json!([ahead, 0]);
+            if v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+            {
+                v["body"] = serde_json::json!({ "hash": identity_hash(&bad).to_string(), "size": bad.len() });
+            }
+        }
+        from_b.bodies.push(bad);
+        receive(a.conn(), &la, &from_b, crate::store::now_ms()).unwrap();
+        let ms: i64 = a
+            .conn()
+            .query_row("SELECT clock_ms FROM sync_libraries", [], |r| r.get(0))
+            .unwrap();
+        assert!((ms as u64) < ahead, "the bad head's clock wasn't observed");
+        let key = Key::parse(&format!("annotation:{ANNO}")).unwrap().0;
+        let record = journal::record_of(a.conn(), &la, &key, Which::All).unwrap();
+        assert_eq!(
+            record.heads(&HashSet::new()).len(),
+            1,
+            "only A's deletion is a head"
+        );
+    }
+
+    #[test]
+    fn an_unsent_value_superseded_by_an_oversized_one_isnt_published() {
+        let (mut a, la) = device(1, "book-a");
+        a.save_annotation(&highlight("book-a", Some("small"), 1_760_000_001_000))
+            .unwrap();
+        let long = "x".repeat(5 * 1024 * 1024);
+        a.save_annotation(&highlight("book-a", Some(&long), 1_760_000_002_000))
+            .unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert!(batch
+            .versions
+            .iter()
+            .all(|v| !v["key"].as_str().unwrap().starts_with("note:")));
+    }
+
+    #[test]
+    fn bad_bodies_arriving_late_stay_within_the_budget() {
+        // Five 4 MB highlight bodies that aren't highlights, sent after their versions.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let mut versions = Vec::new();
+        let mut bodies = Vec::new();
+        for i in 0..5u8 {
+            let mut body = vec![b'x'; 4 * 1024 * 1024 - 1];
+            body[0] = b'0' + i;
+            versions.push(serde_json::json!({
+                "format": 1, "key": format!("annotation:{}", uuid::Uuid::new_v4()),
+                "device": other.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&body).to_string(), "size": body.len() },
+            }));
+            bodies.push(body);
+        }
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        for body in &bodies {
+            journal::put_body(b.conn(), body).unwrap();
+        }
+        apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap();
+        let (items, bytes) = aside_used(b.conn(), &lb, other).unwrap();
+        assert!(
+            items <= ASIDE_ITEMS && bytes <= ASIDE_BYTES,
+            "{items} items, {bytes} bytes"
+        );
+        let left: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE applied = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0, "every bad version is out of merging");
     }
 
     #[test]
