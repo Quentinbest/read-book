@@ -466,7 +466,9 @@ pub fn hold_local(
     content: LocalContent,
     wall_ms: u64,
 ) -> Result<Version> {
-    let record = record_of(conn, lib, key, Which::Applied)?;
+    // SY13: every head in the conflict, those still unapplied (hidden) included;
+    // never one waiting for its ancestry, a clock or a bad body (not loaded).
+    let record = record_of(conn, lib, key, Which::All)?;
     for p in record.versions() {
         observe(conn, lib, p.version.clock, wall_ms)?;
     }

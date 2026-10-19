@@ -89,13 +89,15 @@ fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64
 /// SY28: what each device has set aside, read once per transaction and kept up to
 /// date as bodies are excluded, so excluding many costs one count, not one each.
 #[derive(Default)]
-struct Aside {
+struct Tally {
     used: std::collections::HashMap<DeviceId, (i64, i64)>,
     /// The devices a body was dropped from for want of room.
     dropped: HashSet<DeviceId>,
+    /// SY28: each book's live highlights and notes, in bytes, once read.
+    books: std::collections::HashMap<String, i64>,
 }
 
-impl Aside {
+impl Tally {
     /// Takes room for `items` and `bytes` of `device`'s; `false` when there isn't.
     fn take(
         &mut self,
@@ -153,9 +155,42 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 /// only while every such version's device has room for it: in the pending budget
 /// for a version pending, in the set-aside budget for one waiting for its ancestry
 /// or a clock ahead. `false` when it isn't kept. Applying it is `apply_pending`'s.
+/// A version that declared another size for it is excluded, as it would be had the
+/// body come with it.
 pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
     let hash = identity_hash(bytes);
     let len = bytes.len() as i64;
+    let tx = conn.unchecked_transaction()?;
+    let conn = &*tx;
+    let other_size: Vec<(String, String)> = conn
+        .prepare(
+            "SELECT device, raw FROM sync_versions
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+               AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') != ?3",
+        )?
+        .query_map(params![lib.id.to_string(), hash.to_string(), len], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    let mut tally = Tally::default();
+    for (device, raw) in other_size {
+        let (Some(device), Ok(value)) =
+            (super::ids::Id16::parse(&device), serde_json::from_str(&raw))
+        else {
+            continue;
+        };
+        if let Ok(Checked::Version(v)) = check_version(value, device) {
+            exclude(
+                conn,
+                lib,
+                &mut tally,
+                &v,
+                &hash,
+                0,
+                "its body is another size",
+            )?;
+        }
+    }
     // Each version naming it is charged for it, as `pending_used` and `aside_used`
     // count it once stored.
     let waiting: Vec<(String, i64, i64)> = conn
@@ -170,10 +205,12 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         })?
         .collect::<std::result::Result<_, _>>()?;
     if waiting.is_empty() || journal::body(conn, &hash)?.is_some() {
+        tx.commit()?;
         return Ok(false);
     }
     for (device, state, refs) in &waiting {
         let Some(device) = super::ids::Id16::parse(device) else {
+            tx.commit()?;
             return Ok(false);
         };
         let full = if *state == 0 {
@@ -182,10 +219,12 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
             aside_full(conn, lib, device, 0, len * refs)?
         };
         if full {
+            tx.commit()?;
             return Ok(false);
         }
     }
     journal::put_body(conn, bytes)?;
+    tx.commit()?;
     Ok(true)
 }
 
@@ -547,7 +586,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     // Versions that waited for their ancestry may resolve now.
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     let mut applied = 0;
-    let mut budget = Aside::default();
+    let mut budget = Tally::default();
     for k in keys {
         if apply_key(&tx, lib, &k, now_ms, &mut budget)? {
             applied += 1;
@@ -692,8 +731,8 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
-    // excluded (`Aside`), so this needs no check of its own.
-    let mut aside = Aside::default();
+    // excluded (`Tally`), so this needs no check of its own.
+    let mut aside = Tally::default();
     for k in keys {
         if let Some((key, _)) = Key::parse(&k) {
             if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
@@ -726,21 +765,76 @@ pub const BOOK_NOTES_BYTES: i64 = 64 * 1024 * 1024;
 #[cfg(test)]
 pub const BOOK_NOTES_BYTES: i64 = 512 * 1024;
 
-/// SY28: whether a book's live highlights and notes stay within `BOOK_NOTES_BYTES`
-/// when highlight `id` holds `own` bytes of its own fields and `note` bytes of note.
-fn book_fits(conn: &Connection, book: &str, id: &str, own: i64, note: i64) -> Result<bool> {
-    let others: Option<i64> = conn.query_row(
-        "SELECT SUM(length(CAST(cfi_range AS BLOB)) + length(CAST(quote_exact AS BLOB))
-                  + length(CAST(quote_prefix AS BLOB)) + length(CAST(quote_suffix AS BLOB))
-                  + COALESCE(length(CAST(note AS BLOB)), 0))
-         FROM annotations WHERE book_id = ?1 AND id != ?2 AND deleted_at IS NULL",
-        params![book, id],
-        |r| r.get(0),
-    )?;
-    Ok(others.unwrap_or(0) + own + note <= BOOK_NOTES_BYTES)
+const ROW_BYTES: &str = "length(CAST(cfi_range AS BLOB)) + length(CAST(quote_exact AS BLOB))
+     + length(CAST(quote_prefix AS BLOB)) + length(CAST(quote_suffix AS BLOB))
+     + COALESCE(length(CAST(note AS BLOB)), 0)";
+
+impl Tally {
+    fn book_total(&mut self, conn: &Connection, book: &str) -> Result<&mut i64> {
+        if !self.books.contains_key(book) {
+            let total: Option<i64> = conn.query_row(
+                &format!("SELECT SUM({ROW_BYTES}) FROM annotations WHERE book_id = ?1 AND deleted_at IS NULL"),
+                [book],
+                |r| r.get(0),
+            )?;
+            self.books.insert(book.to_owned(), total.unwrap_or(0));
+        }
+        Ok(self.books.get_mut(book).expect("just inserted"))
+    }
+
+    /// A live highlight's bytes in `book`, if it is one.
+    fn live_bytes(conn: &Connection, book: &str, id: &str) -> Result<i64> {
+        let n: Option<i64> = conn
+            .query_row(
+                &format!("SELECT {ROW_BYTES} FROM annotations WHERE id = ?1 AND book_id = ?2 AND deleted_at IS NULL"),
+                params![id, book],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(n.unwrap_or(0))
+    }
+
+    /// SY28: takes room in `book` for highlight `id` to hold `own` bytes of its own
+    /// fields and `note` bytes of note, in place of what it holds now. `false` when
+    /// that grows the book's highlights and notes past `BOOK_NOTES_BYTES` (an edit
+    /// that makes them smaller always goes ahead). The total is
+    /// read once a transaction and kept up to date, not summed for each version.
+    fn book_take(
+        &mut self,
+        conn: &Connection,
+        book: &str,
+        id: &str,
+        own: i64,
+        note: i64,
+    ) -> Result<bool> {
+        let old = Self::live_bytes(conn, book, id)?;
+        let total = self.book_total(conn, book)?;
+        let next = *total - old + own + note;
+        if next > BOOK_NOTES_BYTES && next > *total {
+            return Ok(false);
+        }
+        *total = next;
+        Ok(true)
+    }
+
+    /// A highlight about to be deleted no longer counts in its book.
+    fn book_release(&mut self, conn: &Connection, id: &str) -> Result<()> {
+        let book: Option<String> = conn
+            .query_row(
+                "SELECT book_id FROM annotations WHERE id = ?1 AND deleted_at IS NULL",
+                [id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if let Some(book) = book {
+            let old = Self::live_bytes(conn, &book, id)?;
+            *self.book_total(conn, &book)? -= old;
+        }
+        Ok(())
+    }
 }
 
-/// A highlight's own fields, in bytes, as `book_fits` counts them.
+/// A highlight's own fields, in bytes, as `ROW_BYTES` counts them.
 fn own_bytes(a: &crate::store::AnnotationRow) -> i64 {
     (a.cfi_range.len() + a.quote_exact.len() + a.quote_prefix.len() + a.quote_suffix.len()) as i64
 }
@@ -756,7 +850,7 @@ enum Body {
 /// declares (also when it arrives after its version). One that fails is excluded:
 /// taken out of merging and never applied, and kept (`applied = -4`, with a small
 /// set-aside entry saying why) while its device's budget has room, or else dropped.
-fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Result<Body> {
+fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Result<Body> {
     let Content::Body { hash, size } = &v.content else {
         return Ok(Body::Missing);
     };
@@ -774,6 +868,30 @@ fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside
         Ok(b) => return Ok(Body::Ready(b)),
         Err(e) => e,
     };
+    exclude(
+        conn,
+        lib,
+        aside,
+        v,
+        hash,
+        bytes.len() as i64,
+        &e.to_string(),
+    )?;
+    Ok(Body::Excluded)
+}
+
+/// SY28: takes a remote version out of merging for its body: kept (`applied = -4`,
+/// with a small set-aside entry saying why) while its device's budget has room for
+/// it and the `body_len` bytes of body it names that are kept, or else dropped.
+fn exclude(
+    conn: &Connection,
+    lib: &Library,
+    aside: &mut Tally,
+    v: &Version,
+    hash: &Hash32,
+    body_len: i64,
+    why: &str,
+) -> Result<()> {
     let row = params![
         lib.id.to_string(),
         v.device.to_string(),
@@ -789,18 +907,18 @@ fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside
         )
         .optional()?;
     let Some(raw) = raw else {
-        return Ok(Body::Excluded);
+        return Ok(());
     };
     let reason = hash.to_string();
     // Two items: the version, still in its writer's chain, and the entry saying why.
-    let cost = raw + bytes.len() as i64 + reason.len() as i64;
+    let cost = raw + body_len + reason.len() as i64;
     if aside.take(conn, lib, v.device, 2, cost)? {
         set_aside(
             conn,
             lib,
             v.device,
             reason.as_bytes(),
-            &e.to_string(),
+            why,
             v.clock.ms() as i64,
         )?;
         conn.execute(
@@ -816,11 +934,11 @@ fn checked_body(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside
         )?;
         journal::drop_body_if_unnamed(conn, hash)?;
     }
-    Ok(Body::Excluded)
+    Ok(())
 }
 
 /// Writes one version's state into the library. `false` when it must wait.
-fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Result<bool> {
+fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
         Content::Body { .. } => match checked_body(conn, lib, v, aside)? {
@@ -845,6 +963,23 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
             let Some(book) = local_book(conn, lib, subject(&v.key))? else {
                 return Ok(false);
             };
+            // SY28: a place over its limit stays on this device, unsynced; nothing
+            // from another device replaces it.
+            if v.kind == Kind::Place {
+                let here: Option<(String, f64, Option<String>)> = conn
+                    .query_row(
+                        "SELECT cfi, fraction, chapter_label FROM positions WHERE book_id = ?1",
+                        [&book],
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                    )
+                    .optional()?;
+                if let Some((cfi, fraction, chapter)) = here {
+                    let body = super::local::place_body(&cfi, fraction, chapter.as_deref());
+                    if body.len() as u64 > Kind::Place.body_limit() {
+                        return Ok(false);
+                    }
+                }
+            }
             match (v.kind, &body) {
                 (Kind::Place, Some(b)) => {
                     conn.execute(
@@ -894,7 +1029,7 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
                     .optional()?
                     .flatten();
                 let note = note.map_or(0, |n| n.len() as i64);
-                if !book_fits(conn, &local, &a.id, own_bytes(&a), note)? {
+                if !aside.book_take(conn, &local, &a.id, own_bytes(&a), note)? {
                     return Ok(false);
                 }
                 conn.execute(
@@ -910,6 +1045,7 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
                 )?;
             }
             None => {
+                aside.book_release(conn, subject(&v.key))?;
                 conn.execute(
                     "UPDATE annotations SET deleted_at = ?2 WHERE id = ?1 AND deleted_at IS NULL",
                     params![subject(&v.key), ms],
@@ -942,10 +1078,9 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
                 }
                 Some(_) => {}
             }
-            if let (Some(t), Some((row, _))) =
-                (&text, crate::store::annotation_row(conn, subject(&v.key))?)
-            {
-                if !book_fits(conn, &row.book_id, &row.id, own_bytes(&row), t.len() as i64)? {
+            if let Some((row, false)) = crate::store::annotation_row(conn, subject(&v.key))? {
+                let note = text.as_ref().map_or(0, |t| t.len() as i64);
+                if !aside.book_take(conn, &row.book_id, &row.id, own_bytes(&row), note)? {
                     return Ok(false);
                 }
             }
@@ -975,7 +1110,7 @@ fn apply_key(
     lib: &Library,
     key: &Key,
     now_ms: i64,
-    aside: &mut Aside,
+    aside: &mut Tally,
 ) -> Result<bool> {
     // SY28: a version whose body fails is excluded before anything is merged or its
     // clock observed, so it is never a head, shown or hidden.
@@ -1935,6 +2070,90 @@ mod tests {
         let got = receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
         assert!(matches!(got, Received::Applied { .. }), "{got:?}");
         assert_eq!(note_of(&b, "book-b"), Some(Some("from A".into())));
+    }
+
+    #[test]
+    fn an_oversized_local_place_isnt_replaced_from_another_device() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        let long = "c".repeat(9 * 1024);
+        a.save_position("book-a", "epubcfi(/6/8)", 0.4, Some(&long))
+            .unwrap();
+        b.save_position("book-b", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        assert_eq!(
+            a.position("book-a").unwrap().unwrap().0,
+            "epubcfi(/6/8)",
+            "SY28: stays"
+        );
+    }
+
+    #[test]
+    fn a_late_body_of_another_size_excludes_its_version() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        for v in &mut batch.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("place:")) {
+                v["body"]["size"] = serde_json::json!(3);
+            }
+        }
+        let bodies = std::mem::take(&mut batch.bodies);
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        let place = bodies.iter().find(|x| x.starts_with(b"{\"cfi\"")).unwrap();
+        assert!(!receive_body(b.conn(), &lb, place).unwrap());
+        let state: i64 = b
+            .conn()
+            .query_row(
+                "SELECT applied FROM sync_versions WHERE key LIKE 'place:%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, -4, "excluded, not left pending");
+    }
+
+    #[test]
+    fn a_replacement_hold_descends_from_a_hidden_head_too() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &first, crate::store::now_ms()).unwrap();
+        receive(c.conn(), &lc, &first, crate::store::now_ms()).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A's unsent"), 1_760_000_001_000))
+            .unwrap();
+        c.save_annotation(&highlight("book-c", Some("C's"), 1_760_000_001_000))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        b.save_annotation(&highlight("book-b", Some("B's"), 1_760_000_001_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        send(&c, &lc, &a, &la).unwrap(); // older than B's: hidden
+        a.save_annotation(&highlight("book-a", Some("A again"), 1_760_000_001_000))
+            .unwrap();
+        let raw: String = a
+            .conn()
+            .query_row(
+                "SELECT raw FROM sync_versions WHERE seq IS NULL AND applied = -3",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let held: Value = serde_json::from_str(&raw).unwrap();
+        let named: Vec<&str> = held["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| e["d"].as_str().unwrap())
+            .collect();
+        assert!(named.contains(&lc.device.to_string().as_str()), "{named:?}");
+        assert!(named.contains(&lb.device.to_string().as_str()), "{named:?}");
     }
 
     #[test]

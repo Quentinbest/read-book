@@ -114,7 +114,7 @@ pub fn covers(conn: &Connection, lib: &Library) -> Result<Vec<Entry>> {
     Ok(out)
 }
 
-fn place_body(cfi: &str, fraction: f64, chapter: Option<&str>) -> Vec<u8> {
+pub(crate) fn place_body(cfi: &str, fraction: f64, chapter: Option<&str>) -> Vec<u8> {
     let mut b = json!({ "cfi": cfi, "fraction": fraction });
     if let Some(c) = chapter {
         b["chapter"] = json!(c);
