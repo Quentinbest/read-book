@@ -585,6 +585,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     )?;
     // Versions that waited for their ancestry may resolve now.
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
+    in_dependency_order(&mut keys);
     let mut applied = 0;
     let mut budget = Tally::default();
     for k in keys {
@@ -722,6 +723,23 @@ pub fn dependent_conflicts(
         .collect())
 }
 
+/// SY21: records applied before those that depend on them, whatever order a change
+/// lists them in (SP14 sets none): books first, then highlights, then the rest
+/// (notes, places), so nothing waits for what the same change brings. Each key once.
+fn in_dependency_order(keys: &mut Vec<Key>) {
+    let rank = |k: &Key| match k.kind() {
+        Kind::Book | Kind::BookFile => 0,
+        Kind::Annotation => 1,
+        _ => 2,
+    };
+    keys.sort_by(|a, b| {
+        rank(a)
+            .cmp(&rank(b))
+            .then_with(|| a.as_str().cmp(b.as_str()))
+    });
+    keys.dedup_by(|a, b| a.as_str() == b.as_str());
+}
+
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
     {
@@ -733,16 +751,19 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
         .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
         .query_map([lib.id.to_string()], |r| r.get(0))?
         .collect::<std::result::Result<_, _>>()?;
+    let mut keys: Vec<Key> = keys
+        .iter()
+        .filter_map(|k| Key::parse(k).map(|(k, _)| k))
+        .collect();
+    in_dependency_order(&mut keys);
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
     // excluded (`Tally`), so this needs no check of its own.
     let mut aside = Tally::default();
-    for k in keys {
-        if let Some((key, _)) = Key::parse(&k) {
-            if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
-                n += 1;
-            }
+    for key in keys {
+        if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
+            n += 1;
         }
     }
     tx.commit()?;
@@ -2227,6 +2248,24 @@ mod tests {
             (ms as u64) < ahead,
             "seen only once its body is here and good"
         );
+    }
+
+    #[test]
+    fn a_note_listed_before_its_highlight_applies_in_the_same_change() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("with a note"), 1_760_000_001_000))
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        batch
+            .versions
+            .sort_by_key(|v| !v["key"].as_str().unwrap().starts_with("note:"));
+        assert!(batch.versions[0]["key"]
+            .as_str()
+            .unwrap()
+            .starts_with("note:"));
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        assert_eq!(note_of(&b, "book-b"), Some(Some("with a note".into())));
     }
 
     #[test]
