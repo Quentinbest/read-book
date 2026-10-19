@@ -869,10 +869,10 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Aside) -> Re
     Ok(true)
 }
 
-fn mark_applied(conn: &Connection, lib: &Library, p: &Placed) -> Result<()> {
+fn mark_applied(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Result<()> {
     conn.execute(
-        "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
-        params![lib.id.to_string(), p.version.device.to_string(), p.seq as i64, p.version.key.as_str()],
+        "UPDATE sync_versions SET applied = ?5 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+        params![lib.id.to_string(), p.version.device.to_string(), p.seq as i64, p.version.key.as_str(), state],
     )?;
     Ok(())
 }
@@ -917,14 +917,14 @@ fn apply_key(
             seq: next,
         });
     }
-    let (winner, heads) = match record.outcome(&HashSet::new()) {
-        Some(Outcome::Settled(p)) => (p, record.heads(&HashSet::new())),
-        Some(Outcome::Conflict { shown, all }) => (shown, all),
+    let (winner, heads, settled) = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => (p, record.heads(&HashSet::new()), true),
+        Some(Outcome::Conflict { shown, all }) => (shown, all, false),
         None => return Ok(false),
     };
     // SY13, #109: this device's unsent edit, now hidden in a conflict, is held for the
     // reader's choice rather than left to be replaced by the next edit.
-    if let Some(Outcome::Conflict { .. }) = record.outcome(&HashSet::new()) {
+    if !settled {
         let hidden_unsent = heads
             .iter()
             .any(|h| h.version.device == lib.device && h.seq == next && h.id() != winner.id());
@@ -958,12 +958,22 @@ fn apply_key(
     // reader decides, they stay unapplied, waiting in the conflict (SY13).
     // Settled (one head, equal contents, or newest-wins): every head is superseded or
     // the same, so all have been seen. In a conflict only the shown one has.
-    let settled = matches!(record.outcome(&HashSet::new()), Some(Outcome::Settled(_)));
+    // One that an applied version (not an unsent one, which may yet be dropped)
+    // descends from is superseded: it is never a head again, so it isn't loaded to
+    // merge, and the work per version stays bounded by the heads, not the history.
     let all_seen = settled || !reader_decides(winner.version.kind);
+    let unsent = |q: &Placed| q.version.device == lib.device && q.seq == next;
+    let seen: Vec<&Placed> = std::iter::once(winner)
+        .chain(heads.iter().copied().filter(|_| all_seen))
+        .collect();
     for p in record.versions() {
-        if winner.descends_from(p) || (all_seen && heads.iter().any(|h| h.descends_from(p))) {
-            mark_applied(conn, lib, p)?;
+        if !seen.iter().any(|q| q.descends_from(p)) {
+            continue;
         }
+        let superseded = seen
+            .iter()
+            .any(|q| q.id() != p.id() && !unsent(q) && q.descends_from(p));
+        mark_applied(conn, lib, p, if superseded { 2 } else { 1 })?;
     }
     Ok(changed)
 }
@@ -1625,6 +1635,50 @@ mod tests {
             )
             .unwrap();
         assert_eq!(left, 0, "every bad version is out of merging");
+    }
+
+    #[test]
+    fn a_second_edit_of_a_held_record_stays_held() {
+        let (mut a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A's unsent"), 1_760_000_001_000))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        b.save_annotation(&highlight("book-b", Some("B's"), 1_760_000_001_000))
+            .unwrap();
+        send(&b, &lb, &a, &la).unwrap();
+        a.save_annotation(&highlight("book-a", Some("A again"), 1_760_000_001_000))
+            .unwrap();
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        assert!(journal::held(a.conn(), &la, &key).unwrap());
+        let published = publish_next(a.conn(), &la).unwrap();
+        assert!(published
+            .into_iter()
+            .flat_map(|b| b.versions)
+            .all(|v| v["key"] != key.as_str()));
+    }
+
+    #[test]
+    fn superseded_versions_arent_merged_again() {
+        let (a, la) = device(1, "book-a");
+        let (mut b, lb) = device(2, "book-b");
+        for i in 0..30 {
+            b.save_position(
+                "book-b",
+                &format!("epubcfi(/6/{})", 2 * i + 2),
+                0.01 * i as f64,
+                None,
+            )
+            .unwrap();
+            send(&b, &lb, &a, &la).unwrap();
+        }
+        let key = Key::parse(&format!("place:{SYNC_BOOK}")).unwrap().0;
+        let record = journal::record_of(a.conn(), &la, &key, Which::All).unwrap();
+        assert_eq!(record.versions().count(), 1, "only the head is loaded");
+        assert_eq!(a.position("book-a").unwrap().unwrap().0, "epubcfi(/6/60)");
     }
 
     #[test]

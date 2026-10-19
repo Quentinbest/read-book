@@ -34,6 +34,11 @@ fn record(
             return journal::drop_unsent(conn, lib, &k);
         }
     }
+    // #109: once an edit is held for the reader's choice, later edits replace the
+    // held one; none becomes publishable before the reader chooses.
+    if journal::held(conn, lib, &k)? {
+        return journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ());
+    }
     match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
         // SY13: this device's own version waits in a conflict the reader hasn't
         // decided. The save goes ahead, and the edit is held as the reader's

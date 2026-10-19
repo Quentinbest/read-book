@@ -186,9 +186,16 @@ fn is_iso_time(t: &str) -> bool {
 /// note is a record of its own (`note:`), so its `body` holds no text.
 fn is_annotation(o: &Map<String, Value>, uuid: &str) -> bool {
     let s = |v: &Value, k: &str| v.get(k).is_some_and(Value::is_string);
+    // SY8: the book is named by its sync ID, a lowercase UUID URN.
+    let book = |t: &Value| {
+        t.get("source")
+            .and_then(Value::as_str)
+            .and_then(|s| s.strip_prefix("urn:uuid:"))
+            .is_some_and(is_uuid)
+    };
     let selectors = o
         .get("target")
-        .filter(|t| s(t, "source"))
+        .filter(|t| book(t))
         .and_then(|t| t.get("selector"))
         .and_then(Value::as_array);
     // The first selector of a type is the one `fromW3C` reads. Its `anchor` field
@@ -841,11 +848,27 @@ mod tests {
         assert!(body_of(Kind::Note, br#"{"text":"hello"}"#).is_ok());
         let anno = format!(
             r#"{{"type":"Annotation","id":"urn:uuid:{BOOK}","created":"2026-10-18T09:00:00.000Z","modified":"2026-10-18T09:00:00.000Z","body":[],
-            "target":{{"source":"s","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
+            "target":{{"source":"urn:uuid:{BOOK}","selector":[{{"type":"FragmentSelector","conformsTo":"x","value":"epubcfi(/6/4)"}},
             {{"type":"TextQuoteSelector","exact":"e","prefix":"","suffix":""}}]}},
             "linen:color":"rose","linen:anchorStatus":"anchored","linen:anchoredContentHash":"{H}"}}"#
         );
         assert!(body_of(Kind::Annotation, anno.as_bytes()).is_ok());
+        for source in [
+            "s",
+            "urn:uuid:not-a-uuid",
+            &format!("urn:uuid:{}", BOOK.to_uppercase()),
+        ] {
+            let bad = anno.replace(
+                &format!("urn:uuid:{BOOK}\",\"selector"),
+                &format!("{source}\",\"selector"),
+            );
+            assert_ne!(bad, anno);
+            assert_eq!(
+                body_of(Kind::Annotation, bad.as_bytes()),
+                Err(RecordError::Body),
+                "{source}"
+            );
+        }
         assert_eq!(
             body_of(Kind::Annotation, b"{}"),
             Err(RecordError::Body),
