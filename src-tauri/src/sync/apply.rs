@@ -235,11 +235,12 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     }
     // A device with no room for the body is past its budget, whether the body is
     // kept for another or not: it is stopped (SY28), and its versions naming the
-    // body are taken out of merging first (`applied = -4`, still in its chain), so
-    // the body kept for another never applies them.
+    // body are dropped first, so the body kept for another neither applies them nor
+    // is kept on their account. The stop stands in for them: nothing more of that
+    // device's chain is received.
     for device in &full_ones {
         conn.execute(
-            "UPDATE sync_versions INDEXED BY sync_versions_body SET applied = -4
+            "DELETE FROM sync_versions INDEXED BY sync_versions_body
              WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?3",
             params![lib.id.to_string(), device.to_string(), hash.to_string()],
@@ -2419,12 +2420,12 @@ mod tests {
         let pending: i64 = b
             .conn()
             .query_row(
-                "SELECT COUNT(*) FROM sync_versions WHERE device = ?1 AND applied = 0",
+                "SELECT COUNT(*) FROM sync_versions WHERE device = ?1",
                 [c.to_string()],
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(pending, 0, "C's versions don't take A's body");
+        assert_eq!(pending, 0, "C's versions don't take A's body, nor keep it");
     }
 
     #[test]
