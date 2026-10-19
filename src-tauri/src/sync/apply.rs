@@ -249,6 +249,7 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     }
     if room {
         journal::put_body(conn, bytes)?;
+        stop_owners_past_budget(conn, lib, &hash, None, crate::store::now_ms())?;
     }
     for device in &tally.dropped {
         stop(
@@ -492,6 +493,34 @@ pub fn stopped(conn: &Connection, lib: &Library, device: DeviceId) -> Result<boo
         .is_some())
 }
 
+/// SY28: a body stored here is charged to every version naming it, so once it is
+/// stored, each other device naming it that is now past a budget is stopped, as its
+/// next change would be.
+fn stop_owners_past_budget(
+    conn: &Connection,
+    lib: &Library,
+    hash: &Hash32,
+    except: Option<DeviceId>,
+    now_ms: i64,
+) -> Result<()> {
+    let owners: Vec<String> = conn
+        .prepare(
+            "SELECT DISTINCT device FROM sync_versions INDEXED BY sync_versions_body
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4)
+               AND json_extract(raw, '$.body.hash') = ?2",
+        )?
+        .query_map(params![lib.id.to_string(), hash.to_string()], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    for device in owners.iter().filter_map(|d| super::ids::Id16::parse(d)) {
+        if Some(device) != except
+            && (aside_full(conn, lib, device, 0, 0)? || pending_full(conn, lib, device)?)
+        {
+            stop(conn, lib, device, "budget", now_ms)?;
+        }
+    }
+    Ok(())
+}
+
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
     if stopped(conn, lib, batch.device)? {
@@ -626,8 +655,13 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     }
     // Only bodies a version in the change names are kept; their type is checked
     // when they are applied.
+    let mut stored = Vec::new();
     for b in &batch.bodies {
-        if named.contains(&identity_hash(b)) {
+        let h = identity_hash(b);
+        if named.contains(&h) {
+            if !journal::has_body(&tx, &h)? {
+                stored.push(h);
+            }
             journal::put_body(&tx, b)?;
         }
     }
@@ -679,9 +713,13 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         stop(conn, lib, batch.device, "budget", now_ms)?;
         return Ok(Received::Stopped);
     }
-    // Another device whose waiting version was dropped here is stopped with it.
+    // Another device whose waiting version was dropped here is stopped with it, and
+    // so is one that a body this change brought puts past a budget.
     for device in &budget.dropped {
         stop(&tx, lib, *device, "set-aside budget", now_ms)?;
+    }
+    for h in &stored {
+        stop_owners_past_budget(&tx, lib, h, Some(batch.device), now_ms)?;
     }
     tx.commit()?;
     Ok(Received::Applied {
@@ -2727,6 +2765,79 @@ mod tests {
             "two no longer counts in book-a"
         );
         assert_eq!(tally.books["book-a2"], bytes);
+    }
+
+    #[test]
+    fn a_body_another_change_brings_stops_an_owner_it_puts_past_its_budget() {
+        // B's two notes name one 600 KB body without it (1.2 MB once it's here, over
+        // the tests' 1 MB pending budget); C's change brings it.
+        let (r, lr) = device(2, "book-b");
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(600 * 1024)).into_bytes();
+        let version = |d: Id16, i: u16| {
+            serde_json::json!({
+                "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                "device": d.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+            })
+        };
+        let (b, c) = (Id16([1; 16]), Id16([3; 16]));
+        let from_b = Batch {
+            device: b,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions: vec![version(b, 0), version(b, 1)],
+            bodies: vec![],
+        };
+        receive(r.conn(), &lr, &from_b, crate::store::now_ms()).unwrap();
+        let from_c = Batch {
+            device: c,
+            seq: 1,
+            hash: Hash32([3; 32]),
+            versions: vec![version(c, 0)],
+            bodies: vec![text.clone()],
+        };
+        let got = receive(r.conn(), &lr, &from_c, crate::store::now_ms()).unwrap();
+        assert!(matches!(got, Received::Applied { .. }), "{got:?}");
+        assert!(stopped(r.conn(), &lr, b).unwrap());
+        assert!(!stopped(r.conn(), &lr, c).unwrap());
+    }
+
+    #[test]
+    fn a_late_body_stops_an_excluded_owner_it_puts_past_its_budget() {
+        // B's five versions declare the body at another size (excluded, kept); C's
+        // one names it rightly. Once stored for C, B is charged 5 × 3.5 MB: stopped.
+        let (r, lr) = device(2, "book-b");
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(3584 * 1024)).into_bytes();
+        let version = |d: Id16, i: u16, size: usize| {
+            serde_json::json!({
+                "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                "device": d.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&text).to_string(), "size": size },
+            })
+        };
+        let (b, c) = (Id16([1; 16]), Id16([3; 16]));
+        let from_b = Batch {
+            device: b,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions: (0..5).map(|i| version(b, i, 1)).collect(),
+            bodies: vec![],
+        };
+        receive(r.conn(), &lr, &from_b, crate::store::now_ms()).unwrap();
+        // C's waits for its ancestry, so the set-aside budget (16 MB) is its own.
+        let mut waiting = version(c, 0, text.len());
+        waiting["history"] = serde_json::json!([{ "d": Id16([9; 16]).to_string(), "s": 1, "h": Hash32([9; 32]).to_string() }]);
+        let from_c = Batch {
+            device: c,
+            seq: 1,
+            hash: Hash32([3; 32]),
+            versions: vec![waiting],
+            bodies: vec![],
+        };
+        receive(r.conn(), &lr, &from_c, crate::store::now_ms()).unwrap();
+        assert!(receive_body(r.conn(), &lr, &text).unwrap(), "kept for C");
+        assert!(stopped(r.conn(), &lr, b).unwrap());
+        assert!(!stopped(r.conn(), &lr, c).unwrap());
     }
 
     #[test]
