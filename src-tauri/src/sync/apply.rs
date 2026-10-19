@@ -193,13 +193,14 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
         }
     }
     // Each version naming it is charged for it, as `pending_used` and `aside_used`
-    // count it once stored.
+    // count it once stored: per device, its pending ones and its set-aside ones.
     let waiting: Vec<(String, i64, i64)> = conn
         .prepare(
-            "SELECT device, applied, COUNT(*) FROM sync_versions INDEXED BY sync_versions_body
+            "SELECT device, SUM(applied = 0), SUM(applied < 0)
+             FROM sync_versions INDEXED BY sync_versions_body
              WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3
-             GROUP BY device, applied",
+             GROUP BY device",
         )?
         .query_map(params![lib.id.to_string(), hash.to_string(), len], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
@@ -220,15 +221,13 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     }
     let mut room = false;
     let mut full_ones = Vec::new();
-    for (device, state, refs) in &waiting {
+    for (device, pending, aside) in &waiting {
         let Some(device) = super::ids::Id16::parse(device) else {
             continue;
         };
-        let full = if *state == 0 {
-            pending_used(conn, lib, device)? + len * refs > PENDING_BYTES
-        } else {
-            aside_full(conn, lib, device, 0, len * refs)?
-        };
+        let full = (*pending > 0
+            && pending_used(conn, lib, device)? + len * pending > PENDING_BYTES)
+            || (*aside > 0 && aside_full(conn, lib, device, 0, len * aside)?);
         if full {
             full_ones.push(device);
         }
@@ -678,6 +677,10 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         drop(tx); // rolls the change back
         stop(conn, lib, batch.device, "budget", now_ms)?;
         return Ok(Received::Stopped);
+    }
+    // Another device whose waiting version was dropped here is stopped with it.
+    for device in &budget.dropped {
+        stop(&tx, lib, *device, "set-aside budget", now_ms)?;
     }
     tx.commit()?;
     Ok(Received::Applied {
@@ -2213,6 +2216,11 @@ mod tests {
         let got = receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
         assert!(matches!(got, Received::Applied { .. }), "{got:?}");
         assert_eq!(note_of(&b, "book-b"), Some(Some("from A".into())));
+        assert!(
+            stopped(b.conn(), &lb, lc.device).unwrap(),
+            "C, whose version was dropped"
+        );
+        assert!(!stopped(b.conn(), &lb, la.device).unwrap());
     }
 
     #[test]
@@ -2629,6 +2637,50 @@ mod tests {
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.color, "blue");
         assert!(row.updated_at >= noted, "{} < {noted}", row.updated_at);
+    }
+
+    #[test]
+    fn a_late_body_is_charged_to_all_of_a_devices_set_aside_versions() {
+        // Three versions waiting for ancestry and three for the clock, one 3 MB body:
+        // 9 MB each, 18 MB in all, over 16.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let text = format!(r#"{{"text":"{}"}}"#, "x".repeat(3 * 1024 * 1024)).into_bytes();
+        let now = crate::store::now_ms() as u64;
+        let versions = (0..6u16)
+            .map(|i| {
+                let mut v = serde_json::json!({
+                    "format": 1, "key": format!("note:{}", uuid::Uuid::new_v4()),
+                    "device": other.to_string(), "clock": [now, i], "history": [],
+                    "body": { "hash": identity_hash(&text).to_string(), "size": text.len() },
+                });
+                if i < 3 {
+                    v["history"] = serde_json::json!([{ "d": Id16([9; 16]).to_string(), "s": 1, "h": Hash32([9; 32]).to_string() }]);
+                } else {
+                    v["clock"] = serde_json::json!([now + 2 * 24 * 60 * 60 * 1000, i]);
+                }
+                v
+            })
+            .collect();
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        let states: Vec<i64> = b
+            .conn()
+            .prepare("SELECT applied FROM sync_versions ORDER BY applied")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert_eq!(states, vec![-2, -2, -2, -1, -1, -1]);
+        assert!(!receive_body(b.conn(), &lb, &text).unwrap());
+        assert!(stopped(b.conn(), &lb, other).unwrap());
     }
 
     #[test]
