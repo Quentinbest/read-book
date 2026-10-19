@@ -385,22 +385,29 @@ pub(crate) fn applied(
     // Since the last answer, one entry a record: what it was before the first
     // change (kept), and the last change (moved on). So the journal holds what Stop
     // syncing needs however long the counting runs, bounded by the records changed.
+    // What the reader let through is kept as of the answer, outside the window Stop
+    // syncing puts back.
     let since = question(conn, lib)?
         .and_then(|q| q.answered_at)
         .unwrap_or(0);
-    let moved = conn.execute(
-        "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6
+    let at = if approved { since } else { now_ms };
+    let moved = if approved {
+        0
+    } else {
+        conn.execute(
+            "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6
          WHERE library = ?1 AND key = ?2 AND at > ?7",
-        params![
-            lib.id.to_string(),
-            p.version.key.as_str(),
-            p.version.device.to_string(),
-            p.seq as i64,
-            p.version.hash.to_string(),
-            now_ms,
-            since
-        ],
-    )?;
+            params![
+                lib.id.to_string(),
+                p.version.key.as_str(),
+                p.version.device.to_string(),
+                p.seq as i64,
+                p.version.hash.to_string(),
+                now_ms,
+                since
+            ],
+        )?
+    };
     if moved == 0 {
         conn.execute(
             "INSERT INTO sync_undo (library, key, device, seq, hash, before, at)
@@ -412,7 +419,7 @@ pub(crate) fn applied(
                 p.seq as i64,
                 p.version.hash.to_string(),
                 before,
-                now_ms
+                at
             ],
         )?;
     }
@@ -420,8 +427,9 @@ pub(crate) fn applied(
     if kind == "places" {
         let counted: bool = conn
             .query_row(
-                "SELECT 1 FROM sync_counted WHERE library = ?1 AND kind = 'places' AND book = ?2 AND at > ?3",
-                params![lib.id.to_string(), book, since.max(now_ms - DAY_MS)],
+                "SELECT 1 FROM sync_counted
+                 WHERE library = ?1 AND kind = 'places' AND book = ?2 AND at > ?3 AND approved = ?4",
+                params![lib.id.to_string(), book, since.max(now_ms - DAY_MS), approved],
                 |_| Ok(()),
             )
             .optional()?
@@ -976,6 +984,122 @@ mod tests {
         assert!(over(b.conn(), &lb, 10 * DAY_MS)
             .unwrap()
             .is_some_and(|(_, t)| t));
+    }
+
+    #[test]
+    fn stop_syncing_after_an_approval_leaves_what_was_approved() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(40, now);
+        let batch = delete(&mut a, &la, &ids[..30]);
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        receive(b.conn(), &lb, &batch, now + 2 * HOUR).unwrap();
+        let more = delete(&mut a, &la, &ids[30..]);
+        receive(b.conn(), &lb, &more, now + 3 * HOUR).unwrap();
+        assert!(b.annotations("book-b").unwrap().is_empty());
+        // Stop syncing puts back the 10 since the answer, not the 30 approved.
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 4 * HOUR).unwrap();
+        assert_eq!(b.annotations("book-b").unwrap().len(), 10);
+    }
+
+    #[test]
+    fn places_rewritten_again_after_an_approval_are_counted_again() {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let mut books = Vec::new();
+        for i in 0..21 {
+            let sync_id = uuid::Uuid::new_v4().to_string();
+            for (s, lib, n) in [(&a, &la, 1), (&b, &lb, 2)] {
+                let book = format!("book-{n}-{i}");
+                s.conn()
+                    .execute(
+                        "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                         VALUES (?1, ?2, 'x.epub', 'T', 'package', 0)",
+                        params![book, format!("h{n}-{i}")],
+                    )
+                    .unwrap();
+                s.conn()
+                    .execute(
+                        "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, ?3)",
+                        params![lib.id.to_string(), sync_id, book],
+                    )
+                    .unwrap();
+            }
+            books.push(format!("book-1-{i}"));
+        }
+        let places = |a: &mut Store, cfi: &str| {
+            for book in &books {
+                a.save_position(book, cfi, 0.1, None).unwrap();
+            }
+        };
+        places(&mut a, "epubcfi(/6/2)");
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &first, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        receive(b.conn(), &lb, &first, now + 2 * HOUR).unwrap();
+        places(&mut a, "epubcfi(/6/4)");
+        let second = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &second, now + 3 * HOUR).unwrap(),
+            Received::Asks
+        );
+    }
+
+    #[test]
+    fn what_resolves_with_an_approved_change_is_counted() {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        let ids = highlights(&mut a, "book-a", 31);
+        let a1 = publish_next(a.conn(), &la).unwrap().unwrap();
+        let_through(&b, &lb, &a1, now);
+        let_through(&c, &lc, &a1, now);
+        b.conn()
+            .execute("UPDATE sync_question SET answered_at = ?1", [now])
+            .unwrap();
+        // A deletes 30 (past 50 records) and rewrites the last one's note.
+        let mut h = highlight("book-a", Some("A's"), 1_760_000_002_000);
+        h.id = ids[30].clone();
+        h.quote_exact = "q30".into();
+        a.save_annotation(&h).unwrap();
+        let a2 = delete(&mut a, &la, &ids[..30]);
+        let_through(&c, &lc, &a2, now);
+        // C rewrites that note after A: at B it waits for A's change.
+        let mut h = highlight("book-c", Some("C's"), 1_760_000_003_000);
+        h.id = ids[30].clone();
+        h.quote_exact = "q30".into();
+        c.save_annotation(&h).unwrap();
+        let c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        receive(b.conn(), &lb, &c1, now + HOUR).unwrap();
+        assert_eq!(
+            receive(b.conn(), &lb, &a2, now + HOUR).unwrap(),
+            Received::Asks
+        );
+        answer(b.conn(), &lb, Answer::Apply, now + HOUR).unwrap();
+        assert!(matches!(
+            receive(b.conn(), &lb, &a2, now + 2 * HOUR).unwrap(),
+            Received::Applied { .. }
+        ));
+        let counted: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_counted WHERE approved = 0 AND at > ?1",
+                [now + HOUR],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            counted, 1,
+            "C's note, which resolved with A's change, is counted"
+        );
     }
 
     #[test]

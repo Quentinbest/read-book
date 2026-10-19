@@ -101,8 +101,11 @@ pub(crate) struct Tally {
     dropped: HashSet<DeviceId>,
     /// SY28: each book's live highlights and notes, in bytes, once read.
     books: std::collections::HashMap<String, i64>,
-    /// SY26: this is the change the reader let through; it isn't counted again.
-    approved: bool,
+    /// SY26: what the reader let through, which isn't counted again: a change (its
+    /// device and sequence), or a pass's records. Anything else applied with it is
+    /// counted as usual.
+    approved_change: Option<(DeviceId, u64)>,
+    approved_keys: HashSet<String>,
 }
 
 impl Tally {
@@ -731,8 +734,10 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     in_dependency_order(&mut keys);
     let mut applied = 0;
+    // SY26: what the reader let through is this change's own versions, not what
+    // resolves with it.
     let mut budget = Tally {
-        approved: gate == guard::Gate::Approved,
+        approved_change: (gate == guard::Gate::Approved).then_some((batch.device, batch.seq)),
         ..Tally::default()
     };
     for k in keys {
@@ -760,10 +765,10 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         return Ok(Received::Stopped);
     }
     // SY26: a change that would take what other devices changed past a threshold
-    // isn't applied (it is rolled back) until the reader answers.
-    if gate == guard::Gate::Approved {
-        guard::settle(&tx, lib)?;
-    } else if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+    // isn't applied (it is rolled back) until the reader answers. What the reader
+    // let through isn't counted, but what resolved with it is: past a threshold,
+    // the reader is asked again.
+    if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
         drop(tx);
         guard::ask(
             conn,
@@ -775,6 +780,9 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             now_ms,
         )?;
         return Ok(Received::Asks);
+    }
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
     }
     // Another device whose waiting version was dropped here is stopped with it, and
     // so is one that a body this change brought puts past a budget.
@@ -944,7 +952,11 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     // SY28: bodies excluded here are held to each device's budget as they are
     // excluded (`Tally`), so this needs no check of its own.
     let mut aside = Tally {
-        approved: gate == guard::Gate::Approved,
+        approved_keys: if gate == guard::Gate::Approved {
+            keys.iter().map(|k| k.as_str().to_owned()).collect()
+        } else {
+            HashSet::new()
+        },
         ..Tally::default()
     };
     for key in keys {
@@ -958,12 +970,13 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
         stop(&tx, lib, *device, "set-aside budget", now_ms)?;
     }
     // SY26: as for a change received.
-    if gate == guard::Gate::Approved {
-        guard::settle(&tx, lib)?;
-    } else if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+    if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
         drop(tx);
         guard::ask(conn, lib, None, &asked, &counts, totals, now_ms)?;
         return Ok(0);
+    }
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
     }
     tx.commit()?;
     Ok(n)
@@ -1472,7 +1485,9 @@ fn apply_key(
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
         if let Some(before) = before {
-            guard::applied(conn, lib, winner, before, aside.approved, now_ms)?;
+            let approved = aside.approved_keys.contains(key.as_str())
+                || aside.approved_change == Some((winner.version.device, winner.seq));
+            guard::applied(conn, lib, winner, before, approved, now_ms)?;
         }
         true
     } else {
