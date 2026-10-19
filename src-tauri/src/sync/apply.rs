@@ -1147,6 +1147,7 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                          quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, NULL, ?11)
                      ON CONFLICT(id) DO UPDATE SET book_id = excluded.book_id,
+                         created_at = excluded.created_at,
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
@@ -2577,6 +2578,21 @@ mod tests {
             aside_used(b.conn(), &lb, other).unwrap(),
             (1, raw.len() as i64)
         );
+    }
+
+    #[test]
+    fn a_highlights_creation_time_follows_its_latest_version() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        let mut h = highlight("book-a", None, 1_760_000_002_000);
+        h.created_at = 1_759_000_000_000;
+        a.save_annotation(&h).unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert_eq!(a.annotations("book-a").unwrap()[0].created_at, h.created_at);
+        assert_eq!(b.annotations("book-b").unwrap()[0].created_at, h.created_at);
     }
 
     #[test]

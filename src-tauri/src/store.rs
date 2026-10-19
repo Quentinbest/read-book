@@ -558,6 +558,7 @@ impl Store {
                  quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, NULL, ?12)
              ON CONFLICT(id) DO UPDATE SET book_id = excluded.book_id,
+                 created_at = excluded.created_at,
                  anchored_content_hash = excluded.anchored_content_hash,
                  color = excluded.color, cfi_range = excluded.cfi_range,
                  quote_exact = excluded.quote_exact, quote_prefix = excluded.quote_prefix,
