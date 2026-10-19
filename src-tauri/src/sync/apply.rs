@@ -1036,7 +1036,8 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                     "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                          quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, ?9, ?10, NULL, ?11)
-                     ON CONFLICT(id) DO UPDATE SET anchored_content_hash = excluded.anchored_content_hash,
+                     ON CONFLICT(id) DO UPDATE SET book_id = excluded.book_id,
+                         anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
                          updated_at = excluded.updated_at, deleted_at = NULL, anchor_status = excluded.anchor_status",
@@ -2154,6 +2155,37 @@ mod tests {
             .collect();
         assert!(named.contains(&lc.device.to_string().as_str()), "{named:?}");
         assert!(named.contains(&lb.device.to_string().as_str()), "{named:?}");
+    }
+
+    #[test]
+    fn a_highlight_moved_to_another_book_moves_on_every_device() {
+        // A second book, matched on both devices.
+        let other = "0b1c2d3e-4f50-4a61-8b72-93a4b5c6d7e8";
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        for (s, book, n) in [(&a, "book-a2", 1), (&b, "book-b2", 2)] {
+            s.conn()
+                .execute(
+                    "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                     VALUES (?1, ?2, 'y.epub', 'Typee', 'package', 0)",
+                    params![book, format!("{HASH}x{n}")],
+                )
+                .unwrap();
+            s.conn()
+                .execute(
+                    "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, ?3)",
+                    params![LIB.to_string(), other, book],
+                )
+                .unwrap();
+        }
+        a.save_annotation(&highlight("book-a", None, 1_760_000_001_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        a.save_annotation(&highlight("book-a2", None, 1_760_000_002_000))
+            .unwrap();
+        send(&a, &la, &b, &lb).unwrap();
+        assert!(b.annotations("book-b").unwrap().is_empty());
+        assert_eq!(b.annotations("book-b2").unwrap().len(), 1);
     }
 
     #[test]
