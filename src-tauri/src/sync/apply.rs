@@ -327,9 +327,20 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         .iter()
         .map(|b| (identity_hash(b), b.len()))
         .collect();
+    // SP11: a change file holds at most one version of a key. Every version of a
+    // key named twice is set aside, so neither is kept in place of the other.
+    let mut times: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+    for raw in &batch.versions {
+        if let Some(k) = raw.get("key").and_then(Value::as_str) {
+            *times.entry(k).or_default() += 1;
+        }
+    }
     for raw in &batch.versions {
         // SY28: a body must be the size its version declares.
         let checked = check_version(raw.clone(), batch.device).and_then(|c| match c {
+            Checked::Version(v) if times.get(v.key.as_str()).is_some_and(|&n| n > 1) => {
+                Err(super::record::RecordError::DuplicateKey)
+            }
             Checked::Version(v) => match &v.content {
                 Content::Body { hash, size }
                     if lengths.get(hash).is_some_and(|&l| l as u64 != *size) =>
@@ -1292,6 +1303,29 @@ mod tests {
             )
             .unwrap();
         assert_eq!(kept, 0, "the whole change is rolled back");
+    }
+
+    #[test]
+    fn two_versions_of_one_key_in_a_change_are_both_set_aside() {
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        a.save_position("book-a", "epubcfi(/6/2)", 0.1, None)
+            .unwrap();
+        let mut batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        let place = batch
+            .versions
+            .iter()
+            .find(|v| v["key"].as_str().is_some_and(|k| k.starts_with("place:")))
+            .unwrap()
+            .clone();
+        let mut twin = place.clone();
+        twin["clock"][1] = serde_json::json!(7);
+        batch.versions.push(twin);
+        assert!(matches!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Applied { set_aside: 2, .. }
+        ));
+        assert!(b.position("book-b").unwrap().is_none());
     }
 
     #[test]

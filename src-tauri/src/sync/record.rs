@@ -372,6 +372,8 @@ pub enum RecordError {
     WrongDevice,
     #[error("two history entries for one device")]
     DuplicateHistory,
+    #[error("its change file holds another version of its key")]
+    DuplicateKey,
     #[error("holds more than one of body, deleted and inline, or none")]
     Content,
     #[error("its body is over its type's limit")]
