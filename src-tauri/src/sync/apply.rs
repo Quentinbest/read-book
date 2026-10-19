@@ -62,6 +62,7 @@ fn aside_full(
     conn: &Connection,
     lib: &Library,
     device: DeviceId,
+    extra_items: i64,
     extra_bytes: i64,
 ) -> Result<bool> {
     let (n, bytes): (i64, Option<i64>) = conn.query_row(
@@ -77,7 +78,7 @@ fn aside_full(
         params![lib.id.to_string(), device.to_string()],
         |r| Ok((r.get(0)?, r.get(1)?)),
     )?;
-    Ok(n + m + 1 > ASIDE_ITEMS
+    Ok(n + m + extra_items > ASIDE_ITEMS
         || bytes.unwrap_or(0) + held.unwrap_or(0) + extra_bytes > ASIDE_BYTES)
 }
 
@@ -278,8 +279,8 @@ fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
     Ok(s.unwrap_or(0) as u64)
 }
 
-/// SY28: keeps a set-aside item, counted once. `false` when that device's budget
-/// is spent: nothing more of it is kept, and receiving from it stops.
+/// SY28: keeps a set-aside item, counted once. The budget is checked by `receive`,
+/// once the whole change is kept.
 fn set_aside(
     conn: &Connection,
     lib: &Library,
@@ -287,10 +288,7 @@ fn set_aside(
     raw: &[u8],
     reason: &str,
     now_ms: i64,
-) -> Result<bool> {
-    if aside_full(conn, lib, device, raw.len() as i64)? {
-        return Ok(false);
-    }
+) -> Result<()> {
     conn.execute(
         "INSERT OR IGNORE INTO sync_aside (library, device, hash, reason, size, raw, first_at)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -304,7 +302,7 @@ fn set_aside(
             now_ms
         ],
     )?;
-    Ok(true)
+    Ok(())
 }
 
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
@@ -316,7 +314,8 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     if batch.seq != have + 1 {
         return Ok(Received::Waits);
     }
-    if aside_full(conn, lib, batch.device, 0)? {
+    // SY28: nothing more is received from a device whose budget is spent.
+    if aside_full(conn, lib, batch.device, 1, 0)? {
         return Ok(Received::Stopped);
     }
     let tx = conn.unchecked_transaction()?;
@@ -329,9 +328,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         .map(|b| (identity_hash(b), b.len()))
         .collect();
     for raw in &batch.versions {
-        // SY28: a body must be the size its version declares, and every version is
-        // counted, with the body it brings, before anything of it is kept. A budget
-        // spent part-way leaves the whole change unkept (the transaction rolls back).
+        // SY28: a body must be the size its version declares.
         let checked = check_version(raw.clone(), batch.device).and_then(|c| match c {
             Checked::Version(v) => match &v.content {
                 Content::Body { hash, size }
@@ -343,15 +340,6 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             },
             other => Ok(other),
         });
-        if let Ok(Checked::Version(v)) = &checked {
-            let body = match &v.content {
-                Content::Body { hash, .. } => lengths.get(hash).copied().unwrap_or(0) as i64,
-                _ => 0,
-            };
-            if aside_full(&tx, lib, batch.device, raw.to_string().len() as i64 + body)? {
-                return Ok(Received::Stopped);
-            }
-        }
         match checked {
             // SY10: more than 24 hours ahead of this clock: kept with its place in the
             // chain (`applied = -2`) but never merged, applied or observed until the
@@ -376,16 +364,14 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                 match ancestry(&tx, lib, &placed) {
                     // SY9: a forged or future ancestor is refused.
                     HistoryCheck::False => {
-                        if !set_aside(
+                        set_aside(
                             &tx,
                             lib,
                             batch.device,
                             raw.to_string().as_bytes(),
                             "false ancestry",
                             now_ms,
-                        )? {
-                            return Ok(Received::Stopped);
-                        }
+                        )?;
                         aside += 1;
                         continue;
                     }
@@ -413,29 +399,25 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             }
             // SY9: a newer format is kept aside whole, and passed on.
             Ok(Checked::NewerFormat(_)) => {
-                if !set_aside(
+                set_aside(
                     &tx,
                     lib,
                     batch.device,
                     raw.to_string().as_bytes(),
                     "newer format",
                     now_ms,
-                )? {
-                    return Ok(Received::Stopped);
-                }
+                )?;
                 aside += 1;
             }
             Err(e) => {
-                if !set_aside(
+                set_aside(
                     &tx,
                     lib,
                     batch.device,
                     raw.to_string().as_bytes(),
                     &e.to_string(),
                     now_ms,
-                )? {
-                    return Ok(Received::Stopped);
-                }
+                )?;
                 aside += 1;
             }
         }
@@ -474,8 +456,12 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             applied += 1;
         }
     }
-    if pending_full(&tx, lib, batch.device)? {
-        return Ok(Received::Stopped); // rolls the change back
+    // SY28: once everything the change brings is kept and applied, what is left of
+    // that device unapplied must fit both budgets; if not, the whole change is
+    // rolled back (the transaction is dropped) and receiving from it stops. A change
+    // file is bounded (SP8), so this is the only check needed, once per change.
+    if aside_full(&tx, lib, batch.device, 0, 0)? || pending_full(&tx, lib, batch.device)? {
+        return Ok(Received::Stopped);
     }
     tx.commit()?;
     Ok(Received::Applied {
@@ -540,6 +526,14 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
             HistoryCheck::False => {
                 set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
                 conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
+                // Its body goes too, unless another version still names it.
+                if let Content::Body { hash, .. } = &placed.version.content {
+                    conn.execute(
+                        "DELETE FROM sync_bodies WHERE hash = ?1 AND NOT EXISTS
+                         (SELECT 1 FROM sync_versions WHERE json_extract(raw, '$.body.hash') = ?1)",
+                        [hash.to_string()],
+                    )?;
+                }
             }
             HistoryCheck::Wait => {
                 set_waiting(conn, lib, &placed, -1)?;
@@ -1210,6 +1204,94 @@ mod tests {
         );
         receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
         assert_eq!(note_of(&b, "book-b"), Some(Some("C two".into())));
+    }
+
+    #[test]
+    fn a_waiting_version_found_false_takes_its_body_with_it() {
+        // C's note names A's change with the wrong hash: it waits for A, then is false.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let (mut c, lc) = device(3, "book-c");
+        a.save_annotation(&highlight("book-a", Some("from A"), 1_760_000_001_000))
+            .unwrap();
+        let from_a = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(c.conn(), &lc, &from_a, crate::store::now_ms()).unwrap();
+        c.save_annotation(&highlight(
+            "book-c",
+            Some("C's own words"),
+            1_760_000_002_000,
+        ))
+        .unwrap();
+        let mut c1 = publish_next(c.conn(), &lc).unwrap().unwrap();
+        let mut body = None;
+        for v in &mut c1.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("note:")) {
+                for e in v["history"].as_array_mut().unwrap() {
+                    if e["d"] == la.device.to_string() {
+                        e["h"] = serde_json::json!(Hash32([9; 32]).to_string());
+                    }
+                }
+                body = Some(v["body"]["hash"].as_str().unwrap().to_owned());
+            }
+        }
+        let body = body.unwrap();
+        let kept = |s: &Store| -> i64 {
+            s.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_bodies WHERE hash = ?1",
+                    [&body],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        receive(b.conn(), &lb, &c1, crate::store::now_ms()).unwrap();
+        assert_eq!(kept(&b), 1, "kept while it waits");
+        receive(b.conn(), &lb, &from_a, crate::store::now_ms()).unwrap();
+        assert_eq!(
+            kept(&b),
+            0,
+            "SY28: not kept outside the budget once found false"
+        );
+        assert_eq!(note_of(&b, "book-b"), Some(Some("from A".into())));
+    }
+
+    #[test]
+    fn bad_bodies_past_the_budget_in_one_change_leave_nothing_kept() {
+        // Five 4 MB highlight bodies that aren't highlights: 20 MB set aside, over 16.
+        let (b, lb) = device(2, "book-b");
+        let other = Id16([4; 16]);
+        let mut versions = Vec::new();
+        let mut bodies = Vec::new();
+        for i in 0..5u8 {
+            let mut body = vec![b'x'; 4 * 1024 * 1024 - 1];
+            body[0] = b'0' + i;
+            versions.push(serde_json::json!({
+                "format": 1, "key": format!("annotation:{}", uuid::Uuid::new_v4()),
+                "device": other.to_string(), "clock": [crate::store::now_ms() as u64, i], "history": [],
+                "body": { "hash": identity_hash(&body).to_string(), "size": body.len() },
+            }));
+            bodies.push(body);
+        }
+        let batch = Batch {
+            device: other,
+            seq: 1,
+            hash: Hash32([1; 32]),
+            versions,
+            bodies,
+        };
+        assert_eq!(
+            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            Received::Stopped
+        );
+        let kept: i64 = b
+            .conn()
+            .query_row(
+                "SELECT (SELECT COUNT(*) FROM sync_bodies) + (SELECT COUNT(*) FROM sync_aside)",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kept, 0, "the whole change is rolled back");
     }
 
     #[test]
