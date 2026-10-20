@@ -233,7 +233,8 @@ pub const MIGRATIONS: &[&str] = &[
         seq INTEGER NOT NULL,
         hash TEXT NOT NULL,
         before BLOB,                        -- the body it replaced; NULL: nothing was shown
-        at INTEGER NOT NULL
+        at INTEGER NOT NULL,
+        turn INTEGER NOT NULL DEFAULT 0     -- orders entries changed in one millisecond
     );
     CREATE INDEX sync_undo_at ON sync_undo(library, at);
 

@@ -332,7 +332,20 @@ pub(crate) fn before(
     next: u64,
 ) -> Result<(Option<Shown>, Option<Vec<u8>>)> {
     let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
-    if let Some(v) = journal::unsent_of(conn, lib, key)? {
+    // This device's own edit not yet sent, held for a choice or not: what the
+    // library shows of it here.
+    let local: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(Ok(super::record::Checked::Version(v))) = local
+        .as_deref()
+        .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
+        .map(|v| super::record::check_version(v, lib.device))
+    {
         record.add(Placed {
             version: v,
             seq: next,
@@ -492,14 +505,14 @@ pub(crate) fn applied(
     let note_counted_with_highlight = p.version.kind == Kind::Note && {
         let last = |key: String| -> Result<Option<i64>> {
             Ok(conn.query_row(
-                "SELECT MAX(at) FROM sync_undo WHERE library = ?1 AND key = ?2 AND at > ?3",
+                "SELECT MAX(turn) FROM sync_undo WHERE library = ?1 AND key = ?2 AND at > ?3",
                 params![lib.id.to_string(), key, since],
                 |r| r.get(0),
             )?)
         };
         let highlight = last(format!("annotation:{subject}"))?;
         let note = last(p.version.key.as_str().to_owned())?;
-        highlight.is_some_and(|h| note.map_or(true, |n| n <= h))
+        highlight.is_some_and(|h| note.map_or(true, |n| n < h))
     };
     // Since the last answer, one entry a record: what it was before the first
     // change (kept), and the last change (moved on). So the journal holds what Stop
@@ -512,11 +525,18 @@ pub(crate) fn applied(
     } else {
         now_ms.max(since + 1)
     };
+    // Each insert or move also takes the next turn, so two changes in one
+    // millisecond still tell which came first.
+    let turn: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(turn), 0) + 1 FROM sync_undo WHERE library = ?1",
+        [lib.id.to_string()],
+        |r| r.get(0),
+    )?;
     let moved = if approved {
         0
     } else {
         conn.execute(
-            "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6
+            "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6, turn = ?8
          WHERE library = ?1 AND key = ?2 AND at > ?7",
             params![
                 lib.id.to_string(),
@@ -525,14 +545,15 @@ pub(crate) fn applied(
                 p.seq as i64,
                 p.version.hash.to_string(),
                 at,
-                since
+                since,
+                turn
             ],
         )?
     };
     if moved == 0 {
         conn.execute(
-            "INSERT INTO sync_undo (library, key, device, seq, hash, before, at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             params![
                 lib.id.to_string(),
                 p.version.key.as_str(),
@@ -540,7 +561,8 @@ pub(crate) fn applied(
                 p.seq as i64,
                 p.version.hash.to_string(),
                 before,
-                at
+                at,
+                turn
             ],
         )?;
     }
@@ -2135,6 +2157,95 @@ mod tests {
             )
             .unwrap();
         assert_eq!(deleted, 1, "the note's own deletion, after it came back");
+    }
+
+    #[test]
+    fn a_hidden_note_added_again_in_the_same_millisecond_counts() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let mut gone = delete(&mut a, &la, &ids);
+        let note_tomb = gone
+            .versions
+            .iter()
+            .find(|v| v["key"].as_str().is_some_and(|k| k.starts_with("note:")))
+            .unwrap()
+            .clone();
+        gone.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        // The hidden note gets a new text, then its tombstone: both after the
+        // highlight's deletion, in the same window.
+        let text = br#"{"text":"again"}"#.to_vec();
+        let key = note_tomb["key"].as_str().unwrap().to_owned();
+        let (prev_seq, prev_hash): (i64, String) = b
+            .conn()
+            .query_row(
+                "SELECT seq, hash FROM sync_versions WHERE key = ?1 AND applied >= 1 ORDER BY seq DESC",
+                [&key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let again = serde_json::json!({
+            "format": 1, "key": key, "device": la.device.to_string(),
+            "clock": [now as u64 + 10 * HOUR as u64 / 10, 0],
+            "history": [{ "d": la.device.to_string(), "s": prev_seq, "h": prev_hash }],
+            "body": { "hash": super::super::ids::identity_hash(&text).to_string(), "size": text.len() },
+        });
+        let seq2 = gone.seq + 1;
+        let b2 = Batch {
+            device: la.device,
+            seq: seq2,
+            hash: super::super::ids::Hash32([0x71; 32]),
+            versions: vec![again.clone()],
+            bodies: vec![text],
+        };
+        receive(b.conn(), &lb, &b2, now + HOUR).unwrap();
+        let mut tomb = again.clone();
+        tomb.as_object_mut().unwrap().remove("body");
+        tomb["deleted"] = serde_json::json!({ "covers": [] });
+        tomb["clock"] = serde_json::json!([now as u64 + 2 * HOUR as u64, 0]);
+        tomb["history"] = serde_json::json!([{
+            "d": la.device.to_string(), "s": seq2,
+            "h": crate::sync::record::version_hash(&again).to_string(),
+        }]);
+        let b3 = Batch {
+            device: la.device,
+            seq: seq2 + 1,
+            hash: super::super::ids::Hash32([0x72; 32]),
+            versions: vec![tomb],
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &b3, now + HOUR).unwrap();
+        let deleted: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_counted WHERE what = 'deleted' AND at > ?1",
+                [now],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // The highlight and its note, then the note's own deletion after it came
+        // back: all in one millisecond.
+        assert_eq!(deleted, 3, "the note's own deletion counts too");
+    }
+
+    #[test]
+    fn stop_syncing_puts_back_an_unsent_edit_a_deletion_held() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // B's reader edits the note, unsent; apart, A deletes the highlight.
+        let mut mine = highlight("book-b", Some("B's unsent"), 1_760_000_002_000);
+        mine.id = ids[0].clone();
+        mine.quote_exact = "q0".into();
+        b.save_annotation(&mine).unwrap();
+        let gone = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("B's unsent"));
     }
 
     #[test]

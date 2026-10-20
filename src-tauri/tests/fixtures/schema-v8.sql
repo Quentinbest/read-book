@@ -33,7 +33,7 @@ CREATE UNIQUE INDEX sync_versions_unsent ON sync_versions(library, key) WHERE se
 CREATE INDEX sync_versions_key ON sync_versions(library, key);
 CREATE INDEX sync_versions_body ON sync_versions(json_extract(raw, '$.body.hash'));
 CREATE TABLE sync_stopped (library TEXT NOT NULL, device TEXT NOT NULL, reason TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (library, device));
-CREATE TABLE sync_undo (library TEXT NOT NULL, key TEXT NOT NULL, device TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, before BLOB, at INTEGER NOT NULL);
+CREATE TABLE sync_undo (library TEXT NOT NULL, key TEXT NOT NULL, device TEXT NOT NULL, seq INTEGER NOT NULL, hash TEXT NOT NULL, before BLOB, at INTEGER NOT NULL, turn INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX sync_undo_at ON sync_undo(library, at);
 CREATE TABLE sync_counted (library TEXT NOT NULL, at INTEGER NOT NULL, what TEXT NOT NULL, kind TEXT NOT NULL, book TEXT, bytes INTEGER NOT NULL, approved INTEGER NOT NULL);
 CREATE INDEX sync_counted_at ON sync_counted(library, at);
@@ -68,6 +68,6 @@ INSERT INTO sync_changes VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3
 INSERT INTO sync_seen VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'aa');
 INSERT INTO sync_aside VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'bb', 'format', 3, X'7B7D', 6100);
 INSERT INTO sync_stopped VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'budget', 6200);
-INSERT INTO sync_undo VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'cc', X'7B7D', 6300);
+INSERT INTO sync_undo VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'cc', X'7B7D', 6300, 1);
 INSERT INTO sync_counted VALUES ('00112233445566778899aabbccddeeff', 6300, 'changed', 'places', '7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 0, 0);
 INSERT INTO sync_question VALUES ('00112233445566778899aabbccddeeff', 0, 0, 6250, NULL, NULL, NULL, '{}', 6260, NULL, NULL);

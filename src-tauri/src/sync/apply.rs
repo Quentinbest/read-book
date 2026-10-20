@@ -1502,6 +1502,16 @@ fn apply_key(
         Some(Outcome::Conflict { shown, all }) => (shown, all, false),
         None => return Ok(false),
     };
+    // SY26: what a remote version replaces is kept in the undo journal, and the
+    // change counted, whenever a different version becomes the one shown. Read
+    // before anything here changes (an unsent edit held, below).
+    let before = if winner.version.device != lib.device {
+        let (shown, body) = guard::before(conn, lib, key, next)?;
+        (shown != Some((winner.version.device, winner.version.hash))).then_some(body)
+    } else {
+        None
+    };
+    let row_before = guard::row(conn, key)?;
     // SY13, #109: this device's unsent edit, now hidden in a conflict, is held for the
     // reader's choice rather than left to be replaced by the next edit.
     if !settled {
@@ -1535,15 +1545,6 @@ fn apply_key(
     {
         return Ok(false);
     }
-    // SY26: what a remote version replaces is kept in the undo journal, and the
-    // change counted, the first time it is applied.
-    let before = if winner.version.device != lib.device {
-        let (shown, body) = guard::before(conn, lib, key, next)?;
-        (shown != Some((winner.version.device, winner.version.hash))).then_some(body)
-    } else {
-        None
-    };
-    let row_before = guard::row(conn, key)?;
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
