@@ -134,11 +134,19 @@ fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<V
         .optional()?;
     let mut best: Option<(super::clock::Stamp, Vec<u8>)> = None;
     if let Some((Some(raw), Some(body))) = kept {
-        if let Some(Ok(super::record::Checked::Version(v))) =
-            serde_json::from_str::<serde_json::Value>(&raw)
-                .ok()
-                .map(|v| super::record::check_version(v, lib.device))
-        {
+        // Checked against the writer it records: this device under the identity it
+        // had then, which a rotation since may have changed.
+        let written = serde_json::from_str::<serde_json::Value>(&raw).ok();
+        let writer = written
+            .as_ref()
+            .and_then(|v| v["device"].as_str())
+            .and_then(super::ids::Id16::parse);
+        if let (Some(Ok(super::record::Checked::Version(v))), Some(_)) = (
+            written
+                .zip(writer)
+                .map(|(v, w)| super::record::check_version(v, w)),
+            writer,
+        ) {
             best = Some((
                 Placed {
                     version: v,
@@ -519,6 +527,29 @@ mod tests {
         b.delete_annotation(ANNO).unwrap();
         assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
         assert_eq!(note_of(&b, "book-b"), Some(Some("A's newer".into())));
+    }
+
+    #[test]
+    fn an_unsent_edit_deleted_then_rotated_is_restorable() {
+        let (_a, _la, mut b, lb) = shared();
+        b.save_annotation(&highlight("book-b", Some("B's latest"), 1_760_000_002_000))
+            .unwrap();
+        b.delete_annotation(ANNO).unwrap();
+        let rotated = Library {
+            id: lb.id,
+            device: crate::sync::ids::Id16([0x2b; 16]),
+        };
+        journal::set_device(
+            b.conn(),
+            &rotated,
+            true,
+            None,
+            crate::store::now_ms() as u64,
+        )
+        .unwrap();
+        let now = crate::store::now_ms();
+        assert!(restore(b.conn(), &rotated, &key("annotation"), now + DAY).unwrap());
+        assert_eq!(note_of(&b, "book-b"), Some(Some("B's latest".into())));
     }
 
     #[test]
