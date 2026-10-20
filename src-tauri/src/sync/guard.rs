@@ -529,18 +529,21 @@ pub(crate) fn applied(
             ],
         )?;
     }
-    // Places count by book: one row a book a day is enough.
+    // Places count by book: one row a book in the day is enough, moved on to the
+    // latest change so the book stays in the rolling 24 hours as long as it changes.
     if kind == "places" {
-        let counted: bool = conn
-            .query_row(
-                "SELECT 1 FROM sync_counted
-                 WHERE library = ?1 AND kind = 'places' AND book = ?2 AND at > ?3 AND approved = ?4",
-                params![lib.id.to_string(), book, since.max(now_ms - DAY_MS), approved],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
-        if counted {
+        let moved = conn.execute(
+            "UPDATE sync_counted SET at = ?5
+             WHERE library = ?1 AND kind = 'places' AND book = ?2 AND at > ?3 AND approved = ?4",
+            params![
+                lib.id.to_string(),
+                book,
+                since.max(now_ms - DAY_MS),
+                approved,
+                at
+            ],
+        )?;
+        if moved > 0 {
             return Ok(());
         }
     }
@@ -1993,6 +1996,21 @@ mod tests {
             "the highlight and its note"
         );
         assert!(*bytes > 0, "its bytes come to the new book");
+    }
+
+    #[test]
+    fn a_place_changed_again_stays_in_the_day() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, _) = shared(1, now);
+        for (i, at) in [now + HOUR, now + 23 * HOUR].into_iter().enumerate() {
+            a.save_position("book-a", &format!("epubcfi(/6/{})", 2 * i + 2), 0.1, None)
+                .unwrap();
+            let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+            receive(b.conn(), &lb, &batch, at).unwrap();
+        }
+        // A day after the first change, the book is still in the last 24 hours.
+        let day = counts(b.conn(), &lb, now + 25 * HOUR - DAY_MS).unwrap();
+        assert_eq!(day.place_books, 1);
     }
 
     #[test]
