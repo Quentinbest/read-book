@@ -575,7 +575,8 @@ pub(crate) fn applied(
             (None, None) => return Ok(()),
         }
     }
-    // A note tombstone for a highlight already deleted was counted with it.
+    // A note tombstone for a highlight whose deletion was counted in this window
+    // was counted with it; one hidden by a deletion before the last answer counts.
     if p.version.kind == Kind::Note && what == "deleted" {
         let hidden: Option<bool> = conn
             .query_row(
@@ -584,7 +585,15 @@ pub(crate) fn applied(
                 |r| r.get(0),
             )
             .optional()?;
-        if hidden == Some(true) {
+        let counted_here: bool = conn
+            .query_row(
+                "SELECT 1 FROM sync_undo WHERE library = ?1 AND key = ?2 AND at > ?3",
+                params![lib.id.to_string(), format!("annotation:{subject}"), since],
+                |_| Ok(()),
+            )
+            .optional()?
+            .is_some();
+        if hidden == Some(true) && counted_here {
             return Ok(());
         }
     }
@@ -2011,6 +2020,43 @@ mod tests {
         // A day after the first change, the book is still in the last 24 hours.
         let day = counts(b.conn(), &lb, now + 25 * HOUR - DAY_MS).unwrap();
         assert_eq!(day.place_books, 1);
+    }
+
+    #[test]
+    fn a_note_deleted_after_its_highlight_was_answered_counts() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        // A's highlight deletion alone, then the reader answers.
+        let mut all = delete(&mut a, &la, &ids);
+        let notes: Vec<serde_json::Value> = all
+            .versions
+            .iter()
+            .filter(|v| v["key"].as_str().is_some_and(|k| k.starts_with("note:")))
+            .cloned()
+            .collect();
+        all.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &all, now + HOUR).unwrap();
+        b.conn()
+            .execute(
+                "UPDATE sync_question SET answered_at = ?1",
+                [now + HOUR + 1],
+            )
+            .unwrap();
+        // The hidden note's tombstone, in the next window, counts.
+        let later = Batch {
+            device: la.device,
+            seq: all.seq + 1,
+            hash: super::super::ids::Hash32([0x77; 32]),
+            versions: notes,
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &later, now + 2 * HOUR).unwrap();
+        let deleted = counted_after(&b, now + HOUR + 1);
+        assert_eq!(deleted, vec![("deleted".to_owned(), 1, 0)]);
     }
 
     #[test]
