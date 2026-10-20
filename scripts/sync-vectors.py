@@ -183,7 +183,11 @@ seal_ad = dom("linen-sync/enroll-seal/v1") + t
 seal_ct = sodium.crypto_aead_xchacha20poly1305_ietf_encrypt(naming_key, seal_ad, seal_nonce, seal_key)
 
 vectors = {
-    "note": "Made by scripts/sync-vectors.py from PyNaCl, argon2-cffi and hashlib; do not edit by hand.",
+    "note": (
+        "Made by scripts/sync-vectors.py from PyNaCl, argon2-cffi and hashlib; do not edit by hand. "
+        "PROVISIONAL: the encodings follow a reading Delegated to Claude, not yet approved "
+        "(docs/decisions.md, SP4's exact inputs and the envelope)."
+    ),
     "library": library.hex(),
     "seed": seed.hex(),
     "public": public.hex(),
