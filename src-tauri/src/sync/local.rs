@@ -39,18 +39,21 @@ fn record(
     }
     // #109: once an edit is held for the reader's choice, later edits replace the
     // held one; none becomes publishable before the reader chooses.
-    if journal::held(conn, lib, &k)? {
-        return journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ());
-    }
-    match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
-        // SY13: this device's own version waits in a conflict the reader hasn't
-        // decided. The save goes ahead, and the edit is held as the reader's
-        // candidate choice, never lost and never published without it (#109).
-        Err(JournalError::Conflicted(_)) => {
-            journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ())
+    let v = if journal::held(conn, lib, &k)? {
+        journal::hold_local(conn, lib, &k, content, now_ms)?
+    } else {
+        match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
+            // SY13: this device's own version waits in a conflict the reader hasn't
+            // decided. The save goes ahead, and the edit is held as the reader's
+            // candidate choice, never lost and never published without it (#109).
+            Err(JournalError::Conflicted(_)) => {
+                journal::hold_local(conn, lib, &k, content, now_ms)?
+            }
+            other => other?,
         }
-        other => other.map(|_| ()),
-    }
+    };
+    // SY17: a deletion made here is first seen now.
+    super::restore::seen(conn, lib, &v, None, now_ms as i64)
 }
 
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never
