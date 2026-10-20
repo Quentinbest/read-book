@@ -264,7 +264,10 @@ pub(crate) fn ask(
     Ok(())
 }
 
-/// The versions the open question counted, which an approval lets through.
+/// The versions a question counted, which its approval lets through: while it is
+/// open and approved, and after it settles, until they have all applied (one the
+/// library can't take yet, a book over its budget say, isn't counted again when it
+/// does). Stop syncing clears them.
 pub(crate) fn approved_versions(conn: &Connection, lib: &Library) -> Result<HashSet<VersionId>> {
     let versions: Option<Option<String>> = conn
         .query_row(
@@ -308,7 +311,8 @@ pub fn answer(conn: &Connection, lib: &Library, answer: Answer, now_ms: i64) -> 
                 [lib.id.to_string()],
             )?;
             tx.execute(
-                "UPDATE sync_question SET asking = 0, approved = 0, answered_at = ?2 WHERE library = ?1",
+                "UPDATE sync_question SET asking = 0, approved = 0, answered_at = ?2, versions = NULL
+                 WHERE library = ?1",
                 params![lib.id.to_string(), now_ms],
             )?;
         }
@@ -373,10 +377,20 @@ pub(crate) fn before(
             .flatten();
         return Ok((id, at.map(stamp)));
     }
-    let body = match shown.map(|p| &p.version.content) {
+    let mut body = match shown.map(|p| &p.version.content) {
         Some(Content::Body { hash, .. }) => journal::body(conn, hash)?,
         _ => None,
     };
+    // A note deleted with its highlight is still kept on the deleted row (for
+    // Restore): that text is what a remote note body replaces.
+    if body.is_none() && key.kind() == Kind::Note {
+        if let Some((row, true)) = crate::store::annotation_row(conn, subject_of(key))? {
+            body = row
+                .note
+                .filter(|n| !n.trim().is_empty())
+                .map(|n| serde_json::json!({ "text": n }).to_string().into_bytes());
+        }
+    }
     Ok((id, body))
 }
 
@@ -2491,6 +2505,59 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(row.note, None, "deleted on its own, it stays deleted");
+    }
+
+    #[test]
+    fn an_approved_version_that_waits_isnt_counted_when_it_applies() {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        highlights(&mut a, "book-a", 110);
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(receive(b.conn(), &lb, &batch, now).unwrap(), Received::Asks);
+        answer(b.conn(), &lb, Answer::Apply, now).unwrap();
+        // Meanwhile B's book is taken away: the approved versions wait.
+        b.conn().execute("DELETE FROM sync_books", []).unwrap();
+        receive(b.conn(), &lb, &batch, now + 1).unwrap();
+        assert!(b.annotations("book-b").unwrap().is_empty());
+        assert!(asking(b.conn(), &lb).unwrap().is_none(), "settled");
+        // The book comes back: they apply, not counted again, not asked again.
+        b.conn()
+            .execute(
+                "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, 'book-b')",
+                params![lb.id.to_string(), crate::sync::apply::tests::SYNC_BOOK],
+            )
+            .unwrap();
+        assert_eq!(apply_pending(b.conn(), &lb, now + HOUR).unwrap(), 220);
+        assert!(asking(b.conn(), &lb).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_remote_body_over_a_hidden_note_is_journalled_and_counted() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // B deletes the highlight with its note (kept on the row); A's later note
+        // body for it replaces that hidden text.
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        let mut h = highlight("book-a", Some("A's text"), 1_760_000_002_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        // A's note version over B's tombstone, without its highlight.
+        a.restore_annotation(&ids[0]).unwrap();
+        a.save_annotation(&h).unwrap();
+        let mut over = publish_next(a.conn(), &la).unwrap().unwrap();
+        over.versions
+            .retain(|v| v["key"].as_str().is_some_and(|k| k.starts_with("note:")));
+        receive(b.conn(), &lb, &over, now + 2 * HOUR).unwrap();
+        let changed = counted_after(&b, now + HOUR);
+        assert_eq!(changed.first().map(|c| c.0.as_str()), Some("changed"));
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
+        let (row, _) = crate::store::annotation_row(b.conn(), &ids[0])
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.note.as_deref(), Some("note 0"), "the original back");
     }
 
     #[test]

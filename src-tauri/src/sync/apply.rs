@@ -740,10 +740,11 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     let mut applied = 0;
     // SY26: what the reader let through is this change's own versions, not what
     // resolves with it.
-    let mut budget = Tally::default();
-    if gate == guard::Gate::Approved {
-        budget.approved_versions = guard::approved_versions(&tx, lib)?;
-    }
+    // What an earlier approval let through and is still to apply stays exempt.
+    let mut budget = Tally {
+        approved_versions: guard::approved_versions(&tx, lib)?,
+        ..Tally::default()
+    };
     for k in keys {
         // SY28: once a body of this device's has been dropped the change is rolled
         // back (below), so nothing more of it is worth applying.
@@ -935,11 +936,8 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     }
     // SY26: an approved pass applies the records the reader was asked about, and
     // nothing that became ready since.
-    let approved = if gate == guard::Gate::Approved {
-        guard::approved_versions(conn, lib)?
-    } else {
-        HashSet::new()
-    };
+    // (What an earlier approval let through and is still to apply stays exempt.)
+    let approved = guard::approved_versions(conn, lib)?;
     let mut keys: Vec<Key> = if gate == guard::Gate::Approved {
         let mut keys: Vec<Key> = approved
             .iter()
