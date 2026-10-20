@@ -384,13 +384,51 @@ fn subject_of(key: &Key) -> &str {
     key.as_str().split(':').nth(1).unwrap_or_default()
 }
 
+/// A highlight's row as SY26 counts it: its book, whether it shows, its bytes
+/// (CFI, quotes and note, as SY28's per-book total) and whether it has a note.
+#[derive(Debug, Clone)]
+pub(crate) struct Row {
+    book: String,
+    live: bool,
+    bytes: i64,
+    note: bool,
+}
+
+/// The row of highlight `key` (an `annotation:` key), if there is one.
+pub(crate) fn row(conn: &Connection, key: &Key) -> Result<Option<Row>> {
+    if key.kind() != Kind::Annotation {
+        return Ok(None);
+    }
+    Ok(conn
+        .query_row(
+            "SELECT book_id, deleted_at IS NULL,
+                    length(CAST(cfi_range AS BLOB)) + length(CAST(quote_exact AS BLOB))
+                    + length(CAST(quote_prefix AS BLOB)) + length(CAST(quote_suffix AS BLOB))
+                    + COALESCE(length(CAST(note AS BLOB)), 0),
+                    COALESCE(trim(note), '') != ''
+             FROM annotations WHERE id = ?1",
+            [subject_of(key)],
+            |r| {
+                Ok(Row {
+                    book: r.get(0)?,
+                    live: r.get(1)?,
+                    bytes: r.get(2)?,
+                    note: r.get(3)?,
+                })
+            },
+        )
+        .optional()?)
+}
+
 /// A remote version has just been applied over `before`: the undo journal keeps
 /// what it replaced, and the change is counted (unless the reader let it through).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn applied(
     conn: &Connection,
     lib: &Library,
     p: &Placed,
     before: Option<Vec<u8>>,
+    row_before: Option<Row>,
     approved: bool,
     now_ms: i64,
 ) -> Result<()> {
@@ -507,27 +545,44 @@ pub(crate) fn applied(
         }
     }
     // Bytes a record brings: all of an added one, what a rewrite grows by.
-    let bytes = match (what, &before, &after) {
+    let mut bytes = match (what, &before, &after) {
         ("added", _, Some(a)) => a.len() as i64,
         ("changed", Some(b), Some(a)) => (a.len() as i64 - b.len() as i64).max(0),
         _ => 0,
     };
-    // A deleted highlight hides its note with it, whether or not a note tombstone
-    // comes too: the note counts with the highlight, and a note tombstone for a
-    // highlight already deleted isn't counted again.
-    let mut items = 1;
-    if what == "deleted" {
-        let row: Option<(Option<String>, bool)> = conn
+    let (mut what, mut book, mut items) = (what, book, 1);
+    // A highlight counts by what its row does in the library: one that appears,
+    // disappears or moves to another book takes its note with it (counted too),
+    // and brings its bytes, note included, to the book it shows in.
+    if p.version.kind == Kind::Annotation {
+        let row_after = row(conn, &p.version.key)?;
+        let note = |r: &Row| if r.note { 2 } else { 1 };
+        match (row_before.filter(|r| r.live), row_after.filter(|r| r.live)) {
+            (None, Some(a)) => {
+                (what, items, bytes, book) = ("added", note(&a), a.bytes, Some(a.book))
+            }
+            (Some(b), None) => (what, items, bytes, book) = ("deleted", note(&b), 0, Some(b.book)),
+            (Some(b), Some(a)) if b.book != a.book => {
+                (what, items, bytes, book) = ("changed", note(&a), a.bytes, Some(a.book))
+            }
+            (Some(b), Some(a)) => {
+                (what, items, bytes, book) =
+                    ("changed", 1, (a.bytes - b.bytes).max(0), Some(a.book))
+            }
+            (None, None) => return Ok(()),
+        }
+    }
+    // A note tombstone for a highlight already deleted was counted with it.
+    if p.version.kind == Kind::Note && what == "deleted" {
+        let hidden: Option<bool> = conn
             .query_row(
-                "SELECT note, deleted_at IS NOT NULL FROM annotations WHERE id = ?1",
+                "SELECT deleted_at IS NOT NULL FROM annotations WHERE id = ?1",
                 [subject],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
             .optional()?;
-        match (p.version.kind, row) {
-            (Kind::Annotation, Some((Some(note), _))) if !note.trim().is_empty() => items = 2,
-            (Kind::Note, Some((_, true))) => return Ok(()),
-            _ => {}
+        if hidden == Some(true) {
+            return Ok(());
         }
     }
     for _ in 0..items {
@@ -1854,6 +1909,89 @@ mod tests {
         receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.note.as_deref(), Some("B's newest"));
+    }
+
+    /// What was counted after `at`: (what, rows, bytes).
+    fn counted_after(s: &Store, at: i64) -> Vec<(String, i64, i64)> {
+        s.conn()
+            .prepare(
+                "SELECT what, COUNT(*), SUM(bytes) FROM sync_counted WHERE at > ?1 AND kind = 'notes'
+                 GROUP BY what ORDER BY what",
+            )
+            .unwrap()
+            .query_map([at], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn a_highlight_restored_with_its_note_counts_both() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let mut gone = delete(&mut a, &la, &ids);
+        gone.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let added = counted_after(&b, now + HOUR + 1);
+        let (what, rows, bytes) = &added[0];
+        assert_eq!(
+            (what.as_str(), *rows),
+            ("added", 2),
+            "the highlight and its note"
+        );
+        assert!(
+            *bytes >= 2 * "note 0".len() as i64,
+            "the note's bytes too: {bytes}"
+        );
+    }
+
+    #[test]
+    fn a_highlight_moved_to_another_book_counts_its_note() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let other = "0b1c2d3e-4f50-4a61-8b72-93a4b5c6d7e8";
+        for (s, lib, book) in [(&a, &la, "book-a2"), (&b, &lb, "book-b2")] {
+            s.conn()
+                .execute(
+                    "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                     VALUES (?1, ?1, 'y.epub', 'Typee', 'package', 0)",
+                    [book],
+                )
+                .unwrap();
+            s.conn()
+                .execute(
+                    "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, ?3)",
+                    params![lib.id.to_string(), other, book],
+                )
+                .unwrap();
+        }
+        let mut h = highlight("book-a2", Some("note 0"), 1_760_000_002_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        a.save_annotation(&h).unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        assert_eq!(b.annotations("book-b2").unwrap().len(), 1);
+        let changed = counted_after(&b, now);
+        let (what, rows, bytes) = &changed[0];
+        assert_eq!(
+            (what.as_str(), *rows),
+            ("changed", 2),
+            "the highlight and its note"
+        );
+        assert!(*bytes > 0, "its bytes come to the new book");
     }
 
     #[test]

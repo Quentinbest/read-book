@@ -1543,13 +1543,14 @@ fn apply_key(
     } else {
         None
     };
+    let row_before = guard::row(conn, key)?;
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
         if let Some(before) = before {
             let id = guard::version_id(winner);
             let approved = aside.approved_versions.contains(&id);
-            guard::applied(conn, lib, winner, before, approved, now_ms)?;
+            guard::applied(conn, lib, winner, before, row_before, approved, now_ms)?;
             aside.applied.push(id);
         }
         true
