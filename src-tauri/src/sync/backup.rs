@@ -46,6 +46,8 @@ pub struct Manifest {
     pub taken_at: i64,
     /// Why: `first sync` or `remote deletion`.
     pub reason: String,
+    /// The sync library it was taken for: joining another (SY29) is a first sync.
+    pub library: String,
 }
 
 /// One backup in the library folder.
@@ -76,7 +78,13 @@ pub fn list(root: &Path) -> Result<Vec<Backup>> {
 
 /// SY27: takes a backup of the library at `root` (its database `conn` and `Books/`).
 /// The caller holds the store, so nothing writes meanwhile.
-pub fn take(conn: &Connection, root: &Path, reason: &str, now_ms: i64) -> Result<Backup> {
+pub fn take(
+    conn: &Connection,
+    root: &Path,
+    lib: &Library,
+    reason: &str,
+    now_ms: i64,
+) -> Result<Backup> {
     let name = super::a9::iso_time(now_ms).replace(':', "-");
     let done = root.join("Backups").join(&name);
     // Written under a temporary name and renamed when whole: an interrupted one is
@@ -113,6 +121,7 @@ pub fn take(conn: &Connection, root: &Path, reason: &str, now_ms: i64) -> Result
     let manifest = Manifest {
         taken_at: now_ms,
         reason: reason.to_owned(),
+        library: lib.id.to_string(),
     };
     std::fs::write(path.join(MANIFEST), serde_json::to_vec_pretty(&manifest)?)?;
     std::fs::rename(&path, &done)?;
@@ -175,8 +184,25 @@ pub fn before_pass(
     deletes: &[Key],
     now_ms: i64,
 ) -> Result<Option<Backup>> {
-    // The first sync is one before which this library has no backup at all.
-    let first = list(root)?.is_empty();
+    // The first sync is one before which this sync library has no backup at all
+    // (the folder may hold another's, from before a switch of storage, SY29).
+    let first = !list(root)?
+        .iter()
+        .any(|b| b.manifest.library == lib.id.to_string());
+    // What the pass may delete: its own changes' tombstones, and those received
+    // earlier and still waiting (for ancestry, a book, a highlight), which may
+    // apply with it.
+    let mut deletes = deletes.to_vec();
+    let waiting: Vec<String> = conn
+        .prepare(
+            "SELECT DISTINCT key FROM sync_versions
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+               AND json_extract(raw, '$.deleted') IS NOT NULL",
+        )?
+        .query_map([lib.id.to_string()], |r| r.get(0))?
+        .collect::<std::result::Result<_, _>>()?;
+    deletes.extend(waiting.iter().filter_map(|k| Key::parse(k).map(|(k, _)| k)));
+    let deletes = &deletes[..];
     let reason = if first {
         "first sync"
     } else if !deletes.is_empty() && !covers(conn, root, lib, deletes, now_ms)? {
@@ -184,7 +210,7 @@ pub fn before_pass(
     } else {
         return Ok(None);
     };
-    let backup = take(conn, root, reason, now_ms)?;
+    let backup = take(conn, root, lib, reason, now_ms)?;
     prune(conn, root, lib, now_ms)?;
     Ok(Some(backup))
 }
@@ -287,7 +313,7 @@ mod tests {
 
     #[test]
     fn a_backup_holds_the_database_with_its_wal_and_the_books() {
-        let (dir, mut store, _) = folder();
+        let (dir, mut store, lib) = folder();
         store
             .conn()
             .execute(
@@ -300,7 +326,7 @@ mod tests {
         store
             .save_position("b", "epubcfi(/6/2)", 0.4, None)
             .unwrap();
-        let backup = take(store.conn(), dir.path(), "first sync", 1_000).unwrap();
+        let backup = take(store.conn(), dir.path(), &lib, "first sync", 1_000).unwrap();
         let copy = Store::open(&backup.path.join("linen.db")).unwrap();
         assert_eq!(copy.position("b").unwrap().unwrap().0, "epubcfi(/6/2)");
         assert_eq!(
@@ -313,7 +339,7 @@ mod tests {
     #[test]
     fn a_library_restored_from_a_backup_starts_paused() {
         let (dir, store, lib) = folder();
-        let backup = take(store.conn(), dir.path(), "first sync", 1_000).unwrap();
+        let backup = take(store.conn(), dir.path(), &lib, "first sync", 1_000).unwrap();
         let copy = Store::open(&backup.path.join("linen.db")).unwrap();
         assert_eq!(restored_from(copy.conn(), &lib).unwrap(), Some(1_000));
         assert!(crate::sync::guard::paused(copy.conn(), &lib).unwrap());
@@ -370,7 +396,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        take(store.conn(), dir.path(), &lib, "first sync", 10).unwrap();
         store
             .save_annotation(&highlight(
                 "book-b",
@@ -397,7 +423,7 @@ mod tests {
         store
             .save_annotation(&highlight("book-b", Some("before"), 1_760_000_001_000))
             .unwrap();
-        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        take(store.conn(), dir.path(), &lib, "first sync", 10).unwrap();
         store
             .save_annotation(&highlight("book-b", Some("after"), 1_760_000_002_000))
             .unwrap();
@@ -412,7 +438,7 @@ mod tests {
         std::fs::create_dir_all(&partial).unwrap();
         std::fs::write(partial.join("linen.db"), b"half").unwrap();
         assert!(list(dir.path()).unwrap().is_empty());
-        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        take(store.conn(), dir.path(), &lib, "first sync", 10).unwrap();
         prune(store.conn(), dir.path(), &lib, 20).unwrap();
         assert!(!partial.exists());
         assert_eq!(list(dir.path()).unwrap().len(), 1);
@@ -430,7 +456,7 @@ mod tests {
                 params![lib.id.to_string(), key.as_str()],
             )
             .unwrap();
-        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        take(store.conn(), dir.path(), &lib, "first sync", 10).unwrap();
         assert!(covers(
             store.conn(),
             dir.path(),
@@ -448,12 +474,48 @@ mod tests {
     }
 
     #[test]
+    fn joining_another_library_is_a_first_sync() {
+        let (dir, store, lib) = folder();
+        assert!(before_pass(store.conn(), dir.path(), &lib, &[], 10)
+            .unwrap()
+            .is_some());
+        let other = Library {
+            id: Id16([9; 16]),
+            device: lib.device,
+        };
+        crate::sync::journal::join(store.conn(), &other, "google-drive", 20).unwrap();
+        let first = before_pass(store.conn(), dir.path(), &other, &[], 20).unwrap();
+        assert_eq!(first.map(|b| b.manifest.reason), Some("first sync".into()));
+    }
+
+    #[test]
+    fn a_deletion_waiting_from_an_earlier_pass_needs_a_backup() {
+        let (dir, store, lib) = folder();
+        take(store.conn(), dir.path(), &lib, "first sync", 10).unwrap();
+        // A tombstone received earlier, still waiting, written after the backup.
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        store
+            .conn()
+            .execute(
+                "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                 VALUES (?1, ?2, 'x', 1, 'h', '{\"deleted\":{\"covers\":[]}}', -1)",
+                params![lib.id.to_string(), key.as_str()],
+            )
+            .unwrap();
+        let backup = before_pass(store.conn(), dir.path(), &lib, &[], 20).unwrap();
+        assert_eq!(
+            backup.map(|b| b.manifest.reason),
+            Some("remote deletion".into())
+        );
+    }
+
+    #[test]
     fn backups_are_kept_a_week_ten_at_most_and_the_newest_always() {
         let (dir, store, lib) = folder();
         let day = 24 * HOUR;
         // 14 backups, one a day for two weeks.
         for i in 0..14 {
-            take(store.conn(), dir.path(), "remote deletion", i * day).unwrap();
+            take(store.conn(), dir.path(), &lib, "remote deletion", i * day).unwrap();
         }
         // On day 30, only the newest remains: the rest are over a week old.
         prune(store.conn(), dir.path(), &lib, 30 * day).unwrap();
@@ -465,6 +527,7 @@ mod tests {
             take(
                 store.conn(),
                 dir.path(),
+                &lib,
                 "remote deletion",
                 40 * day + i * HOUR,
             )
@@ -478,7 +541,7 @@ mod tests {
     fn the_backup_from_before_an_open_question_is_kept() {
         let (dir, store, lib) = folder();
         let day = 24 * HOUR;
-        take(store.conn(), dir.path(), "first sync", 0).unwrap();
+        take(store.conn(), dir.path(), &lib, "first sync", 0).unwrap();
         // A question open since day 1 (its first counted change).
         store
             .conn()
@@ -496,7 +559,7 @@ mod tests {
             )
             .unwrap();
         for i in 2..14 {
-            take(store.conn(), dir.path(), "remote deletion", i * day).unwrap();
+            take(store.conn(), dir.path(), &lib, "remote deletion", i * day).unwrap();
         }
         prune(store.conn(), dir.path(), &lib, 30 * day).unwrap();
         let left: Vec<i64> = list(dir.path())
