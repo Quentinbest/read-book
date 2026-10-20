@@ -143,13 +143,16 @@ pub fn covers(
         newest.path.join("linen.db"),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
     )?;
-    let rows = |c: &Connection, key: &Key| -> Result<Vec<(String, i64, String)>> {
+    // Each version and whether it has applied: a pending version applying later
+    // (its body arrived) changes the library as much as a new one.
+    type Rows = Vec<(String, i64, String, i64)>;
+    let rows = |c: &Connection, key: &Key| -> Result<Rows> {
         Ok(c.prepare(
-            "SELECT device, COALESCE(seq, -1), hash FROM sync_versions
+            "SELECT device, COALESCE(seq, -1), hash, applied FROM sync_versions
              WHERE library = ?1 AND key = ?2 ORDER BY 1, 2, 3",
         )?
         .query_map(params![lib.id.to_string(), key.as_str()], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
         })?
         .collect::<std::result::Result<_, _>>()?)
     };
@@ -161,8 +164,8 @@ pub fn covers(
     Ok(true)
 }
 
-/// SY27: before a sync pass, the backup it needs, if any. A first sync (nothing
-/// received yet from storage) always gets one; a pass that would apply a remote
+/// SY27: before a sync pass, the backup it needs, if any. A first sync (the
+/// library has no backup yet) gets one; a pass that would apply a remote
 /// deletion gets one unless the newest covers it. `deletes` are the keys the pass's
 /// changes delete. Old backups are pruned after a new one is taken.
 pub fn before_pass(
@@ -172,14 +175,8 @@ pub fn before_pass(
     deletes: &[Key],
     now_ms: i64,
 ) -> Result<Option<Backup>> {
-    let first: bool = conn
-        .query_row(
-            "SELECT 1 FROM sync_seen WHERE library = ?1",
-            [lib.id.to_string()],
-            |_| Ok(()),
-        )
-        .optional()?
-        .is_none();
+    // The first sync is one before which this library has no backup at all.
+    let first = list(root)?.is_empty();
     let reason = if first {
         "first sync"
     } else if !deletes.is_empty() && !covers(conn, root, lib, deletes, now_ms)? {
@@ -340,14 +337,7 @@ mod tests {
         // First sync: nothing received yet.
         let first = before_pass(store.conn(), dir.path(), &lib, &[], 10).unwrap();
         assert_eq!(first.map(|b| b.manifest.reason), Some("first sync".into()));
-        store
-            .conn()
-            .execute(
-                "INSERT INTO sync_seen (library, device, seq, hash) VALUES (?1, 'x', 1, 'h')",
-                [lib.id.to_string()],
-            )
-            .unwrap();
-        // Nothing deleted: none.
+        // Nothing received, nothing deleted, later passes: none (the first is done).
         assert!(before_pass(store.conn(), dir.path(), &lib, &[], 20)
             .unwrap()
             .is_none());
@@ -426,6 +416,35 @@ mod tests {
         prune(store.conn(), dir.path(), &lib, 20).unwrap();
         assert!(!partial.exists());
         assert_eq!(list(dir.path()).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_pending_version_applied_since_the_backup_needs_a_new_one() {
+        let (dir, store, lib) = folder();
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        store
+            .conn()
+            .execute(
+                "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                 VALUES (?1, ?2, 'x', 1, 'h', '{}', 0)",
+                params![lib.id.to_string(), key.as_str()],
+            )
+            .unwrap();
+        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        assert!(covers(
+            store.conn(),
+            dir.path(),
+            &lib,
+            std::slice::from_ref(&key),
+            20
+        )
+        .unwrap());
+        // Its body arrives and it applies: the library changed.
+        store
+            .conn()
+            .execute("UPDATE sync_versions SET applied = 1", [])
+            .unwrap();
+        assert!(!covers(store.conn(), dir.path(), &lib, &[key], 30).unwrap());
     }
 
     #[test]
