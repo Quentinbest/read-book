@@ -2561,6 +2561,39 @@ mod tests {
     }
 
     #[test]
+    fn a_kept_note_with_no_record_comes_back_with_its_highlight() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        // As if the note had never had a record in this library.
+        b.conn()
+            .execute("DELETE FROM sync_versions WHERE key LIKE 'note:%'", [])
+            .unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(
+            row.note.as_deref(),
+            Some("note 0"),
+            "kept, and shown with it"
+        );
+        let added = counted_after(&b, now + HOUR + 1);
+        assert_eq!(
+            added.first().map(|c| (c.0.as_str(), c.1)),
+            Some(("added", 2)),
+            "counted"
+        );
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);

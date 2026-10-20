@@ -1391,8 +1391,22 @@ pub(crate) fn write(
                 // A highlight brought back over this device's deleted row takes the
                 // note the library shows; the text kept on the row is journalled
                 // first, so Stop syncing can put it back (SY26).
-                let shown = shown_note(conn, lib, &a.id)?;
-                if !aside.restoring {
+                // A note with no record in this library at all (deleted before it
+                // joined, say) stays as kept on the row; it counts with the highlight.
+                let has_record: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2 AND applied >= -3",
+                        params![lib.id.to_string(), format!("note:{}", a.id)],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
+                let shown = if has_record {
+                    shown_note(conn, lib, &a.id)?
+                } else {
+                    crate::store::annotation_row(conn, &a.id)?.and_then(|(row, _)| row.note)
+                };
+                if !aside.restoring && has_record {
                     if let Some((row, true)) = crate::store::annotation_row(conn, &a.id)? {
                         if let Some(kept) = row
                             .note
