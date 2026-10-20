@@ -1376,7 +1376,8 @@ pub(crate) fn write(
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
-                         updated_at = MAX(updated_at, excluded.updated_at),
+                         updated_at = CASE WHEN ?12 THEN excluded.updated_at
+                             ELSE MAX(updated_at, excluded.updated_at) END,
                          note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN ?13 ELSE note END,
                          deleted_at = NULL, anchor_status = excluded.anchor_status",
                     // SY26: Stop syncing restores the highlight with the note it hid.

@@ -2249,6 +2249,26 @@ mod tests {
     }
 
     #[test]
+    fn stop_syncing_puts_back_a_highlights_time_too() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let mut h = highlight("book-a", Some("note 0"), 1_760_000_009_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        h.color = "blue".into();
+        a.save_annotation(&h).unwrap();
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        // Back as it was: its colour, and the time its body had (`highlights`).
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(
+            (row.color.as_str(), row.updated_at),
+            ("yellow", 1_760_000_001_000)
+        );
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);
