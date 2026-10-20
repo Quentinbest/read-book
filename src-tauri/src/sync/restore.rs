@@ -357,6 +357,24 @@ mod tests {
     }
 
     #[test]
+    fn a_held_edit_deleted_is_restorable() {
+        let (mut a, la, mut b, lb) = shared();
+        let now = crate::store::now_ms();
+        // B's unsent edit, then A's later one: B's is held for the reader.
+        b.save_annotation(&highlight("book-b", Some("B's held"), 1_760_000_002_000))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a.save_annotation(&highlight("book-a", Some("A's"), 1_760_000_003_000))
+            .unwrap();
+        let edit = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &edit, now).unwrap();
+        assert!(journal::held(b.conn(), &lb, &key("note")).unwrap());
+        b.delete_annotation(ANNO).unwrap();
+        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        assert_eq!(note_of(&b, "book-b"), Some(Some("B's held".into())));
+    }
+
+    #[test]
     fn a_note_deleted_while_its_highlight_stays_is_restorable() {
         let (mut a, la, b, lb) = shared();
         let now = crate::store::now_ms();

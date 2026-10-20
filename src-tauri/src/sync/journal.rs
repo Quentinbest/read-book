@@ -597,6 +597,25 @@ pub fn release_held(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
     Ok(())
 }
 
+/// The body of this device's unnumbered version of one key (unsent, or held for a
+/// choice), if it has one.
+pub fn unnumbered_body(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Vec<u8>>> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match check(&raw, lib.device)?.content {
+        super::record::Content::Body { hash, .. } => body(conn, &hash),
+        _ => Ok(None),
+    }
+}
+
 /// This device's unsent version of one key, if any (not one held, #109).
 pub fn unsent_of(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Version>> {
     let raw: Option<String> = conn

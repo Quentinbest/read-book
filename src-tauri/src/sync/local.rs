@@ -41,11 +41,8 @@ fn record(
     // held one; none becomes publishable before the reader chooses.
     // SY17: a deletion replacing an unsent body keeps it, for Restore (its history
     // can't name a version that was never numbered).
-    let replaced = match (&content, journal::unsent_of(conn, lib, &k)?) {
-        (LocalContent::Deleted { .. }, Some(u)) => match &u.content {
-            super::record::Content::Body { hash, .. } => journal::body(conn, hash)?,
-            _ => None,
-        },
+    let replaced = match &content {
+        LocalContent::Deleted { .. } => journal::unnumbered_body(conn, lib, &k)?,
         _ => None,
     };
     let v = if journal::held(conn, lib, &k)? {
