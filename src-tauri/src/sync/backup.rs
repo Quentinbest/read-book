@@ -46,8 +46,6 @@ pub struct Manifest {
     pub taken_at: i64,
     /// Why: `first sync` or `remote deletion`.
     pub reason: String,
-    /// The journal's last row at the time: a record changed since has a later one.
-    pub journal_row: i64,
 }
 
 /// One backup in the library folder.
@@ -76,19 +74,17 @@ pub fn list(root: &Path) -> Result<Vec<Backup>> {
     Ok(out)
 }
 
-fn journal_row(conn: &Connection) -> Result<i64> {
-    Ok(conn.query_row(
-        "SELECT COALESCE(MAX(rowid), 0) FROM sync_versions",
-        [],
-        |r| r.get(0),
-    )?)
-}
-
 /// SY27: takes a backup of the library at `root` (its database `conn` and `Books/`).
 /// The caller holds the store, so nothing writes meanwhile.
 pub fn take(conn: &Connection, root: &Path, reason: &str, now_ms: i64) -> Result<Backup> {
     let name = super::a9::iso_time(now_ms).replace(':', "-");
-    let path = root.join("Backups").join(&name);
+    let done = root.join("Backups").join(&name);
+    // Written under a temporary name and renamed when whole: an interrupted one is
+    // never taken for a backup, and `prune` removes it.
+    let path = root.join("Backups").join(format!(".partial-{name}"));
+    if path.exists() {
+        std::fs::remove_dir_all(&path)?;
+    }
     std::fs::create_dir_all(&path)?;
     // The online backup API copies the database as one consistent snapshot, rows
     // still in the WAL included.
@@ -117,15 +113,19 @@ pub fn take(conn: &Connection, root: &Path, reason: &str, now_ms: i64) -> Result
     let manifest = Manifest {
         taken_at: now_ms,
         reason: reason.to_owned(),
-        journal_row: journal_row(conn)?,
     };
-    // Written last: a backup without it was interrupted and isn't one.
     std::fs::write(path.join(MANIFEST), serde_json::to_vec_pretty(&manifest)?)?;
-    Ok(Backup { path, manifest })
+    std::fs::rename(&path, &done)?;
+    Ok(Backup {
+        path: done,
+        manifest,
+    })
 }
 
 /// Whether the newest backup covers a pass that could remove or replace `keys`:
-/// taken within the hour, with none of them changed since.
+/// taken within the hour, with each of them as it is now. The journal records
+/// every local and remote change of a record, so a record is unchanged when its
+/// journal rows are the same here and in the backup's own database.
 pub fn covers(
     conn: &Connection,
     root: &Path,
@@ -139,20 +139,22 @@ pub fn covers(
     if now_ms - newest.manifest.taken_at >= HOUR_MS {
         return Ok(false);
     }
+    let copy = Connection::open_with_flags(
+        newest.path.join("linen.db"),
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )?;
+    let rows = |c: &Connection, key: &Key| -> Result<Vec<(String, i64, String)>> {
+        Ok(c.prepare(
+            "SELECT device, COALESCE(seq, -1), hash FROM sync_versions
+             WHERE library = ?1 AND key = ?2 ORDER BY 1, 2, 3",
+        )?
+        .query_map(params![lib.id.to_string(), key.as_str()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?)
+    };
     for key in keys {
-        let changed: bool = conn
-            .query_row(
-                "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2 AND rowid > ?3",
-                params![
-                    lib.id.to_string(),
-                    key.as_str(),
-                    newest.manifest.journal_row
-                ],
-                |_| Ok(()),
-            )
-            .optional()?
-            .is_some();
-        if changed {
+        if rows(conn, key)? != rows(&copy, key)? {
             return Ok(false);
         }
     }
@@ -204,6 +206,15 @@ pub fn deletions(batch: &super::apply::Batch) -> Vec<Key> {
 /// its age, and the one SY26 keeps while the reader is asked (the newest from
 /// before the first change it counted); removes the rest.
 pub fn prune(conn: &Connection, root: &Path, lib: &Library, now_ms: i64) -> Result<()> {
+    // What an interrupted backup left (no manifest) isn't one: it goes.
+    if let Ok(entries) = std::fs::read_dir(root.join("Backups")) {
+        for entry in entries {
+            let path = entry?.path();
+            if path.is_dir() && !path.join(MANIFEST).exists() {
+                std::fs::remove_dir_all(&path)?;
+            }
+        }
+    }
     let backups = list(root)?;
     let Some(newest) = backups.last().map(|b| b.path.clone()) else {
         return Ok(());
@@ -379,6 +390,42 @@ mod tests {
             .unwrap();
         let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
         assert!(!covers(store.conn(), dir.path(), &lib, &[key], 20).unwrap());
+    }
+
+    #[test]
+    fn an_edit_replacing_the_last_journal_row_needs_a_new_backup() {
+        let (dir, mut store, lib) = folder();
+        store
+            .conn()
+            .execute(
+                "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                 VALUES ('book-b', 'h', 'moby.epub', 'Moby-Dick', 'package', 0)",
+                [],
+            )
+            .unwrap();
+        // An unsent note, the journal's last row, then replaced after the backup.
+        store
+            .save_annotation(&highlight("book-b", Some("before"), 1_760_000_001_000))
+            .unwrap();
+        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        store
+            .save_annotation(&highlight("book-b", Some("after"), 1_760_000_002_000))
+            .unwrap();
+        let key = Key::parse(&format!("note:{ANNO}")).unwrap().0;
+        assert!(!covers(store.conn(), dir.path(), &lib, &[key], 20).unwrap());
+    }
+
+    #[test]
+    fn an_interrupted_backup_isnt_one_and_goes() {
+        let (dir, store, lib) = folder();
+        let partial = dir.path().join("Backups/.partial-2026-10-20T00-00-00.000Z");
+        std::fs::create_dir_all(&partial).unwrap();
+        std::fs::write(partial.join("linen.db"), b"half").unwrap();
+        assert!(list(dir.path()).unwrap().is_empty());
+        take(store.conn(), dir.path(), "first sync", 10).unwrap();
+        prune(store.conn(), dir.path(), &lib, 20).unwrap();
+        assert!(!partial.exists());
+        assert_eq!(list(dir.path()).unwrap().len(), 1);
     }
 
     #[test]
