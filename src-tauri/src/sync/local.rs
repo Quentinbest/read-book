@@ -39,6 +39,15 @@ fn record(
     }
     // #109: once an edit is held for the reader's choice, later edits replace the
     // held one; none becomes publishable before the reader chooses.
+    // SY17: a deletion replacing an unsent body keeps it, for Restore (its history
+    // can't name a version that was never numbered).
+    let replaced = match (&content, journal::unsent_of(conn, lib, &k)?) {
+        (LocalContent::Deleted { .. }, Some(u)) => match &u.content {
+            super::record::Content::Body { hash, .. } => journal::body(conn, hash)?,
+            _ => None,
+        },
+        _ => None,
+    };
     let v = if journal::held(conn, lib, &k)? {
         journal::hold_local(conn, lib, &k, content, now_ms)?
     } else {
@@ -53,7 +62,7 @@ fn record(
         }
     };
     // SY17: a deletion made here is first seen now.
-    super::restore::seen(conn, lib, &v, None, now_ms as i64)
+    super::restore::seen(conn, lib, &v, None, replaced, now_ms as i64)
 }
 
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never

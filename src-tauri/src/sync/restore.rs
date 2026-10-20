@@ -24,26 +24,30 @@ pub const WEEK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
 
 /// A deletion this device saw: its tombstone (`seq` once published, for a remote
 /// one) and when it was first seen here.
+/// `displaced` is the body of this device's unsent version the tombstone replaced,
+/// which its history can't name (it was never numbered).
 pub(crate) fn seen(
     conn: &Connection,
     lib: &Library,
     v: &Version,
     seq: Option<u64>,
+    displaced: Option<Vec<u8>>,
     now_ms: i64,
 ) -> Result<()> {
     if !matches!(v.content, Content::Deleted { .. }) {
         return Ok(());
     }
     conn.execute(
-        "INSERT OR IGNORE INTO sync_deleted (library, key, device, hash, seq, first_seen)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT OR IGNORE INTO sync_deleted (library, key, device, hash, seq, first_seen, displaced)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
         params![
             lib.id.to_string(),
             v.key.as_str(),
             v.device.to_string(),
             v.hash.to_string(),
             seq.map(|s| s as i64),
-            now_ms
+            now_ms,
+            displaced
         ],
     )?;
     Ok(())
@@ -110,6 +114,23 @@ fn age(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<Optio
 /// The version the tombstone displaced: the newest of those it descends from (its
 /// history for this key) that still has a body here.
 fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<Vec<u8>>> {
+    // This device's unsent version the tombstone replaced, kept with the deletion.
+    let kept: Option<Vec<u8>> = conn
+        .query_row(
+            "SELECT displaced FROM sync_deleted WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+            params![
+                lib.id.to_string(),
+                tomb.version.key.as_str(),
+                tomb.version.device.to_string(),
+                tomb.version.hash.to_string()
+            ],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if kept.is_some() {
+        return Ok(kept);
+    }
     let mut best: Option<(super::clock::Hlc, Vec<u8>)> = None;
     for e in &tomb.version.history {
         let raw: Option<String> = conn
@@ -321,6 +342,18 @@ mod tests {
         let now = crate::store::now_ms();
         assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
         assert_eq!(note_of(&b, "book-b"), Some(Some("the note".into())));
+    }
+
+    #[test]
+    fn an_edit_deleted_before_it_was_sent_is_restorable() {
+        let (_a, _la, mut b, lb) = shared();
+        // B edits the note (unsent), then deletes the highlight.
+        b.save_annotation(&highlight("book-b", Some("B's edit"), 1_760_000_002_000))
+            .unwrap();
+        b.delete_annotation(ANNO).unwrap();
+        let now = crate::store::now_ms();
+        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        assert_eq!(note_of(&b, "book-b"), Some(Some("B's edit".into())));
     }
 
     #[test]

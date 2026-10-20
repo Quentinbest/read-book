@@ -276,6 +276,7 @@ pub const MIGRATIONS: &[&str] = &[
         hash TEXT NOT NULL,
         seq INTEGER,                        -- NULL: this device's, not yet sent
         first_seen INTEGER NOT NULL,        -- time this device can vouch for
+        displaced BLOB,                     -- an unsent body this device's tombstone replaced
         PRIMARY KEY (library, key, device, hash)
     );
     "#,

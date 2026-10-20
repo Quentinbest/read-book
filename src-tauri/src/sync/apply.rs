@@ -1616,7 +1616,7 @@ fn apply_key(
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
         // SY17: another device's deletion, first seen here now.
-        super::restore::seen(conn, lib, &winner.version, Some(winner.seq), now_ms)?;
+        super::restore::seen(conn, lib, &winner.version, Some(winner.seq), None, now_ms)?;
         if let Some(before) = before {
             let id = guard::version_id(winner);
             let approved = aside.approved_versions.contains(&id);
