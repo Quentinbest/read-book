@@ -213,8 +213,8 @@ pub fn recently_deleted(conn: &Connection, lib: &Library, now_ms: i64) -> Result
         if !matches!(key.kind(), Kind::Annotation | Kind::Note) {
             continue;
         }
-        if let Some((tomb, age_ms)) = age(conn, lib, &key, now_ms)? {
-            if age_ms < WEEK_MS && displaced(conn, lib, &tomb)?.is_some() {
+        if let Some((_, age_ms)) = age(conn, lib, &key, now_ms)? {
+            if age_ms < WEEK_MS && restorable(conn, lib, &key, now_ms)? {
                 out.push(Deleted { key, age_ms });
             }
         }
@@ -230,21 +230,40 @@ pub fn recently_deleted(conn: &Connection, lib: &Library, now_ms: i64) -> Result
 /// displaced is gone.
 pub fn restore(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<bool> {
     let tx = conn.unchecked_transaction()?;
+    if !restore_in(&tx, lib, key, now_ms)? {
+        // Dropped uncommitted: nothing of a partial restore stays.
+        return Ok(false);
+    }
+    tx.commit()?;
+    Ok(true)
+}
+
+/// Whether Restore would bring `key` back now: tried, then undone, so what is
+/// offered is exactly what can be restored.
+fn restorable(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<bool> {
+    conn.execute_batch("SAVEPOINT restorable")?;
+    let tried = restore_in(conn, lib, key, now_ms);
+    conn.execute_batch("ROLLBACK TO restorable; RELEASE restorable")?;
+    tried
+}
+
+/// `restore` inside the caller's transaction; on `false` the caller rolls back.
+fn restore_in(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<bool> {
     // The note's tombstone, read before the highlight comes back.
     let note = Key::parse(&format!("note:{}", subject(key))).map(|(k, _)| k);
     let note_tomb = match (&note, key.kind()) {
-        (Some(note), Kind::Annotation) => age(&tx, lib, note, now_ms)?,
+        (Some(note), Kind::Annotation) => age(conn, lib, note, now_ms)?,
         _ => None,
     };
-    let Some(tomb) = restore_one(&tx, lib, key, now_ms)? else {
+    let Some(tomb) = restore_one(conn, lib, key, now_ms)? else {
         return Ok(false);
     };
     if let (Some(note), Some((note_tomb, _))) = (note, note_tomb) {
-        if same_change(&tomb, &note_tomb) {
-            restore_one(&tx, lib, &note, now_ms)?;
+        // SY19: a highlight comes back with the note deleted with it, or not at all.
+        if same_change(&tomb, &note_tomb) && restore_one(conn, lib, &note, now_ms)?.is_none() {
+            return Ok(false);
         }
     }
-    tx.commit()?;
     Ok(true)
 }
 
@@ -258,12 +277,24 @@ fn same_change(a: &Placed, b: &Placed) -> bool {
     a.version.device == b.version.device && a.seq == b.seq
 }
 
-/// Restores one record; the tombstone it restored over, if it did.
+/// Restores one record; the tombstone it restored over, if it did. Within the
+/// caller's transaction: on `None` it may have journalled a version, which the
+/// caller rolls back.
 fn restore_one(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<Option<Placed>> {
     let Some((tomb, age_ms)) = age(conn, lib, key, now_ms)? else {
         return Ok(None);
     };
     if age_ms >= WEEK_MS {
+        return Ok(None);
+    }
+    // A note shows only on its highlight: where that isn't shown here (not arrived,
+    // or deleted), the note alone would bring nothing back.
+    if key.kind() == Kind::Note
+        && !matches!(
+            crate::store::annotation_row(conn, subject(key))?,
+            Some((_, false))
+        )
+    {
         return Ok(None);
     }
     let Some(body) = displaced(conn, lib, &tomb)? else {
@@ -289,7 +320,10 @@ fn restore_one(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Resu
     super::guard::changed_here(conn, lib, key)?;
     let mut restoring = Tally::default();
     restoring.restoring = true;
-    apply::write(conn, lib, &v, &mut restoring)?;
+    // Nothing is restored that can't be written here (a note whose highlight isn't).
+    if !apply::write(conn, lib, &v, &mut restoring)? {
+        return Ok(None);
+    }
     Ok(Some(tomb))
 }
 
@@ -330,10 +364,8 @@ mod tests {
             .iter()
             .map(|d| d.key.as_str().to_owned())
             .collect();
-        assert_eq!(
-            offered,
-            vec![key("annotation").as_str(), key("note").as_str()]
-        );
+        // The note comes back with its highlight, not on its own.
+        assert_eq!(offered, vec![key("annotation").as_str()]);
         assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
         assert_eq!(note_of(&b, "book-b"), Some(Some("the note".into())));
         // It comes back on the device that deleted it too.
@@ -550,6 +582,51 @@ mod tests {
         let now = crate::store::now_ms();
         assert!(restore(b.conn(), &rotated, &key("annotation"), now + DAY).unwrap());
         assert_eq!(note_of(&b, "book-b"), Some(Some("B's latest".into())));
+    }
+
+    fn unsent(store: &Store) -> i64 {
+        store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM sync_versions WHERE seq IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_note_isnt_restored_where_its_highlight_isnt() {
+        let (mut a, la, b, lb) = shared();
+        let now = crate::store::now_ms();
+        a.delete_annotation(ANNO).unwrap();
+        let gone = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &gone, now).unwrap();
+        assert!(!restore(b.conn(), &lb, &key("note"), now + DAY).unwrap());
+        assert_eq!(unsent(&b), 0);
+        assert!(b.annotations("book-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_highlight_isnt_restored_without_the_note_deleted_with_it() {
+        let (mut a, la, b, lb) = shared();
+        let now = crate::store::now_ms();
+        a.delete_annotation(ANNO).unwrap();
+        let gone = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &gone, now).unwrap();
+        // The note's text is gone from this device; the highlight's isn't.
+        b.conn()
+            .execute(
+                "DELETE FROM sync_bodies WHERE CAST(body AS TEXT) LIKE '%the note%'",
+                [],
+            )
+            .unwrap();
+        assert!(recently_deleted(b.conn(), &lb, now + DAY)
+            .unwrap()
+            .is_empty());
+        assert!(!restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        assert_eq!(unsent(&b), 0);
+        assert!(b.annotations("book-b").unwrap().is_empty());
     }
 
     #[test]
