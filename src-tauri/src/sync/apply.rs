@@ -11,6 +11,7 @@
 //! form (SP14) and Stage 2 their storage.
 
 use super::a9;
+use super::guard;
 use super::ids::{identity_hash, DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, Which};
 use super::merge::{
@@ -46,6 +47,11 @@ pub enum Received {
     /// SY28: this device has set aside as much from that one as it keeps, so it
     /// stops receiving from it; nothing of the change is kept.
     Stopped,
+    /// SY26: the reader is asked first; nothing of the change is kept until they
+    /// answer (`guard::answer`).
+    Asks,
+    /// SY26, SY27: sync is paused; nothing is received until the reader resumes.
+    Paused,
 }
 
 /// SY28 (prov., item 106): what is kept set aside from one device before this one
@@ -89,12 +95,21 @@ fn aside_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<(i64
 /// SY28: what each device has set aside, read once per transaction and kept up to
 /// date as bodies are excluded, so excluding many costs one count, not one each.
 #[derive(Default)]
-struct Tally {
+pub(crate) struct Tally {
     used: std::collections::HashMap<DeviceId, (i64, i64)>,
     /// The devices a body was dropped from for want of room.
     dropped: HashSet<DeviceId>,
     /// SY28: each book's live highlights and notes, in bytes, once read.
     books: std::collections::HashMap<String, i64>,
+    /// SY26: putting back the reader's own earlier state (Stop syncing), which
+    /// SY28's per-book cap on other devices' content doesn't hold back.
+    pub(crate) restoring: bool,
+    /// SY26: the versions the reader let through (those the question counted),
+    /// which aren't counted again. Anything else applied with them is.
+    approved_versions: HashSet<guard::VersionId>,
+    /// SY26: the remote versions applied and counted in this pass, which a
+    /// question names so that an approval lets exactly them through.
+    applied: Vec<guard::VersionId>,
 }
 
 impl Tally {
@@ -159,6 +174,11 @@ fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i6
 /// A version that declared another size for it is excluded, as it would be had the
 /// body come with it.
 pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bool> {
+    // SY26: while the reader is asked, or sync is paused, no body arrives to make
+    // more ready; it is fetched again later.
+    if guard::asking(conn, lib)?.is_some() || guard::paused(conn, lib)? {
+        return Ok(false);
+    }
     let hash = identity_hash(bytes);
     let len = bytes.len() as i64;
     let tx = conn.unchecked_transaction()?;
@@ -543,6 +563,9 @@ fn stop_owners_past_budget(
 
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
+    if guard::paused(conn, lib)? {
+        return Ok(Received::Paused);
+    }
     if stopped(conn, lib, batch.device)? {
         return Ok(Received::Stopped);
     }
@@ -558,6 +581,13 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         stop(conn, lib, batch.device, "set-aside budget", now_ms)?;
         return Ok(Received::Stopped);
     }
+    // SY26: while the reader is asked, nothing more is applied but the change
+    // they let through.
+    let gate = guard::gate(conn, lib, Some((batch.device, batch.seq, batch.hash)))?;
+    if gate == guard::Gate::Asking {
+        return Ok(Received::Asks);
+    }
+    guard::prune(conn, lib, now_ms)?;
     let tx = conn.unchecked_transaction()?;
     let mut keys = Vec::new();
     let mut aside = 0;
@@ -708,7 +738,13 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     keys.extend(recheck_waiting(&tx, lib, now_ms)?);
     in_dependency_order(&mut keys);
     let mut applied = 0;
-    let mut budget = Tally::default();
+    // SY26: what the reader let through is this change's own versions, not what
+    // resolves with it.
+    // What an earlier approval let through and is still to apply stays exempt.
+    let mut budget = Tally {
+        approved_versions: guard::approved_versions(&tx, lib)?,
+        ..Tally::default()
+    };
     for k in keys {
         // SY28: once a body of this device's has been dropped the change is rolled
         // back (below), so nothing more of it is worth applying.
@@ -732,6 +768,26 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         drop(tx); // rolls the change back
         stop(conn, lib, batch.device, "budget", now_ms)?;
         return Ok(Received::Stopped);
+    }
+    // SY26: a change that would take what other devices changed past a threshold
+    // isn't applied (it is rolled back) until the reader answers. What the reader
+    // let through isn't counted, but what resolved with it is: past a threshold,
+    // the reader is asked again.
+    if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+        drop(tx);
+        guard::ask(
+            conn,
+            lib,
+            Some((batch.device, batch.seq, batch.hash)),
+            &budget.applied,
+            &counts,
+            totals,
+            now_ms,
+        )?;
+        return Ok(Received::Asks);
+    }
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
     }
     // Another device whose waiting version was dropped here is stopped with it, and
     // so is one that a body this change brought puts past a budget.
@@ -873,25 +929,43 @@ fn in_dependency_order(keys: &mut Vec<Key>) {
 
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
-    {
+    // SY26, SY27: nothing is applied while sync is paused or the reader is asked.
+    let gate = guard::gate(conn, lib, None)?;
+    if guard::paused(conn, lib)? || gate == guard::Gate::Asking {
+        return Ok(0);
+    }
+    // SY26: an approved pass applies the records the reader was asked about, and
+    // nothing that became ready since.
+    // (What an earlier approval let through and is still to apply stays exempt.)
+    let approved = guard::approved_versions(conn, lib)?;
+    let mut keys: Vec<Key> = if gate == guard::Gate::Approved {
+        let mut keys: Vec<Key> = approved
+            .iter()
+            .filter_map(|(_, _, k)| Key::parse(k).map(|(k, _)| k))
+            .collect();
+        keys.dedup_by(|a, b| a.as_str() == b.as_str());
+        keys
+    } else {
         let tx = conn.unchecked_transaction()?;
         recheck_waiting(&tx, lib, now_ms)?;
         tx.commit()?;
-    }
-    let keys: Vec<String> = conn
-        .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
-        .query_map([lib.id.to_string()], |r| r.get(0))?
-        .collect::<std::result::Result<_, _>>()?;
-    let mut keys: Vec<Key> = keys
-        .iter()
-        .filter_map(|k| Key::parse(k).map(|(k, _)| k))
-        .collect();
+        let keys: Vec<String> = conn
+            .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1 AND applied = 0")?
+            .query_map([lib.id.to_string()], |r| r.get(0))?
+            .collect::<std::result::Result<_, _>>()?;
+        keys.iter()
+            .filter_map(|k| Key::parse(k).map(|(k, _)| k))
+            .collect()
+    };
     in_dependency_order(&mut keys);
     let tx = conn.unchecked_transaction()?;
     let mut n = 0;
     // SY28: bodies excluded here are held to each device's budget as they are
     // excluded (`Tally`), so this needs no check of its own.
-    let mut aside = Tally::default();
+    let mut aside = Tally {
+        approved_versions: approved,
+        ..Tally::default()
+    };
     for key in keys {
         if apply_key(&tx, lib, &key, now_ms, &mut aside)? {
             n += 1;
@@ -902,8 +976,81 @@ pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<us
     for device in &aside.dropped {
         stop(&tx, lib, *device, "set-aside budget", now_ms)?;
     }
+    // SY26: as for a change received.
+    if let Some((counts, totals)) = guard::over(&tx, lib, now_ms)? {
+        drop(tx);
+        guard::ask(conn, lib, None, &aside.applied, &counts, totals, now_ms)?;
+        return Ok(0);
+    }
+    if gate == guard::Gate::Approved {
+        guard::settle(&tx, lib)?;
+    }
     tx.commit()?;
     Ok(n)
+}
+
+/// The text of the note the library shows for highlight `id`, if it shows one: a
+/// highlight brought back over a deleted row takes it, not the text kept on the
+/// row (SY19: a note deleted on its own stays deleted).
+fn shown_note(conn: &Connection, lib: &Library, id: &str) -> Result<Option<String>> {
+    let Some((key, _)) = Key::parse(&format!("note:{id}")) else {
+        return Ok(None);
+    };
+    // The reader's own edit not yet sent (or held for a choice) is the newest.
+    let local: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    if let Some(Ok(Checked::Version(v))) = local
+        .as_deref()
+        .and_then(|r| serde_json::from_str::<Value>(r).ok())
+        .map(|v| check_version(v, lib.device))
+    {
+        return Ok(match &v.content {
+            Content::Body { hash, .. } => journal::body(conn, hash)?
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .and_then(|b| b["text"].as_str().map(str::to_owned)),
+            _ => None,
+        });
+    }
+    let record = journal::record_of(conn, lib, &key, Which::Applied)?;
+    let shown = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => p,
+        Some(Outcome::Conflict { shown, .. }) => shown,
+        None => return Ok(None),
+    };
+    let Content::Body { hash, .. } = &shown.version.content else {
+        return Ok(None);
+    };
+    Ok(journal::body(conn, hash)?
+        .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+        .and_then(|b| b["text"].as_str().map(str::to_owned)))
+}
+
+/// Whether note tombstone `v` came in the same change as the deletion its highlight
+/// shows: the note was deleted with the highlight (SY19).
+fn deleted_with_highlight(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
+    let seq: Option<i64> = conn
+        .query_row(
+            "SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4",
+            params![lib.id.to_string(), v.device.to_string(), v.key.as_str(), v.hash.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let Some((key, _)) = Key::parse(&format!("annotation:{}", subject(&v.key))) else {
+        return Ok(false);
+    };
+    let record = journal::record_of(conn, lib, &key, Which::Applied)?;
+    let shown = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => p,
+        Some(Outcome::Conflict { shown, .. }) => shown,
+        None => return Ok(false),
+    };
+    Ok(shown.is_deleted() && shown.version.device == v.device && Some(shown.seq as i64) == seq)
 }
 
 fn local_book(conn: &Connection, lib: &Library, sync_id: &str) -> Result<Option<String>> {
@@ -972,9 +1119,10 @@ impl Tally {
         note: i64,
     ) -> Result<bool> {
         let old = Self::live_bytes(conn, book, id)?;
+        let restoring = self.restoring;
         let total = self.book_total(conn, book)?;
         let next = *total - old + own + note;
-        if next > BOOK_NOTES_BYTES && next > *total {
+        if next > BOOK_NOTES_BYTES && next > *total && !restoring {
             return Ok(false);
         }
         *total = next;
@@ -1134,7 +1282,12 @@ fn exclude(
 }
 
 /// Writes one version's state into the library. `false` when it must wait.
-fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Result<bool> {
+pub(crate) fn write(
+    conn: &Connection,
+    lib: &Library,
+    v: &Version,
+    aside: &mut Tally,
+) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
         Content::Body { .. } => match checked_body(conn, lib, v, aside)? {
@@ -1202,6 +1355,13 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                         params![book, at],
                     )?;
                 }
+                // A reading state deleted (SY26's Stop syncing undoing a first one).
+                (Kind::BookOpened, None) => {
+                    conn.execute("UPDATE books SET opened_at = NULL WHERE id = ?1", [&book])?;
+                }
+                (Kind::BookFinished, None) => {
+                    conn.execute("UPDATE books SET finished_at = NULL WHERE id = ?1", [&book])?;
+                }
                 _ => {}
             }
         }
@@ -1228,6 +1388,37 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                 if !aside.book_take(conn, &local, &a.id, own_bytes(&a), note)? {
                     return Ok(false);
                 }
+                // A highlight brought back over this device's deleted row takes the
+                // note the library shows; the text kept on the row is journalled
+                // first, so Stop syncing can put it back (SY26).
+                // A note with no record in this library at all (deleted before it
+                // joined, say) stays as kept on the row; it counts with the highlight.
+                let has_record: bool = conn
+                    .query_row(
+                        // An applied note version, or this device's own edit (held or
+                        // not); one still pending (its body missing, say) isn't yet.
+                        "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2
+                         AND (applied IN (1, 2) OR seq IS NULL)",
+                        params![lib.id.to_string(), format!("note:{}", a.id)],
+                        |_| Ok(()),
+                    )
+                    .optional()?
+                    .is_some();
+                let shown = if has_record {
+                    shown_note(conn, lib, &a.id)?
+                } else {
+                    crate::store::annotation_row(conn, &a.id)?.and_then(|(row, _)| row.note)
+                };
+                if !aside.restoring && has_record {
+                    if let Some((row, true)) = crate::store::annotation_row(conn, &a.id)? {
+                        if let Some(kept) = row
+                            .note
+                            .filter(|n| !n.trim().is_empty() && Some(n) != shown.as_ref())
+                        {
+                            guard::keep_hidden_note(conn, lib, &a.id, &kept)?;
+                        }
+                    }
+                }
                 conn.execute(
                     "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                          quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
@@ -1237,10 +1428,15 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
-                         updated_at = MAX(updated_at, excluded.updated_at), deleted_at = NULL,
-                         anchor_status = excluded.anchor_status",
+                         updated_at = CASE WHEN ?12 THEN MAX(excluded.updated_at, ?14)
+                             ELSE MAX(updated_at, excluded.updated_at, ?14) END,
+                         note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN ?13 ELSE note END,
+                         deleted_at = NULL, anchor_status = excluded.anchor_status",
+                    // SY26: Stop syncing restores the highlight with the note it hid.
+                    // Its time is the version's (a restoration's too), on every device.
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
-                        a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status],
+                        a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status,
+                        aside.restoring, shown, ms],
                 )?;
             }
             None => {
@@ -1293,11 +1489,24 @@ fn write(conn: &Connection, lib: &Library, v: &Version, aside: &mut Tally) -> Re
                     return Ok(false);
                 }
             }
+            // SY19: a note deleted with its highlight comes back with it, so its
+            // tombstone leaves the text kept on the deleted highlight's row (as a
+            // local deletion does): when it comes in the highlight's own change, or
+            // the note was already deleted (a later tombstone changes nothing). A
+            // note deleted on its own stays deleted: its text goes.
+            let keep = text.is_none()
+                && matches!(
+                    crate::store::annotation_row(conn, subject(&v.key))?,
+                    Some((_, true))
+                )
+                && (shown_note(conn, lib, subject(&v.key))?.is_none()
+                    || deleted_with_highlight(conn, lib, v)?);
             // The highlight shows as changed when its note does, as on the device
             // that wrote it.
             conn.execute(
-                "UPDATE annotations SET note = ?2, updated_at = MAX(updated_at, ?3) WHERE id = ?1",
-                params![subject(&v.key), text, ms],
+                "UPDATE annotations SET note = CASE WHEN ?4 THEN note ELSE ?2 END,
+                     updated_at = MAX(updated_at, ?3) WHERE id = ?1",
+                params![subject(&v.key), text, ms, keep],
             )?;
         }
         // Settings (item 103), books and their files (Stage 4) and choices (Stage 5)
@@ -1360,6 +1569,16 @@ fn apply_key(
         Some(Outcome::Conflict { shown, all }) => (shown, all, false),
         None => return Ok(false),
     };
+    // SY26: what a remote version replaces is kept in the undo journal, and the
+    // change counted, whenever a different version becomes the one shown. Read
+    // before anything here changes (an unsent edit held, below).
+    let before = if winner.version.device != lib.device {
+        let (shown, body) = guard::before(conn, lib, key, next)?;
+        (shown != Some((winner.version.device, winner.version.hash))).then_some(body)
+    } else {
+        None
+    };
+    let row_before = guard::row(conn, key)?;
     // SY13, #109: this device's unsent edit, now hidden in a conflict, is held for the
     // reader's choice rather than left to be replaced by the next edit.
     if !settled {
@@ -1396,6 +1615,12 @@ fn apply_key(
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
     } else if write(conn, lib, &winner.version, aside)? {
+        if let Some(before) = before {
+            let id = guard::version_id(winner);
+            let approved = aside.approved_versions.contains(&id);
+            guard::applied(conn, lib, winner, before, row_before, approved, now_ms)?;
+            aside.applied.push(id);
+        }
         true
     } else {
         return Ok(false);
@@ -1426,20 +1651,21 @@ fn apply_key(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::store::{AnnotationRow, Store};
     use crate::sync::ids::Id16;
     use crate::sync::local;
 
-    const LIB: Id16 = Id16([7; 16]);
-    const SYNC_BOOK: &str = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
-    const ANNO: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
-    const HASH: &str = "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
+    pub(crate) const LIB: Id16 = Id16([7; 16]);
+    pub(crate) const SYNC_BOOK: &str = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+    pub(crate) const ANNO: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
+    pub(crate) const HASH: &str =
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad";
 
     /// A device with one book, joined to the library. The book is matched to the
     /// same sync ID on every device, as Stage 4's book records will do.
-    fn device(n: u8, book: &str) -> (Store, Library) {
+    pub(crate) fn device(n: u8, book: &str) -> (Store, Library) {
         let store = Store::open_in_memory().unwrap();
         let lib = Library {
             id: LIB,
@@ -1462,16 +1688,16 @@ mod tests {
     }
 
     /// The tests stand in for the device store with the library's own count.
-    fn publish_next(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
+    pub(crate) fn publish_next(conn: &Connection, lib: &Library) -> Result<Option<Batch>> {
         publish(conn, lib, own_seq(conn, lib)?)
     }
 
-    fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
+    pub(crate) fn send(from: &Store, fl: &Library, to: &Store, tl: &Library) -> Option<Received> {
         let batch = publish_next(from.conn(), fl).unwrap()?;
         Some(receive(to.conn(), tl, &batch, crate::store::now_ms()).unwrap())
     }
 
-    fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
+    pub(crate) fn highlight(book: &str, note: Option<&str>, at: i64) -> AnnotationRow {
         AnnotationRow {
             id: ANNO.into(),
             book_id: book.into(),
@@ -1488,7 +1714,7 @@ mod tests {
         }
     }
 
-    fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
+    pub(crate) fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
         s.annotations(book).unwrap().first().map(|a| a.note.clone())
     }
 
@@ -3405,8 +3631,12 @@ mod tests {
         }
         let batch = publish_next(a.conn(), &la).unwrap().unwrap();
         assert!(batch.versions.len() > ASIDE_ITEMS as usize);
+        // SY26: 600 added is past 200, so the reader is asked first.
+        let now = crate::store::now_ms();
+        assert_eq!(receive(b.conn(), &lb, &batch, now).unwrap(), Received::Asks);
+        guard::answer(b.conn(), &lb, guard::Answer::Apply, now).unwrap();
         assert!(matches!(
-            receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap(),
+            receive(b.conn(), &lb, &batch, now).unwrap(),
             Received::Applied { .. }
         ));
         assert_eq!(b.annotations("book-b").unwrap().len(), 600);

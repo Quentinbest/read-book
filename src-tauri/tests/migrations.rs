@@ -25,6 +25,9 @@ const TABLES: &[&str] = &[
     "sync_seen",
     "sync_aside",
     "sync_stopped",
+    "sync_undo",
+    "sync_counted",
+    "sync_question",
 ];
 
 fn dump(conn: &Connection, table: &str) -> Vec<Vec<String>> {

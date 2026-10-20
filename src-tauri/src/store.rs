@@ -224,6 +224,45 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device)
     );
     "#,
+    // 8: SY26: the undo journal, what other devices changed, and the question
+    r#"
+    CREATE TABLE sync_undo (
+        library TEXT NOT NULL,
+        key TEXT NOT NULL,
+        device TEXT NOT NULL,               -- the version applied: writer, sequence, hash
+        seq INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        before BLOB,                        -- the body it replaced; NULL: nothing was shown
+        at INTEGER NOT NULL,
+        turn INTEGER NOT NULL DEFAULT 0     -- orders entries changed in one millisecond
+    );
+    CREATE INDEX sync_undo_at ON sync_undo(library, at);
+
+    CREATE TABLE sync_counted (
+        library TEXT NOT NULL,
+        at INTEGER NOT NULL,
+        what TEXT NOT NULL,                 -- 'added' | 'changed' | 'deleted'
+        kind TEXT NOT NULL,                 -- 'notes' | 'places' | 'settings' | 'books'
+        book TEXT,
+        bytes INTEGER NOT NULL,
+        approved INTEGER NOT NULL           -- part of a change the reader let through
+    );
+    CREATE INDEX sync_counted_at ON sync_counted(library, at);
+
+    CREATE TABLE sync_question (
+        library TEXT PRIMARY KEY,
+        asking INTEGER NOT NULL,
+        approved INTEGER NOT NULL,
+        asked_at INTEGER,
+        device TEXT,                        -- the change that waits (NULL: a pass of pending ones)
+        seq INTEGER,
+        hash TEXT,
+        counts TEXT,
+        answered_at INTEGER,
+        totals_asked_at INTEGER,
+        versions TEXT                       -- the versions counted, which an approval lets through
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

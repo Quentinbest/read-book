@@ -29,6 +29,8 @@ fn record(
     content: LocalContent,
     now_ms: u64,
 ) -> Result<()> {
+    // SY26: the reader changed this record here, so Stop syncing leaves it.
+    super::guard::changed_here(conn, lib, &k)?;
     if let LocalContent::Body(b) = &content {
         if b.len() as u64 > k.kind().body_limit() {
             // An earlier unsent value is superseded here and isn't published.
