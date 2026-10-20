@@ -612,9 +612,13 @@ pub fn release_held(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
     Ok(())
 }
 
-/// The body of this device's unnumbered version of one key (unsent, or held for a
-/// choice), if it has one.
-pub fn unnumbered_body(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Vec<u8>>> {
+/// This device's unnumbered version of one key (unsent, or held for a choice), as
+/// written, with its body, if it has one.
+pub fn unnumbered(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+) -> Result<Option<(String, Vec<u8>)>> {
     let raw: Option<String> = conn
         .query_row(
             "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
@@ -626,7 +630,7 @@ pub fn unnumbered_body(conn: &Connection, lib: &Library, key: &Key) -> Result<Op
         return Ok(None);
     };
     match check(&raw, lib.device)?.content {
-        super::record::Content::Body { hash, .. } => body(conn, &hash),
+        super::record::Content::Body { hash, .. } => Ok(body(conn, &hash)?.map(|b| (raw, b))),
         _ => Ok(None),
     }
 }

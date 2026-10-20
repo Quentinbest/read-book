@@ -31,15 +31,16 @@ pub(crate) fn seen(
     lib: &Library,
     v: &Version,
     seq: Option<u64>,
-    displaced: Option<Vec<u8>>,
+    displaced: Option<(String, Vec<u8>)>,
     now_ms: i64,
 ) -> Result<()> {
     if !matches!(v.content, Content::Deleted { .. }) {
         return Ok(());
     }
     conn.execute(
-        "INSERT OR IGNORE INTO sync_deleted (library, key, device, hash, seq, first_seen, displaced)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        "INSERT OR IGNORE INTO sync_deleted
+             (library, key, device, hash, seq, first_seen, displaced_raw, displaced)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             lib.id.to_string(),
             v.key.as_str(),
@@ -47,7 +48,8 @@ pub(crate) fn seen(
             v.hash.to_string(),
             seq.map(|s| s as i64),
             now_ms,
-            displaced
+            displaced.as_ref().map(|(raw, _)| raw.clone()),
+            displaced.map(|(_, body)| body)
         ],
     )?;
     Ok(())
@@ -111,28 +113,42 @@ fn age(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Result<Optio
     Ok(first.map(|f| (tomb, now_ms - f)))
 }
 
-/// The version the tombstone displaced: the newest of those it descends from (its
-/// history for this key) that still has a body here.
+/// The version the tombstone displaced: the newest, in SY10's order, of those it
+/// descends from (its history for this key, and this device's unnumbered one it
+/// replaced) that still has a body here.
 fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<Vec<u8>>> {
-    // This device's unsent version the tombstone replaced, kept with the deletion.
-    let kept: Option<Vec<u8>> = conn
+    // This device's unnumbered version the tombstone replaced, kept with the
+    // deletion, competes with the rest in SY10's order (clock, then device).
+    let kept: Option<(Option<String>, Option<Vec<u8>>)> = conn
         .query_row(
-            "SELECT displaced FROM sync_deleted WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+            "SELECT displaced_raw, displaced FROM sync_deleted
+             WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
             params![
                 lib.id.to_string(),
                 tomb.version.key.as_str(),
                 tomb.version.device.to_string(),
                 tomb.version.hash.to_string()
             ],
-            |r| r.get(0),
+            |r| Ok((r.get(0)?, r.get(1)?)),
         )
-        .optional()?
-        .flatten();
-    if kept.is_some() {
-        return Ok(kept);
-    }
-    // SY10's order: the clock, then the device, so a tie still has one newest.
+        .optional()?;
     let mut best: Option<(super::clock::Stamp, Vec<u8>)> = None;
+    if let Some((Some(raw), Some(body))) = kept {
+        if let Some(Ok(super::record::Checked::Version(v))) =
+            serde_json::from_str::<serde_json::Value>(&raw)
+                .ok()
+                .map(|v| super::record::check_version(v, lib.device))
+        {
+            best = Some((
+                Placed {
+                    version: v,
+                    seq: u64::MAX,
+                }
+                .stamp(),
+                body,
+            ));
+        }
+    }
     for e in &tomb.version.history {
         let raw: Option<String> = conn
             .query_row(
@@ -370,24 +386,6 @@ mod tests {
     }
 
     #[test]
-    fn a_held_edit_deleted_is_restorable() {
-        let (mut a, la, mut b, lb) = shared();
-        let now = crate::store::now_ms();
-        // B's unsent edit, then A's later one: B's is held for the reader.
-        b.save_annotation(&highlight("book-b", Some("B's held"), 1_760_000_002_000))
-            .unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(5));
-        a.save_annotation(&highlight("book-a", Some("A's"), 1_760_000_003_000))
-            .unwrap();
-        let edit = publish_next(a.conn(), &la).unwrap().unwrap();
-        receive(b.conn(), &lb, &edit, now).unwrap();
-        assert!(journal::held(b.conn(), &lb, &key("note")).unwrap());
-        b.delete_annotation(ANNO).unwrap();
-        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
-        assert_eq!(note_of(&b, "book-b"), Some(Some("B's held".into())));
-    }
-
-    #[test]
     fn a_deletion_reauthored_after_a_rotation_stays_restorable() {
         let (_a, _la, mut b, lb) = shared();
         b.delete_annotation(ANNO).unwrap();
@@ -503,6 +501,24 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(body, br#"{"text":"from 4"}"#.to_vec());
+    }
+
+    #[test]
+    fn a_held_older_edit_doesnt_win_over_the_newer_one_it_waited_on() {
+        let (mut a, la, mut b, lb) = shared();
+        let now = crate::store::now_ms();
+        // B's unsent edit, then A's later one: B's is held. B deletes: the newest
+        // the deletion displaced is A's.
+        b.save_annotation(&highlight("book-b", Some("B's older"), 1_760_000_002_000))
+            .unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        a.save_annotation(&highlight("book-a", Some("A's newer"), 1_760_000_003_000))
+            .unwrap();
+        let edit = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &edit, now).unwrap();
+        b.delete_annotation(ANNO).unwrap();
+        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        assert_eq!(note_of(&b, "book-b"), Some(Some("A's newer".into())));
     }
 
     #[test]
