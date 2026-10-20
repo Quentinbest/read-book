@@ -377,3 +377,4 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(a)** Build Resume in Stage 2, once frontiers (1c) and storage (2) exist, with SY27's restore check (“A backup restored after a sync removed one book… after Resume the book is back on every device”).
     - **(b)** Build a simpler Resume now: “make this copy win” only, re-versioning every record that differs from what storage sends.
     *Recommendation:* (a). Choice (b) alone would undo every change made elsewhere since the backup, which SY27's first choice exists to avoid. Until then a restored library stays paused, so nothing is lost.
+    **Approved 2026-10-20: (a).**
