@@ -2445,6 +2445,55 @@ mod tests {
     }
 
     #[test]
+    fn a_note_deleted_with_its_highlight_keeps_its_text_for_restore() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        let gone = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        let (row, deleted) = crate::store::annotation_row(b.conn(), &ids[0])
+            .unwrap()
+            .unwrap();
+        assert!(deleted);
+        assert_eq!(
+            row.note.as_deref(),
+            Some("note 0"),
+            "comes back with Restore"
+        );
+    }
+
+    #[test]
+    fn a_hidden_note_deleted_on_its_own_loses_its_text() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        // A's highlight tombstone alone; then the hidden note's own deletion.
+        let mut gone = delete(&mut a, &la, &ids);
+        let note = gone
+            .versions
+            .iter()
+            .find(|v| v["key"].as_str().is_some_and(|k| k.starts_with("note:")))
+            .unwrap()
+            .clone();
+        gone.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &gone, now + HOUR).unwrap();
+        let later = Batch {
+            device: la.device,
+            seq: gone.seq + 1,
+            hash: super::super::ids::Hash32([0x66; 32]),
+            versions: vec![note],
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &later, now + 2 * HOUR).unwrap();
+        let (row, _) = crate::store::annotation_row(b.conn(), &ids[0])
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.note, None, "deleted on its own, it stays deleted");
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);

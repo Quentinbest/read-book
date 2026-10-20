@@ -1032,6 +1032,29 @@ fn shown_note(conn: &Connection, lib: &Library, id: &str) -> Result<Option<Strin
         .and_then(|b| b["text"].as_str().map(str::to_owned)))
 }
 
+/// Whether note tombstone `v` came in the same change as the deletion its highlight
+/// shows: the note was deleted with the highlight (SY19).
+fn deleted_with_highlight(conn: &Connection, lib: &Library, v: &Version) -> Result<bool> {
+    let seq: Option<i64> = conn
+        .query_row(
+            "SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND key = ?3 AND hash = ?4",
+            params![lib.id.to_string(), v.device.to_string(), v.key.as_str(), v.hash.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    let Some((key, _)) = Key::parse(&format!("annotation:{}", subject(&v.key))) else {
+        return Ok(false);
+    };
+    let record = journal::record_of(conn, lib, &key, Which::Applied)?;
+    let shown = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => p,
+        Some(Outcome::Conflict { shown, .. }) => shown,
+        None => return Ok(false),
+    };
+    Ok(shown.is_deleted() && shown.version.device == v.device && Some(shown.seq as i64) == seq)
+}
+
 fn local_book(conn: &Connection, lib: &Library, sync_id: &str) -> Result<Option<String>> {
     Ok(conn
         .query_row(
@@ -1451,15 +1474,24 @@ pub(crate) fn write(
                     return Ok(false);
                 }
             }
+            // SY19: a note deleted with its highlight comes back with it, so its
+            // tombstone leaves the text kept on the deleted highlight's row (as a
+            // local deletion does): when it comes in the highlight's own change, or
+            // the note was already deleted (a later tombstone changes nothing). A
+            // note deleted on its own stays deleted: its text goes.
+            let keep = text.is_none()
+                && matches!(
+                    crate::store::annotation_row(conn, subject(&v.key))?,
+                    Some((_, true))
+                )
+                && (shown_note(conn, lib, subject(&v.key))?.is_none()
+                    || deleted_with_highlight(conn, lib, v)?);
             // The highlight shows as changed when its note does, as on the device
-            // that wrote it. A note's tombstone leaves the text kept on a deleted
-            // highlight's row, as a local deletion does, for Restore (SY19); it
-            // clears a live one's.
+            // that wrote it.
             conn.execute(
-                "UPDATE annotations SET note = CASE WHEN ?2 IS NULL AND deleted_at IS NOT NULL
-                     THEN note ELSE ?2 END,
+                "UPDATE annotations SET note = CASE WHEN ?4 THEN note ELSE ?2 END,
                      updated_at = MAX(updated_at, ?3) WHERE id = ?1",
-                params![subject(&v.key), text, ms],
+                params![subject(&v.key), text, ms, keep],
             )?;
         }
         // Settings (item 103), books and their files (Stage 4) and choices (Stage 5)
