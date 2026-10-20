@@ -2632,14 +2632,31 @@ mod tests {
         b.delete_annotation(&ids[0]).unwrap();
         let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
         receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        // As if the note had no applied record here: only a pending version comes.
         b.conn()
             .execute("DELETE FROM sync_versions WHERE key LIKE 'note:%'", [])
             .unwrap();
-        // A restores with a note version whose body doesn't come.
         a.restore_annotation(&ids[0]).unwrap();
         let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
-        back.bodies.retain(|x| !x.starts_with(br#"{"text""#));
+        let text = br#"{"text":"never comes"}"#;
+        for v in &mut back.versions {
+            if v["key"].as_str().is_some_and(|k| k.starts_with("note:")) {
+                v["history"] = serde_json::json!([]);
+                v["body"] = serde_json::json!({
+                    "hash": super::super::ids::identity_hash(text).to_string(), "size": text.len()
+                });
+            }
+        }
         receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let pending: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE key LIKE 'note:%' AND applied = 0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(pending, 1, "the note version waits for its body");
         let row = &b.annotations("book-b").unwrap()[0];
         assert_eq!(row.note.as_deref(), Some("note 0"));
     }
