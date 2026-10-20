@@ -131,7 +131,8 @@ fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<V
     if kept.is_some() {
         return Ok(kept);
     }
-    let mut best: Option<(super::clock::Hlc, Vec<u8>)> = None;
+    // SY10's order: the clock, then the device, so a tie still has one newest.
+    let mut best: Option<(super::clock::Stamp, Vec<u8>)> = None;
     for e in &tomb.version.history {
         let raw: Option<String> = conn
             .query_row(
@@ -160,8 +161,13 @@ fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<V
         let Some(body) = journal::body(conn, hash)? else {
             continue;
         };
-        if best.as_ref().map_or(true, |(c, _)| v.clock > *c) {
-            best = Some((v.clock, body));
+        let stamp = Placed {
+            version: v,
+            seq: e.seq,
+        }
+        .stamp();
+        if best.as_ref().map_or(true, |(c, _)| stamp > *c) {
+            best = Some((stamp, body));
         }
     }
     Ok(best.map(|(_, b)| b))
@@ -269,6 +275,7 @@ mod tests {
     use crate::store::Store;
     use crate::sync::apply::receive;
     use crate::sync::apply::tests::{device, highlight, note_of, publish_next, send, ANNO};
+    use rusqlite::params;
 
     const DAY: i64 = 24 * 60 * 60 * 1000;
 
@@ -443,6 +450,59 @@ mod tests {
             .find(|e| e["d"] == la.device.to_string())
             .cloned();
         assert_eq!(a_entry.and_then(|e| e["s"].as_u64()), Some(edit.seq), "{v}");
+    }
+
+    #[test]
+    fn restore_brings_back_the_newest_of_tied_versions_by_device() {
+        let (_a, _la, b, lb) = shared();
+        let k = key("note");
+        // Two versions with one clock, from devices 3 and 4, and a tombstone naming
+        // both: SY10 orders 4's after 3's.
+        let mut history = Vec::new();
+        for (d, text) in [(3u8, "from 3"), (4u8, "from 4")] {
+            let body = format!(r#"{{"text":"{text}"}}"#).into_bytes();
+            let hash = journal::put_body(b.conn(), &body).unwrap();
+            let v = serde_json::json!({
+                "format": 1, "key": k.as_str(), "device": crate::sync::ids::Id16([d; 16]).to_string(),
+                "clock": [1_760_000_009_000u64, 0], "history": [],
+                "body": { "hash": hash.to_string(), "size": body.len() },
+            });
+            let vh = crate::sync::record::version_hash(&v);
+            b.conn()
+                .execute(
+                    "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                     VALUES (?1, ?2, ?3, 1, ?4, ?5, 1)",
+                    params![
+                        lb.id.to_string(),
+                        k.as_str(),
+                        crate::sync::ids::Id16([d; 16]).to_string(),
+                        vh.to_string(),
+                        v.to_string()
+                    ],
+                )
+                .unwrap();
+            history.push(serde_json::json!({ "d": crate::sync::ids::Id16([d; 16]).to_string(), "s": 1, "h": vh.to_string() }));
+        }
+        let tomb = serde_json::json!({
+            "format": 1, "key": k.as_str(), "device": crate::sync::ids::Id16([5; 16]).to_string(),
+            "clock": [1_760_000_010_000u64, 0], "history": history, "deleted": { "covers": [] },
+        });
+        let crate::sync::record::Checked::Version(tv) =
+            crate::sync::record::check_version(tomb, crate::sync::ids::Id16([5; 16])).unwrap()
+        else {
+            unreachable!()
+        };
+        let body = displaced(
+            b.conn(),
+            &lb,
+            &Placed {
+                version: tv,
+                seq: 1,
+            },
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(body, br#"{"text":"from 4"}"#.to_vec());
     }
 
     #[test]
