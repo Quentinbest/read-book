@@ -242,7 +242,14 @@ pub(crate) fn ask(
     now_ms: i64,
 ) -> Result<()> {
     let counts = serde_json::to_string(counts).expect("counts serialize");
-    let versions = serde_json::to_string(versions).expect("versions serialize");
+    // Versions an earlier approval let through and still to apply stay let through.
+    let mut all: HashSet<VersionId> = versions.iter().cloned().collect();
+    if question(conn, lib)?.is_some_and(|q| !q.asking || q.approved) {
+        all.extend(approved_versions(conn, lib)?);
+    }
+    let mut all: Vec<VersionId> = all.into_iter().collect();
+    all.sort();
+    let versions = serde_json::to_string(&all).expect("versions serialize");
     conn.execute(
         "INSERT INTO sync_question
              (library, asking, approved, asked_at, device, seq, hash, counts, totals_asked_at, versions)
@@ -2591,6 +2598,50 @@ mod tests {
             Some(("added", 2)),
             "counted"
         );
+    }
+
+    #[test]
+    fn a_new_question_keeps_an_earlier_approval_still_to_apply() {
+        let now = crate::store::now_ms();
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        highlights(&mut a, "book-a", 110);
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        assert_eq!(receive(b.conn(), &lb, &first, now).unwrap(), Received::Asks);
+        answer(b.conn(), &lb, Answer::Apply, now).unwrap();
+        b.conn().execute("DELETE FROM sync_books", []).unwrap();
+        receive(b.conn(), &lb, &first, now + 1).unwrap();
+        // An unrelated question is asked and answered meanwhile.
+        ask(b.conn(), &lb, None, &[], &Counts::default(), false, now + 2).unwrap();
+        answer(b.conn(), &lb, Answer::Apply, now + 2).unwrap();
+        settle(b.conn(), &lb).unwrap();
+        b.conn()
+            .execute(
+                "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, 'book-b')",
+                params![lb.id.to_string(), crate::sync::apply::tests::SYNC_BOOK],
+            )
+            .unwrap();
+        assert_eq!(apply_pending(b.conn(), &lb, now + HOUR).unwrap(), 220);
+        assert!(asking(b.conn(), &lb).unwrap().is_none(), "not asked again");
+    }
+
+    #[test]
+    fn a_kept_note_stays_while_its_note_version_is_still_pending() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        b.conn()
+            .execute("DELETE FROM sync_versions WHERE key LIKE 'note:%'", [])
+            .unwrap();
+        // A restores with a note version whose body doesn't come.
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.bodies.retain(|x| !x.starts_with(br#"{"text""#));
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.note.as_deref(), Some("note 0"));
     }
 
     #[test]

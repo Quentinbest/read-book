@@ -1395,7 +1395,10 @@ pub(crate) fn write(
                 // joined, say) stays as kept on the row; it counts with the highlight.
                 let has_record: bool = conn
                     .query_row(
-                        "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2 AND applied >= -3",
+                        // An applied note version, or this device's own edit (held or
+                        // not); one still pending (its body missing, say) isn't yet.
+                        "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2
+                         AND (applied IN (1, 2) OR seq IS NULL)",
                         params![lib.id.to_string(), format!("note:{}", a.id)],
                         |_| Ok(()),
                     )
