@@ -1953,10 +1953,9 @@ mod tests {
             ("added", 2),
             "the highlight and its note"
         );
-        assert!(
-            *bytes >= 2 * "note 0".len() as i64,
-            "the note's bytes too: {bytes}"
-        );
+        // The row's bytes, note included, once.
+        let key = Key::parse(&format!("annotation:{}", ids[0])).unwrap().0;
+        assert_eq!(*bytes, row(b.conn(), &key).unwrap().unwrap().bytes);
     }
 
     #[test]
