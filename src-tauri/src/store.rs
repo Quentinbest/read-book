@@ -263,6 +263,10 @@ pub const MIGRATIONS: &[&str] = &[
         versions TEXT                       -- the versions counted, which an approval lets through
     );
     "#,
+    // 9: SY27: the backup a library was restored from
+    r#"
+    ALTER TABLE sync_libraries ADD COLUMN restored_from INTEGER; -- its time; sync paused
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]
