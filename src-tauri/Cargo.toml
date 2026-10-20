@@ -37,6 +37,15 @@ encoding_rs = "0.8"
 unicode-normalization = "0.1"
 ammonia = "4"
 security-framework = "3"
+# SP4's one suite (docs/sync-protocol.md): signatures, key agreement, sealing,
+# derivation and the recovery code. getrandom is the OS's CSPRNG (SP1).
+ed25519-dalek = "3.0.0"
+x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
+chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc"] }
+hkdf = "0.13.0"
+hmac = "0.13.0"
+argon2 = { version = "0.6.0", default-features = false, features = ["alloc"] }
+getrandom = "0.4.3"
 
 [features]
 # Phase 0 spike harness (docs/spikes/). Never enabled in product builds.
