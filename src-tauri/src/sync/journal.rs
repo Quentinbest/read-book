@@ -142,12 +142,14 @@ pub fn set_device(
             params![lib.id.to_string(), stored, last as i64],
         )?;
     }
-    let pending: Vec<(i64, String)> = tx
-        .prepare("SELECT rowid, raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid")?
-        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+    let pending: Vec<(i64, String, String)> = tx
+        .prepare(
+            "SELECT rowid, raw, hash FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid",
+        )?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;
     let old = Id16::parse(&stored);
-    for (rowid, raw) in pending {
+    for (rowid, raw, old_hash) in pending {
         let mut v: Value = serde_json::from_str(&raw).map_err(|_| RecordError::NotAnObject)?;
         v["device"] = json!(lib.device.to_string());
         // No ancestor may be a version the old identity never signed: such an entry
@@ -201,6 +203,19 @@ pub fn set_device(
                 lib.device.to_string(),
                 version.hash.to_string(),
                 v.to_string()
+            ],
+        )?;
+        // SY17: a re-authored tombstone keeps its deletion's age and what it replaced.
+        tx.execute(
+            "UPDATE sync_deleted SET device = ?3, hash = ?4
+             WHERE library = ?1 AND key = ?2 AND device = ?5 AND hash = ?6",
+            params![
+                lib.id.to_string(),
+                version.key.as_str(),
+                lib.device.to_string(),
+                version.hash.to_string(),
+                stored,
+                old_hash
             ],
         )?;
     }

@@ -241,14 +241,20 @@ fn restore_one(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Resu
     };
     // The reader's own choice: where this device's version waits in a conflict, the
     // restored one descends from every head, as a choice does, and is sent.
+    // A held tombstone (this device's, hidden in a conflict) is replaced the same way.
     let wall = now_ms.max(0) as u64;
-    let v = match journal::record_local(conn, lib, key, LocalContent::Body(body.clone()), wall) {
-        Err(JournalError::Conflicted(_)) => {
-            let v = journal::hold_local(conn, lib, key, LocalContent::Body(body), wall)?;
-            journal::release_held(conn, lib, key)?;
-            v
+    let as_choice = |body: Vec<u8>| -> Result<Version> {
+        let v = journal::hold_local(conn, lib, key, LocalContent::Body(body), wall)?;
+        journal::release_held(conn, lib, key)?;
+        Ok(v)
+    };
+    let v = if journal::held(conn, lib, key)? {
+        as_choice(body)?
+    } else {
+        match journal::record_local(conn, lib, key, LocalContent::Body(body.clone()), wall) {
+            Err(JournalError::Conflicted(_)) => as_choice(body)?,
+            other => other?,
         }
-        other => other?,
     };
     super::guard::changed_here(conn, lib, key)?;
     let mut restoring = Tally::default();
@@ -372,6 +378,71 @@ mod tests {
         b.delete_annotation(ANNO).unwrap();
         assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
         assert_eq!(note_of(&b, "book-b"), Some(Some("B's held".into())));
+    }
+
+    #[test]
+    fn a_deletion_reauthored_after_a_rotation_stays_restorable() {
+        let (_a, _la, mut b, lb) = shared();
+        b.delete_annotation(ANNO).unwrap();
+        // B takes a new identity before sending: its unsent versions are re-authored.
+        let rotated = Library {
+            id: lb.id,
+            device: crate::sync::ids::Id16([0x2b; 16]),
+        };
+        journal::set_device(
+            b.conn(),
+            &rotated,
+            true,
+            None,
+            crate::store::now_ms() as u64,
+        )
+        .unwrap();
+        let now = crate::store::now_ms();
+        assert!(recently_deleted(b.conn(), &rotated, now + DAY)
+            .unwrap()
+            .iter()
+            .any(|d| d.key == key("annotation")));
+        assert!(restore(b.conn(), &rotated, &key("annotation"), now + DAY).unwrap());
+    }
+
+    #[test]
+    fn restoring_a_held_deletion_descends_from_every_head() {
+        let (mut a, la, mut b, lb) = shared();
+        let now = crate::store::now_ms();
+        // B deletes (unsent); apart, A edits: B's deletion is shown, A's waits in the
+        // conflict. B restores: the restored version names A's too.
+        b.delete_annotation(ANNO).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut h = highlight("book-a", Some("A's"), 1_760_000_002_000);
+        h.color = "blue".into();
+        a.save_annotation(&h).unwrap();
+        let edit = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &edit, now).unwrap();
+        // Hold B's tombstone, as if the reader's choice were pending.
+        b.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = -3 WHERE seq IS NULL AND key = ?1",
+                [key("annotation").as_str()],
+            )
+            .unwrap();
+        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        let raw: String = b
+            .conn()
+            .query_row(
+                "SELECT raw FROM sync_versions WHERE seq IS NULL AND key = ?1",
+                [key("annotation").as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        // The entry for A names A's edit, the head that waits in the conflict.
+        let a_entry = v["history"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|e| e["d"] == la.device.to_string())
+            .cloned();
+        assert_eq!(a_entry.and_then(|e| e["s"].as_u64()), Some(edit.seq), "{v}");
     }
 
     #[test]
