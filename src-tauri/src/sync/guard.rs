@@ -638,6 +638,63 @@ pub(crate) fn applied(
     Ok(())
 }
 
+/// SY26: a note kept on this device's deleted highlight row is about to be replaced
+/// by a highlight brought back from another device: the text is
+/// journalled under the note's record, as of the note version shown now, so Stop
+/// syncing puts it back. Not counted: the highlight's change is.
+pub(crate) fn keep_hidden_note(
+    conn: &Connection,
+    lib: &Library,
+    id: &str,
+    text: &str,
+) -> Result<()> {
+    let Some((key, _)) = Key::parse(&format!("note:{id}")) else {
+        return Ok(());
+    };
+    let record = journal::record_of(conn, lib, &key, Which::Applied)?;
+    let Some(shown) = (match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => Some(p),
+        Some(Outcome::Conflict { shown, .. }) => Some(shown),
+        None => None,
+    }) else {
+        return Ok(());
+    };
+    let since = question(conn, lib)?
+        .and_then(|q| q.answered_at)
+        .unwrap_or(0);
+    let entry: bool = conn
+        .query_row(
+            "SELECT 1 FROM sync_undo WHERE library = ?1 AND key = ?2 AND at > ?3",
+            params![lib.id.to_string(), key.as_str(), since],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some();
+    if entry {
+        return Ok(());
+    }
+    let turn: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(turn), 0) + 1 FROM sync_undo WHERE library = ?1",
+        [lib.id.to_string()],
+        |r| r.get(0),
+    )?;
+    conn.execute(
+        "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            lib.id.to_string(),
+            key.as_str(),
+            shown.version.device.to_string(),
+            shown.seq as i64,
+            shown.version.hash.to_string(),
+            serde_json::json!({ "text": text }).to_string().into_bytes(),
+            crate::store::now_ms().max(since + 1),
+            turn
+        ],
+    )?;
+    Ok(())
+}
+
 /// SY26: the reader changed `key` on this device. What other devices changed of it
 /// before isn't put back by Stop syncing (the reader's edit stays), so its undo
 /// entry ends; a later remote change starts a new one, from the reader's edit.
@@ -2260,11 +2317,73 @@ mod tests {
         let batch = publish_next(a.conn(), &la).unwrap().unwrap();
         receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
         answer(b.conn(), &lb, Answer::StopSyncing, now + 2 * HOUR).unwrap();
-        // Back as it was: its colour, and the time its body had (`highlights`).
+        // Back as it was, with the restoration's time (as on every device).
         let row = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(row.color, "yellow");
+        let restored = journal::unsent(b.conn(), &lb)
+            .unwrap()
+            .into_iter()
+            .find(|v| v.key.as_str().starts_with("annotation:"))
+            .unwrap();
+        assert_eq!(row.updated_at, restored.clock.ms() as i64);
+    }
+
+    #[test]
+    fn a_restorations_time_reaches_the_other_devices() {
+        let now = crate::store::now_ms();
+        let (a, la, b, lb, ids) = shared(1, now);
+        let mut h = highlight("book-b", Some("note 0"), 1_760_000_009_000);
+        h.id = ids[0].clone();
+        h.quote_exact = "q0".into();
+        h.color = "blue".into();
+        // B's edit reaches A; A stops syncing and puts it back; the restoration
+        // reaches B.
+        let mut b = b;
+        b.save_annotation(&h).unwrap();
+        let edit = publish_next(b.conn(), &lb).unwrap().unwrap();
+        a.conn()
+            .execute(
+                "INSERT INTO sync_question (library, asking, approved, answered_at) VALUES (?1, 0, 0, ?2)
+                 ON CONFLICT(library) DO UPDATE SET answered_at = ?2",
+                params![la.id.to_string(), now],
+            )
+            .unwrap();
+        receive(a.conn(), &la, &edit, now + HOUR).unwrap();
+        answer(a.conn(), &la, Answer::StopSyncing, now + 2 * HOUR).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &back, now + 3 * HOUR).unwrap();
+        let on_a = &a.annotations("book-a").unwrap()[0];
+        let on_b = &b.annotations("book-b").unwrap()[0];
+        assert_eq!(on_b.color, "yellow");
+        assert_eq!(on_a.updated_at, on_b.updated_at, "the same time on both");
+    }
+
+    #[test]
+    fn stop_syncing_keeps_a_note_a_remote_restore_replaced() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        // B deletes the highlight (its note stays on the row); A brings it back
+        // without a note version.
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let mut back = publish_next(a.conn(), &la).unwrap().unwrap();
+        back.versions.retain(|v| {
+            v["key"]
+                .as_str()
+                .is_some_and(|k| k.starts_with("annotation:"))
+        });
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        answer(b.conn(), &lb, Answer::StopSyncing, now + 3 * HOUR).unwrap();
+        let (row, deleted) = crate::store::annotation_row(b.conn(), &ids[0])
+            .unwrap()
+            .unwrap();
+        assert!(deleted, "deleted again");
         assert_eq!(
-            (row.color.as_str(), row.updated_at),
-            ("yellow", 1_760_000_001_000)
+            row.note.as_deref(),
+            Some("note 0"),
+            "its note kept, for Restore"
         );
     }
 

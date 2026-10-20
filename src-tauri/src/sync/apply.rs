@@ -1367,6 +1367,20 @@ pub(crate) fn write(
                 if !aside.book_take(conn, &local, &a.id, own_bytes(&a), note)? {
                     return Ok(false);
                 }
+                // A highlight brought back over this device's deleted row takes the
+                // note the library shows; the text kept on the row is journalled
+                // first, so Stop syncing can put it back (SY26).
+                let shown = shown_note(conn, lib, &a.id)?;
+                if !aside.restoring {
+                    if let Some((row, true)) = crate::store::annotation_row(conn, &a.id)? {
+                        if let Some(kept) = row
+                            .note
+                            .filter(|n| !n.trim().is_empty() && Some(n) != shown.as_ref())
+                        {
+                            guard::keep_hidden_note(conn, lib, &a.id, &kept)?;
+                        }
+                    }
+                }
                 conn.execute(
                     "INSERT INTO annotations (id, book_id, anchored_content_hash, color, cfi_range, quote_exact,
                          quote_prefix, quote_suffix, note, created_at, updated_at, deleted_at, anchor_status)
@@ -1376,14 +1390,15 @@ pub(crate) fn write(
                          anchored_content_hash = excluded.anchored_content_hash,
                          color = excluded.color, cfi_range = excluded.cfi_range, quote_exact = excluded.quote_exact,
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
-                         updated_at = CASE WHEN ?12 THEN excluded.updated_at
-                             ELSE MAX(updated_at, excluded.updated_at) END,
+                         updated_at = CASE WHEN ?12 THEN MAX(excluded.updated_at, ?14)
+                             ELSE MAX(updated_at, excluded.updated_at, ?14) END,
                          note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN ?13 ELSE note END,
                          deleted_at = NULL, anchor_status = excluded.anchor_status",
                     // SY26: Stop syncing restores the highlight with the note it hid.
+                    // Its time is the version's (a restoration's too), on every device.
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
                         a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status,
-                        aside.restoring, shown_note(conn, lib, &a.id)?],
+                        aside.restoring, shown, ms],
                 )?;
             }
             None => {
