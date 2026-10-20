@@ -16,6 +16,14 @@ SP4's exact inputs: fixed-length fields (IDs 16 bytes; hashes, keys and root 32;
 nonces as stated; sequences 8 bytes big-endian) are joined as they are; a domain
 string or any other variable-length field is preceded by its length as 4 bytes
 big-endian. HKDF's info is the domain string's bytes, as given.
+
+PROVISIONAL: where the protocol leaves the bytes open, this script follows the
+same reading as the Rust, Delegated to Claude and not yet approved
+(docs/decisions.md, "SP4's exact inputs and the envelope"): the signature input's
+length-prefixed domain and type with literal 0x00 bytes (1), the version list as
+one length-prefixed field (2), and the recovery code's 26 ASCII characters as a
+fixed field (3). The vectors check that the Rust implements that reading, not
+that the reading is approved.
 """
 
 import hashlib
@@ -81,8 +89,10 @@ entries = [
     h("place:b00c".encode())[:16] + pattern(32, 0xC0),
 ]
 vlist = b"".join(entries)
+# PROVISIONAL (decisions.md, (2)): the list as one length-prefixed field.
 vroot = h(dom("linen-sync/vlist/v1") + var(vlist))
 seq = 7
+# PROVISIONAL (decisions.md, (1)): domain and type length-prefixed, 0x00 literal.
 message = (
     dom("linen-sync/sig/v1")
     + b"\x00"
@@ -124,6 +134,7 @@ fpr = crockford(h(dom("linen-sync/fpr/v1") + public)[:10], 80)
 # SP22: the recovery code.
 code = "7K2M9QXT4HV8B1N6CZRDWJ3PAE"
 assert len(code) == 26 and all(c in CROCKFORD for c in code)
+# PROVISIONAL (decisions.md, (3)): the 26 characters as a fixed ASCII field.
 check = crockford(h(dom("linen-sync/code-check/v1") + code.encode())[:2], 10)
 code_nonce = pattern(16, 0x60)
 salt = h(dom("linen-sync/code-salt/v1") + library + code_nonce)
