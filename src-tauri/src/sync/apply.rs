@@ -1452,9 +1452,13 @@ pub(crate) fn write(
                 }
             }
             // The highlight shows as changed when its note does, as on the device
-            // that wrote it.
+            // that wrote it. A note's tombstone leaves the text kept on a deleted
+            // highlight's row, as a local deletion does, for Restore (SY19); it
+            // clears a live one's.
             conn.execute(
-                "UPDATE annotations SET note = ?2, updated_at = MAX(updated_at, ?3) WHERE id = ?1",
+                "UPDATE annotations SET note = CASE WHEN ?2 IS NULL AND deleted_at IS NOT NULL
+                     THEN note ELSE ?2 END,
+                     updated_at = MAX(updated_at, ?3) WHERE id = ?1",
                 params![subject(&v.key), text, ms],
             )?;
         }

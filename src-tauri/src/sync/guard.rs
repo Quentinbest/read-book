@@ -2388,6 +2388,52 @@ mod tests {
     }
 
     #[test]
+    fn a_later_note_tombstone_keeps_the_text_a_deleted_highlight_holds() {
+        let now = crate::store::now_ms();
+        let (mut a, la, mut b, lb, ids) = shared(1, now);
+        b.delete_annotation(&ids[0]).unwrap();
+        let gone = publish_next(b.conn(), &lb).unwrap().unwrap();
+        receive(a.conn(), &la, &gone, now + HOUR).unwrap();
+        // A's descendant of B's note tombstone: the same content.
+        let key = format!("note:{}", ids[0]);
+        let tomb = gone
+            .versions
+            .iter()
+            .find(|v| v["key"] == key)
+            .unwrap()
+            .clone();
+        let mut again = tomb.clone();
+        again["device"] = serde_json::json!(la.device.to_string());
+        again["clock"] = serde_json::json!([now as u64 + 2 * HOUR as u64, 0]);
+        again["history"] = serde_json::json!([{
+            "d": lb.device.to_string(), "s": gone.seq,
+            "h": crate::sync::record::version_hash(&tomb).to_string(),
+        }]);
+        let seq: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COALESCE(MAX(seq), 0) FROM sync_versions WHERE device = ?1",
+                [la.device.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let next = Batch {
+            device: la.device,
+            seq: seq as u64 + 1,
+            hash: super::super::ids::Hash32([0x55; 32]),
+            versions: vec![again],
+            bodies: vec![],
+        };
+        receive(b.conn(), &lb, &next, now + 2 * HOUR).unwrap();
+        let _ = &mut a;
+        let (row, deleted) = crate::store::annotation_row(b.conn(), &ids[0])
+            .unwrap()
+            .unwrap();
+        assert!(deleted);
+        assert_eq!(row.note.as_deref(), Some("note 0"), "kept for Restore");
+    }
+
+    #[test]
     fn a_change_already_applied_isnt_counted_again() {
         let now = crate::store::now_ms();
         let (_a, _la, b, lb, _ids) = shared(10, now);
