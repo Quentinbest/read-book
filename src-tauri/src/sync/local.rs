@@ -9,7 +9,7 @@ use super::a9;
 use super::ids::Id16;
 use super::journal::{self, JournalError, Library, LocalContent};
 use super::merge::Outcome;
-use super::record::{Entry, Key};
+use super::record::{Entry, Key, Version};
 use crate::store::AnnotationRow;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
@@ -28,13 +28,13 @@ fn record(
     k: Key,
     content: LocalContent,
     now_ms: u64,
-) -> Result<()> {
+) -> Result<Option<Version>> {
     // SY26: the reader changed this record here, so Stop syncing leaves it.
     super::guard::changed_here(conn, lib, &k)?;
     if let LocalContent::Body(b) = &content {
         if b.len() as u64 > k.kind().body_limit() {
             // An earlier unsent value is superseded here and isn't published.
-            return journal::drop_unsent(conn, lib, &k);
+            return journal::drop_unsent(conn, lib, &k).map(|()| None);
         }
     }
     // #109: once an edit is held for the reader's choice, later edits replace the
@@ -59,7 +59,8 @@ fn record(
         }
     };
     // SY17: a deletion made here is first seen now.
-    super::restore::seen(conn, lib, &v, None, replaced, now_ms as i64)
+    super::restore::seen(conn, lib, &v, None, replaced, now_ms as i64)?;
+    Ok(Some(v))
 }
 
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never
@@ -238,7 +239,7 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         return Ok(());
     };
     let covers = covers(conn, &lib)?;
-    record(
+    let highlight = record(
         conn,
         &lib,
         key(format!("annotation:{}", row.id)),
@@ -249,7 +250,7 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         now_ms,
     )?;
     if live_note(&row.note).is_some() {
-        record(
+        let note = record(
             conn,
             &lib,
             key(format!("note:{}", row.id)),
@@ -259,6 +260,10 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
             },
             now_ms,
         )?;
+        // SY19: one deletion, whichever of the two is held for a choice and sent apart.
+        if let (Some(highlight), Some(note)) = (highlight, note) {
+            super::restore::paired(conn, &lib, &highlight, &note)?;
+        }
     }
     Ok(())
 }

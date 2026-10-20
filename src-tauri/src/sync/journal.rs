@@ -218,6 +218,10 @@ pub fn set_device(
                 old_hash
             ],
         )?;
+        tx.execute(
+            "UPDATE sync_deleted SET highlight = ?2 WHERE library = ?1 AND highlight = ?3",
+            params![lib.id.to_string(), version.hash.to_string(), old_hash],
+        )?;
     }
     tx.commit()?;
     Ok(())

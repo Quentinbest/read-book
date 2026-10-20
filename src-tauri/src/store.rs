@@ -278,6 +278,8 @@ pub const MIGRATIONS: &[&str] = &[
         first_seen INTEGER NOT NULL,        -- time this device can vouch for
         displaced BLOB,                     -- an unsent body this device's tombstone replaced
         displaced_raw TEXT,                 -- and its version, to order it with the rest
+        highlight TEXT,                     -- a note's: the hash of the highlight tombstone
+                                            -- this device deleted with it, sent or not
         PRIMARY KEY (library, key, device, hash)
     );
     "#,

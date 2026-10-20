@@ -38,7 +38,7 @@ CREATE INDEX sync_undo_at ON sync_undo(library, at);
 CREATE TABLE sync_counted (library TEXT NOT NULL, at INTEGER NOT NULL, what TEXT NOT NULL, kind TEXT NOT NULL, book TEXT, bytes INTEGER NOT NULL, approved INTEGER NOT NULL);
 CREATE INDEX sync_counted_at ON sync_counted(library, at);
 CREATE TABLE sync_question (library TEXT PRIMARY KEY, asking INTEGER NOT NULL, approved INTEGER NOT NULL, asked_at INTEGER, device TEXT, seq INTEGER, hash TEXT, counts TEXT, answered_at INTEGER, totals_asked_at INTEGER, versions TEXT);
-CREATE TABLE sync_deleted (library TEXT NOT NULL, key TEXT NOT NULL, device TEXT NOT NULL, hash TEXT NOT NULL, seq INTEGER, first_seen INTEGER NOT NULL, displaced BLOB, displaced_raw TEXT, PRIMARY KEY (library, key, device, hash));
+CREATE TABLE sync_deleted (library TEXT NOT NULL, key TEXT NOT NULL, device TEXT NOT NULL, hash TEXT NOT NULL, seq INTEGER, first_seen INTEGER NOT NULL, displaced BLOB, displaced_raw TEXT, highlight TEXT, PRIMARY KEY (library, key, device, hash));
 CREATE TABLE sync_bodies (hash TEXT PRIMARY KEY, body BLOB NOT NULL);
 CREATE TABLE sync_books (library TEXT NOT NULL, sync_id TEXT NOT NULL, book_id TEXT, PRIMARY KEY (library, sync_id));
 CREATE UNIQUE INDEX sync_books_local ON sync_books(library, book_id) WHERE book_id IS NOT NULL;
@@ -72,4 +72,4 @@ INSERT INTO sync_stopped VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3
 INSERT INTO sync_undo VALUES ('00112233445566778899aabbccddeeff', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'cc', X'7B7D', 6300, 1);
 INSERT INTO sync_counted VALUES ('00112233445566778899aabbccddeeff', 6300, 'changed', 'places', '7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 0, 0);
 INSERT INTO sync_question VALUES ('00112233445566778899aabbccddeeff', 0, 0, 6250, NULL, NULL, NULL, '{}', 6260, NULL, NULL);
-INSERT INTO sync_deleted VALUES ('00112233445566778899aabbccddeeff', 'note:1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'dd', 4, 6400, NULL, NULL);
+INSERT INTO sync_deleted VALUES ('00112233445566778899aabbccddeeff', 'note:1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'dd', 4, 6400, NULL, NULL, NULL);

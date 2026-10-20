@@ -260,7 +260,9 @@ fn restore_in(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Resul
     };
     if let (Some(note), Some((note_tomb, _))) = (note, note_tomb) {
         // SY19: a highlight comes back with the note deleted with it, or not at all.
-        if same_change(&tomb, &note_tomb) && restore_one(conn, lib, &note, now_ms)?.is_none() {
+        if same_change(conn, lib, &tomb, &note_tomb)?
+            && restore_one(conn, lib, &note, now_ms)?.is_none()
+        {
             return Ok(false);
         }
     }
@@ -271,10 +273,51 @@ fn subject(key: &Key) -> &str {
     key.as_str().split(':').nth(1).unwrap_or_default()
 }
 
-/// Whether two tombstones came in the same change: the same writer and sequence,
-/// or both this device's own, not yet sent.
-fn same_change(a: &Placed, b: &Placed) -> bool {
-    a.version.device == b.version.device && a.seq == b.seq
+/// Whether a highlight's tombstone and its note's came in the same change: the same
+/// writer and sequence (both this device's own, not yet sent, too), or deleted
+/// together here, whichever of the two was then held for a choice and sent apart
+/// (or re-authored apart by a rotation).
+fn same_change(
+    conn: &Connection,
+    lib: &Library,
+    highlight: &Placed,
+    note: &Placed,
+) -> Result<bool> {
+    if highlight.version.device == note.version.device && highlight.seq == note.seq {
+        return Ok(true);
+    }
+    // Deleted together here: the link names the highlight's tombstone exactly, even
+    // after a rotation re-authored only the one still unsent.
+    let with: Option<Option<String>> = conn
+        .query_row(
+            "SELECT highlight FROM sync_deleted
+             WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+            params![
+                lib.id.to_string(),
+                note.version.key.as_str(),
+                note.version.device.to_string(),
+                note.version.hash.to_string()
+            ],
+            |r| r.get(0),
+        )
+        .optional()?;
+    Ok(with.flatten() == Some(highlight.version.hash.to_string()))
+}
+
+/// SY19: a note's tombstone made here with its highlight's, kept as one deletion.
+pub fn paired(conn: &Connection, lib: &Library, highlight: &Version, note: &Version) -> Result<()> {
+    conn.execute(
+        "UPDATE sync_deleted SET highlight = ?5
+         WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+        params![
+            lib.id.to_string(),
+            note.key.as_str(),
+            note.device.to_string(),
+            note.hash.to_string(),
+            highlight.hash.to_string()
+        ],
+    )?;
+    Ok(())
 }
 
 /// Restores one record; the tombstone it restored over, if it did. Within the
@@ -627,6 +670,75 @@ mod tests {
         assert!(!restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
         assert_eq!(unsent(&b), 0);
         assert!(b.annotations("book-b").unwrap().is_empty());
+    }
+
+    /// B's highlight held for a choice when B deletes it with its note; the
+    /// note's tombstone is sent on its own.
+    fn held_when_deleted() -> (Store, Library, i64) {
+        let (mut a, la, mut b, lb) = shared();
+        let now = crate::store::now_ms();
+        // B's unsent edit, then A's apart: B's is held. B deletes: the highlight's
+        // tombstone is held too, the note's is sent on its own.
+        let mut mine = highlight("book-b", Some("the note"), 1_760_000_002_000);
+        mine.color = "green".into();
+        b.save_annotation(&mine).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let mut theirs = highlight("book-a", Some("the note"), 1_760_000_003_000);
+        theirs.color = "blue".into();
+        a.save_annotation(&theirs).unwrap();
+        let edit = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &edit, now).unwrap();
+        assert!(journal::held(b.conn(), &lb, &key("annotation")).unwrap());
+        b.delete_annotation(ANNO).unwrap();
+        let sent = publish_next(b.conn(), &lb).unwrap().unwrap();
+        assert!(sent
+            .versions
+            .iter()
+            .any(|v| v["key"] == key("note").as_str()));
+        (b, lb, now)
+    }
+
+    #[test]
+    fn a_highlight_held_when_deleted_comes_back_with_its_note() {
+        let (b, lb, now) = held_when_deleted();
+        assert!(restore(b.conn(), &lb, &key("annotation"), now + DAY).unwrap());
+        // The note comes back as a version of its own, sent with the highlight.
+        let back = publish_next(b.conn(), &lb).unwrap().unwrap();
+        assert!(
+            back.versions
+                .iter()
+                .any(|v| v["key"] == key("note").as_str() && v.get("deleted").is_none()),
+            "{back:?}"
+        );
+    }
+
+    #[test]
+    fn a_highlight_held_when_deleted_keeps_its_note_across_a_rotation() {
+        let (b, lb, now) = held_when_deleted();
+        let rotated = Library {
+            id: lb.id,
+            device: crate::sync::ids::Id16([0x2c; 16]),
+        };
+        journal::set_device(
+            b.conn(),
+            &rotated,
+            true,
+            None,
+            crate::store::now_ms() as u64,
+        )
+        .unwrap();
+        assert!(restore(b.conn(), &rotated, &key("annotation"), now + DAY).unwrap());
+        let note: Option<i64> = b
+            .conn()
+            .query_row(
+                "SELECT applied FROM sync_versions WHERE key = ?1 AND seq IS NULL
+                 AND raw NOT LIKE '%\"deleted\"%'",
+                [key("note").as_str()],
+                |r| r.get(0),
+            )
+            .optional()
+            .unwrap();
+        assert!(note.is_some(), "the note's restored version is journalled");
     }
 
     #[test]
