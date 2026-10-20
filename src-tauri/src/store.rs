@@ -267,6 +267,22 @@ pub const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sync_libraries ADD COLUMN restored_from INTEGER; -- its time; sync paused
     "#,
+    // 10: SY17: when this device first saw each deletion (Restore's week)
+    r#"
+    CREATE TABLE sync_deleted (
+        library TEXT NOT NULL,
+        key TEXT NOT NULL,
+        device TEXT NOT NULL,               -- the tombstone: its writer and hash
+        hash TEXT NOT NULL,
+        seq INTEGER,                        -- NULL: this device's, not yet sent
+        first_seen INTEGER NOT NULL,        -- time this device can vouch for
+        displaced BLOB,                     -- an unsent body this device's tombstone replaced
+        displaced_raw TEXT,                 -- and its version, to order it with the rest
+        highlight TEXT,                     -- a note's: the hash of the highlight tombstone
+                                            -- this device deleted with it, sent or not
+        PRIMARY KEY (library, key, device, hash)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

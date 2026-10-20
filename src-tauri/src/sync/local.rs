@@ -9,7 +9,7 @@ use super::a9;
 use super::ids::Id16;
 use super::journal::{self, JournalError, Library, LocalContent};
 use super::merge::Outcome;
-use super::record::{Entry, Key};
+use super::record::{Entry, Key, Version};
 use crate::store::AnnotationRow;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
@@ -28,29 +28,39 @@ fn record(
     k: Key,
     content: LocalContent,
     now_ms: u64,
-) -> Result<()> {
+) -> Result<Option<Version>> {
     // SY26: the reader changed this record here, so Stop syncing leaves it.
     super::guard::changed_here(conn, lib, &k)?;
     if let LocalContent::Body(b) = &content {
         if b.len() as u64 > k.kind().body_limit() {
             // An earlier unsent value is superseded here and isn't published.
-            return journal::drop_unsent(conn, lib, &k);
+            return journal::drop_unsent(conn, lib, &k).map(|()| None);
         }
     }
     // #109: once an edit is held for the reader's choice, later edits replace the
     // held one; none becomes publishable before the reader chooses.
-    if journal::held(conn, lib, &k)? {
-        return journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ());
-    }
-    match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
-        // SY13: this device's own version waits in a conflict the reader hasn't
-        // decided. The save goes ahead, and the edit is held as the reader's
-        // candidate choice, never lost and never published without it (#109).
-        Err(JournalError::Conflicted(_)) => {
-            journal::hold_local(conn, lib, &k, content, now_ms).map(|_| ())
+    // SY17: a deletion replacing an unsent body keeps it, for Restore (its history
+    // can't name a version that was never numbered).
+    let replaced = match &content {
+        LocalContent::Deleted { .. } => journal::unnumbered(conn, lib, &k)?,
+        _ => None,
+    };
+    let v = if journal::held(conn, lib, &k)? {
+        journal::hold_local(conn, lib, &k, content, now_ms)?
+    } else {
+        match journal::record_local(conn, lib, &k, content.clone(), now_ms) {
+            // SY13: this device's own version waits in a conflict the reader hasn't
+            // decided. The save goes ahead, and the edit is held as the reader's
+            // candidate choice, never lost and never published without it (#109).
+            Err(JournalError::Conflicted(_)) => {
+                journal::hold_local(conn, lib, &k, content, now_ms)?
+            }
+            other => other?,
         }
-        other => other.map(|_| ()),
-    }
+    };
+    // SY17: a deletion made here is first seen now.
+    super::restore::seen(conn, lib, &v, None, replaced, now_ms as i64)?;
+    Ok(Some(v))
 }
 
 /// SY8: a book's sync ID in this library, made on first use. Local book IDs never
@@ -133,6 +143,34 @@ fn live_note(note: &Option<String>) -> Option<&str> {
     note.as_deref().filter(|t| !t.trim().is_empty())
 }
 
+/// SY9, SY19: a deletion made here; `local` is the body it deletes, as this device
+/// shows it. One over its limit was never synced (SY28), so it is kept with the
+/// deletion: Restore brings it back here only.
+fn record_deletion(
+    conn: &Connection,
+    lib: &Library,
+    k: Key,
+    covers: Vec<Entry>,
+    local: Vec<u8>,
+    now_ms: u64,
+) -> Result<Option<Version>> {
+    let over = local.len() as u64 > k.kind().body_limit();
+    let v = record(
+        conn,
+        lib,
+        k,
+        LocalContent::Deleted {
+            covers,
+            identity: None,
+        },
+        now_ms,
+    )?;
+    if let (Some(v), true) = (&v, over) {
+        super::restore::kept_here(conn, lib, v, local)?;
+    }
+    Ok(v)
+}
+
 /// SY12: a place saved, and the book marked opened (`save_position` does both).
 pub fn on_position(
     conn: &Connection,
@@ -204,16 +242,14 @@ pub fn on_annotation(
             )?;
         }
         // SY9: emptying a note is a deletion, kept for the week and restorable.
-        (Some(_), None) => {
+        (Some(old), None) => {
             let covers = covers(conn, &lib)?;
-            record(
+            record_deletion(
                 conn,
                 &lib,
                 key(format!("note:{}", after.id)),
-                LocalContent::Deleted {
-                    covers,
-                    identity: None,
-                },
+                covers,
+                note_body(old),
                 now_ms,
             )?;
         }
@@ -229,27 +265,28 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         return Ok(());
     };
     let covers = covers(conn, &lib)?;
-    record(
+    let book = sync_id(conn, &lib, &row.book_id)?;
+    let highlight = record_deletion(
         conn,
         &lib,
         key(format!("annotation:{}", row.id)),
-        LocalContent::Deleted {
-            covers: covers.clone(),
-            identity: None,
-        },
+        covers.clone(),
+        a9::body_of(row, &book).to_string().into_bytes(),
         now_ms,
     )?;
-    if live_note(&row.note).is_some() {
-        record(
+    if let Some(text) = live_note(&row.note) {
+        let note = record_deletion(
             conn,
             &lib,
             key(format!("note:{}", row.id)),
-            LocalContent::Deleted {
-                covers,
-                identity: None,
-            },
+            covers,
+            note_body(text),
             now_ms,
         )?;
+        // SY19: one deletion, whichever of the two is held for a choice and sent apart.
+        if let (Some(highlight), Some(note)) = (highlight, note) {
+            super::restore::paired(conn, &lib, &highlight, &note)?;
+        }
     }
     Ok(())
 }

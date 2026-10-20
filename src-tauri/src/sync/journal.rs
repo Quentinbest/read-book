@@ -142,12 +142,14 @@ pub fn set_device(
             params![lib.id.to_string(), stored, last as i64],
         )?;
     }
-    let pending: Vec<(i64, String)> = tx
-        .prepare("SELECT rowid, raw FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid")?
-        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+    let pending: Vec<(i64, String, String)> = tx
+        .prepare(
+            "SELECT rowid, raw, hash FROM sync_versions WHERE library = ?1 AND seq IS NULL ORDER BY rowid",
+        )?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
         .collect::<std::result::Result<_, _>>()?;
     let old = Id16::parse(&stored);
-    for (rowid, raw) in pending {
+    for (rowid, raw, old_hash) in pending {
         let mut v: Value = serde_json::from_str(&raw).map_err(|_| RecordError::NotAnObject)?;
         v["device"] = json!(lib.device.to_string());
         // No ancestor may be a version the old identity never signed: such an entry
@@ -202,6 +204,23 @@ pub fn set_device(
                 version.hash.to_string(),
                 v.to_string()
             ],
+        )?;
+        // SY17: a re-authored tombstone keeps its deletion's age and what it replaced.
+        tx.execute(
+            "UPDATE sync_deleted SET device = ?3, hash = ?4
+             WHERE library = ?1 AND key = ?2 AND device = ?5 AND hash = ?6",
+            params![
+                lib.id.to_string(),
+                version.key.as_str(),
+                lib.device.to_string(),
+                version.hash.to_string(),
+                stored,
+                old_hash
+            ],
+        )?;
+        tx.execute(
+            "UPDATE sync_deleted SET highlight = ?2 WHERE library = ?1 AND highlight = ?3",
+            params![lib.id.to_string(), version.hash.to_string(), old_hash],
         )?;
     }
     tx.commit()?;
@@ -595,6 +614,29 @@ pub fn release_held(conn: &Connection, lib: &Library, key: &Key) -> Result<()> {
         params![lib.id.to_string(), key.as_str()],
     )?;
     Ok(())
+}
+
+/// This device's unnumbered version of one key (unsent, or held for a choice), as
+/// written, with its body, if it has one.
+pub fn unnumbered(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+) -> Result<Option<(String, Vec<u8>)>> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    match check(&raw, lib.device)?.content {
+        super::record::Content::Body { hash, .. } => Ok(body(conn, &hash)?.map(|b| (raw, b))),
+        _ => Ok(None),
+    }
 }
 
 /// This device's unsent version of one key, if any (not one held, #109).

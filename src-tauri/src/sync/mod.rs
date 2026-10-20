@@ -18,4 +18,5 @@ pub mod json;
 pub mod local;
 pub mod merge;
 pub mod record;
+pub mod restore;
 pub mod retention;

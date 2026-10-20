@@ -370,3 +370,11 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
 114. **The new device confirms the code too (SP24, SY34; Stage 1, its screens Stage 3).** Item 110 asks the reader to confirm the six-digit code only on the enrolled device. The new device, though, can't tell a real library from one a stranger made in the folder, and a stranger could answer it and enrol it at once in a library of their own, whose deletions it would then apply to the reader's books and notes. Proposed: the new device shows the code with “Does ‹device› show this code? · It matches · Cancel”, and joins only after It matches.
     *Recommendation:* approve. It is one more click when adding a device, and without it the code protects only the library, not the device joining it.
     **Approved 2026-10-18.**
+
+## Sync Stage 1b (2026-10-20, #92)
+
+115. **When SY27's Resume is built (Stage 1b or later).** A library restored from a backup starts paused (built in Stage 1b.3b). Resume offers two choices: bring back what was removed or replaced while keeping other newer changes, or make this copy win. The first must know which deletions and replacements *this device* applied after the backup was taken. That comes from the device's signed frontier in storage (SP29, Stage 1c) and from what storage holds (Stage 2). The restored database can't tell on its own, because those changes happened in the database it replaced.
+    - **(a)** Build Resume in Stage 2, once frontiers (1c) and storage (2) exist, with SY27's restore check (“A backup restored after a sync removed one book… after Resume the book is back on every device”).
+    - **(b)** Build a simpler Resume now: “make this copy win” only, re-versioning every record that differs from what storage sends.
+    *Recommendation:* (a). Choice (b) alone would undo every change made elsewhere since the backup, which SY27's first choice exists to avoid. Until then a restored library stays paused, so nothing is lost.
+    **Approved 2026-10-20: (a).**
