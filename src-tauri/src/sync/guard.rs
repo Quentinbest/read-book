@@ -2405,10 +2405,21 @@ mod tests {
         let mut again = tomb.clone();
         again["device"] = serde_json::json!(la.device.to_string());
         again["clock"] = serde_json::json!([now as u64 + 2 * HOUR as u64, 0]);
-        again["history"] = serde_json::json!([{
-            "d": lb.device.to_string(), "s": gone.seq,
-            "h": crate::sync::record::version_hash(&tomb).to_string(),
-        }]);
+        let (a_seq, a_hash): (i64, String) = b
+            .conn()
+            .query_row(
+                "SELECT seq, hash FROM sync_versions WHERE key = ?1 AND device = ?2",
+                params![key, la.device.to_string()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        again["history"] = serde_json::json!([
+            { "d": la.device.to_string(), "s": a_seq, "h": a_hash },
+            {
+                "d": lb.device.to_string(), "s": gone.seq,
+                "h": crate::sync::record::version_hash(&tomb).to_string(),
+            },
+        ]);
         let seq: i64 = b
             .conn()
             .query_row(
