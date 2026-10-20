@@ -55,6 +55,94 @@ pub(crate) fn seen(
     Ok(())
 }
 
+/// SY28, SY19: what a deletion made here displaced was over its limit, so never
+/// synced. It is kept with the deletion (with no version, which it never had), and
+/// Restore brings it back on this device only.
+pub(crate) fn kept_here(
+    conn: &Connection,
+    lib: &Library,
+    tomb: &Version,
+    body: Vec<u8>,
+) -> Result<()> {
+    conn.execute(
+        "UPDATE sync_deleted SET displaced = ?5, displaced_raw = NULL
+         WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+        params![
+            lib.id.to_string(),
+            tomb.key.as_str(),
+            tomb.device.to_string(),
+            tomb.hash.to_string(),
+            body
+        ],
+    )?;
+    Ok(())
+}
+
+/// The body `kept_here` kept with this tombstone, if any.
+fn local_only(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<Vec<u8>>> {
+    Ok(conn
+        .query_row(
+            "SELECT displaced FROM sync_deleted
+             WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4
+               AND displaced_raw IS NULL",
+            params![
+                lib.id.to_string(),
+                tomb.version.key.as_str(),
+                tomb.version.device.to_string(),
+                tomb.version.hash.to_string()
+            ],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten())
+}
+
+/// SY28: a body over its limit comes back on this device only, as it was, and
+/// stays unsynced, as before the deletion; the deletion is then no longer one to
+/// offer here.
+fn restore_here(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    tomb: &Placed,
+    body: &[u8],
+) -> Result<bool> {
+    let id = subject(key);
+    let n = match key.kind() {
+        Kind::Note => {
+            let Some(text) = serde_json::from_slice::<serde_json::Value>(body)
+                .ok()
+                .and_then(|b| b["text"].as_str().map(str::to_owned))
+            else {
+                return Ok(false);
+            };
+            conn.execute(
+                "UPDATE annotations SET note = ?2 WHERE id = ?1 AND deleted_at IS NULL",
+                params![id, text],
+            )?
+        }
+        // The highlight's row stays, marked deleted (A7), holding what it showed.
+        _ => conn.execute(
+            "UPDATE annotations SET deleted_at = NULL WHERE id = ?1 AND deleted_at IS NOT NULL",
+            [id],
+        )?,
+    };
+    if n == 0 {
+        return Ok(false);
+    }
+    super::guard::changed_here(conn, lib, key)?;
+    conn.execute(
+        "DELETE FROM sync_deleted WHERE library = ?1 AND key = ?2 AND device = ?3 AND hash = ?4",
+        params![
+            lib.id.to_string(),
+            key.as_str(),
+            tomb.version.device.to_string(),
+            tomb.version.hash.to_string()
+        ],
+    )?;
+    Ok(true)
+}
+
 /// A deletion Restore can be offered for.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Deleted {
@@ -339,6 +427,9 @@ fn restore_one(conn: &Connection, lib: &Library, key: &Key, now_ms: i64) -> Resu
         )
     {
         return Ok(None);
+    }
+    if let Some(body) = local_only(conn, lib, &tomb)? {
+        return Ok(restore_here(conn, lib, key, &tomb, &body)?.then_some(tomb));
     }
     let Some(body) = displaced(conn, lib, &tomb)? else {
         return Ok(None);
@@ -739,6 +830,61 @@ mod tests {
             .optional()
             .unwrap();
         assert!(note.is_some(), "the note's restored version is journalled");
+    }
+
+    fn body_versions(store: &Store, k: &Key) -> i64 {
+        store
+            .conn()
+            .query_row(
+                "SELECT count(*) FROM sync_versions WHERE key = ?1 AND seq IS NULL
+                 AND raw NOT LIKE '%\"deleted\"%'",
+                [k.as_str()],
+                |r| r.get(0),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn a_note_too_long_to_sync_comes_back_here_as_it_was() {
+        let (mut a, la) = device(1, "book-a");
+        let now = crate::store::now_ms();
+        a.save_annotation(&highlight("book-a", Some("short"), 1_760_000_001_000))
+            .unwrap();
+        publish_next(a.conn(), &la).unwrap().unwrap();
+        // SY28: the longer note stays here, unsynced; then the reader empties it.
+        let long = "x".repeat(5 * 1024 * 1024);
+        a.save_annotation(&highlight("book-a", Some(&long), 1_760_000_002_000))
+            .unwrap();
+        a.save_annotation(&highlight("book-a", None, 1_760_000_003_000))
+            .unwrap();
+        assert!(restore(a.conn(), &la, &key("note"), now + DAY).unwrap());
+        assert_eq!(note_of(&a, "book-a"), Some(Some(long)));
+        // Here only, as before: nothing journalled for it, and not offered again.
+        assert_eq!(body_versions(&a, &key("note")), 0);
+        assert!(recently_deleted(a.conn(), &la, now + DAY)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn a_highlight_too_long_to_sync_comes_back_here_with_its_note() {
+        let (mut a, la) = device(1, "book-a");
+        let now = crate::store::now_ms();
+        let mut h = highlight("book-a", Some("the note"), 1_760_000_001_000);
+        h.quote_exact = "x".repeat(5 * 1024 * 1024);
+        a.save_annotation(&h).unwrap();
+        a.delete_annotation(ANNO).unwrap();
+        let offered: Vec<String> = recently_deleted(a.conn(), &la, now + DAY)
+            .unwrap()
+            .iter()
+            .map(|d| d.key.as_str().to_owned())
+            .collect();
+        assert_eq!(offered, vec![key("annotation").as_str()]);
+        assert!(restore(a.conn(), &la, &key("annotation"), now + DAY).unwrap());
+        let back = a.annotations("book-a").unwrap();
+        assert_eq!(back[0].quote_exact.len(), h.quote_exact.len());
+        assert_eq!(back[0].note.as_deref(), Some("the note"));
+        assert_eq!(body_versions(&a, &key("annotation")), 0);
     }
 
     #[test]

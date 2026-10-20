@@ -143,6 +143,34 @@ fn live_note(note: &Option<String>) -> Option<&str> {
     note.as_deref().filter(|t| !t.trim().is_empty())
 }
 
+/// SY9, SY19: a deletion made here; `local` is the body it deletes, as this device
+/// shows it. One over its limit was never synced (SY28), so it is kept with the
+/// deletion: Restore brings it back here only.
+fn record_deletion(
+    conn: &Connection,
+    lib: &Library,
+    k: Key,
+    covers: Vec<Entry>,
+    local: Vec<u8>,
+    now_ms: u64,
+) -> Result<Option<Version>> {
+    let over = local.len() as u64 > k.kind().body_limit();
+    let v = record(
+        conn,
+        lib,
+        k,
+        LocalContent::Deleted {
+            covers,
+            identity: None,
+        },
+        now_ms,
+    )?;
+    if let (Some(v), true) = (&v, over) {
+        super::restore::kept_here(conn, lib, v, local)?;
+    }
+    Ok(v)
+}
+
 /// SY12: a place saved, and the book marked opened (`save_position` does both).
 pub fn on_position(
     conn: &Connection,
@@ -214,16 +242,14 @@ pub fn on_annotation(
             )?;
         }
         // SY9: emptying a note is a deletion, kept for the week and restorable.
-        (Some(_), None) => {
+        (Some(old), None) => {
             let covers = covers(conn, &lib)?;
-            record(
+            record_deletion(
                 conn,
                 &lib,
                 key(format!("note:{}", after.id)),
-                LocalContent::Deleted {
-                    covers,
-                    identity: None,
-                },
+                covers,
+                note_body(old),
                 now_ms,
             )?;
         }
@@ -239,25 +265,22 @@ pub fn on_annotation_deleted(conn: &Connection, row: &AnnotationRow, now_ms: u64
         return Ok(());
     };
     let covers = covers(conn, &lib)?;
-    let highlight = record(
+    let book = sync_id(conn, &lib, &row.book_id)?;
+    let highlight = record_deletion(
         conn,
         &lib,
         key(format!("annotation:{}", row.id)),
-        LocalContent::Deleted {
-            covers: covers.clone(),
-            identity: None,
-        },
+        covers.clone(),
+        a9::body_of(row, &book).to_string().into_bytes(),
         now_ms,
     )?;
-    if live_note(&row.note).is_some() {
-        let note = record(
+    if let Some(text) = live_note(&row.note) {
+        let note = record_deletion(
             conn,
             &lib,
             key(format!("note:{}", row.id)),
-            LocalContent::Deleted {
-                covers,
-                identity: None,
-            },
+            covers,
+            note_body(text),
             now_ms,
         )?;
         // SY19: one deletion, whichever of the two is held for a choice and sent apart.
