@@ -585,7 +585,9 @@ pub(crate) fn applied(
             return Ok(());
         }
     }
-    for _ in 0..items {
+    // One row an item; the record's bytes go on the first only.
+    for i in 0..items {
+        let bytes = if i == 0 { bytes } else { 0 };
         conn.execute(
             "INSERT INTO sync_counted (library, at, what, kind, book, bytes, approved)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
