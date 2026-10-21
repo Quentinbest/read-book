@@ -301,7 +301,13 @@ fn body(type_: &str, b: &Map<String, Value>) -> Result<Body> {
                 clock: clock(b.get("clock"))?,
                 by,
                 n,
-                sas: opt_hash(b.get("sas"))?,
+                // SP24: a device enrollment binds the transcript its readers
+                // confirmed (`sas` = `t`); a code enrollment has none.
+                sas: match (by, opt_hash(b.get("sas"))?) {
+                    (Some(_), Some(t)) => Some(t),
+                    (None, None) => None,
+                    _ => return Err(TrustError::Shape),
+                },
                 reveal: match (by, b.get("reveal"), b.get("pop")) {
                     (Some(_), r, pop) => Some((
                         r.and_then(Value::as_str)
@@ -362,8 +368,9 @@ fn body(type_: &str, b: &Map<String, Value>) -> Result<Body> {
                     .iter()
                     .map(|h| hash(Some(h)))
                     .collect::<Result<Vec<_>>>()?;
-                // SP19: two or more sibling heads.
-                if p.len() < 2 {
+                // SP19: two or more sibling heads, each once.
+                let distinct: std::collections::BTreeSet<&Hash32> = p.iter().collect();
+                if p.len() < 2 || distinct.len() != p.len() {
                     return Err(TrustError::Shape);
                 }
                 p
@@ -747,6 +754,13 @@ mod tests {
             open_signed("enroll", enroll_by(&e, &new, 2, (payload, other_pop)), &by),
             Err(TrustError::Reveal)
         ));
+        // A device enrollment without its transcript (`sas`).
+        let mut no_sas = enroll_by(&e, &new, 2, reveal(&new, &e.device()));
+        no_sas["sas"] = json!(null);
+        assert!(matches!(
+            open_signed("enroll", no_sas, &by),
+            Err(TrustError::Shape)
+        ));
         // A device enrollment without its `n`.
         let mut no_n = enroll_by(&e, &new, 2, reveal(&new, &e.device()));
         no_n.as_object_mut().unwrap().remove("n");
@@ -775,7 +789,13 @@ mod tests {
             open_signed("enroll", fields.clone(), &signers[..1]),
             Err(TrustError::Signature)
         ));
-        // With an `n`, or a reveal: not a code enrollment's.
+        // With an `n`, a reveal or a transcript: not a code enrollment's.
+        let mut with_sas = fields.clone();
+        with_sas["sas"] = json!("dd".repeat(32));
+        assert!(matches!(
+            open_signed("enroll", with_sas, &signers),
+            Err(TrustError::Shape)
+        ));
         let mut with_n = fields.clone();
         with_n["n"] = json!(1);
         assert!(matches!(
@@ -869,6 +889,11 @@ mod tests {
         );
         assert!(matches!(
             merge(vec!["aa".repeat(32)]),
+            Err(TrustError::Shape)
+        ));
+        // Nor is one naming the same head twice.
+        assert!(matches!(
+            merge(vec!["aa".repeat(32), "aa".repeat(32)]),
             Err(TrustError::Shape)
         ));
     }
