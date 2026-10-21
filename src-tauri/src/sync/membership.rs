@@ -28,6 +28,11 @@ pub const MAX_DEVICES: usize = 12;
 pub const ENROLLMENTS_A_DAY: usize = 2;
 /// SY7: past two rotations of one identity in 30 days, a rotation needs the code.
 pub const ROTATIONS_WITHOUT_CODE: usize = 2;
+/// The most records one computation judges, oldest first sight first, so a folder
+/// filled with well-formed junk records can't exhaust memory or time (its
+/// ancestor sets grow with the square of the graph). PROVISIONAL (decisions.md,
+/// “Computing membership”, (7)); #122 makes the computation incremental.
+pub const MAX_RECORDS: usize = 1024;
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 const ROTATION_WINDOW_MS: i64 = 30 * DAY_MS;
 
@@ -70,6 +75,8 @@ pub enum Wait {
     Chain,
     /// Sibling sealed heads, a `confirm` or a `merge` (1c.4c).
     Fork,
+    /// Not judged: a predecessor this device doesn't hold, or past `MAX_RECORDS`.
+    Unjudged,
 }
 
 /// Why a record counts for nothing.
@@ -223,6 +230,9 @@ impl<'a> Graph<'a> {
                 .min_by_key(|h| (seen(h), **h))
                 .copied();
             let Some(h) = next else { break };
+            if order.len() >= MAX_RECORDS {
+                break;
+            }
             left.remove(&h);
             let mut anc = BTreeSet::new();
             for p in inputs.records[&h].prevs() {
@@ -410,11 +420,14 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
             let state = g.state(&verdicts, &all);
             let newest_sealed = g.newest(&sealed);
             let mut verdicts = verdicts;
-            // Records not reachable from the genesis count for nothing here.
-            for h in inputs.records.keys() {
-                verdicts
-                    .entry(*h)
-                    .or_insert(Verdict::Refused(Refusal::OtherGenesis));
+            // Another genesis counts for nothing; a record left out of the graph (a
+            // predecessor not held, or past the bound) isn't judged yet.
+            for (h, r) in inputs.records {
+                verdicts.entry(*h).or_insert(if r.prevs().is_empty() {
+                    Verdict::Refused(Refusal::OtherGenesis)
+                } else {
+                    Verdict::Waits(Wait::Unjudged)
+                });
             }
             let missing: Vec<Hash32> = inputs
                 .accepted
@@ -1056,6 +1069,41 @@ mod tests {
         assert_eq!(
             l.compute_after(g, &accepted).unwrap_err(),
             Stale { missing: vec![rm] }
+        );
+    }
+
+    #[test]
+    fn a_folder_of_junk_records_is_judged_only_up_to_the_bound() {
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        // Well-formed enrollments by a stranger, chained, each its own new key.
+        let stranger = k(99);
+        let mut prev = g;
+        for i in 0..MAX_RECORDS as u64 + 10 {
+            let new = Keypair::from_seed(&{
+                let mut s = [7u8; 32];
+                s[..8].copy_from_slice(&i.to_be_bytes());
+                s
+            });
+            prev = l.enroll(prev, &stranger, &new, 1, OLD + i as i64);
+        }
+        let m = l.compute(g);
+        let judged = m
+            .verdicts
+            .values()
+            .filter(|v| **v != Verdict::Waits(Wait::Unjudged))
+            .count();
+        assert_eq!(judged, MAX_RECORDS);
+        assert_eq!(m.verdict(&prev), Some(Verdict::Waits(Wait::Unjudged)));
+        assert!(m.trusted(&a.device()).is_some());
+        // A record whose predecessor isn't held isn't judged either.
+        let mut l = Lib::default();
+        let g = l.genesis(&a, &c0);
+        let orphan = l.enroll(Hash32([3; 32]), &a, &k(2), 1, OLD);
+        assert_eq!(
+            l.compute(g).verdict(&orphan),
+            Some(Verdict::Waits(Wait::Unjudged))
         );
     }
 
