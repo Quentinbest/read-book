@@ -713,7 +713,7 @@ mod tests {
                 "enroll",
                 json!({ "prev": prev.to_string(), "device": new.device().to_string(),
                         "key": b64url_encode(&new.public()), "label": "new", "clock": [NOW as u64, 1],
-                        "by": by.device().to_string(), "n": n, "sas": null,
+                        "by": by.device().to_string(), "n": n, "sas": "dd".repeat(32),
                         "reveal": b64url_encode(&reveal), "pop": b64url_encode(&pop) }),
                 &[(by, Signer::Device(by.device()), n)],
                 seen,
