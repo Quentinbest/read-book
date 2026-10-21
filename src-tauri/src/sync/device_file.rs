@@ -177,8 +177,9 @@ fn part_bytes(field: &str, part: u64, items: &[Value]) -> Vec<u8> {
     json::canonical(&json!({ "field": field, "part": part, "items": items }))
 }
 
-/// Splits `items` into parts of at most `MAX_OVERFLOW_FILE` each.
-fn parts(field: &str, items: &[Value]) -> Vec<Vec<u8>> {
+/// Splits `items` into parts of at most `MAX_OVERFLOW_FILE` each. An item too
+/// large for a part of its own is refused: no part may pass SP8's limit.
+fn parts(field: &str, items: &[Value]) -> Result<Vec<Vec<u8>>> {
     let mut out = Vec::new();
     let mut current: Vec<Value> = Vec::new();
     let mut size = 0usize;
@@ -186,6 +187,9 @@ fn parts(field: &str, items: &[Value]) -> Vec<Vec<u8>> {
     let wrap = part_bytes(field, MAX_SAFE_INTEGER, &[]).len();
     for item in items {
         let n = item.to_string().len() + 1;
+        if wrap + n > MAX_OVERFLOW_FILE {
+            return Err(DeviceError::TooLarge);
+        }
         if !current.is_empty() && wrap + size + n > MAX_OVERFLOW_FILE {
             out.push(part_bytes(field, out.len() as u64, &current));
             current.clear();
@@ -197,7 +201,7 @@ fn parts(field: &str, items: &[Value]) -> Vec<Vec<u8>> {
     if !current.is_empty() {
         out.push(part_bytes(field, out.len() as u64, &current));
     }
-    out
+    Ok(out)
 }
 
 /// SP16: writes and signs a device file at `counter`. Lists that would take the
@@ -258,7 +262,7 @@ pub fn write(
             // SP16, would hold it; no device carries that many parts yet).
             return Err(DeviceError::TooLarge);
         };
-        for (i, b) in parts(name, &items).into_iter().enumerate() {
+        for (i, b) in parts(name, &items)?.into_iter().enumerate() {
             let hash = identity_hash(&b);
             overflow.push(Overflow {
                 field: name.to_owned(),
@@ -478,10 +482,11 @@ pub fn publish(
     let state = store.library(library).ok_or(StoreError::Unreadable)?;
     let key = state.key()?;
     let writer = state.writer_id()?;
-    let counter = state.counter + 1;
-    if counter > MAX_SAFE_INTEGER {
+    // A stored counter out of range is refused before anything is added to it.
+    if state.counter >= MAX_SAFE_INTEGER {
         return Err(DeviceError::Store(StoreError::Unreadable));
     }
+    let counter = state.counter + 1;
     let written = write(&key, library, &writer, counter, fields)?;
     let mut next = store.clone();
     let state = next.library_mut(library).expect("checked above");
@@ -789,6 +794,29 @@ mod tests {
         let mut wrong = reloaded.clone();
         wrong.library_mut(&LIB).unwrap().counter = 5;
         assert!(pending(&wrong, &LIB).is_err());
+    }
+
+    #[test]
+    fn an_item_too_large_for_a_part_and_a_counter_out_of_range_are_refused() {
+        let (ks, mut store, key) = device();
+        let mut f = fields();
+        f.lists
+            .insert("proofs".into(), vec![json!("x".repeat(MAX_OVERFLOW_FILE))]);
+        assert!(matches!(
+            write(&key, &LIB, &Id16([2; 16]), 1, &f),
+            Err(DeviceError::TooLarge)
+        ));
+        // Refused before signing: the counter didn't move.
+        assert!(publish(&ks, &mut store, &LIB, &f).is_err());
+        assert_eq!(store.library(&LIB).unwrap().counter, 0);
+        for counter in [MAX_SAFE_INTEGER, u64::MAX] {
+            let mut bad = store.clone();
+            bad.library_mut(&LIB).unwrap().counter = counter;
+            assert!(matches!(
+                publish(&ks, &mut bad, &LIB, &fields()),
+                Err(DeviceError::Store(StoreError::Unreadable))
+            ));
+        }
     }
 
     #[test]
