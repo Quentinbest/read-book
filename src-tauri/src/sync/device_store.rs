@@ -106,6 +106,18 @@ pub struct Floor {
     pub gen: u64,
     #[serde(default)]
     pub counter: u64,
+    /// Earlier checkpoints `{ s, h }` the chain applied here hasn't passed yet: a
+    /// newer device file raised the floor before the chain reached them, and the
+    /// chain must still pass each with its hash.
+    #[serde(default)]
+    pub earlier: Vec<Checkpoint>,
+}
+
+/// SP18: one change a floor names, `{ s, h }`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub s: u64,
+    pub h: String,
 }
 
 impl Floor {
@@ -119,6 +131,24 @@ impl Floor {
                 .ok_or(StoreError::Unreadable),
             _ => Err(StoreError::Unreadable),
         }
+    }
+
+    /// Every change the floor names, its earlier checkpoints and its newest, in
+    /// sequence order.
+    pub fn checkpoints(&self) -> Result<Vec<(u64, Hash32)>, StoreError> {
+        let mut out = self
+            .earlier
+            .iter()
+            .map(|c| {
+                Hash32::parse(&c.h)
+                    .filter(|_| c.s > 0)
+                    .map(|h| (c.s, h))
+                    .ok_or(StoreError::Unreadable)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        out.extend(self.change()?);
+        out.sort_by_key(|(s, _)| *s);
+        Ok(out)
     }
 }
 

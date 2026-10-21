@@ -13,7 +13,7 @@
 //! 1c that own them; here they are carried, split and joined again as arrays.
 
 use super::crypto::{self, Keypair};
-use super::device_store::{DeviceStore, Floor, Keystore, StoreError, Unsent};
+use super::device_store::{Checkpoint, DeviceStore, Floor, Keystore, StoreError, Unsent};
 use super::envelope::{self, EnvelopeError, Place, Signer};
 use super::ids::{b64url_encode, identity_hash, DeviceId, Hash32, Id16};
 use super::json::{self, Numbers, MAX_SAFE_INTEGER};
@@ -635,6 +635,14 @@ pub fn accept(
     };
     if let Some((o, oh)) = f.fields.own {
         if held.map_or(true, |(s, _)| o > s) {
+            // The checkpoint it replaces stays until the chain applied here passes
+            // it: a newer `own` proves nothing about what lies before it.
+            if let Some((s, h)) = held {
+                raised.earlier.push(Checkpoint {
+                    s,
+                    h: h.to_string(),
+                });
+            }
             raised.s = o;
             raised.h = Some(oh.to_string());
         }
@@ -649,22 +657,47 @@ pub fn accept(
     Ok(Accepted::New(Box::new(f), lists))
 }
 
-/// SP18: `device`'s floor change, `{ s, h }`, which `chain::receive_change` holds
-/// its change files to.
+/// SP18: every change `device`'s floor names (its newest and the earlier ones the
+/// chain applied here hasn't passed), which `chain::receive_run` holds its change
+/// files to.
 pub fn floor_of(
     store: &DeviceStore,
     library: &Id16,
     device: &DeviceId,
-) -> Result<Option<(u64, Hash32)>> {
+) -> Result<Vec<(u64, Hash32)>> {
     Ok(match store.library(library) {
-        Some(state) => state
-            .floors
-            .get(&device.to_string())
-            .map(Floor::change)
-            .transpose()?
-            .flatten(),
-        None => None,
+        Some(state) => match state.floors.get(&device.to_string()) {
+            Some(f) => f.checkpoints()?,
+            None => Vec::new(),
+        },
+        None => Vec::new(),
     })
+}
+
+/// SP18: once the chain applied here reaches `applied` (checked against the
+/// checkpoints by `chain::receive_run`), the earlier checkpoints at or below it
+/// are passed and leave the floor. The store changes only once the save succeeds.
+pub fn prune_floors(
+    ks: &dyn Keystore,
+    store: &mut DeviceStore,
+    library: &Id16,
+    device: &DeviceId,
+    applied: u64,
+) -> Result<()> {
+    let mut next = store.clone();
+    let Some(f) = next
+        .library_mut(library)
+        .and_then(|st| st.floors.get_mut(&device.to_string()))
+    else {
+        return Ok(());
+    };
+    let before = f.earlier.len();
+    f.earlier.retain(|c| c.s > applied);
+    if f.earlier.len() != before {
+        next.save(ks)?;
+        *store = next;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1006,7 +1039,16 @@ mod tests {
             &no_files,
         )
         .unwrap();
+        // The checkpoint it replaced stays until the chain applied here passes it.
         let saved = DeviceStore::load(&ks).unwrap();
-        assert_eq!(floor_of(&saved, &LIB, &pd).unwrap(), Some((7, h(7))));
+        assert_eq!(
+            floor_of(&saved, &LIB, &pd).unwrap(),
+            vec![(5, h(5)), (7, h(7))]
+        );
+        prune_floors(&ks, &mut store, &LIB, &pd, 4).unwrap();
+        assert_eq!(floor_of(&store, &LIB, &pd).unwrap().len(), 2);
+        prune_floors(&ks, &mut store, &LIB, &pd, 5).unwrap();
+        let pruned = DeviceStore::load(&ks).unwrap();
+        assert_eq!(floor_of(&pruned, &LIB, &pd).unwrap(), vec![(7, h(7))]);
     }
 }

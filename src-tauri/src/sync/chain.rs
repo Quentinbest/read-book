@@ -401,9 +401,10 @@ pub fn open_change(
 /// SP14: a peer's change file, checked and, when it is the next in the chain this
 /// device holds, received (SY9–SY13). One beyond a gap waits; one that doesn't
 /// follow the chain held, or differs from one already held at its sequence, is
-/// refused. SP18: so is one at the sequence of the peer's floor (`floor`, from
-/// `device_file::floor_of`) with another hash, since the chain must lead to it,
-/// and one below the floor waits for the run that shows it does (`receive_run`).
+/// refused. SP18: so is one at the sequence of a checkpoint of the peer's floor
+/// (`floor`, from `device_file::floor_of`) with another hash, since the chain must
+/// pass it, and one below a checkpoint waits for the run that shows it does
+/// (`receive_run`).
 /// `bodies` are the blobs its versions name, as fetched.
 #[allow(clippy::too_many_arguments)]
 pub fn receive_change(
@@ -412,7 +413,7 @@ pub fn receive_change(
     bytes: &[u8],
     device: &DeviceId,
     key: &[u8; 32],
-    floor: Option<(u64, Hash32)>,
+    floor: &[(u64, Hash32)],
     bodies: Vec<Vec<u8>>,
     now_ms: i64,
 ) -> Result<Received> {
@@ -430,9 +431,11 @@ pub fn receive_change(
 
 /// SP14, SP18: a run of a peer's change files, in sequence order, each with the
 /// blobs its versions name. Each is received as `receive_change` says. While this
-/// device holds less of the peer's chain than its floor, though, none is applied
-/// until the run is seen to lead to the floor: consecutive from what is held,
-/// linked by `prev`, and reaching the floor's sequence with its hash. A run that
+/// device holds less of the peer's chain than a checkpoint of its floor, though,
+/// none is applied until the run is seen to lead to it: consecutive from what is
+/// held, linked by `prev`, matching every checkpoint it passes, and reaching the
+/// lowest one not yet passed. Every checkpoint the chain held has passed must be
+/// the change held there. A run that
 /// stops short waits, whole; one that leads anywhere else is refused, whole, so a
 /// fork below the floor never reaches the library. Only the run's sequences,
 /// links and hashes are kept while it is checked; each change is decoded again,
@@ -442,7 +445,7 @@ pub fn receive_run(
     lib: &Library,
     device: &DeviceId,
     key: &[u8; 32],
-    floor: Option<(u64, Hash32)>,
+    floor: &[(u64, Hash32)],
     files: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
     now_ms: i64,
 ) -> Result<Vec<Received>> {
@@ -463,37 +466,34 @@ pub fn receive_run(
         })
         .collect::<Result<Vec<_>>>()?;
     let have = apply::seen(conn, lib, *device)?;
-    if let Some((s, h)) = floor {
-        // Already past the floor: the change held at its sequence must be the one
-        // it names, or this device followed another chain than the floor's.
+    // Checkpoints the chain held has passed must be the changes held there, or
+    // this device followed another chain than the floor's.
+    for &(s, h) in floor {
         if have >= s && held_hash(conn, lib, device, s)?.is_some_and(|held| held != h) {
             return Err(ChainError::Link);
         }
-        if have < s {
-            let mut prev = held_hash(conn, lib, device, have)?;
-            if have > 0 && prev.is_none() {
+    }
+    if let Some(lowest) = floor.iter().map(|(s, _)| *s).filter(|s| *s > have).min() {
+        let mut prev = held_hash(conn, lib, device, have)?;
+        if have > 0 && prev.is_none() {
+            return Err(ChainError::Link);
+        }
+        let mut reached = false;
+        for (next, c) in (have + 1..).zip(opened.iter().filter(|c| c.seq > have)) {
+            if c.seq != next {
+                break;
+            }
+            if c.prev != prev {
                 return Err(ChainError::Link);
             }
-            let mut reached = false;
-            for (next, c) in (have + 1..).zip(opened.iter().filter(|c| c.seq > have)) {
-                if c.seq != next {
-                    break;
-                }
-                if c.prev != prev {
-                    return Err(ChainError::Link);
-                }
-                if c.seq == s {
-                    if c.hash != h {
-                        return Err(ChainError::Link);
-                    }
-                    reached = true;
-                    break;
-                }
-                prev = Some(c.hash);
+            if floor.iter().any(|(s, h)| *s == c.seq && *h != c.hash) {
+                return Err(ChainError::Link);
             }
-            if !reached {
-                return Ok(opened.iter().map(|_| Received::Waits).collect());
-            }
+            reached |= c.seq == lowest;
+            prev = Some(c.hash);
+        }
+        if !reached {
+            return Ok(opened.iter().map(|_| Received::Waits).collect());
         }
     }
     let mut out = Vec::with_capacity(files.len());
@@ -529,12 +529,12 @@ fn held_hash(
 fn receive_opened(
     conn: &Connection,
     lib: &Library,
-    floor: Option<(u64, Hash32)>,
+    floor: &[(u64, Hash32)],
     c: Change,
     bodies: Vec<Vec<u8>>,
     now_ms: i64,
 ) -> Result<Received> {
-    if matches!(floor, Some((s, h)) if s == c.seq && h != c.hash) {
+    if floor.iter().any(|(s, h)| *s == c.seq && *h != c.hash) {
         return Err(ChainError::Link);
     }
     let have = apply::seen(conn, lib, c.device)?;
@@ -623,7 +623,7 @@ mod tests {
             &one.bytes,
             &la.device,
             &key,
-            None,
+            &[],
             bodies(&a, &one, &la),
             now,
         )
@@ -641,7 +641,7 @@ mod tests {
             &two.bytes,
             &la.device,
             &key,
-            None,
+            &[],
             bodies(&a, &two, &la),
             now,
         )
@@ -655,7 +655,7 @@ mod tests {
                 &two.bytes,
                 &la.device,
                 &key,
-                None,
+                &[],
                 vec![],
                 now
             )
@@ -687,7 +687,7 @@ mod tests {
                 &c.bytes,
                 &la.device,
                 &key,
-                None,
+                &[],
                 bodies(&a, c, &la),
                 now,
             )
@@ -695,7 +695,7 @@ mod tests {
         }
         // A newer floor at change 1 that isn't the change 1 held: change 3 is refused.
         let three = &changes[2];
-        let wrong = Some((1, Hash32([6; 32])));
+        let wrong: &[(u64, Hash32)] = &[(1, Hash32([6; 32]))];
         assert!(matches!(
             receive_change(
                 b.conn(),
@@ -710,7 +710,7 @@ mod tests {
             Err(ChainError::Link)
         ));
         // With the floor the chain held does reach, it's received.
-        let right = Some((1, changes[0].hash));
+        let right: &[(u64, Hash32)] = &[(1, changes[0].hash)];
         let got = receive_change(
             b.conn(),
             &lb,
@@ -735,7 +735,7 @@ mod tests {
             .unwrap();
         let one = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
         // SP18: the floor says change 1 has another hash: the chain must lead to it.
-        let floor = Some((1, Hash32([6; 32])));
+        let floor: &[(u64, Hash32)] = &[(1, Hash32([6; 32]))];
         assert!(matches!(
             receive_change(
                 b.conn(),
@@ -756,12 +756,44 @@ mod tests {
             &one.bytes,
             &la.device,
             &key,
-            Some((1, one.hash)),
+            &[(1, one.hash)],
             bodies(&a, &one, &la),
             now,
         )
         .unwrap();
         assert!(matches!(got, Received::Applied { .. }), "{got:?}");
+    }
+
+    #[test]
+    fn a_fork_past_an_earlier_checkpoint_is_refused() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let (b, lb, _kb, _sb) = signed_device("book-b");
+        let now = crate::store::now_ms();
+        let key = key_of(&sa, &la);
+        let akey = sa.library(&la.id).unwrap().key().unwrap();
+        let writer = sa.library(&la.id).unwrap().writer_id().unwrap();
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        a.save_annotation(&highlight("book-a", Some("second"), 1_760_000_002_000))
+            .unwrap();
+        let two = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        // A's key, stolen, signs a fork from the start: 1, 2 and 3 of its own.
+        let f1 = sign_change(&akey, &la.id, &writer, 1, None, &[]);
+        let f2 = sign_change(&akey, &la.id, &writer, 2, Some(f1.hash), &[]);
+        let f3 = sign_change(&akey, &la.id, &writer, 3, Some(f2.hash), &[]);
+        // B had the true change 2 as its floor; a newer device file named the fork's
+        // 3, and the floor kept 2 as an earlier checkpoint.
+        let floor: &[(u64, Hash32)] = &[(2, two.hash), (3, f3.hash)];
+        let fork: Vec<(Vec<u8>, Vec<Vec<u8>>)> = [&f1, &f2, &f3]
+            .iter()
+            .map(|c| (c.bytes.clone(), vec![]))
+            .collect();
+        assert!(matches!(
+            receive_run(b.conn(), &lb, &la.device, &key, floor, fork, now),
+            Err(ChainError::Link)
+        ));
+        assert_eq!(apply::seen(b.conn(), &lb, la.device).unwrap(), 0);
     }
 
     #[test]
@@ -778,7 +810,7 @@ mod tests {
         a.save_annotation(&highlight("book-a", Some("second"), 1_760_000_002_000))
             .unwrap();
         let two = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
-        let floor = Some((2, two.hash));
+        let floor: &[(u64, Hash32)] = &[(2, two.hash)];
         // A fork of A's key below the floor: its own 1 and a 2 after it.
         let note = |text: &str| {
             json!({
@@ -844,7 +876,7 @@ mod tests {
             &one.bytes,
             &la.device,
             &key,
-            None,
+            &[],
             bodies(&a, &one, &la),
             now,
         )
@@ -858,7 +890,7 @@ mod tests {
                 &forked.bytes,
                 &la.device,
                 &key,
-                None,
+                &[],
                 vec![],
                 now
             ),
@@ -873,7 +905,7 @@ mod tests {
                 &other_one.bytes,
                 &la.device,
                 &key,
-                None,
+                &[],
                 vec![],
                 now
             ),
@@ -888,7 +920,7 @@ mod tests {
                 &three.bytes,
                 &la.device,
                 &key,
-                None,
+                &[],
                 vec![],
                 now
             )
@@ -1058,7 +1090,7 @@ mod tests {
             &first.bytes,
             &la.device,
             &key,
-            None,
+            &[],
             bodies(&a, &first, &la),
             now,
         )
@@ -1101,7 +1133,7 @@ mod tests {
                 "{ks:?}"
             );
             keys.extend(ks);
-            receive_change(b.conn(), &lb, &c.bytes, &la.device, &key, None, vec![], now).unwrap();
+            receive_change(b.conn(), &lb, &c.bytes, &la.device, &key, &[], vec![], now).unwrap();
         }
         // Every version went out once, in order, and B applied the deletion.
         assert_eq!(keys.len(), 22);
