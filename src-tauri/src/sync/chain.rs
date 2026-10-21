@@ -207,27 +207,40 @@ fn publish_within(
 
 /// SP15: what this device signed and hasn't yet seen in storage, to upload again,
 /// oldest first. Each is opened as a peer would open it, with this device's key,
-/// and must sit at the path its sequence names. One that doesn't is an error,
-/// never skipped or uploaded: its sequence is used, so nothing else would publish
-/// it, and a peer would refuse it.
+/// and must sit at the path its sequence names. Together they are the end of the
+/// chain the device store records: in order, each linked to the one before when
+/// they are consecutive, and the newest the stored head itself. One that doesn't
+/// fit is an error, never skipped or uploaded: its sequence is used, so nothing
+/// else would publish it, and a peer would refuse it or what follows it.
 pub fn pending(store: &DeviceStore, lib: &Id16) -> Result<Vec<(String, Vec<u8>)>> {
     let Some(state) = store.library(lib) else {
         return Ok(Vec::new());
     };
     let device = state.device_id()?;
     let key = state.key()?.public();
-    state
-        .unsent
-        .iter()
-        .map(|u| {
-            let bytes = u.bytes().ok_or(StoreError::Unreadable)?;
-            let c = open_change(&bytes, lib, &device, &key)?;
-            if u.path != change_path(&device, c.seq) || c.seq > state.seq {
-                return Err(ChainError::Store(StoreError::Unreadable));
+    let unreadable = || ChainError::Store(StoreError::Unreadable);
+    let mut out = Vec::with_capacity(state.unsent.len());
+    let mut before: Option<Change> = None;
+    for u in &state.unsent {
+        let bytes = u.bytes().ok_or(StoreError::Unreadable)?;
+        let c = open_change(&bytes, lib, &device, &key)?;
+        if u.path != change_path(&device, c.seq) {
+            return Err(unreadable());
+        }
+        if let Some(b) = &before {
+            if c.seq <= b.seq || (c.seq == b.seq + 1 && c.prev != Some(b.hash)) {
+                return Err(unreadable());
             }
-            Ok((u.path.clone(), bytes))
-        })
-        .collect()
+        }
+        out.push((u.path.clone(), bytes));
+        before = Some(c);
+    }
+    if let Some(last) = before {
+        if last.seq != state.seq || Some(last.hash) != state.last_hash()? {
+            return Err(unreadable());
+        }
+    }
+    Ok(out)
 }
 
 /// SP15: storage holds `path` now; its bytes leave the device store.
@@ -778,6 +791,44 @@ mod tests {
         let payload = e.payload.len() + MAX_VERSION_BYTES;
         let around = empty.bytes.len() - b64url_encode(&e.payload).len();
         assert!(payload.div_ceil(3) * 4 + around <= MAX_CHANGE_BYTES);
+    }
+
+    #[test]
+    fn queued_changes_must_end_at_the_stored_head() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let one = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        a.save_annotation(&highlight("book-a", Some("second"), 1_760_000_002_000))
+            .unwrap();
+        let two = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        assert_eq!(pending(&sa, &la.id).unwrap().len(), 2);
+        // A head whose hash isn't the newest queued change's.
+        let mut wrong = sa.clone();
+        wrong.library_mut(&la.id).unwrap().hash = Some(Hash32([9; 32]).to_string());
+        assert!(pending(&wrong, &la.id).is_err());
+        // Queued out of order, or a sequence the head is past with nothing after it.
+        let mut swapped = sa.clone();
+        swapped.library_mut(&la.id).unwrap().unsent.reverse();
+        assert!(pending(&swapped, &la.id).is_err());
+        let mut behind = sa.clone();
+        behind.library_mut(&la.id).unwrap().unsent.pop();
+        assert!(pending(&behind, &la.id).is_err());
+        // A change 2 that doesn't link to the queued change 1.
+        let key = sa.library(&la.id).unwrap().key().unwrap();
+        let writer = sa.library(&la.id).unwrap().writer_id().unwrap();
+        let forked = sign_change(&key, &la.id, &writer, 2, Some(Hash32([7; 32])), &[]);
+        let mut unlinked = sa.clone();
+        let st = unlinked.library_mut(&la.id).unwrap();
+        st.unsent[1].bytes = b64url_encode(&forked.bytes);
+        st.hash = Some(forked.hash.to_string());
+        assert!(pending(&unlinked, &la.id).is_err());
+        // Once 1 is in storage, 2 alone is still the end of the chain.
+        uploaded(&ka, &mut sa, &la.id, &one.path).unwrap();
+        assert_eq!(
+            pending(&sa, &la.id).unwrap(),
+            vec![(two.path.clone(), two.bytes.clone())]
+        );
     }
 
     #[test]
