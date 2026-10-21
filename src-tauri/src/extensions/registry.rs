@@ -618,6 +618,10 @@ pub fn net_fetch(
         .user_agent("Linen")
         // An error status is a response the extension reads, not a failure.
         .http_status_as_error(false)
+        // Only the host the extension was granted: never a proxy named in the
+        // environment (`HTTP_PROXY`, `ALL_PROXY`), which ureq 3 would otherwise use,
+        // so nothing a request carries goes to a host it wasn't granted.
+        .proxy(None)
         .build()
         .into();
     let mut sent = headers;
