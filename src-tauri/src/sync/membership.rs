@@ -402,9 +402,21 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     // Code enrollments found overtaken by a sealed head judged after them: judged
     // again as refused, until nothing changes.
     let mut overtaken: BTreeSet<Hash32> = BTreeSet::new();
+    // SP20: the cap is counted over the whole graph, so removals judged later in it
+    // make room for enrollments judged earlier: each pass counts the devices the
+    // previous pass found removed. A bound on passes keeps a pathological graph
+    // from looping; its last pass stands.
+    let mut freed: BTreeSet<DeviceId> = BTreeSet::new();
+    let mut passes = 0;
     loop {
-        let verdicts = judge(&g, &overtaken);
+        passes += 1;
+        let verdicts = judge(&g, &overtaken, &freed);
         let all: BTreeSet<Hash32> = g.order.iter().copied().collect();
+        let removed = g.state(&verdicts, &all).removed;
+        if removed != freed && passes < MAX_PASSES {
+            freed = removed;
+            continue;
+        }
         let sealed = g.sealed(&verdicts, &all);
         let newly: Vec<Hash32> = verdicts
             .iter()
@@ -448,7 +460,14 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     }
 }
 
-fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdict> {
+/// Passes `compute` makes, at most, for the cap to see removals judged later.
+const MAX_PASSES: usize = 8;
+
+fn judge(
+    g: &Graph<'_>,
+    overtaken: &BTreeSet<Hash32>,
+    freed: &BTreeSet<DeviceId>,
+) -> BTreeMap<Hash32, Verdict> {
     let inputs = g.inputs;
     let seen = |h: &Hash32| inputs.first_seen.get(h).copied().unwrap_or(inputs.now_ms);
     let recent = |h: &Hash32| !inputs.checkpoint.contains(h) && seen(h) > inputs.now_ms - DAY_MS;
@@ -494,10 +513,13 @@ fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdic
                     Some(s) => {
                         let lineage = s.lineage;
                         // The lineage's enrollments held here, by their `n`.
+                        // Only enrollments that count: a signed-looking record whose
+                        // enroller's signature doesn't hold proves no history.
                         let by_n = |k: u64| {
-                            inputs.records.iter().find(|(_, o)| {
-                                matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
-                                    if *m == k && global.members.get(b).map(|x| x.lineage) == Some(lineage))
+                            inputs.records.iter().find(|(x, o)| {
+                                verdicts.get(*x) == Some(&Verdict::Counts)
+                                    && matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
+                                        if *m == k && global.members.get(b).map(|x| x.lineage) == Some(lineage))
                             })
                         };
                         // Its `n` follows the lineage's `n − 1`, which this device must
@@ -510,7 +532,7 @@ fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdic
                             || !enrollment_quota(g, &verdicts, &global, h, lineage, &recent);
                         if waits_for_quota {
                             Verdict::Waits(Wait::Quota)
-                        } else if global.trusted_count() >= MAX_DEVICES {
+                        } else if cap_count(&global, freed) >= MAX_DEVICES {
                             Verdict::Waits(Wait::Cap)
                         } else {
                             Verdict::Counts
@@ -543,7 +565,7 @@ fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdic
                 }
                 Some(_) if introduced(key, device) => Verdict::Refused(Refusal::KeyAgain),
                 Some(_) if !inputs.confirmed.contains(h) => Verdict::Waits(Wait::Unconfirmed),
-                Some(_) if global.trusted_count() >= MAX_DEVICES => Verdict::Waits(Wait::Cap),
+                Some(_) if cap_count(&global, freed) >= MAX_DEVICES => Verdict::Waits(Wait::Cap),
                 Some(_) => Verdict::Counts,
             },
             Body::Rotate {
@@ -632,6 +654,16 @@ fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdic
         verdicts.insert(*h, v);
     }
     verdicts
+}
+
+/// The devices the cap counts: those trusted so far, less those a counting removal
+/// anywhere in the graph takes away (`freed`, from the previous pass).
+fn cap_count(global: &State, freed: &BTreeSet<DeviceId>) -> usize {
+    global
+        .members
+        .keys()
+        .filter(|d| global.trusted(d).is_some() && !freed.contains(*d))
+        .count()
 }
 
 /// SP20 (1): an enrollment by `lineage` also counts against the quota of each of
@@ -1070,6 +1102,77 @@ mod tests {
             l.compute_after(g, &accepted).unwrap_err(),
             Stale { missing: vec![rm] }
         );
+    }
+
+    #[test]
+    fn a_removal_later_in_the_graph_makes_room_under_the_cap() {
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        let mut prev = g;
+        for i in 0..11u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        // The thirteenth waits; then a removal built on it removes one of the twelve.
+        let waiting = l.enroll(prev, &a, &k(50), 12, OLD + 20);
+        let rm = l.remove(waiting, &a, &c0, &k(101), &[&k(15)], OLD + 21);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&waiting), Some(Verdict::Counts));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+        // Two waiting for one slot: the one judged first takes it.
+        let mut l = Lib::default();
+        let g = l.genesis(&a, &c0);
+        let mut prev = g;
+        for i in 0..11u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        let first = l.enroll(prev, &a, &k(50), 12, OLD + 20);
+        let second = l.enroll(first, &a, &k(51), 13, OLD + 21);
+        let rm = l.remove(second, &a, &c0, &k(101), &[&k(15)], OLD + 22);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&first), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&second), Some(Verdict::Waits(Wait::Cap)));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+    }
+
+    #[test]
+    fn a_forged_enrollment_proves_no_quota_history() {
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        // A record claiming to be A's enrollment 1, signed by another key.
+        let new = k(2);
+        let reveal = json::canonical(&json!({
+            "type": "enroll-reveal", "library": LIB.to_string(),
+            "applicant": new.device().to_string(), "enroller": a.device().to_string(),
+        }));
+        let pop = new.sign(&envelope::message(
+            "enroll-reveal",
+            &LIB,
+            &Signer::Device(new.device()),
+            &Place::default(),
+            &crate::sync::crypto::payload_hash(&reveal),
+        ));
+        let forger = k(99);
+        let forged = l.add(
+            "enroll",
+            json!({ "prev": g.to_string(), "device": new.device().to_string(),
+                    "key": b64url_encode(&new.public()), "label": "new", "clock": [NOW as u64, 1],
+                    "by": a.device().to_string(), "n": 1, "sas": "dd".repeat(32),
+                    "reveal": b64url_encode(&reveal), "pop": b64url_encode(&pop) }),
+            &[(&forger, Signer::Device(a.device()), 1)],
+            OLD,
+        );
+        // A's real enrollment 2 can't lean on it.
+        let second = l.enroll(forged, &a, &k(3), 2, OLD + 1);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&forged),
+            Some(Verdict::Refused(Refusal::Signature))
+        );
+        assert_eq!(m.verdict(&second), Some(Verdict::Waits(Wait::Quota)));
     }
 
     #[test]
