@@ -9,9 +9,9 @@
 //! by `scripts/sync-vectors.py` from implementations other than these (libsodium,
 //! the reference Argon2, Python's hashlib), checks each derivation.
 //!
-//! PROVISIONAL: where the protocol leaves the bytes open, the reading here is
-//! Delegated to Claude, not approved (`docs/decisions.md`, “SP4's exact inputs and
-//! the envelope”): each such place says so.
+//! Where the protocol leaves the bytes open, the reading here is the one the owner
+//! approved 2026-10-21 (`docs/decisions.md`, “SP4's exact inputs and the
+//! envelope”); each such place cites its item.
 
 use super::ids::{device_id, identity_hash, DeviceId, Hash32, Id16};
 use chacha20poly1305::{aead::Aead, aead::Payload, KeyInit, XChaCha20Poly1305};
@@ -130,7 +130,7 @@ fn crockford(data: &[u8], nbits: usize) -> String {
 
 /// SP4: the fingerprint shown to the reader, the first 10 bytes of
 /// `H("linen-sync/fpr/v1" ‖ key)` as 4 groups of 4 Crockford characters.
-/// PROVISIONAL: the groups separated by spaces (decisions.md, (4)).
+/// The groups are separated by spaces (decisions.md, (4)).
 pub fn fingerprint(public: &[u8; 32]) -> String {
     let h = Input::domain("linen-sync/fpr/v1").fixed(public).hash();
     groups(&crockford(&h.0[..10], 80), ' ')
@@ -255,8 +255,8 @@ impl RecoveryCode {
     }
 
     /// The 2 check characters: the first 10 bits of
-    /// `H("linen-sync/code-check/v1" ‖ the 26 characters)`. PROVISIONAL: the
-    /// characters as ASCII, a fixed field with no length (decisions.md, (3)).
+    /// `H("linen-sync/code-check/v1" ‖ the 26 characters)`, the characters as
+    /// ASCII, a fixed field with no length (decisions.md, (3)).
     fn check(chars: &[u8; 26]) -> String {
         let h = Input::domain("linen-sync/code-check/v1")
             .fixed(chars)
@@ -298,8 +298,8 @@ impl RecoveryCode {
     }
 
     /// SP22: `root`, Argon2id over the 26 characters, salted with the library and
-    /// the sealed head's 16-byte `nonce`. PROVISIONAL: the password is the 26
-    /// characters as ASCII, without the check (decisions.md, (3)).
+    /// the sealed head's 16-byte `nonce`. The password is the 26 characters as
+    /// ASCII, without the check (decisions.md, (3)).
     pub fn root(&self, library: &Id16, nonce: &[u8; 16]) -> [u8; 32] {
         let salt = Input::domain("linen-sync/code-salt/v1")
             .fixed(&library.0)
@@ -425,8 +425,7 @@ pub fn sas(t: &Hash32) -> u32 {
     (u64::from_be_bytes(first) % 1_000_000) as u32
 }
 
-/// As it is shown: `472 913`. PROVISIONAL: zero-padded, two groups of three
-/// (decisions.md, (4)).
+/// As it is shown: `472 913`, zero-padded, two groups of three (decisions.md, (4)).
 pub fn sas_display(code: u32) -> String {
     format!("{:03} {:03}", code / 1000, code % 1000)
 }

@@ -59,9 +59,9 @@ pub struct Place {
     pub vroot: Option<Hash32>,
 }
 
-/// SP6: the bytes a signature is over. PROVISIONAL: the domain and the type are
-/// length-prefixed like every variable field, and the two `0x00` bytes are
-/// literal (decisions.md, “SP4's exact inputs and the envelope”, (1)).
+/// SP6: the bytes a signature is over. The domain and the type are length-prefixed
+/// like every variable field, and the two `0x00` bytes are literal (decisions.md,
+/// “SP4's exact inputs and the envelope”, (1)).
 pub fn message(
     type_: &str,
     library: &Id16,
@@ -94,8 +94,7 @@ pub fn vlist_entry(key: &str, version: &Hash32) -> [u8; 48] {
 }
 
 /// SP6: `vroot`, `H("linen-sync/vlist/v1" ‖ the version list)`, the list in the
-/// file's order. PROVISIONAL: the list is one variable field, length-prefixed
-/// (decisions.md, (2)).
+/// file's order, as one variable field, length-prefixed (decisions.md, (2)).
 pub fn vroot(entries: &[[u8; 48]]) -> Hash32 {
     Input::domain("linen-sync/vlist/v1")
         .var(&entries.concat())
@@ -185,8 +184,8 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
     let v = json::parse(bytes, Numbers::Integers).map_err(EnvelopeError::Json)?;
     let o = v.as_object().ok_or(EnvelopeError::Shape)?;
     // Nothing in the envelope beyond its four fields is signed, so nothing else is
-    // read: an unknown field is refused, not kept. PROVISIONAL, as are refusing no
-    // signatures and a signer named twice (decisions.md, (5)).
+    // read: an unknown field is refused, not kept, as are no signatures and a
+    // signer named twice (decisions.md, (5)).
     if !exactly(o, &["sync", "type", "payload", "sigs"]) {
         return Err(EnvelopeError::Shape);
     }
@@ -254,7 +253,7 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
 impl Envelope {
     /// Whether `by` signed this file for `place`, with `key`. A device's key must be
     /// the one its ID names (SP1); a code key is whatever the sealed head names.
-    /// PROVISIONAL: checked here, at every verification (decisions.md, (6)).
+    /// Checked here, at every verification (decisions.md, (6)).
     pub fn verified(&self, by: &Signer, key: &[u8; 32], library: &Id16, place: &Place) -> bool {
         if let Signer::Device(d) = by {
             if device_id(key) != *d {

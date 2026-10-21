@@ -39,8 +39,8 @@ ammonia = "4"
 security-framework = "3"
 # SP4's one suite (docs/sync-protocol.md): signatures, key agreement, sealing,
 # derivation and the recovery code. getrandom is the OS's CSPRNG (SP1).
-# PROVISIONAL: the crates and their releases are Delegated to Claude, not approved
-# (docs/decisions.md, "SP4's exact inputs and the envelope", (7)).
+# The crates and their releases: docs/decisions.md, "SP4's exact inputs and the
+# envelope", (7), approved 2026-10-21.
 ed25519-dalek = "3.0.0"
 x25519-dalek = { version = "3.0.0", features = ["static_secrets"] }
 chacha20poly1305 = { version = "0.11.0", default-features = false, features = ["alloc"] }
