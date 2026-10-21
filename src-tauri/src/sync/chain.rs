@@ -221,7 +221,12 @@ pub fn pending(store: &DeviceStore, lib: &Id16) -> Result<Vec<(String, Vec<u8>)>
     let unreadable = || ChainError::Store(StoreError::Unreadable);
     let mut out = Vec::with_capacity(state.unsent.len());
     let mut before: Option<Change> = None;
-    for u in &state.unsent {
+    // Device files share the list (SP28); `device_file::pending` checks those.
+    for u in state
+        .unsent
+        .iter()
+        .filter(|u| u.path.starts_with("changes/"))
+    {
         let bytes = u.bytes().ok_or(StoreError::Unreadable)?;
         let c = open_change(&bytes, lib, &device, &key)?;
         if u.path != change_path(&device, c.seq) {
@@ -377,17 +382,24 @@ pub fn open_change(
 /// SP14: a peer's change file, checked and, when it is the next in the chain this
 /// device holds, received (SY9–SY13). One beyond a gap waits; one that doesn't
 /// follow the chain held, or differs from one already held at its sequence, is
-/// refused. `bodies` are the blobs its versions name, as fetched.
+/// refused. SP18: so is one at the sequence of the peer's floor (`floor`, from
+/// `device_file::floor_of`) with another hash, since the chain must lead to it.
+/// `bodies` are the blobs its versions name, as fetched.
+#[allow(clippy::too_many_arguments)]
 pub fn receive_change(
     conn: &Connection,
     lib: &Library,
     bytes: &[u8],
     device: &DeviceId,
     key: &[u8; 32],
+    floor: Option<(u64, Hash32)>,
     bodies: Vec<Vec<u8>>,
     now_ms: i64,
 ) -> Result<Received> {
     let c = open_change(bytes, &lib.id, device, key)?;
+    if matches!(floor, Some((s, h)) if s == c.seq && h != c.hash) {
+        return Err(ChainError::Link);
+    }
     let held = |seq: u64| -> Result<Option<Hash32>> {
         let h: Option<String> = conn
             .query_row(
@@ -485,6 +497,7 @@ mod tests {
             &one.bytes,
             &la.device,
             &key,
+            None,
             bodies(&a, &one, &la),
             now,
         )
@@ -502,6 +515,7 @@ mod tests {
             &two.bytes,
             &la.device,
             &key,
+            None,
             bodies(&a, &two, &la),
             now,
         )
@@ -509,9 +523,58 @@ mod tests {
         assert_eq!(note_of(&b, "book-b"), Some(Some("second".into())));
         // The same file again is a repeat.
         assert_eq!(
-            receive_change(b.conn(), &lb, &two.bytes, &la.device, &key, vec![], now).unwrap(),
+            receive_change(
+                b.conn(),
+                &lb,
+                &two.bytes,
+                &la.device,
+                &key,
+                None,
+                vec![],
+                now
+            )
+            .unwrap(),
             Received::Repeat
         );
+    }
+
+    #[test]
+    fn a_change_at_the_floors_sequence_must_have_its_hash() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let (b, lb, _kb, _sb) = signed_device("book-b");
+        let now = crate::store::now_ms();
+        let key = key_of(&sa, &la);
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let one = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        // SP18: the floor says change 1 has another hash: the chain must lead to it.
+        let floor = Some((1, Hash32([6; 32])));
+        assert!(matches!(
+            receive_change(
+                b.conn(),
+                &lb,
+                &one.bytes,
+                &la.device,
+                &key,
+                floor,
+                vec![],
+                now
+            ),
+            Err(ChainError::Link)
+        ));
+        // With the floor it does name, it's received.
+        let got = receive_change(
+            b.conn(),
+            &lb,
+            &one.bytes,
+            &la.device,
+            &key,
+            Some((1, one.hash)),
+            bodies(&a, &one, &la),
+            now,
+        )
+        .unwrap();
+        assert!(matches!(got, Received::Applied { .. }), "{got:?}");
     }
 
     #[test]
@@ -531,6 +594,7 @@ mod tests {
             &one.bytes,
             &la.device,
             &key,
+            None,
             bodies(&a, &one, &la),
             now,
         )
@@ -538,7 +602,16 @@ mod tests {
         // Signed by A's key, but after another first change: refused.
         let forked = sign_change(&akey, &la.id, &writer, 2, Some(Hash32([7; 32])), &[]);
         assert!(matches!(
-            receive_change(b.conn(), &lb, &forked.bytes, &la.device, &key, vec![], now),
+            receive_change(
+                b.conn(),
+                &lb,
+                &forked.bytes,
+                &la.device,
+                &key,
+                None,
+                vec![],
+                now
+            ),
             Err(ChainError::Link)
         ));
         // Another file for a sequence already held: refused, not a repeat.
@@ -550,6 +623,7 @@ mod tests {
                 &other_one.bytes,
                 &la.device,
                 &key,
+                None,
                 vec![],
                 now
             ),
@@ -558,7 +632,17 @@ mod tests {
         // One beyond a gap waits.
         let three = sign_change(&akey, &la.id, &writer, 3, Some(Hash32([7; 32])), &[]);
         assert_eq!(
-            receive_change(b.conn(), &lb, &three.bytes, &la.device, &key, vec![], now).unwrap(),
+            receive_change(
+                b.conn(),
+                &lb,
+                &three.bytes,
+                &la.device,
+                &key,
+                None,
+                vec![],
+                now
+            )
+            .unwrap(),
             Received::Waits
         );
     }
@@ -724,6 +808,7 @@ mod tests {
             &first.bytes,
             &la.device,
             &key,
+            None,
             bodies(&a, &first, &la),
             now,
         )
@@ -766,7 +851,7 @@ mod tests {
                 "{ks:?}"
             );
             keys.extend(ks);
-            receive_change(b.conn(), &lb, &c.bytes, &la.device, &key, vec![], now).unwrap();
+            receive_change(b.conn(), &lb, &c.bytes, &la.device, &key, None, vec![], now).unwrap();
         }
         // Every version went out once, in order, and B applied the deletion.
         assert_eq!(keys.len(), 22);
