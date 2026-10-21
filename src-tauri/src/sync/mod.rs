@@ -9,8 +9,10 @@
 pub mod a9;
 pub mod apply;
 pub mod backup;
+pub mod chain;
 pub mod clock;
 pub mod crypto;
+pub mod device_store;
 pub mod envelope;
 pub mod guard;
 pub mod identity;
