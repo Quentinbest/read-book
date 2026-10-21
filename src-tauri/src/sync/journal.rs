@@ -13,7 +13,9 @@
 use super::clock::{Clock, Hlc};
 use super::ids::{identity_hash, DeviceId, Hash32, Id16};
 use super::merge::{Outcome, Placed, Record};
-use super::record::{check_version, Checked, Entry, Key, RecordError, Version, FORMAT};
+use super::record::{
+    check_version, Checked, Content, Entry, Key, Kind, RecordError, Version, FORMAT,
+};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashSet};
@@ -675,6 +677,20 @@ pub fn take_unsent(
     lib: &Library,
     last_seq: u64,
 ) -> Result<Option<(u64, Vec<Version>)>> {
+    take_unsent_within(conn, lib, last_seq, usize::MAX)
+}
+
+/// `take_unsent`, numbering only the oldest unsent versions whose written form
+/// fits in `max_bytes` (SP8: a change file is at most 8 MB, so a backlog becomes
+/// several changes); the rest stay unsent for the next. A highlight's tombstone
+/// and its note's go in one change (SP13), so they are taken together. The first
+/// group is always taken, whatever its size.
+pub fn take_unsent_within(
+    conn: &Connection,
+    lib: &Library,
+    last_seq: u64,
+    max_bytes: usize,
+) -> Result<Option<(u64, Vec<Version>)>> {
     let tx = conn.unchecked_transaction()?;
     let journalled = tx
         .query_row(
@@ -707,18 +723,64 @@ pub fn take_unsent(
         // store rolled back. SY7's start check rotates before anything is published.
         return Err(JournalError::StoreBehind(last_seq));
     }
-    let versions = unsent(&tx, lib)?;
-    if versions.is_empty() {
+    // The rows `unsent` chooses: never an edit held for the reader (#109).
+    let rows: Vec<(i64, String)> = tx
+        .prepare(
+            "SELECT rowid, raw FROM sync_versions
+             WHERE library = ?1 AND seq IS NULL AND applied != -3 ORDER BY rowid",
+        )?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    if rows.is_empty() {
         return Ok(None);
     }
+    let versions: Vec<(i64, Version)> = rows
+        .into_iter()
+        .map(|(rowid, raw)| Ok((rowid, check(&raw, lib.device)?)))
+        .collect::<Result<_>>()?;
+    // SP13: a highlight's tombstone and its note's tombstone are one group.
+    let group = |v: &Version| -> String {
+        let k = v.key.as_str();
+        match (v.key.kind(), &v.content) {
+            (Kind::Annotation | Kind::Note, Content::Deleted { .. }) => {
+                format!("deleted:{}", k.split(':').nth(1).unwrap_or(k))
+            }
+            _ => k.to_owned(),
+        }
+    };
+    let mut order: Vec<String> = Vec::new();
+    let mut sizes: std::collections::HashMap<String, usize> = Default::default();
+    for (_, v) in &versions {
+        let g = group(v);
+        if !sizes.contains_key(&g) {
+            order.push(g.clone());
+        }
+        // Its written form, and the comma that joins it to the next.
+        *sizes.entry(g).or_default() += v.raw.to_string().len() + 1;
+    }
+    let mut taken = HashSet::new();
+    let mut total = 0usize;
+    for g in order {
+        let size = sizes[&g];
+        if !taken.is_empty() && total + size > max_bytes {
+            break;
+        }
+        total += size;
+        taken.insert(g);
+    }
     let seq = last_seq + 1;
-    tx.execute(
-        // Exactly the rows `unsent` chose: never an edit held for the reader (#109).
-        "UPDATE sync_versions SET seq = ?2 WHERE library = ?1 AND seq IS NULL AND applied != -3",
-        params![lib.id.to_string(), seq as i64],
-    )?;
+    let mut out = Vec::new();
+    for (rowid, v) in versions {
+        if taken.contains(&group(&v)) {
+            tx.execute(
+                "UPDATE sync_versions SET seq = ?2 WHERE rowid = ?1",
+                params![rowid, seq as i64],
+            )?;
+            out.push(v);
+        }
+    }
     tx.commit()?;
-    Ok(Some((seq, versions)))
+    Ok(Some((seq, out)))
 }
 
 /// Keeps a checked remote version; a repeat delivery changes nothing. Returns whether

@@ -23,6 +23,12 @@ use std::collections::HashSet;
 /// SP8: a change file is at most 8 MB.
 pub const MAX_CHANGE_BYTES: usize = 8 << 20;
 
+/// SP8: the versions one change takes, in their written form. The payload goes in
+/// the envelope as base64url, 4/3 of its size, so 5 MiB of versions, with the
+/// payload's other fields and the signature, stays under `MAX_CHANGE_BYTES`; a
+/// larger backlog becomes several changes.
+pub const MAX_VERSION_BYTES: usize = 5 << 20;
+
 /// SP8: a change file's path; the sequence is 12 decimal digits, zero-padded.
 pub fn change_path(device: &DeviceId, seq: u64) -> String {
     format!("changes/{device}/{seq:012}.json")
@@ -141,6 +147,16 @@ pub fn publish(
     ks: &dyn Keystore,
     store: &mut DeviceStore,
 ) -> Result<Option<Signed>> {
+    publish_within(conn, lib, ks, store, MAX_VERSION_BYTES)
+}
+
+fn publish_within(
+    conn: &Connection,
+    lib: &Library,
+    ks: &dyn Keystore,
+    store: &mut DeviceStore,
+    max_bytes: usize,
+) -> Result<Option<Signed>> {
     let state = store.library(&lib.id).ok_or(ChainError::NoIdentity)?;
     if state.device_id()? != lib.device {
         return Err(ChainError::NoIdentity);
@@ -149,7 +165,7 @@ pub fn publish(
     let writer = state.writer_id()?;
     let (last, last_hash) = (state.seq, state.last_hash()?);
     // Step 2: number (the journal fixes the rows) and sign.
-    let Some((seq, versions)) = journal::take_unsent(conn, lib, last)? else {
+    let Some((seq, versions)) = journal::take_unsent_within(conn, lib, last, max_bytes)? else {
         return Ok(None);
     };
     debug_assert_eq!(seq, last + 1);
@@ -179,17 +195,21 @@ pub fn publish(
 }
 
 /// SP15: what this device signed and hasn't yet seen in storage, to upload again,
-/// oldest first.
-pub fn pending(store: &DeviceStore, lib: &Id16) -> Vec<(String, Vec<u8>)> {
-    store
-        .library(lib)
-        .map(|s| {
-            s.unsent
-                .iter()
-                .filter_map(|u| Some((u.path.clone(), u.bytes()?)))
-                .collect()
+/// oldest first. Bytes that don't decode are an error, never skipped: their
+/// sequence is used, so nothing else would ever publish it.
+pub fn pending(store: &DeviceStore, lib: &Id16) -> Result<Vec<(String, Vec<u8>)>> {
+    let Some(state) = store.library(lib) else {
+        return Ok(Vec::new());
+    };
+    state
+        .unsent
+        .iter()
+        .map(|u| {
+            u.bytes()
+                .map(|b| (u.path.clone(), b))
+                .ok_or(ChainError::Store(StoreError::Unreadable))
         })
-        .unwrap_or_default()
+        .collect()
 }
 
 /// SP15: storage holds `path` now; its bytes leave the device store.
@@ -603,7 +623,7 @@ mod tests {
         // Linen stops before the upload: what was saved in step 3 comes back.
         let reloaded = DeviceStore::load(&ka).unwrap();
         assert_eq!(
-            pending(&reloaded, &la.id),
+            pending(&reloaded, &la.id).unwrap(),
             vec![(one.path.clone(), one.bytes.clone())]
         );
         assert_eq!(reloaded.library(&la.id).unwrap().seq, 1);
@@ -611,7 +631,19 @@ mod tests {
         let mut store = reloaded;
         assert_eq!(publish(a.conn(), &la, &ka, &mut store).unwrap(), None);
         uploaded(&ka, &mut store, &la.id, &one.path).unwrap();
-        assert!(pending(&DeviceStore::load(&ka).unwrap(), &la.id).is_empty());
+        assert!(pending(&DeviceStore::load(&ka).unwrap(), &la.id)
+            .unwrap()
+            .is_empty());
+        // A queued change whose bytes don't decode is an error, not skipped.
+        let mut broken = DeviceStore::load(&ka).unwrap();
+        broken.library_mut(&la.id).unwrap().unsent.push(Unsent {
+            path: change_path(&la.device, 2),
+            bytes: "not base64url!".into(),
+        });
+        assert!(matches!(
+            pending(&broken, &la.id),
+            Err(ChainError::Store(StoreError::Unreadable))
+        ));
     }
 
     #[test]
@@ -627,6 +659,92 @@ mod tests {
         store.save(&ka).unwrap();
         let again = publish(a.conn(), &la, &ka, &mut store).unwrap().unwrap();
         assert_eq!(again, one);
+    }
+
+    #[test]
+    fn a_backlog_becomes_several_changes_each_within_the_limit() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let (b, lb, _kb, _sb) = signed_device("book-b");
+        let now = crate::store::now_ms();
+        let key = key_of(&sa, &la);
+        // A highlight with a note, then deleted: its tombstone and its note's must
+        // go in one change (SP13). Then places for many books, a backlog.
+        a.save_annotation(&highlight("book-a", Some("the note"), 1_760_000_001_000))
+            .unwrap();
+        let first = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        receive_change(
+            b.conn(),
+            &lb,
+            &first.bytes,
+            &la.device,
+            &key,
+            bodies(&a, &first, &la),
+            now,
+        )
+        .unwrap();
+        a.delete_annotation(crate::sync::apply::tests::ANNO)
+            .unwrap();
+        for i in 0..20 {
+            journal::record_local(
+                a.conn(),
+                &la,
+                &crate::sync::record::Key::parse(&format!("place:00000000-0000-4000-8000-{i:012}"))
+                    .unwrap()
+                    .0,
+                journal::LocalContent::Body(
+                    br#"{"cfi":"/6/4","fraction":0.5,"chapter":null}"#.to_vec(),
+                ),
+                1_760_000_002_000,
+            )
+            .unwrap();
+        }
+        // A bound so small each change takes one group: the two tombstones, then
+        // one place a change.
+        let mut changes = Vec::new();
+        while let Some(c) = publish_within(a.conn(), &la, &ka, &mut sa, 1).unwrap() {
+            changes.push(c);
+        }
+        assert_eq!(changes.len(), 21);
+        let mut keys = Vec::new();
+        for c in &changes {
+            let opened = open_change(&c.bytes, &la.id, &la.device, &key).unwrap();
+            let ks: Vec<String> = opened
+                .versions
+                .iter()
+                .map(|v| v["key"].as_str().unwrap().to_owned())
+                .collect();
+            // The highlight's tombstone and its note's are in the same change.
+            assert_eq!(
+                ks.iter().any(|k| k.starts_with("annotation:")),
+                ks.iter().any(|k| k.starts_with("note:")),
+                "{ks:?}"
+            );
+            keys.extend(ks);
+            receive_change(b.conn(), &lb, &c.bytes, &la.device, &key, vec![], now).unwrap();
+        }
+        // Every version went out once, in order, and B applied the deletion.
+        assert_eq!(keys.len(), 22);
+        assert_eq!(keys.iter().collect::<HashSet<_>>().len(), 22);
+        assert!(b.annotations("book-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_version_bound_keeps_a_change_within_sp8s_limit() {
+        // The payload's own fields and the envelope around it, measured on an empty
+        // change, with room for the longest IDs and sequence a change can carry.
+        let key = Keypair::from_seed(&[1; 32]);
+        let empty = sign_change(
+            &key,
+            &Id16([1; 16]),
+            &Id16([2; 16]),
+            MAX_SAFE_INTEGER,
+            Some(Hash32([3; 32])),
+            &[],
+        );
+        let e = envelope::open(&empty.bytes, "change", &Id16([1; 16])).unwrap();
+        let payload = e.payload.len() + MAX_VERSION_BYTES;
+        let around = empty.bytes.len() - b64url_encode(&e.payload).len();
+        assert!(payload.div_ceil(3) * 4 + around <= MAX_CHANGE_BYTES);
     }
 
     #[test]
