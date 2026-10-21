@@ -49,6 +49,10 @@ pub struct Inputs<'a> {
     /// How far this device holds each device's change chain, for a rotation's
     /// `last` (SP20 (3)).
     pub held: &'a dyn Fn(&DeviceId) -> u64,
+    /// SP21: the newest sealed head, removals and rotations this device has
+    /// accepted, from its device store (`Membership::accepted`). A graph in which
+    /// any of them doesn't count is stale, never a reason to trust anyone again.
+    pub accepted: &'a BTreeSet<Hash32>,
     /// The time this device can vouch for now.
     pub now_ms: i64,
 }
@@ -160,6 +164,24 @@ impl Membership {
 
     pub fn verdict(&self, h: &Hash32) -> Option<Verdict> {
         self.verdicts.get(h).copied()
+    }
+
+    /// SP21: what the device store keeps so that a later graph lacking it is
+    /// known to be stale: the newest sealed head, and every counting removal and
+    /// rotation.
+    pub fn accepted(&self, records: &BTreeMap<Hash32, Record>) -> BTreeSet<Hash32> {
+        self.verdicts
+            .iter()
+            .filter(|(_, v)| **v == Verdict::Counts)
+            .map(|(h, _)| *h)
+            .filter(|h| {
+                matches!(
+                    records.get(h).map(|r| &r.body),
+                    Some(Body::Remove { .. } | Body::Rotate { .. })
+                )
+            })
+            .chain(self.newest_sealed)
+            .collect()
     }
 }
 
@@ -356,8 +378,16 @@ impl<'a> Graph<'a> {
     }
 }
 
-/// SP20: computes the membership.
-pub fn compute(inputs: &Inputs<'_>) -> Membership {
+/// SP21: storage that lacks, or no longer counts, something this device has
+/// accepted: stale (waited for, SY30) or a restored library (SY27).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Stale {
+    pub missing: Vec<Hash32>,
+}
+
+/// SP20: computes the membership, or `Stale` (SP21) when the records lack, or
+/// don't count, something this device has accepted.
+pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     let g = Graph::new(inputs);
     // Code enrollments found overtaken by a sealed head judged after them: judged
     // again as refused, until nothing changes.
@@ -386,11 +416,20 @@ pub fn compute(inputs: &Inputs<'_>) -> Membership {
                     .entry(*h)
                     .or_insert(Verdict::Refused(Refusal::OtherGenesis));
             }
-            return Membership {
+            let missing: Vec<Hash32> = inputs
+                .accepted
+                .iter()
+                .filter(|h| verdicts.get(*h) != Some(&Verdict::Counts))
+                .copied()
+                .collect();
+            if !missing.is_empty() {
+                return Err(Stale { missing });
+            }
+            return Ok(Membership {
                 verdicts,
                 state,
                 newest_sealed,
-            };
+            });
         }
         overtaken.extend(newly);
     }
@@ -554,12 +593,15 @@ fn judge(g: &Graph<'_>, overtaken: &BTreeSet<Hash32>) -> BTreeMap<Hash32, Verdic
                     Some(_) if sibling => Verdict::Waits(Wait::Fork),
                     Some(s) => {
                         let code = inputs.records[&s].seal().map(|c| c.code_key);
-                        let removed: BTreeSet<DeviceId> =
-                            removes.iter().map(|x| x.device).collect();
+                        // What it removes, as lineages: removing any identity of a
+                        // lineage removes all of them (SP27).
+                        let removed: BTreeSet<DeviceId> = removes
+                            .iter()
+                            .map(|x| st.members.get(&x.device).map_or(x.device, |m| m.lineage))
+                            .collect();
                         // One signer trusted at its predecessor and not removed by it.
                         let device_signed = st.members.values().any(|m| {
                             st.trusted(&m.device).is_some()
-                                && !removed.contains(&m.device)
                                 && !removed.contains(&m.lineage)
                                 && r.signed_by(&Signer::Device(m.device), &m.key, 0)
                         });
@@ -776,6 +818,14 @@ mod tests {
         }
 
         fn compute(&self, genesis: Hash32) -> Membership {
+            self.compute_after(genesis, &BTreeSet::new()).unwrap()
+        }
+
+        fn compute_after(
+            &self,
+            genesis: Hash32,
+            accepted: &BTreeSet<Hash32>,
+        ) -> Result<Membership, Stale> {
             let held = |d: &DeviceId| self.held.get(d).copied().unwrap_or(0);
             compute(&Inputs {
                 genesis,
@@ -784,6 +834,7 @@ mod tests {
                 confirmed: &self.confirmed,
                 checkpoint: &BTreeSet::new(),
                 held: &held,
+                accepted,
                 now_ms: NOW,
             })
         }
@@ -971,6 +1022,41 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
         assert_eq!(m.verdict(&r3), Some(Verdict::Refused(Refusal::NeedsCode)));
+    }
+
+    #[test]
+    fn a_rotated_lineage_cant_sign_its_own_removal() {
+        let mut l = Lib::default();
+        let (a, a2, a3, b, c0) = (k(1), k(21), k(22), k(2), k(100));
+        let g = l.genesis(&b, &c0);
+        let e = l.enroll(g, &b, &a, 1, OLD);
+        let r1 = l.rotate(e, &a, &a2, None, OLD + 1);
+        let r2 = l.rotate(r1, &a2, &a3, None, OLD + 2);
+        // A3 signs the removal of A2, an earlier identity of its own lineage.
+        let rm = l.remove(r2, &a3, &c0, &k(101), &[&a2], OLD + 3);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Refused(Refusal::Signer)));
+        assert!(m.trusted(&a3.device()).is_some());
+    }
+
+    #[test]
+    fn storage_missing_what_this_device_accepted_is_stale() {
+        let mut l = Lib::default();
+        let (a, b, c0) = (k(1), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let rm = l.remove(e1, &a, &c0, &k(101), &[&b], OLD + 1);
+        let m = l.compute(g);
+        let accepted = m.accepted(&l.records);
+        assert_eq!(accepted, [rm].into_iter().collect());
+        // The same storage again: still current.
+        assert!(l.compute_after(g, &accepted).is_ok());
+        // Storage that lost the removal would trust B again: stale instead.
+        l.records.remove(&rm);
+        assert_eq!(
+            l.compute_after(g, &accepted).unwrap_err(),
+            Stale { missing: vec![rm] }
+        );
     }
 
     #[test]
