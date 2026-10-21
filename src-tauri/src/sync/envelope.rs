@@ -154,7 +154,7 @@ pub enum EnvelopeError {
     Library,
     #[error("the payload isn't valid JSON: {0}")]
     Payload(JsonError),
-    #[error("a signer named twice")]
+    #[error("a device named twice, or one signature twice")]
     DuplicateSigner,
 }
 
@@ -184,8 +184,10 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
     let v = json::parse(bytes, Numbers::Integers).map_err(EnvelopeError::Json)?;
     let o = v.as_object().ok_or(EnvelopeError::Shape)?;
     // Nothing in the envelope beyond its four fields is signed, so nothing else is
-    // read: an unknown field is refused, not kept, as are no signatures and a
-    // signer named twice (decisions.md, (5)).
+    // read: an unknown field is refused, not kept, as are no signatures, a device
+    // named twice and one signature twice (decisions.md, (5)). Several code keys
+    // may sign one file (SP19: a removal, confirm or merge carries the current
+    // code's and the next code's), each checked with the key its head names.
     if !exactly(o, &["sync", "type", "payload", "sigs"]) {
         return Err(EnvelopeError::Shape);
     }
@@ -220,7 +222,7 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
     if raw.is_empty() {
         return Err(EnvelopeError::Shape);
     }
-    let mut seen = HashSet::new();
+    let (mut devices, mut codes) = (HashSet::new(), HashSet::new());
     let mut sigs = Vec::with_capacity(raw.len());
     for s in raw {
         let s = s.as_object().ok_or(EnvelopeError::Shape)?;
@@ -236,7 +238,11 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
             .and_then(b64url_decode)
             .and_then(|b| b.try_into().ok())
             .ok_or(EnvelopeError::Shape)?;
-        if !seen.insert(by) {
+        let repeated = match by {
+            Signer::Device(d) => !devices.insert(d),
+            Signer::Code => !codes.insert(sig),
+        };
+        if repeated {
             return Err(EnvelopeError::DuplicateSigner);
         }
         sigs.push(Sig { by, sig });
@@ -413,6 +419,36 @@ mod tests {
     }
 
     #[test]
+    fn a_removal_carries_its_device_and_two_code_keys() {
+        // SP19: a `remove` is signed by an enrolled device, the current code's key
+        // and the next code's key; both code keys sign as "code".
+        let f = fixture();
+        let (current, next) = (Keypair::from_seed(&[2; 32]), Keypair::from_seed(&[3; 32]));
+        let payload = format!(r#"{{"type":"remove","library":"{}"}}"#, f.library).into_bytes();
+        let none = Place::default();
+        let by = Signer::Device(f.key.device());
+        let sigs = [
+            sign(&f.key, by, "remove", &f.library, &none, &payload),
+            sign(
+                &current,
+                Signer::Code,
+                "remove",
+                &f.library,
+                &none,
+                &payload,
+            ),
+            sign(&next, Signer::Code, "remove", &f.library, &none, &payload),
+        ];
+        let e = open(&write("remove", &payload, &sigs), "remove", &f.library).unwrap();
+        assert!(e.verified(&by, &f.key.public(), &f.library, &none));
+        assert!(e.verified(&Signer::Code, &current.public(), &f.library, &none));
+        assert!(e.verified(&Signer::Code, &next.public(), &f.library, &none));
+        // A code key that didn't sign isn't found among them.
+        let other = Keypair::from_seed(&[4; 32]);
+        assert!(!e.verified(&Signer::Code, &other.public(), &f.library, &none));
+    }
+
+    #[test]
     fn an_envelope_not_of_sp5s_shape_is_refused() {
         let f = fixture();
         let sig = sign(
@@ -434,8 +470,25 @@ mod tests {
         assert_eq!(with(&|v| v["sync"] = json!(2)), EnvelopeError::Suite);
         assert_eq!(with(&|v| v["extra"] = json!(1)), EnvelopeError::Shape);
         assert_eq!(with(&|v| v["sigs"] = json!([])), EnvelopeError::Shape);
+        // The same signature twice adds nothing: refused.
         assert_eq!(
             with(&|v| v["sigs"] = json!([v["sigs"][0], v["sigs"][0]])),
+            EnvelopeError::DuplicateSigner
+        );
+        // One device twice, even with two different signatures: refused.
+        let d = Signer::Device(f.key.device());
+        let first = sign(&f.key, d, "change", &f.library, &f.place, &f.payload);
+        let second = Sig {
+            by: d,
+            sig: [1; 64],
+        };
+        assert_eq!(
+            open(
+                &write("change", &f.payload, &[first, second]),
+                "change",
+                &f.library
+            )
+            .unwrap_err(),
             EnvelopeError::DuplicateSigner
         );
         assert_eq!(
