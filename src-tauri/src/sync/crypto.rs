@@ -623,11 +623,26 @@ pub(crate) mod tests {
             .replace('0', "o")
             .replace('1', "l");
         assert_eq!(RecoveryCode::parse(&typed), Ok(code.clone()));
-        // One character wrong is a typing error, said at once.
-        let mut wrong: Vec<char> = shown.replace(' ', "").chars().collect();
-        wrong[3] = if wrong[3] == 'A' { 'B' } else { 'A' };
-        let wrong: String = wrong.into_iter().collect();
-        assert_eq!(RecoveryCode::parse(&wrong), Err(CodeError::Check));
+        // One character wrong is a typing error, said at once: a check character,
+        // whatever the code, and, for the vectors' fixed code, one of its 26 (a
+        // random one would share its 10-bit check once in 1,024).
+        let flip = |s: &str, at: usize| -> String {
+            let mut c: Vec<char> = s.chars().collect();
+            c[at] = if c[at] == 'A' { 'B' } else { 'A' };
+            c.into_iter().collect()
+        };
+        assert_eq!(
+            RecoveryCode::parse(&flip(&shown.replace(' ', ""), 27)),
+            Err(CodeError::Check)
+        );
+        let c = &vectors()["code"];
+        let fixed = format!(
+            "{}{}",
+            c["chars"].as_str().unwrap(),
+            c["check"].as_str().unwrap()
+        );
+        assert!(RecoveryCode::parse(&fixed).is_ok());
+        assert_eq!(RecoveryCode::parse(&flip(&fixed, 3)), Err(CodeError::Check));
         assert_eq!(RecoveryCode::parse("ABCD"), Err(CodeError::Length));
         assert_eq!(
             RecoveryCode::parse(&shown.replace(' ', "").replacen(|_| true, "U", 1)),
