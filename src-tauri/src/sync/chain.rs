@@ -164,6 +164,12 @@ fn publish_within(
     let key = state.key()?;
     let writer = state.writer_id()?;
     let (last, last_hash) = (state.seq, state.last_hash()?);
+    // SP14: a chain head is a sequence with its hash, or nothing before the first;
+    // anything else would sign a `prev` no peer accepts, after the numbering had
+    // already used the sequence. Checked before anything is numbered.
+    if (last == 0) != last_hash.is_none() || last >= MAX_SAFE_INTEGER {
+        return Err(ChainError::Store(StoreError::Unreadable));
+    }
     // Step 2: number (the journal fixes the rows) and sign.
     let Some((seq, versions)) = journal::take_unsent_within(conn, lib, last, max_bytes)? else {
         return Ok(None);
@@ -745,6 +751,32 @@ mod tests {
         let payload = e.payload.len() + MAX_VERSION_BYTES;
         let around = empty.bytes.len() - b64url_encode(&e.payload).len();
         assert!(payload.div_ceil(3) * 4 + around <= MAX_CHANGE_BYTES);
+    }
+
+    #[test]
+    fn an_inconsistent_chain_head_numbers_nothing() {
+        let (mut a, la, ka, sa) = signed_device("book-a");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let unsent = || journal::unsent(a.conn(), &la).unwrap().len();
+        let before = unsent();
+        assert!(before > 0);
+        for (seq, hash) in [
+            (1, None),
+            (0, Some(Hash32([1; 32]).to_string())),
+            (MAX_SAFE_INTEGER, Some(Hash32([1; 32]).to_string())),
+        ] {
+            let mut store = sa.clone();
+            let state = store.library_mut(&la.id).unwrap();
+            state.seq = seq;
+            state.hash = hash;
+            assert!(matches!(
+                publish(a.conn(), &la, &ka, &mut store),
+                Err(ChainError::Store(StoreError::Unreadable))
+            ));
+            // Nothing was numbered: the versions are still unsent.
+            assert_eq!(unsent(), before);
+        }
     }
 
     #[test]
