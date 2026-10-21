@@ -21,6 +21,7 @@ pub mod ids;
 pub mod journal;
 pub mod json;
 pub mod local;
+pub mod membership;
 pub mod merge;
 pub mod record;
 pub mod restore;
