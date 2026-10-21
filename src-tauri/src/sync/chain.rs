@@ -383,7 +383,8 @@ pub fn open_change(
 /// device holds, received (SY9–SY13). One beyond a gap waits; one that doesn't
 /// follow the chain held, or differs from one already held at its sequence, is
 /// refused. SP18: so is one at the sequence of the peer's floor (`floor`, from
-/// `device_file::floor_of`) with another hash, since the chain must lead to it.
+/// `device_file::floor_of`) with another hash, since the chain must lead to it,
+/// and one below the floor waits for the run that shows it does (`receive_run`).
 /// `bodies` are the blobs its versions name, as fetched.
 #[allow(clippy::too_many_arguments)]
 pub fn receive_change(
@@ -396,26 +397,111 @@ pub fn receive_change(
     bodies: Vec<Vec<u8>>,
     now_ms: i64,
 ) -> Result<Received> {
-    let c = open_change(bytes, &lib.id, device, key)?;
+    let mut got = receive_run(
+        conn,
+        lib,
+        device,
+        key,
+        floor,
+        vec![(bytes.to_vec(), bodies)],
+        now_ms,
+    )?;
+    Ok(got.remove(0))
+}
+
+/// SP14, SP18: a run of a peer's change files, in sequence order, each with the
+/// blobs its versions name. Each is received as `receive_change` says. While this
+/// device holds less of the peer's chain than its floor, though, none is applied
+/// until the run is seen to lead to the floor: consecutive from what is held,
+/// linked by `prev`, and reaching the floor's sequence with its hash. A run that
+/// stops short waits, whole; one that leads anywhere else is refused, whole, so a
+/// fork below the floor never reaches the library.
+pub fn receive_run(
+    conn: &Connection,
+    lib: &Library,
+    device: &DeviceId,
+    key: &[u8; 32],
+    floor: Option<(u64, Hash32)>,
+    files: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
+    now_ms: i64,
+) -> Result<Vec<Received>> {
+    let opened = files
+        .iter()
+        .map(|(b, _)| open_change(b, &lib.id, device, key))
+        .collect::<Result<Vec<_>>>()?;
+    let have = apply::seen(conn, lib, *device)?;
+    if let Some((s, h)) = floor {
+        if have < s {
+            let mut prev = held_hash(conn, lib, device, have)?;
+            if have > 0 && prev.is_none() {
+                return Err(ChainError::Link);
+            }
+            let mut reached = false;
+            for (next, c) in (have + 1..).zip(opened.iter().filter(|c| c.seq > have)) {
+                if c.seq != next {
+                    break;
+                }
+                if c.prev != prev {
+                    return Err(ChainError::Link);
+                }
+                if c.seq == s {
+                    if c.hash != h {
+                        return Err(ChainError::Link);
+                    }
+                    reached = true;
+                    break;
+                }
+                prev = Some(c.hash);
+            }
+            if !reached {
+                return Ok(opened.iter().map(|_| Received::Waits).collect());
+            }
+        }
+    }
+    let mut out = Vec::with_capacity(opened.len());
+    for (c, (_, bodies)) in opened.into_iter().zip(files) {
+        out.push(receive_opened(conn, lib, floor, c, bodies, now_ms)?);
+    }
+    Ok(out)
+}
+
+/// The payload hash this device holds for `device`'s change `seq` (none for 0).
+fn held_hash(
+    conn: &Connection,
+    lib: &Library,
+    device: &DeviceId,
+    seq: u64,
+) -> Result<Option<Hash32>> {
+    if seq == 0 {
+        return Ok(None);
+    }
+    let h: Option<String> = conn
+        .query_row(
+            "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
+            params![lib.id.to_string(), device.to_string(), seq as i64],
+            |r| r.get(0),
+        )
+        .optional()
+        .map_err(JournalError::from)?;
+    Ok(h.as_deref().and_then(Hash32::parse))
+}
+
+fn receive_opened(
+    conn: &Connection,
+    lib: &Library,
+    floor: Option<(u64, Hash32)>,
+    c: Change,
+    bodies: Vec<Vec<u8>>,
+    now_ms: i64,
+) -> Result<Received> {
     if matches!(floor, Some((s, h)) if s == c.seq && h != c.hash) {
         return Err(ChainError::Link);
     }
-    let held = |seq: u64| -> Result<Option<Hash32>> {
-        let h: Option<String> = conn
-            .query_row(
-                "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
-                params![lib.id.to_string(), device.to_string(), seq as i64],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(JournalError::from)?;
-        Ok(h.as_deref().and_then(Hash32::parse))
-    };
-    let have = apply::seen(conn, lib, *device)?;
+    let have = apply::seen(conn, lib, c.device)?;
     if c.seq <= have {
         // Already held: the same file again is a repeat; another for that sequence
         // isn't this device's chain (SP30 makes a proof of it).
-        return match held(c.seq)? {
+        return match held_hash(conn, lib, &c.device, c.seq)? {
             Some(h) if h == c.hash => Ok(Received::Repeat),
             _ => Err(ChainError::Link),
         };
@@ -423,7 +509,7 @@ pub fn receive_change(
     if c.seq > have + 1 {
         return Ok(Received::Waits);
     }
-    let expected = if have == 0 { None } else { held(have)? };
+    let expected = held_hash(conn, lib, &c.device, have)?;
     if have > 0 && expected.is_none() {
         // The chain held has no hash for its last change: nothing can be linked.
         return Err(ChainError::Link);
@@ -575,6 +661,69 @@ mod tests {
         )
         .unwrap();
         assert!(matches!(got, Received::Applied { .. }), "{got:?}");
+    }
+
+    #[test]
+    fn changes_below_the_floor_apply_only_once_their_run_reaches_it() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let (b, lb, _kb, _sb) = signed_device("book-b");
+        let now = crate::store::now_ms();
+        let key = key_of(&sa, &la);
+        let akey = sa.library(&la.id).unwrap().key().unwrap();
+        let writer = sa.library(&la.id).unwrap().writer_id().unwrap();
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let one = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        a.save_annotation(&highlight("book-a", Some("second"), 1_760_000_002_000))
+            .unwrap();
+        let two = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        let floor = Some((2, two.hash));
+        // A fork of A's key below the floor: its own 1 and a 2 after it.
+        let note = |text: &str| {
+            json!({
+                "format": 1, "key": format!("note:{}", crate::sync::apply::tests::ANNO),
+                "device": la.device.to_string(), "clock": [1_760_000_009_000u64, 0],
+                "history": [], "body": { "hash": crate::sync::ids::identity_hash(text.as_bytes()).to_string(), "size": text.len() },
+            })
+        };
+        let f1 = sign_change(
+            &akey,
+            &la.id,
+            &writer,
+            1,
+            None,
+            &[note("{\"text\":\"forked\"}")],
+        );
+        let f2 = sign_change(&akey, &la.id, &writer, 2, Some(f1.hash), &[]);
+        let run = |files: &[&Signed]| {
+            receive_run(
+                b.conn(),
+                &lb,
+                &la.device,
+                &key,
+                floor,
+                files
+                    .iter()
+                    .map(|c| (c.bytes.clone(), bodies(&a, c, &la)))
+                    .collect(),
+                now,
+            )
+        };
+        assert!(matches!(run(&[&f1, &f2]), Err(ChainError::Link)));
+        // Refused whole: the fork's change 1 never reached the library.
+        assert_eq!(apply::seen(b.conn(), &lb, la.device).unwrap(), 0);
+        // Change 1 alone, below the floor: it waits, nothing applied.
+        assert_eq!(run(&[&f1]).unwrap(), vec![Received::Waits]);
+        assert_eq!(run(&[&one]).unwrap(), vec![Received::Waits]);
+        assert_eq!(apply::seen(b.conn(), &lb, la.device).unwrap(), 0);
+        assert_eq!(note_of(&b, "book-b"), None);
+        // The run that reaches the floor applies, in order.
+        let got = run(&[&one, &two]).unwrap();
+        assert!(
+            got.iter().all(|r| matches!(r, Received::Applied { .. })),
+            "{got:?}"
+        );
+        assert_eq!(note_of(&b, "book-b"), Some(Some("second".into())));
     }
 
     #[test]

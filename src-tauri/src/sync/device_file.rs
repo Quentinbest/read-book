@@ -331,6 +331,8 @@ pub fn open(bytes: &[u8], library: &Id16, device: &DeviceId, key: &[u8; 32]) -> 
         .and_then(Value::as_array)
         .filter(|a| a.len() == 2)
         .and_then(|a| Some((a[0].as_u64()?, u16::try_from(a[1].as_u64()?).ok()?)))
+        // SP10: milliseconds are 48 bits.
+        .filter(|(ms, n)| super::clock::Hlc(*ms, *n).is_valid())
         .ok_or(DeviceError::Shape)?;
     let ahead = clock
         .get("ahead")
@@ -704,6 +706,18 @@ mod tests {
         assert!(matches!(
             open(&resigned, &LIB, &key.device(), &key.public()),
             Err(DeviceError::Signature)
+        ));
+    }
+
+    #[test]
+    fn a_clock_beyond_48_bits_is_refused() {
+        let (_ks, _store, key) = device();
+        let mut f = fields();
+        f.clock = (1 << 48, 0);
+        let w = write(&key, &LIB, &Id16([2; 16]), 1, &f).unwrap();
+        assert!(matches!(
+            open(&w.bytes, &LIB, &key.device(), &key.public()),
+            Err(DeviceError::Shape)
         ));
     }
 
