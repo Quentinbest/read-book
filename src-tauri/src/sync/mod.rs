@@ -10,6 +10,8 @@ pub mod a9;
 pub mod apply;
 pub mod backup;
 pub mod clock;
+pub mod crypto;
+pub mod envelope;
 pub mod guard;
 pub mod identity;
 pub mod ids;

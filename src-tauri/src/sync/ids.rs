@@ -76,6 +76,20 @@ fn parse_hex<const N: usize>(s: &str) -> Option<[u8; N]> {
     Some(out)
 }
 
+/// SP3: unpadded base64url.
+pub fn b64url_encode(bytes: &[u8]) -> String {
+    const A: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let n = chunk.len();
+        let acc = chunk.iter().fold(0u32, |a, &b| a << 8 | b as u32) << (8 * (3 - n));
+        for i in 0..=n {
+            out.push(A[(acc >> (18 - 6 * i) & 63) as usize] as char);
+        }
+    }
+    out
+}
+
 /// SP3: unpadded base64url, decoded strictly: only the URL-safe alphabet, no
 /// padding, and zero trailing bits, so every byte string has exactly one spelling.
 pub fn b64url_decode(s: &str) -> Option<Vec<u8>> {
@@ -167,6 +181,19 @@ mod tests {
         assert!(Id16::parse(&s.to_uppercase()).is_none());
         assert!(Id16::parse("00ff").is_none());
         assert!(Id16::parse("zz".repeat(16).as_str()).is_none());
+    }
+
+    #[test]
+    fn base64url_is_encoded_without_padding_and_round_trips() {
+        assert_eq!(b64url_encode(b""), "");
+        assert_eq!(b64url_encode(b"f"), "Zg");
+        assert_eq!(b64url_encode(b"fo"), "Zm8");
+        assert_eq!(b64url_encode(b"foo"), "Zm9v");
+        assert_eq!(b64url_encode(&[0xfb, 0xff]), "-_8");
+        let all: Vec<u8> = (0..=255).collect();
+        for n in 0..all.len() {
+            assert_eq!(b64url_decode(&b64url_encode(&all[..n])).unwrap(), &all[..n]);
+        }
     }
 
     #[test]
