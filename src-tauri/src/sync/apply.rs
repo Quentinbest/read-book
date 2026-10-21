@@ -30,7 +30,8 @@ type Result<T> = std::result::Result<T, JournalError>;
 pub struct Batch {
     pub device: DeviceId,
     pub seq: u64,
-    /// The change's payload hash (SP5); a stand-in until Stage 1c signs changes.
+    /// The change's payload hash (SP5): from `chain::open_change` for a signed
+    /// file; the tests' unsigned `publish` makes a stand-in.
     pub hash: Hash32,
     pub versions: Vec<Value>,
     pub bodies: Vec<Vec<u8>>,
@@ -295,8 +296,10 @@ fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
 }
 
 /// SY7, SP15: number this device's unsent versions as its next change, after
-/// `last_seq`, the last sequence its device store says it signed (SP28).
-pub fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result<Option<Batch>> {
+/// `last_seq`, unsigned, with a stand-in hash: the tests' way to move changes
+/// between devices. Linen publishes through `chain::publish`, which signs.
+#[cfg(test)]
+pub(crate) fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result<Option<Batch>> {
     let Some((seq, unsent)) = journal::take_unsent(conn, lib, last_seq)? else {
         return Ok(None);
     };
@@ -449,7 +452,7 @@ fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
     }
 }
 
-fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
+pub(crate) fn seen(conn: &Connection, lib: &Library, device: DeviceId) -> Result<u64> {
     let s: Option<i64> = conn
         .query_row(
             "SELECT seq FROM sync_seen WHERE library = ?1 AND device = ?2",
@@ -1668,16 +1671,21 @@ pub(crate) mod tests {
     /// A device with one book, joined to the library. The book is matched to the
     /// same sync ID on every device, as Stage 4's book records will do.
     pub(crate) fn device(n: u8, book: &str) -> (Store, Library) {
+        device_with(Id16([n; 16]), book)
+    }
+
+    /// A device under a given ID: one a key names, for signed changes (Stage 1c).
+    pub(crate) fn device_with(id: DeviceId, book: &str) -> (Store, Library) {
         let store = Store::open_in_memory().unwrap();
         let lib = Library {
             id: LIB,
-            device: Id16([n; 16]),
+            device: id,
         };
         let c = store.conn();
         c.execute(
             "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
              VALUES (?1, ?2, 'x.epub', 'Moby-Dick', 'package', 0)",
-            params![book, format!("{HASH}{n}")],
+            params![book, format!("{HASH}{}", id.0[0])],
         )
         .unwrap();
         journal::join(c, &lib, "icloud-drive", crate::store::now_ms()).unwrap();
