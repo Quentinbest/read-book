@@ -431,6 +431,11 @@ pub fn receive_run(
         .collect::<Result<Vec<_>>>()?;
     let have = apply::seen(conn, lib, *device)?;
     if let Some((s, h)) = floor {
+        // Already past the floor: the change held at its sequence must be the one
+        // it names, or this device followed another chain than the floor's.
+        if have >= s && held_hash(conn, lib, device, s)?.is_some_and(|held| held != h) {
+            return Err(ChainError::Link);
+        }
         if have < s {
             let mut prev = held_hash(conn, lib, device, have)?;
             if have > 0 && prev.is_none() {
@@ -622,6 +627,67 @@ mod tests {
             .unwrap(),
             Received::Repeat
         );
+    }
+
+    #[test]
+    fn a_floor_below_the_chain_held_must_name_the_change_held() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let (b, lb, _kb, _sb) = signed_device("book-b");
+        let now = crate::store::now_ms();
+        let key = key_of(&sa, &la);
+        let mut changes = Vec::new();
+        for (i, text) in ["first", "second", "third"].iter().enumerate() {
+            a.save_annotation(&highlight(
+                "book-a",
+                Some(text),
+                1_760_000_001_000 + i as i64,
+            ))
+            .unwrap();
+            changes.push(publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap());
+        }
+        for c in &changes[..2] {
+            receive_change(
+                b.conn(),
+                &lb,
+                &c.bytes,
+                &la.device,
+                &key,
+                None,
+                bodies(&a, c, &la),
+                now,
+            )
+            .unwrap();
+        }
+        // A newer floor at change 1 that isn't the change 1 held: change 3 is refused.
+        let three = &changes[2];
+        let wrong = Some((1, Hash32([6; 32])));
+        assert!(matches!(
+            receive_change(
+                b.conn(),
+                &lb,
+                &three.bytes,
+                &la.device,
+                &key,
+                wrong,
+                vec![],
+                now
+            ),
+            Err(ChainError::Link)
+        ));
+        // With the floor the chain held does reach, it's received.
+        let right = Some((1, changes[0].hash));
+        let got = receive_change(
+            b.conn(),
+            &lb,
+            &three.bytes,
+            &la.device,
+            &key,
+            right,
+            bodies(&a, three, &la),
+            now,
+        )
+        .unwrap();
+        assert!(matches!(got, Received::Applied { .. }), "{got:?}");
     }
 
     #[test]

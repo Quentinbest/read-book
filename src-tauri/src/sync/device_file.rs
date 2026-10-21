@@ -38,6 +38,11 @@ pub const LISTS: [&str; 9] = [
     "proofs",
 ];
 
+/// The most list items and their fields one device file's overflow parts may
+/// build in memory, so a few valid 8 MB parts of tiny values can't exhaust it.
+/// PROVISIONAL (decisions.md, “The device file”, (6)).
+pub const MAX_OVERFLOW_VALUES: u64 = 250_000;
+
 /// SP16: a name is cut to 64 characters. PROVISIONAL: Unicode characters, not
 /// bytes (decisions.md, (2)).
 pub const MAX_NAME_CHARS: usize = 64;
@@ -438,6 +443,16 @@ impl DeviceFile {
         &self,
         fetch: &dyn Fn(&str) -> Option<Vec<u8>>,
     ) -> Result<BTreeMap<String, Vec<Value>>> {
+        self.lists_within(fetch, MAX_OVERFLOW_VALUES)
+    }
+
+    /// `lists`, its parts building at most `max_values` values in all.
+    fn lists_within(
+        &self,
+        fetch: &dyn Fn(&str) -> Option<Vec<u8>>,
+        max_values: u64,
+    ) -> Result<BTreeMap<String, Vec<Value>>> {
+        let mut left = max_values;
         let mut lists = self.fields.lists.clone();
         let mut by_field: BTreeMap<&str, Vec<&Overflow>> = BTreeMap::new();
         for o in &self.overflow {
@@ -454,8 +469,12 @@ impl DeviceFile {
                 if bytes.len() as u64 != o.size || identity_hash(&bytes) != o.hash {
                     return Err(DeviceError::Overflow);
                 }
-                let v =
-                    json::parse(&bytes, Numbers::Integers).map_err(|_| DeviceError::Overflow)?;
+                let (v, rest) = match json::parse_within(&bytes, Numbers::Integers, left) {
+                    Ok(got) => got,
+                    Err(json::JsonError::TooManyValues) => return Err(DeviceError::TooLarge),
+                    Err(_) => return Err(DeviceError::Overflow),
+                };
+                left = rest;
                 let ok = v.get("field").and_then(Value::as_str) == Some(field)
                     && v.get("part").and_then(Value::as_u64) == Some(o.part);
                 let items = v.get("items").and_then(Value::as_array).filter(|_| ok);
@@ -539,21 +558,18 @@ pub fn pending(store: &DeviceStore, library: &Id16) -> Result<Vec<(String, Vec<u
             Err(DeviceError::Store(StoreError::Unreadable))
         };
     };
-    // Every part it names is queued with it, and nothing else.
-    let named: Vec<String> = f
-        .overflow
-        .iter()
-        .map(|o| overflow_path(&device, &o.hash))
-        .collect();
-    let mut queued: Vec<String> = files.iter().map(|(p, _)| p.clone()).collect();
-    let mut wanted = named.clone();
-    queued.sort();
-    wanted.sort();
-    if queued != wanted {
-        return Err(DeviceError::Store(StoreError::Unreadable));
+    // SP15: parts already uploaded have left the queue; every part still queued
+    // is one the file names, with that hash and size.
+    for (p, b) in &files {
+        let named = f.overflow.iter().any(|o| {
+            overflow_path(&device, &o.hash) == *p
+                && identity_hash(b) == o.hash
+                && b.len() as u64 == o.size
+        });
+        if !named {
+            return Err(DeviceError::Store(StoreError::Unreadable));
+        }
     }
-    let fetch = |p: &str| files.iter().find(|(q, _)| q == p).map(|(_, b)| b.clone());
-    f.lists(&fetch)?;
     files.push((path, bytes));
     Ok(files)
 }
@@ -561,8 +577,9 @@ pub fn pending(store: &DeviceStore, library: &Id16) -> Result<Vec<(String, Vec<u
 /// What reading a peer's device file came to.
 #[derive(Debug)]
 pub enum Accepted {
-    /// Newer than any accepted before: its floor moved up to it.
-    New(Box<DeviceFile>),
+    /// Newer than any accepted before, with its lists whole: its floor moved up
+    /// to it.
+    New(Box<DeviceFile>, BTreeMap<String, Vec<Value>>),
     /// A counter at or below the last accepted: ignored (SP18), not an error.
     Stale,
 }
@@ -570,8 +587,10 @@ pub enum Accepted {
 /// SP18, SP29: a peer's device file is accepted only with a higher counter than
 /// the last accepted, and only when its `own` doesn't contradict the floor (a
 /// latest change before the floor's, or the floor's sequence with another hash).
-/// Accepting it raises the floor: its counter, and its `own` when that is newer.
-/// The store changes only once the save succeeds. PROVISIONAL: no `own` while the
+/// Its overflow parts are fetched and checked first (`fetch`), so a part not there
+/// yet (`Missing`) or not as named leaves the floor where it was and the file can
+/// be read again. Accepting it raises the floor: its counter, and its `own` when
+/// that is newer. The store changes only once the save succeeds. PROVISIONAL: no `own` while the
 /// floor has a change is refused too (decisions.md, (5)).
 pub fn accept(
     ks: &dyn Keystore,
@@ -580,6 +599,7 @@ pub fn accept(
     device: &DeviceId,
     key: &[u8; 32],
     bytes: &[u8],
+    fetch: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<Accepted> {
     let f = open(bytes, library, device, key)?;
     let state = store.library(library).ok_or(StoreError::Unreadable)?;
@@ -598,6 +618,7 @@ pub fn accept(
         (Some((s, h)), Some((o, oh))) if o == s && oh != h => return Err(DeviceError::BelowFloor),
         _ => {}
     }
+    let lists = f.lists(fetch)?;
     let mut raised = Floor {
         counter: f.counter,
         ..floor
@@ -615,7 +636,7 @@ pub fn accept(
         .insert(device.to_string(), raised);
     next.save(ks)?;
     *store = next;
-    Ok(Accepted::New(Box::new(f)))
+    Ok(Accepted::New(Box::new(f), lists))
 }
 
 /// SP18: `device`'s floor change, `{ s, h }`, which `chain::receive_change` holds
@@ -833,11 +854,64 @@ mod tests {
         let queued = pending(&store, &LIB).unwrap();
         assert_eq!(queued.len(), w.parts.len() + 1);
         assert_eq!(queued.last().unwrap().0, device_path(&key.device()));
-        // A part missing from the queue is an error, not a file uploaded without it.
-        let mut missing = store.clone();
-        let st = missing.library_mut(&LIB).unwrap();
-        st.unsent.retain(|u| u.path == device_path(&key.device()));
-        assert!(pending(&missing, &LIB).is_err());
+        // SP15: a part uploaded leaves the queue, and the rest still go, the file
+        // last: an upload stopped part-way resumes.
+        let (first, _) = &queued[0];
+        uploaded_part(&ks, &mut store, first);
+        let rest = pending(&store, &LIB).unwrap();
+        assert_eq!(rest.len(), w.parts.len());
+        assert_eq!(rest.last().unwrap().0, device_path(&key.device()));
+        // A queued part the file doesn't name is an error, never uploaded.
+        let mut stranger = store.clone();
+        stranger.library_mut(&LIB).unwrap().unsent.insert(
+            0,
+            Unsent {
+                path: overflow_path(&key.device(), &Hash32([1; 32])),
+                bytes: b64url_encode(b"{}"),
+            },
+        );
+        assert!(pending(&stranger, &LIB).is_err());
+    }
+
+    fn uploaded_part(ks: &Memory, store: &mut DeviceStore, path: &str) {
+        let mut next = store.clone();
+        next.library_mut(&LIB)
+            .unwrap()
+            .unsent
+            .retain(|u| u.path != path);
+        next.save(ks).unwrap();
+        *store = next;
+    }
+
+    #[test]
+    fn a_peers_file_is_accepted_only_with_its_parts_and_within_the_value_budget() {
+        let (ks, mut store, _mine) = device();
+        let peer = Keypair::from_seed(&[3; 32]);
+        let (pd, pk) = (peer.device(), peer.public());
+        let mut f = fields();
+        f.lists
+            .insert("marks".into(), (0..60_000).map(|i| json!(i)).collect());
+        let w = write(&peer, &LIB, &Id16([2; 16]), 1, &f).unwrap();
+        assert!(!w.parts.is_empty());
+        // A part not in storage yet: nothing accepted, so the file can be read again.
+        assert!(matches!(
+            accept(&ks, &mut store, &LIB, &pd, &pk, &w.bytes, &no_files),
+            Err(DeviceError::Missing(_))
+        ));
+        assert!(store.library(&LIB).unwrap().floors.is_empty());
+        let fetch = |p: &str| w.parts.iter().find(|(q, _)| q == p).map(|(_, b)| b.clone());
+        let Accepted::New(_, lists) =
+            accept(&ks, &mut store, &LIB, &pd, &pk, &w.bytes, &fetch).unwrap()
+        else {
+            panic!("accepted");
+        };
+        assert_eq!(lists["marks"].len(), 60_000);
+        // Past the value budget, the parts are refused before they are all built.
+        let opened = open(&w.bytes, &LIB, &pd, &pk).unwrap();
+        assert!(matches!(
+            opened.lists_within(&fetch, 1000),
+            Err(DeviceError::TooLarge)
+        ));
     }
 
     #[test]
@@ -854,8 +928,17 @@ mod tests {
         };
         let h = |n: u8| Hash32([n; 32]);
         assert!(matches!(
-            accept(&ks, &mut store, &LIB, &pd, &pk, &file(2, Some((5, h(5))))).unwrap(),
-            Accepted::New(_)
+            accept(
+                &ks,
+                &mut store,
+                &LIB,
+                &pd,
+                &pk,
+                &file(2, Some((5, h(5)))),
+                &no_files
+            )
+            .unwrap(),
+            Accepted::New(..)
         ));
         let floor = store.library(&LIB).unwrap().floors[&pd.to_string()].clone();
         assert_eq!(
@@ -871,7 +954,8 @@ mod tests {
                     &LIB,
                     &pd,
                     &pk,
-                    &file(counter, Some((6, h(6))))
+                    &file(counter, Some((6, h(6)))),
+                    &no_files
                 )
                 .unwrap(),
                 Accepted::Stale
@@ -881,12 +965,21 @@ mod tests {
         // sequence with another hash, or none at all: refused.
         for own in [Some((4, h(4))), Some((5, h(9))), None] {
             assert!(matches!(
-                accept(&ks, &mut store, &LIB, &pd, &pk, &file(3, own)),
+                accept(&ks, &mut store, &LIB, &pd, &pk, &file(3, own), &no_files),
                 Err(DeviceError::BelowFloor)
             ));
         }
         // A higher counter with a newer change raises the floor, and it was saved.
-        accept(&ks, &mut store, &LIB, &pd, &pk, &file(3, Some((7, h(7))))).unwrap();
+        accept(
+            &ks,
+            &mut store,
+            &LIB,
+            &pd,
+            &pk,
+            &file(3, Some((7, h(7)))),
+            &no_files,
+        )
+        .unwrap();
         let saved = DeviceStore::load(&ks).unwrap();
         assert_eq!(floor_of(&saved, &LIB, &pd).unwrap(), Some((7, h(7))));
     }
