@@ -27,7 +27,7 @@ sha2 = "0.11"
 uuid = { version = "1", features = ["v4"] }
 tauri-plugin-dialog = "2"
 semver = "1"
-ureq = { version = "2", default-features = false, features = ["tls"] }
+ureq = { version = "3.4.2", default-features = false, features = ["rustls"] }
 tauri-plugin-updater = "2"
 # Already in the tree through tauri; the updater's daily timer (D6).
 tokio = { version = "1", features = ["time"] }

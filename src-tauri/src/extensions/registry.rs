@@ -610,34 +610,49 @@ pub fn net_fetch(
             )));
         }
     }
-    let agent = ureq::AgentBuilder::new()
-        .redirects(0)
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .max_redirects(0)
         // Below the host's 10 s work budget (LK10): a slow provider ends as the
         // extension's own error, worded by it, not as the watchdog's timeout.
-        .timeout(NET_TIMEOUT)
+        .timeout_global(Some(NET_TIMEOUT))
         .user_agent("Linen")
-        .build();
-    let mut request = agent.request(method, url);
-    for (k, v) in &headers {
-        request = request.set(k, v);
-    }
+        // An error status is a response the extension reads, not a failure.
+        .http_status_as_error(false)
+        .build()
+        .into();
+    let mut sent = headers;
     if let Some(k) = &key {
-        let (name, value) = k.scheme.header(&k.value);
-        request = request.set(&name, &value);
+        sent.push(k.scheme.header(&k.value));
     }
-    let result = match body {
-        Some(b) => request.send_string(b),
-        None => request.call(),
+    let result = if method == "POST" {
+        let mut request = agent.post(url);
+        for (k, v) in &sent {
+            request = request.header(k, v);
+        }
+        match body {
+            Some(b) => request.send(b),
+            None => request.send_empty(),
+        }
+    } else {
+        let mut request = agent.get(url);
+        for (k, v) in &sent {
+            request = request.header(k, v);
+        }
+        match body {
+            Some(b) => request.force_send_body().send(b),
+            None => request.call(),
+        }
     };
-    let response = match result {
-        Ok(r) => r,
-        Err(ureq::Error::Status(_, r)) => r,
-        Err(e) => return Err(ExtError::Refused(format!("the request failed: {e}"))),
-    };
-    let status = response.status();
-    let content_type = response.header("content-type").map(String::from);
+    let response = result.map_err(|e| ExtError::Refused(format!("the request failed: {e}")))?;
+    let status = response.status().as_u16();
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
     let mut text = String::new();
     response
+        .into_body()
         .into_reader()
         .take(MAX_RESPONSE)
         .read_to_string(&mut text)
@@ -953,6 +968,129 @@ mod tests {
             None
         )
         .is_err());
+    }
+
+    /// A local HTTP server answering `n` requests, recording each request's head and body.
+    fn serve(n: usize) -> (String, std::thread::JoinHandle<Vec<(String, String)>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let handle = std::thread::spawn(move || {
+            let mut seen = Vec::new();
+            for _ in 0..n {
+                let (mut s, _) = listener.accept().unwrap();
+                let mut buf = Vec::new();
+                let mut byte = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    s.read_exact(&mut byte).unwrap();
+                    buf.push(byte[0]);
+                }
+                let head = String::from_utf8(buf).unwrap();
+                let len = head
+                    .lines()
+                    .find_map(|l| {
+                        let (k, v) = l.split_once(':')?;
+                        k.eq_ignore_ascii_case("content-length")
+                            .then(|| v.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                let mut body = vec![0u8; len];
+                s.read_exact(&mut body).unwrap();
+                let body = String::from_utf8(body).unwrap();
+                let path = head.split(' ').nth(1).unwrap().to_owned();
+                let (status, extra, reply) = match path.as_str() {
+                    "/moved" => ("302 Found", "Location: /ok\r\n", "moved".to_owned()),
+                    "/missing" => ("404 Not Found", "", "nope".to_owned()),
+                    "/echo" => ("200 OK", "", body.clone()),
+                    "/big" => ("200 OK", "", "x".repeat(MAX_RESPONSE as usize + 10)),
+                    _ => ("200 OK", "", "hello".to_owned()),
+                };
+                write!(
+                    s,
+                    "HTTP/1.1 {status}\r\nContent-Type: text/plain\r\n{extra}Content-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+                    reply.len()
+                )
+                .unwrap();
+                seen.push((head, body));
+            }
+            seen
+        });
+        (format!("127.0.0.1:{port}"), handle)
+    }
+
+    #[test]
+    fn net_fetch_returns_status_type_and_text_and_never_follows_a_redirect() {
+        let (host, server) = serve(5);
+        let granted = vec![format!("network:{host}")];
+        let get = |path: &str| {
+            net_fetch(
+                &granted,
+                &format!("http://{host}{path}"),
+                "GET",
+                None,
+                &[],
+                None,
+            )
+            .unwrap()
+        };
+        let ok = get("/ok");
+        assert_eq!((ok.status, ok.body.as_str()), (200, "hello"));
+        assert_eq!(ok.content_type.as_deref(), Some("text/plain"));
+        // A redirect could lead anywhere: the extension sees the 3xx itself.
+        let moved = get("/moved");
+        assert_eq!((moved.status, moved.body.as_str()), (302, "moved"));
+        // An error status is a response, not a failure.
+        let missing = get("/missing");
+        assert_eq!((missing.status, missing.body.as_str()), (404, "nope"));
+        // A POST sends its body and the extension's headers.
+        let echo = net_fetch(
+            &granted,
+            &format!("http://{host}/echo"),
+            "POST",
+            Some("word=ishmael"),
+            &[("x-test".into(), "1".into())],
+            None,
+        )
+        .unwrap();
+        assert_eq!((echo.status, echo.body.as_str()), (200, "word=ishmael"));
+        // A response is read only up to its limit.
+        assert_eq!(get("/big").body.len() as u64, MAX_RESPONSE);
+        let seen = server.join().unwrap();
+        // The redirect wasn't followed: five requests, none of them a second /ok.
+        let paths: Vec<&str> = seen
+            .iter()
+            .map(|(h, _)| h.split(' ').nth(1).unwrap())
+            .collect();
+        assert_eq!(paths, ["/ok", "/moved", "/missing", "/echo", "/big"]);
+        let (head, body) = &seen[3];
+        assert!(head.starts_with("POST /echo "));
+        assert!(head.to_ascii_lowercase().contains("x-test: 1"), "{head}");
+        assert!(
+            head.to_ascii_lowercase().contains("user-agent: linen"),
+            "{head}"
+        );
+        assert_eq!(body, "word=ishmael");
+    }
+
+    /// TLS with the bundled roots: a valid certificate answers, an expired one is
+    /// refused. Needs the network; run by hand.
+    #[test]
+    #[ignore]
+    fn net_fetch_verifies_certificates() {
+        let granted = vec![
+            "network:github.com".to_string(),
+            "network:expired.badssl.com".to_string(),
+        ];
+        let ok = net_fetch(&granted, "https://github.com/", "GET", None, &[], None).unwrap();
+        assert!((200..400).contains(&ok.status), "{}", ok.status);
+        let expired = net_fetch(
+            &granted,
+            "https://expired.badssl.com/",
+            "GET",
+            None,
+            &[],
+            None,
+        );
+        assert!(expired.is_err());
     }
 
     #[test]
