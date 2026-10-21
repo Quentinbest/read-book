@@ -29,6 +29,15 @@ pub const MAX_CHANGE_BYTES: usize = 8 << 20;
 /// larger backlog becomes several changes.
 pub const MAX_VERSION_BYTES: usize = 5 << 20;
 
+/// The most values (`json::parse_within`) one change file's payload may build, so
+/// a file of many tiny values can't exhaust memory; this device's own changes are
+/// held to it before they are numbered. PROVISIONAL (decisions.md, “The device
+/// file”, (7)).
+pub const MAX_CHANGE_VALUES: u64 = 1_000_000;
+
+/// The payload's own fields beyond its versions, generously.
+const PAYLOAD_VALUES: u64 = 64;
+
 /// SP8: a change file's path; the sequence is 12 decimal digits, zero-padded.
 pub fn change_path(device: &DeviceId, seq: u64) -> String {
     format!("changes/{device}/{seq:012}.json")
@@ -147,7 +156,14 @@ pub fn publish(
     ks: &dyn Keystore,
     store: &mut DeviceStore,
 ) -> Result<Option<Signed>> {
-    publish_within(conn, lib, ks, store, MAX_VERSION_BYTES)
+    publish_within(
+        conn,
+        lib,
+        ks,
+        store,
+        MAX_VERSION_BYTES,
+        MAX_CHANGE_VALUES - PAYLOAD_VALUES,
+    )
 }
 
 fn publish_within(
@@ -156,6 +172,7 @@ fn publish_within(
     ks: &dyn Keystore,
     store: &mut DeviceStore,
     max_bytes: usize,
+    max_values: u64,
 ) -> Result<Option<Signed>> {
     let state = store.library(&lib.id).ok_or(ChainError::NoIdentity)?;
     if state.device_id()? != lib.device {
@@ -171,7 +188,9 @@ fn publish_within(
         return Err(ChainError::Store(StoreError::Unreadable));
     }
     // Step 2: number (the journal fixes the rows) and sign.
-    let Some((seq, versions)) = journal::take_unsent_within(conn, lib, last, max_bytes)? else {
+    let Some((seq, versions)) =
+        journal::take_unsent_within(conn, lib, last, max_bytes, max_values)?
+    else {
         return Ok(None);
     };
     debug_assert_eq!(seq, last + 1);
@@ -300,7 +319,7 @@ pub fn open_change(
     if bytes.len() > MAX_CHANGE_BYTES {
         return Err(ChainError::TooLarge);
     }
-    let e = envelope::open(bytes, "change", library)?;
+    let e = envelope::open_within(bytes, "change", library, MAX_CHANGE_VALUES)?;
     let b = &e.body;
     match b.get("format").and_then(Value::as_u64) {
         Some(1) => {}
@@ -415,7 +434,9 @@ pub fn receive_change(
 /// until the run is seen to lead to the floor: consecutive from what is held,
 /// linked by `prev`, and reaching the floor's sequence with its hash. A run that
 /// stops short waits, whole; one that leads anywhere else is refused, whole, so a
-/// fork below the floor never reaches the library.
+/// fork below the floor never reaches the library. Only the run's sequences,
+/// links and hashes are kept while it is checked; each change is decoded again,
+/// and applied, one at a time, so a run's decoded size is one change's.
 pub fn receive_run(
     conn: &Connection,
     lib: &Library,
@@ -425,9 +446,21 @@ pub fn receive_run(
     files: Vec<(Vec<u8>, Vec<Vec<u8>>)>,
     now_ms: i64,
 ) -> Result<Vec<Received>> {
+    // The run's chain metadata: each change opened and checked, then dropped.
+    struct Meta {
+        seq: u64,
+        prev: Option<Hash32>,
+        hash: Hash32,
+    }
     let opened = files
         .iter()
-        .map(|(b, _)| open_change(b, &lib.id, device, key))
+        .map(|(b, _)| {
+            open_change(b, &lib.id, device, key).map(|c| Meta {
+                seq: c.seq,
+                prev: c.prev,
+                hash: c.hash,
+            })
+        })
         .collect::<Result<Vec<_>>>()?;
     let have = apply::seen(conn, lib, *device)?;
     if let Some((s, h)) = floor {
@@ -463,8 +496,10 @@ pub fn receive_run(
             }
         }
     }
-    let mut out = Vec::with_capacity(opened.len());
-    for (c, (_, bodies)) in opened.into_iter().zip(files) {
+    let mut out = Vec::with_capacity(files.len());
+    for (bytes, bodies) in files {
+        let c = open_change(&bytes, &lib.id, device, key)?;
+        drop(bytes);
         out.push(receive_opened(conn, lib, floor, c, bodies, now_ms)?);
     }
     Ok(out)
@@ -1047,7 +1082,7 @@ mod tests {
         // A bound so small each change takes one group: the two tombstones, then
         // one place a change.
         let mut changes = Vec::new();
-        while let Some(c) = publish_within(a.conn(), &la, &ka, &mut sa, 1).unwrap() {
+        while let Some(c) = publish_within(a.conn(), &la, &ka, &mut sa, 1, u64::MAX).unwrap() {
             changes.push(c);
         }
         assert_eq!(changes.len(), 21);
@@ -1072,6 +1107,61 @@ mod tests {
         assert_eq!(keys.len(), 22);
         assert_eq!(keys.iter().collect::<HashSet<_>>().len(), 22);
         assert!(b.annotations("book-b").unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_change_of_too_many_values_is_refused_and_never_signed_here() {
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        let key = sa.library(&la.id).unwrap().key().unwrap();
+        let writer = sa.library(&la.id).unwrap().writer_id().unwrap();
+        // A peer's change of a million tiny values in `reserve`: refused when opened.
+        let mut p: Value = serde_json::from_slice(&json::canonical(
+            &serde_json::from_slice::<Value>(
+                &crate::sync::ids::b64url_decode(
+                    serde_json::from_slice::<Value>(
+                        &sign_change(&key, &la.id, &writer, 1, None, &[]).bytes,
+                    )
+                    .unwrap()["payload"]
+                        .as_str()
+                        .unwrap(),
+                )
+                .unwrap(),
+            )
+            .unwrap(),
+        ))
+        .unwrap();
+        p["reserve"] = Value::Array(vec![json!(0); MAX_CHANGE_VALUES as usize]);
+        let body = json::canonical(&p);
+        let place = Place {
+            seq: 1,
+            prev: None,
+            vroot: Some(vroot_of(&[])),
+        };
+        let sig = envelope::sign(
+            &key,
+            Signer::Device(la.device),
+            "change",
+            &la.id,
+            &place,
+            &body,
+        );
+        let bytes = envelope::write("change", &body, &[sig]);
+        assert!(matches!(
+            open_change(&bytes, &la.id, &la.device, &key.public()),
+            Err(ChainError::Envelope(EnvelopeError::Payload(
+                json::JsonError::TooManyValues
+            )))
+        ));
+        // Here, a value budget so small each change takes one group, as for bytes.
+        a.save_annotation(&highlight("book-a", Some("one"), 1_760_000_001_000))
+            .unwrap();
+        a.save_position("book-a", "epubcfi(/6/4!/4/2/1:0)", 0.1, None)
+            .unwrap();
+        let first = publish_within(a.conn(), &la, &ka, &mut sa, usize::MAX, 1)
+            .unwrap()
+            .unwrap();
+        let opened = open_change(&first.bytes, &la.id, &la.device, &key.public()).unwrap();
+        assert_eq!(opened.versions.len(), 1);
     }
 
     #[test]

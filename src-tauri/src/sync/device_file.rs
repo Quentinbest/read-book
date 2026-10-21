@@ -232,7 +232,7 @@ pub fn write(
         .map(|n| (*n, fields.lists.get(*n).cloned().unwrap_or_default()))
         .collect();
     let mut overflow = Vec::new();
-    let mut files = Vec::new();
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     loop {
         let body = payload(&w, fields, &lists, &overflow);
         let sig = envelope::sign(
@@ -248,6 +248,16 @@ pub fn write(
         );
         let bytes = envelope::write("device", &body, &[sig]);
         if bytes.len() <= MAX_DEVICE_FILE {
+            // The parts must fit a reader's value budget (`lists`), or no peer would
+            // take the file.
+            let mut values = 0u64;
+            for (_, b) in &files {
+                let v = json::parse(b, Numbers::Integers).map_err(|_| DeviceError::Overflow)?;
+                values += json::count_values(&v);
+            }
+            if values > MAX_OVERFLOW_VALUES {
+                return Err(DeviceError::TooLarge);
+            }
             return Ok(Written {
                 counter,
                 hash: crypto::payload_hash(&body),
@@ -838,6 +848,22 @@ mod tests {
                 Err(DeviceError::Store(StoreError::Unreadable))
             ));
         }
+    }
+
+    #[test]
+    fn a_file_past_the_readers_value_budget_is_never_signed() {
+        let (ks, mut store, key) = device();
+        let mut f = fields();
+        f.lists.insert(
+            "marks".into(),
+            (0..MAX_OVERFLOW_VALUES).map(|i| json!(i)).collect(),
+        );
+        assert!(matches!(
+            write(&key, &LIB, &Id16([2; 16]), 1, &f),
+            Err(DeviceError::TooLarge)
+        ));
+        assert!(publish(&ks, &mut store, &LIB, &f).is_err());
+        assert_eq!(store.library(&LIB).unwrap().counter, 0);
     }
 
     #[test]

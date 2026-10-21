@@ -677,19 +677,21 @@ pub fn take_unsent(
     lib: &Library,
     last_seq: u64,
 ) -> Result<Option<(u64, Vec<Version>)>> {
-    take_unsent_within(conn, lib, last_seq, usize::MAX)
+    take_unsent_within(conn, lib, last_seq, usize::MAX, u64::MAX)
 }
 
 /// `take_unsent`, numbering only the oldest unsent versions whose written form
 /// fits in `max_bytes` (SP8: a change file is at most 8 MB, so a backlog becomes
-/// several changes); the rest stay unsent for the next. A highlight's tombstone
-/// and its note's go in one change (SP13), so they are taken together. The first
-/// group is always taken, whatever its size.
+/// several changes), and whose values a reader's budget counts fit in
+/// `max_values`; the rest stay unsent for the next. A highlight's tombstone and its
+/// note's go in one change (SP13), so they are taken together. The first group is
+/// always taken, whatever its size.
 pub fn take_unsent_within(
     conn: &Connection,
     lib: &Library,
     last_seq: u64,
     max_bytes: usize,
+    max_values: u64,
 ) -> Result<Option<(u64, Vec<Version>)>> {
     let tx = conn.unchecked_transaction()?;
     let journalled = tx
@@ -749,23 +751,27 @@ pub fn take_unsent_within(
         }
     };
     let mut order: Vec<String> = Vec::new();
-    let mut sizes: std::collections::HashMap<String, usize> = Default::default();
+    let mut sizes: std::collections::HashMap<String, (usize, u64)> = Default::default();
     for (_, v) in &versions {
         let g = group(v);
         if !sizes.contains_key(&g) {
             order.push(g.clone());
         }
-        // Its written form, and the comma that joins it to the next.
-        *sizes.entry(g).or_default() += v.raw.to_string().len() + 1;
+        // Its written form, and the comma that joins it to the next; its values, and
+        // its own place in the list.
+        let e = sizes.entry(g).or_default();
+        e.0 += v.raw.to_string().len() + 1;
+        e.1 += super::json::count_values(&v.raw) + 1;
     }
     let mut taken = HashSet::new();
-    let mut total = 0usize;
+    let (mut total, mut values) = (0usize, 0u64);
     for g in order {
-        let size = sizes[&g];
-        if !taken.is_empty() && total + size > max_bytes {
+        let (size, n) = sizes[&g];
+        if !taken.is_empty() && (total + size > max_bytes || values + n > max_values) {
             break;
         }
         total += size;
+        values += n;
         taken.insert(g);
     }
     let seq = last_seq + 1;

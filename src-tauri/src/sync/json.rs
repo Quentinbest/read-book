@@ -203,6 +203,17 @@ pub fn parse_within(
     Ok((v, left.get()))
 }
 
+/// The values `parse_within` counts for `v`: every array element and object
+/// member, at every level. A writer checks its own files with it, so it never signs
+/// one a reader's budget refuses.
+pub fn count_values(v: &Value) -> u64 {
+    match v {
+        Value::Array(a) => a.len() as u64 + a.iter().map(count_values).sum::<u64>(),
+        Value::Object(o) => o.len() as u64 + o.values().map(count_values).sum::<u64>(),
+        _ => 0,
+    }
+}
+
 /// SP11: RFC 8785's canonical form of a protocol value. Protocol values hold only
 /// integers (SP3), so no float formatting arises; a value parsed with
 /// `Numbers::Integers` is always accepted.
@@ -323,6 +334,9 @@ mod tests {
             JsonError::TooManyValues
         );
         assert!(parse(tiny.as_bytes(), Numbers::Integers).is_ok());
+        // A writer counts the same values a reader's budget does.
+        let (v, left) = parse_within(doc, Numbers::Integers, 100).unwrap();
+        assert_eq!(count_values(&v), 100 - left);
     }
 
     #[test]
