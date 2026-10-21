@@ -189,42 +189,56 @@ fn publish_within(
     )
     .map_err(JournalError::from)?;
     // Step 3: the sequence, hash and signed bytes, saved before anything is uploaded.
-    let state = store.library_mut(&lib.id).expect("checked above");
+    // The store changes only once the save succeeds: after a failed save the same
+    // rows are signed again on the next try (the journal kept the numbering), and
+    // nothing unsaved is ever handed out for upload.
+    let mut next = store.clone();
+    let state = next.library_mut(&lib.id).expect("checked above");
     state.seq = seq;
     state.hash = Some(signed.hash.to_string());
     state.unsent.push(Unsent {
         path: signed.path.clone(),
         bytes: b64url_encode(&signed.bytes),
     });
-    store.save(ks)?;
+    next.save(ks)?;
+    *store = next;
     Ok(Some(signed))
 }
 
 /// SP15: what this device signed and hasn't yet seen in storage, to upload again,
-/// oldest first. Bytes that don't decode are an error, never skipped: their
-/// sequence is used, so nothing else would ever publish it.
+/// oldest first. Each is opened as a peer would open it, with this device's key,
+/// and must sit at the path its sequence names. One that doesn't is an error,
+/// never skipped or uploaded: its sequence is used, so nothing else would publish
+/// it, and a peer would refuse it.
 pub fn pending(store: &DeviceStore, lib: &Id16) -> Result<Vec<(String, Vec<u8>)>> {
     let Some(state) = store.library(lib) else {
         return Ok(Vec::new());
     };
+    let device = state.device_id()?;
+    let key = state.key()?.public();
     state
         .unsent
         .iter()
         .map(|u| {
-            u.bytes()
-                .map(|b| (u.path.clone(), b))
-                .ok_or(ChainError::Store(StoreError::Unreadable))
+            let bytes = u.bytes().ok_or(StoreError::Unreadable)?;
+            let c = open_change(&bytes, lib, &device, &key)?;
+            if u.path != change_path(&device, c.seq) || c.seq > state.seq {
+                return Err(ChainError::Store(StoreError::Unreadable));
+            }
+            Ok((u.path.clone(), bytes))
         })
         .collect()
 }
 
 /// SP15: storage holds `path` now; its bytes leave the device store.
 pub fn uploaded(ks: &dyn Keystore, store: &mut DeviceStore, lib: &Id16, path: &str) -> Result<()> {
-    if let Some(state) = store.library_mut(lib) {
+    let mut next = store.clone();
+    if let Some(state) = next.library_mut(lib) {
         let before = state.unsent.len();
         state.unsent.retain(|u| u.path != path);
         if state.unsent.len() != before {
-            store.save(ks)?;
+            next.save(ks)?;
+            *store = next;
         }
     }
     Ok(())
@@ -640,14 +654,27 @@ mod tests {
         assert!(pending(&DeviceStore::load(&ka).unwrap(), &la.id)
             .unwrap()
             .is_empty());
-        // A queued change whose bytes don't decode is an error, not skipped.
-        let mut broken = DeviceStore::load(&ka).unwrap();
-        broken.library_mut(&la.id).unwrap().unsent.push(Unsent {
-            path: change_path(&la.device, 2),
-            bytes: "not base64url!".into(),
-        });
+        // A queued change that isn't what a peer would accept is an error, not
+        // skipped or uploaded: bytes that don't decode, bytes changed after
+        // signing, or a path that isn't its sequence's.
+        let queued = |path: String, bytes: String| {
+            let mut s = DeviceStore::load(&ka).unwrap();
+            s.library_mut(&la.id)
+                .unwrap()
+                .unsent
+                .push(Unsent { path, bytes });
+            pending(&s, &la.id)
+        };
         assert!(matches!(
-            pending(&broken, &la.id),
+            queued(one.path.clone(), "not base64url!".into()),
+            Err(ChainError::Store(StoreError::Unreadable))
+        ));
+        let mut altered = one.bytes.clone();
+        let at = altered.iter().position(|&b| b == b'"').unwrap();
+        altered[at] = b' ';
+        assert!(queued(one.path.clone(), b64url_encode(&altered)).is_err());
+        assert!(matches!(
+            queued(change_path(&la.device, 2), b64url_encode(&one.bytes)),
             Err(ChainError::Store(StoreError::Unreadable))
         ));
     }
@@ -751,6 +778,39 @@ mod tests {
         let payload = e.payload.len() + MAX_VERSION_BYTES;
         let around = empty.bytes.len() - b64url_encode(&e.payload).len();
         assert!(payload.div_ceil(3) * 4 + around <= MAX_CHANGE_BYTES);
+    }
+
+    #[test]
+    fn a_failed_save_changes_nothing_and_the_retry_signs_the_same_file() {
+        struct Refuses;
+        impl Keystore for Refuses {
+            fn load(&self) -> std::result::Result<Option<Vec<u8>>, StoreError> {
+                Ok(None)
+            }
+            fn save(&self, _: &[u8]) -> std::result::Result<(), StoreError> {
+                Err(StoreError::Keychain(-25308))
+            }
+        }
+        let (mut a, la, ka, mut sa) = signed_device("book-a");
+        a.save_annotation(&highlight("book-a", Some("first"), 1_760_000_001_000))
+            .unwrap();
+        let before = sa.clone();
+        assert!(matches!(
+            publish(a.conn(), &la, &Refuses, &mut sa),
+            Err(ChainError::Store(StoreError::Keychain(_)))
+        ));
+        // Nothing unsaved is handed out, and the head didn't move.
+        assert_eq!(sa, before);
+        assert!(pending(&sa, &la.id).unwrap().is_empty());
+        // The retry signs the change the journal numbered, and saves it.
+        let one = publish(a.conn(), &la, &ka, &mut sa).unwrap().unwrap();
+        assert_eq!(one.seq, 1);
+        assert_eq!(
+            pending(&DeviceStore::load(&ka).unwrap(), &la.id)
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]
