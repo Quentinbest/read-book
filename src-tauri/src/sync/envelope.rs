@@ -181,6 +181,17 @@ fn exactly(o: &Map<String, Value>, fields: &[&str]) -> bool {
 /// payload whose `type` or `library` differs is refused before any signature is
 /// checked.
 pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelope, EnvelopeError> {
+    open_within(bytes, expected_type, library, u64::MAX)
+}
+
+/// `open`, the payload building at most `max_values` values (`json::parse_within`),
+/// so a file of many tiny values is refused before it takes much memory.
+pub fn open_within(
+    bytes: &[u8],
+    expected_type: &str,
+    library: &Id16,
+    max_values: u64,
+) -> Result<Envelope, EnvelopeError> {
     let v = json::parse(bytes, Numbers::Integers).map_err(EnvelopeError::Json)?;
     let o = v.as_object().ok_or(EnvelopeError::Shape)?;
     // Nothing in the envelope beyond its four fields is signed, so nothing else is
@@ -202,7 +213,10 @@ pub fn open(bytes: &[u8], expected_type: &str, library: &Id16) -> Result<Envelop
         .as_str()
         .and_then(b64url_decode)
         .ok_or(EnvelopeError::Shape)?;
-    let body = match json::parse(&payload, Numbers::Integers).map_err(EnvelopeError::Payload)? {
+    let body = match json::parse_within(&payload, Numbers::Integers, max_values)
+        .map_err(EnvelopeError::Payload)?
+        .0
+    {
         Value::Object(m) => m,
         _ => return Err(EnvelopeError::Shape),
     };

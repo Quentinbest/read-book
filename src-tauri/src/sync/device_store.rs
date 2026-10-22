@@ -92,6 +92,66 @@ impl Unsent {
     }
 }
 
+/// SP18: a peer's floor, the newest signed state of it this device knows (from
+/// earlier passes, or an enrollment's checkpoint, SP24): a change, a view
+/// generation and a device-file counter. A floor refuses what contradicts it,
+/// never what comes before it, and never counts as applied.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Floor {
+    #[serde(default)]
+    pub s: u64,
+    #[serde(default)]
+    pub h: Option<String>,
+    #[serde(default)]
+    pub gen: u64,
+    #[serde(default)]
+    pub counter: u64,
+    /// Earlier checkpoints `{ s, h }` the chain applied here hasn't passed yet: a
+    /// newer device file raised the floor before the chain reached them, and the
+    /// chain must still pass each with its hash.
+    #[serde(default)]
+    pub earlier: Vec<Checkpoint>,
+}
+
+/// SP18: one change a floor names, `{ s, h }`.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Checkpoint {
+    pub s: u64,
+    pub h: String,
+}
+
+impl Floor {
+    /// The floor's change, `{ s, h }`, if it has one; a sequence without its hash,
+    /// or a hash without a sequence, is unreadable.
+    pub fn change(&self) -> Result<Option<(u64, Hash32)>, StoreError> {
+        match (self.s, self.h.as_deref()) {
+            (0, None) => Ok(None),
+            (s, Some(h)) if s > 0 => Hash32::parse(h)
+                .map(|h| Some((s, h)))
+                .ok_or(StoreError::Unreadable),
+            _ => Err(StoreError::Unreadable),
+        }
+    }
+
+    /// Every change the floor names, its earlier checkpoints and its newest, in
+    /// sequence order.
+    pub fn checkpoints(&self) -> Result<Vec<(u64, Hash32)>, StoreError> {
+        let mut out = self
+            .earlier
+            .iter()
+            .map(|c| {
+                Hash32::parse(&c.h)
+                    .filter(|_| c.s > 0)
+                    .map(|h| (c.s, h))
+                    .ok_or(StoreError::Unreadable)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        out.extend(self.change()?);
+        out.sort_by_key(|(s, _)| *s);
+        Ok(out)
+    }
+}
+
 /// One library's state on this device (SP28).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LibraryState {
@@ -107,8 +167,15 @@ pub struct LibraryState {
     pub hash: Option<String>,
     #[serde(default)]
     pub unsent: Vec<Unsent>,
+    /// SP16, SP15: the last device-file counter this device signed (0 before the
+    /// first).
+    #[serde(default)]
+    pub counter: u64,
+    /// SP18: each peer's floor, by device ID.
+    #[serde(default)]
+    pub floors: BTreeMap<String, Floor>,
     /// Everything else SP28 lists (`retired`, `genesis`, `head`, `removals`,
-    /// `rotations`, `counter`, `gen`, `frontier`, `floors`, `acceptedByAll`), written
+    /// `rotations`, `gen`, `frontier`, `acceptedByAll`), written
     /// by later parts of Stage 1c, and fields a newer Linen added: kept as they are.
     #[serde(flatten)]
     pub rest: Map<String, Value>,
@@ -127,6 +194,8 @@ impl LibraryState {
             seq: 0,
             hash: None,
             unsent: Vec::new(),
+            counter: 0,
+            floors: BTreeMap::new(),
             rest: Map::new(),
         })
     }

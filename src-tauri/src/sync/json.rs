@@ -25,6 +25,8 @@ pub enum JsonError {
     TooDeep,
     #[error("a number that isn't a safe integer")]
     NotSafeInteger,
+    #[error("more values than the reader allows")]
+    TooManyValues,
 }
 
 /// What numbers a document may hold.
@@ -39,10 +41,14 @@ pub enum Numbers {
 const DUP: &str = "linen-sync:duplicate-key";
 const DEEP: &str = "linen-sync:too-deep";
 const NUM: &str = "linen-sync:not-safe-integer";
+const MANY: &str = "linen-sync:too-many-values";
 
 struct Strict {
     depth: usize,
     numbers: Numbers,
+    /// How many more array elements and object members may be built; shared by
+    /// every level of one parse, so decoded memory is bounded before it is used.
+    left: std::rc::Rc<std::cell::Cell<u64>>,
 }
 
 impl<'de> DeserializeSeed<'de> for Strict {
@@ -102,6 +108,7 @@ impl<'de> Visitor<'de> for Strict {
         let inner = self.inner()?;
         let mut out = Vec::new();
         while let Some(v) = seq.next_element_seed(inner.clone_seed())? {
+            self.take()?;
             out.push(v);
         }
         Ok(Value::Array(out))
@@ -115,6 +122,7 @@ impl<'de> Visitor<'de> for Strict {
                 return Err(de::Error::custom(DUP));
             }
             let v = map.next_value_seed(inner.clone_seed())?;
+            self.take()?;
             out.insert(k, v);
         }
         Ok(Value::Object(out))
@@ -129,6 +137,7 @@ impl Strict {
         Ok(Strict {
             depth: self.depth + 1,
             numbers: self.numbers,
+            left: self.left.clone(),
         })
     }
 
@@ -136,32 +145,73 @@ impl Strict {
         Strict {
             depth: self.depth,
             numbers: self.numbers,
+            left: self.left.clone(),
+        }
+    }
+
+    /// One more element or member, within the budget.
+    fn take<E: de::Error>(&self) -> Result<(), E> {
+        match self.left.get().checked_sub(1) {
+            Some(n) => {
+                self.left.set(n);
+                Ok(())
+            }
+            None => Err(E::custom(MANY)),
         }
     }
 }
 
 /// SP3: parse untrusted bytes. The caller has already checked their size (SY28).
 pub fn parse(bytes: &[u8], numbers: Numbers) -> Result<Value, JsonError> {
+    parse_within(bytes, numbers, u64::MAX).map(|(v, _)| v)
+}
+
+/// `parse`, building at most `max_values` array elements and object members in
+/// all, so a small file of many tiny values can't take much memory: past the
+/// budget it stops with `TooManyValues`. Returns the value and what is left.
+pub fn parse_within(
+    bytes: &[u8],
+    numbers: Numbers,
+    max_values: u64,
+) -> Result<(Value, u64), JsonError> {
+    let left = std::rc::Rc::new(std::cell::Cell::new(max_values));
     if bytes.starts_with(&[0xef, 0xbb, 0xbf]) {
         return Err(JsonError::ByteOrderMark);
     }
     let mut d = serde_json::Deserializer::from_slice(bytes);
-    let v = Strict { depth: 0, numbers }
-        .deserialize(&mut d)
-        .and_then(|v| d.end().map(|_| v))
-        .map_err(|e| {
-            let m = e.to_string();
-            if m.starts_with(DUP) {
-                JsonError::DuplicateKey
-            } else if m.starts_with(DEEP) {
-                JsonError::TooDeep
-            } else if m.starts_with(NUM) {
-                JsonError::NotSafeInteger
-            } else {
-                JsonError::Syntax
-            }
-        })?;
-    Ok(v)
+    let v = Strict {
+        depth: 0,
+        numbers,
+        left: left.clone(),
+    }
+    .deserialize(&mut d)
+    .and_then(|v| d.end().map(|_| v))
+    .map_err(|e| {
+        let m = e.to_string();
+        if m.starts_with(DUP) {
+            JsonError::DuplicateKey
+        } else if m.starts_with(DEEP) {
+            JsonError::TooDeep
+        } else if m.starts_with(NUM) {
+            JsonError::NotSafeInteger
+        } else if m.starts_with(MANY) {
+            JsonError::TooManyValues
+        } else {
+            JsonError::Syntax
+        }
+    })?;
+    Ok((v, left.get()))
+}
+
+/// The values `parse_within` counts for `v`: every array element and object
+/// member, at every level. A writer checks its own files with it, so it never signs
+/// one a reader's budget refuses.
+pub fn count_values(v: &Value) -> u64 {
+    match v {
+        Value::Array(a) => a.len() as u64 + a.iter().map(count_values).sum::<u64>(),
+        Value::Object(o) => o.len() as u64 + o.values().map(count_values).sum::<u64>(),
+        _ => 0,
+    }
 }
 
 /// SP11: RFC 8785's canonical form of a protocol value. Protocol values hold only
@@ -265,6 +315,28 @@ mod tests {
         );
         assert_eq!(strict("{} {}"), Err(JsonError::Syntax), "trailing data");
         assert_eq!(strict("{"), Err(JsonError::Syntax));
+    }
+
+    #[test]
+    fn values_are_held_to_a_budget_across_every_level() {
+        let doc = br#"{"a":[1,2,3],"b":{"c":[4,5]}}"#;
+        // a, b, c are members; 1–5 are elements: 8 values.
+        let (v, left) = parse_within(doc, Numbers::Integers, 8).unwrap();
+        assert_eq!((v["b"]["c"][1].as_u64(), left), (Some(5), 0));
+        assert_eq!(
+            parse_within(doc, Numbers::Integers, 7).unwrap_err(),
+            JsonError::TooManyValues
+        );
+        // Many tiny values in a small file stop at the budget.
+        let tiny = format!("[{}0]", "0,".repeat(100_000));
+        assert_eq!(
+            parse_within(tiny.as_bytes(), Numbers::Integers, 1000).unwrap_err(),
+            JsonError::TooManyValues
+        );
+        assert!(parse(tiny.as_bytes(), Numbers::Integers).is_ok());
+        // A writer counts the same values a reader's budget does.
+        let (v, left) = parse_within(doc, Numbers::Integers, 100).unwrap();
+        assert_eq!(count_values(&v), 100 - left);
     }
 
     #[test]
