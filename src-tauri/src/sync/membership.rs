@@ -525,11 +525,16 @@ fn judge(
                         // Only enrollments that count: a signed-looking record whose
                         // enroller's signature doesn't hold proves no history.
                         let by_n = |k: u64| {
-                            inputs.records.iter().find(|(x, o)| {
-                                verdicts.get(*x) == Some(&Verdict::Counts)
-                                    && matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
+                            // Among the records judged so far, which the graph's
+                            // bound limits: never a scan of everything held.
+                            verdicts
+                                .iter()
+                                .filter(|(_, v)| **v == Verdict::Counts)
+                                .map(|(x, _)| (x, &inputs.records[x]))
+                                .find(|(_, o)| {
+                                    matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
                                         if *m == k && global.members.get(b).map(|x| x.lineage) == Some(lineage))
-                            })
+                                })
                         };
                         // Its `n` follows the lineage's `n − 1`, which this device must
                         // hold; `n − 2` was first seen a day ago; and its ancestors'
