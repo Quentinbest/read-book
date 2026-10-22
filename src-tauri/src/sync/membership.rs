@@ -494,10 +494,19 @@ fn judge(
         let so_far: BTreeSet<Hash32> = verdicts.keys().copied().collect();
         let global = g.state(&verdicts, &so_far);
         let all_sealed = g.sealed(&verdicts, &so_far);
+        // SP20: a key any ancestor record introduced, whatever that record's
+        // verdict, can't be introduced again.
         let introduced = |key: &[u8; 32], device: &DeviceId| {
-            st.members
-                .values()
-                .any(|m| m.key == *key || m.device == *device)
+            before.iter().any(|a| match &inputs.records[a].body {
+                Body::Genesis {
+                    device: d, key: k, ..
+                }
+                | Body::Enroll {
+                    device: d, key: k, ..
+                }
+                | Body::Rotate { new: d, key: k, .. } => k == key || d == device,
+                _ => false,
+            })
         };
         let v = match &r.body {
             // Another genesis, a claim or an escrow is never in the graph: none has a
@@ -1026,6 +1035,23 @@ mod tests {
         );
         assert_eq!(m.verdict(&e1), Some(Verdict::Counts));
         assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::KeyAgain)));
+    }
+
+    #[test]
+    fn a_key_a_refused_ancestor_introduced_cant_be_introduced_again() {
+        let mut l = Lib::default();
+        let (a, b, c0) = (k(1), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        // A stranger's enrollment of B is refused; A's enrollment of B built on it
+        // reuses the key that ancestor introduced.
+        let refused = l.enroll(g, &k(9), &b, 1, OLD);
+        let again = l.enroll(refused, &a, &b, 1, OLD + 1);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&refused), Some(Verdict::Refused(Refusal::Signer)));
+        assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::KeyAgain)));
+        // Built beside it, not on it, the same key is a fresh enrollment.
+        let beside = l.enroll(g, &a, &b, 1, OLD + 2);
+        assert_eq!(l.compute(g).verdict(&beside), Some(Verdict::Counts));
     }
 
     #[test]
