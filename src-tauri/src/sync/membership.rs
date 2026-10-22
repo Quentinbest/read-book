@@ -216,19 +216,17 @@ impl<'a> Graph<'a> {
             ancestors.insert(inputs.genesis, BTreeSet::new());
             order.push(inputs.genesis);
         }
-        // Each record's successors, and how many of its predecessors are still to be
-        // placed, built once: placing takes time in proportion to the records, never
-        // a rescan of them all per record.
-        let mut children: BTreeMap<Hash32, Vec<Hash32>> = BTreeMap::new();
-        let mut waiting: BTreeMap<Hash32, usize> = BTreeMap::new();
+        // Each record waits on one of its predecessors not yet placed, and moves to
+        // the next when that one is placed: one entry a record, however many
+        // predecessors it names, and nothing more for records the genesis never
+        // reaches.
+        let mut watching: BTreeMap<Hash32, Vec<Hash32>> = BTreeMap::new();
         for (h, r) in inputs.records {
-            let prevs: BTreeSet<Hash32> = r.prevs().into_iter().collect();
-            if *h == inputs.genesis || prevs.is_empty() {
+            if *h == inputs.genesis {
                 continue;
             }
-            waiting.insert(*h, prevs.len());
-            for p in prevs {
-                children.entry(p).or_default().push(*h);
+            if let Some(first) = r.prevs().first() {
+                watching.entry(*first).or_default().push(*h);
             }
         }
         // Repeatedly take, among records whose predecessors are all placed, the one
@@ -236,21 +234,24 @@ impl<'a> Graph<'a> {
         let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<(i64, Hash32)>> =
             std::collections::BinaryHeap::new();
         let release = |h: &Hash32,
-                       waiting: &mut BTreeMap<Hash32, usize>,
+                       placed: &BTreeMap<Hash32, BTreeSet<Hash32>>,
+                       watching: &mut BTreeMap<Hash32, Vec<Hash32>>,
                        ready: &mut std::collections::BinaryHeap<
             std::cmp::Reverse<(i64, Hash32)>,
         >| {
-            for c in children.get(h).into_iter().flatten() {
-                if let Some(n) = waiting.get_mut(c) {
-                    *n -= 1;
-                    if *n == 0 {
-                        ready.push(std::cmp::Reverse((seen(c), *c)));
-                    }
+            for c in watching.remove(h).unwrap_or_default() {
+                match inputs.records[&c]
+                    .prevs()
+                    .into_iter()
+                    .find(|p| !placed.contains_key(p))
+                {
+                    Some(next) => watching.entry(next).or_default().push(c),
+                    None => ready.push(std::cmp::Reverse((seen(&c), c))),
                 }
             }
         };
         if !order.is_empty() {
-            release(&inputs.genesis, &mut waiting, &mut ready);
+            release(&inputs.genesis, &ancestors, &mut watching, &mut ready);
         }
         while let Some(std::cmp::Reverse((_, h))) = ready.pop() {
             if order.len() >= MAX_RECORDS {
@@ -263,7 +264,7 @@ impl<'a> Graph<'a> {
             }
             ancestors.insert(h, anc);
             order.push(h);
-            release(&h, &mut waiting, &mut ready);
+            release(&h, &ancestors, &mut watching, &mut ready);
         }
         Graph {
             inputs,
@@ -743,8 +744,14 @@ fn enrollment_quota(
     }
     // Under `top`: lineages enrolled, directly or through others, by recent counting
     // enrollments, this one included.
+    // SP20: two records enrolling one key on different branches are one
+    // enrollment, so devices are counted, not records.
+    let this = match &g.inputs.records[record].body {
+        Body::Enroll { device, .. } => Some(*device),
+        _ => None,
+    };
     let under = |top: DeviceId| -> usize {
-        let mut count = 1;
+        let mut devices: BTreeSet<DeviceId> = this.into_iter().collect();
         for h in g
             .order
             .iter()
@@ -757,14 +764,14 @@ fn enrollment_quota(
                 let mut at = global.members.get(device).and_then(|m| m.enroller);
                 while let Some(e) = at {
                     if e == top {
-                        count += 1;
+                        devices.insert(*device);
                         break;
                     }
                     at = global.members.get(&e).and_then(|m| m.enroller);
                 }
             }
         }
-        count
+        devices.len()
     };
     let mut top = Some(lineage);
     while let Some(t) = top {
@@ -855,6 +862,20 @@ mod tests {
             n: u64,
             seen: i64,
         ) -> Hash32 {
+            self.enroll_labelled(prev, by, new, n, seen, "new")
+        }
+
+        /// `enroll` with a label of its own: another record for the same key.
+        #[allow(clippy::too_many_arguments)]
+        fn enroll_labelled(
+            &mut self,
+            prev: Hash32,
+            by: &Keypair,
+            new: &Keypair,
+            n: u64,
+            seen: i64,
+            label: &str,
+        ) -> Hash32 {
             let reveal = json::canonical(&json!({
                 "type": "enroll-reveal", "library": LIB.to_string(),
                 "applicant": new.device().to_string(), "enroller": by.device().to_string(),
@@ -869,7 +890,7 @@ mod tests {
             self.add(
                 "enroll",
                 json!({ "prev": prev.to_string(), "device": new.device().to_string(),
-                        "key": b64url_encode(&new.public()), "label": "new", "clock": [NOW as u64, 1],
+                        "key": b64url_encode(&new.public()), "label": label, "clock": [NOW as u64, 1],
                         "by": by.device().to_string(), "n": n, "sas": "dd".repeat(32),
                         "reveal": b64url_encode(&reveal), "pop": b64url_encode(&pop) }),
                 &[(by, Signer::Device(by.device()), n)],
@@ -1015,6 +1036,23 @@ mod tests {
         let e5 = l.enroll(e2, &b, &k(5), 1, NOW - 800);
         let m = l.compute(g);
         assert_eq!(m.verdict(&e5), Some(Verdict::Waits(Wait::Quota)));
+    }
+
+    #[test]
+    fn one_key_enrolled_on_two_branches_counts_once_against_the_quota() {
+        let mut l = Lib::default();
+        let (a, b, c) = (k(1), k(2), k(3));
+        let g = l.genesis(&a, &k(100));
+        // A enrols B twice, on two branches: one enrollment. Then C: the second
+        // device today, not the third.
+        let e1 = l.enroll(g, &a, &b, 1, NOW - 1000);
+        let e1b = l.enroll_labelled(g, &a, &b, 1, NOW - 900, "B again");
+        assert_ne!(e1, e1b);
+        let e2 = l.enroll(e1, &a, &c, 2, NOW - 800);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&e1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&e1b), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&e2), Some(Verdict::Counts));
     }
 
     #[test]
