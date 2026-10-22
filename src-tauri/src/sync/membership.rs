@@ -51,9 +51,9 @@ pub struct Inputs<'a> {
     /// Records in the membership head this device joined at (its checkpoint,
     /// SP24): its enrollments aren't timed again.
     pub checkpoint: &'a BTreeSet<Hash32>,
-    /// How far this device holds each device's change chain, for a rotation's
-    /// `last` (SP20 (3)).
-    pub held: &'a dyn Fn(&DeviceId) -> u64,
+    /// The payload hash of a device's change `s` in the chain this device holds,
+    /// if it holds it, for a rotation's `last` (SP20 (3)).
+    pub held: &'a dyn Fn(&DeviceId, u64) -> Option<Hash32>,
     /// SP21: the newest sealed head, removals and rotations this device has
     /// accepted, from its device store (`Membership::accepted`). A graph in which
     /// any of them doesn't count is stale, never a reason to trust anyone again.
@@ -96,6 +96,9 @@ pub enum Refusal {
     Rotated,
     /// A third rotation in 30 days without the code's signature (SY7).
     NeedsCode,
+    /// A rotation whose `last` isn't the old chain this device holds at that
+    /// sequence: a conflict 1c.6 makes an equivocation proof of (SP20 (3), SP30).
+    LastConflict,
     /// A code record that doesn't build on a sealed head.
     NotSealed,
 }
@@ -339,19 +342,7 @@ impl<'a> Graph<'a> {
                 }
             }
         }
-        loop {
-            let more: Vec<DeviceId> = st
-                .members
-                .values()
-                .filter(|m| !gone.contains(&m.lineage))
-                .filter(|m| m.enroller.is_some_and(|e| gone.contains(&e)))
-                .map(|m| m.lineage)
-                .collect();
-            if more.is_empty() {
-                break;
-            }
-            gone.extend(more);
-        }
+        let gone = closure(&st.members, gone);
         st.removed = st
             .members
             .values()
@@ -404,8 +395,9 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     let mut overtaken: BTreeSet<Hash32> = BTreeSet::new();
     // SP20: the cap is counted over the whole graph, so removals judged later in it
     // make room for enrollments judged earlier: each pass counts the devices the
-    // previous pass found removed. A bound on passes keeps a pathological graph
-    // from looping; its last pass stands.
+    // previous pass found removed, until the removed set settles. Each pass that
+    // changes it unlocks at least one record, so the graph's size bounds the
+    // passes; the bound only keeps a pathological graph from looping.
     let mut freed: BTreeSet<DeviceId> = BTreeSet::new();
     let mut passes = 0;
     loop {
@@ -413,7 +405,7 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
         let verdicts = judge(&g, &overtaken, &freed);
         let all: BTreeSet<Hash32> = g.order.iter().copied().collect();
         let removed = g.state(&verdicts, &all).removed;
-        if removed != freed && passes < MAX_PASSES {
+        if removed != freed && passes <= g.order.len() {
             freed = removed;
             continue;
         }
@@ -459,9 +451,6 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
         overtaken.extend(newly);
     }
 }
-
-/// Passes `compute` makes, at most, for the cap to see removals judged later.
-const MAX_PASSES: usize = 8;
 
 fn judge(
     g: &Graph<'_>,
@@ -609,10 +598,16 @@ fn judge(
                         && !code_key.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0))
                     {
                         Verdict::Refused(Refusal::NeedsCode)
-                    } else if last.is_some_and(|m| (inputs.held)(old) < m.s) {
-                        Verdict::Waits(Wait::Chain)
                     } else {
-                        Verdict::Counts
+                        // The old chain must be held through exactly `last`.
+                        match last.map(|m| ((inputs.held)(old, m.s), m.h)) {
+                            None => Verdict::Counts,
+                            Some((None, _)) => Verdict::Waits(Wait::Chain),
+                            Some((Some(held), named)) if held != named => {
+                                Verdict::Refused(Refusal::LastConflict)
+                            }
+                            Some(_) => Verdict::Counts,
+                        }
                     }
                 }
             },
@@ -630,10 +625,15 @@ fn judge(
                         let code = inputs.records[&s].seal().map(|c| c.code_key);
                         // What it removes, as lineages: removing any identity of a
                         // lineage removes all of them (SP27).
-                        let removed: BTreeSet<DeviceId> = removes
-                            .iter()
-                            .map(|x| st.members.get(&x.device).map_or(x.device, |m| m.lineage))
-                            .collect();
+                        // And what they enrolled: a signer the cascade would take
+                        // is removed by it too.
+                        let removed = closure(
+                            &st.members,
+                            removes
+                                .iter()
+                                .map(|x| st.members.get(&x.device).map_or(x.device, |m| m.lineage))
+                                .collect(),
+                        );
                         // One signer trusted at its predecessor and not removed by it.
                         let device_signed = st.members.values().any(|m| {
                             st.trusted(&m.device).is_some()
@@ -654,6 +654,26 @@ fn judge(
         verdicts.insert(*h, v);
     }
     verdicts
+}
+
+/// SP20: the closure of removing `lineages`: them, and every lineage they enrolled,
+/// directly or through others.
+fn closure(
+    members: &BTreeMap<DeviceId, Member>,
+    mut gone: BTreeSet<DeviceId>,
+) -> BTreeSet<DeviceId> {
+    loop {
+        let more: Vec<DeviceId> = members
+            .values()
+            .filter(|m| !gone.contains(&m.lineage))
+            .filter(|m| m.enroller.is_some_and(|e| gone.contains(&e)))
+            .map(|m| m.lineage)
+            .collect();
+        if more.is_empty() {
+            return gone;
+        }
+        gone.extend(more);
+    }
 }
 
 /// The devices the cap counts: those trusted so far, less those a counting removal
@@ -739,6 +759,16 @@ mod tests {
         Keypair::from_seed(&[n; 32])
     }
 
+    trait CloneKey {
+        fn clone_key(&self) -> Keypair;
+    }
+
+    impl CloneKey for Keypair {
+        fn clone_key(&self) -> Keypair {
+            Keypair::from_seed(&self.seed())
+        }
+    }
+
     fn code(key: &Keypair) -> Value {
         json!({ "nonce": b64url_encode(&[5; 16]), "codeKey": b64url_encode(&key.public()) })
     }
@@ -749,7 +779,7 @@ mod tests {
         records: BTreeMap<Hash32, Record>,
         seen: BTreeMap<Hash32, i64>,
         confirmed: BTreeSet<Hash32>,
-        held: BTreeMap<DeviceId, u64>,
+        held: BTreeMap<(DeviceId, u64), Hash32>,
     }
 
     impl Lib {
@@ -871,7 +901,7 @@ mod tests {
             genesis: Hash32,
             accepted: &BTreeSet<Hash32>,
         ) -> Result<Membership, Stale> {
-            let held = |d: &DeviceId| self.held.get(d).copied().unwrap_or(0);
+            let held = |d: &DeviceId, s: u64| self.held.get(&(*d, s)).copied();
             compute(&Inputs {
                 genesis,
                 records: &self.records,
@@ -1037,7 +1067,9 @@ mod tests {
         let mut l = Lib::default();
         let (a, a2, a3, c0) = (k(1), k(21), k(22), k(100));
         let g = l.genesis(&a, &c0);
-        l.held.insert(a.device(), 4);
+        // The rotations below name `last = { 4, ee… }`: this device holds it.
+        l.held
+            .insert((a.device(), 4), Hash32::parse(&"ee".repeat(32)).unwrap());
         let r1 = l.rotate(g, &a, &a2, Some(4), OLD);
         let twice = l.rotate(g, &a, &a3, Some(4), OLD + 1);
         let m = l.compute(g);
@@ -1053,6 +1085,16 @@ mod tests {
         let ahead = l.rotate(g, &a, &a2, Some(9), OLD);
         let m = l.compute(g);
         assert_eq!(m.verdict(&ahead), Some(Verdict::Waits(Wait::Chain)));
+        // One naming a `last` this device holds with another hash: a conflict.
+        let mut l = Lib::default();
+        let g = l.genesis(&a, &c0);
+        l.held.insert((a.device(), 4), Hash32([1; 32]));
+        let conflict = l.rotate(g, &a, &a2, Some(4), OLD);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&conflict),
+            Some(Verdict::Refused(Refusal::LastConflict))
+        );
     }
 
     #[test]
@@ -1082,6 +1124,64 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&rm), Some(Verdict::Refused(Refusal::Signer)));
         assert!(m.trusted(&a3.device()).is_some());
+    }
+
+    #[test]
+    fn a_device_cant_sign_a_removal_whose_cascade_takes_it() {
+        let mut l = Lib::default();
+        let (a, b, c, c0) = (k(1), k(2), k(3), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &b, &c, 1, OLD + 1);
+        // C signs the removal of B, who enrolled it: the cascade would take C too.
+        let rm = l.remove(e2, &c, &c0, &k(101), &[&b], OLD + 2);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Refused(Refusal::Signer)));
+        assert!(m.trusted(&c.device()).is_some());
+    }
+
+    #[test]
+    fn unlocks_that_take_many_passes_still_settle() {
+        // Twelve devices, then eight enrollments waiting on the cap, each followed
+        // by a removal signed by the device enrolled just before it: each pass
+        // unlocks one enrollment and the removal after it.
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        let mut prev = g;
+        for i in 0..11u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        let mut waiting = Vec::new();
+        let mut signer = a.clone_key();
+        let mut code_now = c0.clone_key();
+        for i in 0..8u8 {
+            let new = k(60 + i);
+            let e = l.enroll(
+                prev,
+                &a,
+                &new,
+                12 + u64::from(i),
+                OLD + 100 + 10 * i64::from(i),
+            );
+            waiting.push(e);
+            let next_code = k(110 + i);
+            let rm = l.remove(
+                e,
+                &signer,
+                &code_now,
+                &next_code,
+                &[&k(10 + i)],
+                OLD + 105 + 10 * i64::from(i),
+            );
+            prev = rm;
+            signer = new;
+            code_now = next_code;
+        }
+        let m = l.compute(g);
+        for e in &waiting {
+            assert_eq!(m.verdict(e), Some(Verdict::Counts), "{e:?}");
+        }
     }
 
     #[test]
