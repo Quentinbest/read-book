@@ -96,6 +96,9 @@ pub enum Refusal {
     Rotated,
     /// A third rotation in 30 days without the code's signature (SY7).
     NeedsCode,
+    /// A removal naming a device the membership at its predecessor doesn't hold:
+    /// what a remover hadn't seen is suspended, not removed (SP26).
+    UnknownTarget,
     /// A rotation whose `last` isn't the old chain this device holds at that
     /// sequence: a conflict 1c.6 makes an equivocation proof of (SP20 (3), SP30).
     LastConflict,
@@ -213,30 +216,46 @@ impl<'a> Graph<'a> {
             ancestors.insert(inputs.genesis, BTreeSet::new());
             order.push(inputs.genesis);
         }
+        // Each record's successors, and how many of its predecessors are still to be
+        // placed, built once: placing takes time in proportion to the records, never
+        // a rescan of them all per record.
+        let mut children: BTreeMap<Hash32, Vec<Hash32>> = BTreeMap::new();
+        let mut waiting: BTreeMap<Hash32, usize> = BTreeMap::new();
+        for (h, r) in inputs.records {
+            let prevs: BTreeSet<Hash32> = r.prevs().into_iter().collect();
+            if *h == inputs.genesis || prevs.is_empty() {
+                continue;
+            }
+            waiting.insert(*h, prevs.len());
+            for p in prevs {
+                children.entry(p).or_default().push(*h);
+            }
+        }
         // Repeatedly take, among records whose predecessors are all placed, the one
         // first seen (then the smaller hash).
-        let mut left: BTreeSet<Hash32> = inputs
-            .records
-            .iter()
-            .filter(|(h, r)| **h != inputs.genesis && !r.prevs().is_empty())
-            .map(|(h, _)| *h)
-            .collect();
-        loop {
-            let next = left
-                .iter()
-                .filter(|h| {
-                    inputs.records[*h]
-                        .prevs()
-                        .iter()
-                        .all(|p| ancestors.contains_key(p))
-                })
-                .min_by_key(|h| (seen(h), **h))
-                .copied();
-            let Some(h) = next else { break };
+        let mut ready: std::collections::BinaryHeap<std::cmp::Reverse<(i64, Hash32)>> =
+            std::collections::BinaryHeap::new();
+        let release = |h: &Hash32,
+                       waiting: &mut BTreeMap<Hash32, usize>,
+                       ready: &mut std::collections::BinaryHeap<
+            std::cmp::Reverse<(i64, Hash32)>,
+        >| {
+            for c in children.get(h).into_iter().flatten() {
+                if let Some(n) = waiting.get_mut(c) {
+                    *n -= 1;
+                    if *n == 0 {
+                        ready.push(std::cmp::Reverse((seen(c), *c)));
+                    }
+                }
+            }
+        };
+        if !order.is_empty() {
+            release(&inputs.genesis, &mut waiting, &mut ready);
+        }
+        while let Some(std::cmp::Reverse((_, h))) = ready.pop() {
             if order.len() >= MAX_RECORDS {
                 break;
             }
-            left.remove(&h);
             let mut anc = BTreeSet::new();
             for p in inputs.records[&h].prevs() {
                 anc.insert(p);
@@ -244,6 +263,7 @@ impl<'a> Graph<'a> {
             }
             ancestors.insert(h, anc);
             order.push(h);
+            release(&h, &mut waiting, &mut ready);
         }
         Graph {
             inputs,
@@ -625,6 +645,10 @@ fn judge(
                         let code = inputs.records[&s].seal().map(|c| c.code_key);
                         // What it removes, as lineages: removing any identity of a
                         // lineage removes all of them (SP27).
+                        // Every device it names must be known here: one enrolled or
+                        // rotated in later could otherwise turn out to be its own
+                        // signer's lineage.
+                        let unknown = removes.iter().any(|x| !st.members.contains_key(&x.device));
                         // And what they enrolled: a signer the cascade would take
                         // is removed by it too.
                         let removed = closure(
@@ -640,7 +664,9 @@ fn judge(
                                 && !removed.contains(&m.lineage)
                                 && r.signed_by(&Signer::Device(m.device), &m.key, 0)
                         });
-                        if !device_signed {
+                        if unknown {
+                            Verdict::Refused(Refusal::UnknownTarget)
+                        } else if !device_signed {
                             Verdict::Refused(Refusal::Signer)
                         } else if !code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
                             Verdict::Refused(Refusal::Signature)
@@ -1012,9 +1038,10 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&by_code), Some(Verdict::Counts));
         assert!(m.trusted(&k(2).device()).is_some());
-        // A removal sealed on the same head, even judged after it, overtakes it: the
-        // old code can't enrol anyone once a removal has rotated it.
-        let rm = l.remove(g, &a, &c0, &k(102), &[&k(4)], OLD + 1);
+        // A removal sealed after the same head, even judged after it, overtakes it:
+        // the old code can't enrol anyone once a removal has rotated it.
+        let e = l.enroll(g, &a, &k(4), 1, OLD + 1);
+        let rm = l.remove(e, &a, &c0, &k(102), &[&k(4)], OLD + 2);
         let m = l.compute(g);
         assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
         assert_eq!(
@@ -1138,6 +1165,23 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&rm), Some(Verdict::Refused(Refusal::Signer)));
         assert!(m.trusted(&c.device()).is_some());
+    }
+
+    #[test]
+    fn a_removal_naming_a_device_not_yet_known_is_refused() {
+        let mut l = Lib::default();
+        let (a, a2, c0) = (k(1), k(21), k(100));
+        let g = l.genesis(&a, &c0);
+        // A signs the removal of A2, unknown so far; then A rotates to A2.
+        let rm = l.remove(g, &a, &c0, &k(101), &[&a2], OLD + 1);
+        let r = l.rotate(rm, &a, &a2, None, OLD + 2);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&rm),
+            Some(Verdict::Refused(Refusal::UnknownTarget))
+        );
+        assert_eq!(m.verdict(&r), Some(Verdict::Counts));
+        assert!(m.trusted(&a2.device()).is_some());
     }
 
     #[test]
@@ -1316,7 +1360,7 @@ mod tests {
         let (a, b, c0) = (k(1), k(2), k(100));
         let g = l.genesis(&a, &c0);
         let e1 = l.enroll(g, &a, &b, 1, OLD);
-        let first = l.remove(e1, &a, &c0, &k(101), &[&k(5)], OLD + 1);
+        let first = l.remove(e1, &a, &c0, &k(101), &[&b], OLD + 1);
         let sibling = l.remove(e1, &b, &c0, &k(102), &[&k(6)], OLD + 2);
         let m = l.compute(g);
         assert_eq!(m.verdict(&first), Some(Verdict::Counts));
