@@ -478,12 +478,13 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
                         .all(|a| !matches!(verdicts.get(a), Some(Verdict::Waits(_))))
                 })
                 // A rotation is unsettled while another rotation of the same identity
-                // waits: that one stands once it counts (one successor, SP27).
+                // waits, placed or not yet (its predecessor missing): that one stands
+                // once it counts (one successor, SP27).
                 .filter(|h| match &inputs.records[*h].body {
-                    Body::Rotate { old, .. } => !g.order.iter().any(|o| {
+                    Body::Rotate { old, .. } => !inputs.records.iter().any(|(o, r)| {
                         o != *h
                             && matches!(verdicts.get(o), Some(Verdict::Waits(_)))
-                            && matches!(&inputs.records[o].body, Body::Rotate { old: o2, .. } if o2 == old)
+                            && matches!(&r.body, Body::Rotate { old: o2, .. } if o2 == old)
                     }),
                     _ => true,
                 })
@@ -1364,6 +1365,29 @@ mod tests {
         // the same storage isn't stale.
         l.held
             .insert((a.device(), 4), Hash32::parse(&"ee".repeat(32)).unwrap());
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Refused(Refusal::Rotated)));
+    }
+
+    #[test]
+    fn a_rotation_with_an_unjudged_sibling_isnt_kept_as_accepted() {
+        let mut l = Lib::default();
+        let (a, a2, a3, b, c0) = (k(1), k(21), k(22), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        // A → A2 was seen first but its predecessor is missing for now; A → A3
+        // counts meanwhile.
+        let p = l.enroll(g, &a, &b, 1, OLD);
+        let r1 = l.rotate(p, &a, &a2, None, OLD + 1);
+        let r2 = l.rotate(g, &a, &a3, None, OLD + 2);
+        let held = l.records.remove(&p).unwrap();
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r1), Some(Verdict::Waits(Wait::Unjudged)));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        let accepted = m.accepted(&l.records);
+        assert!(!accepted.contains(&r2));
+        // The predecessor comes back: A2 is A's successor, and the storage isn't stale.
+        l.records.insert(p, held);
         let m = l.compute_after(g, &accepted).unwrap();
         assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
         assert_eq!(m.verdict(&r2), Some(Verdict::Refused(Refusal::Rotated)));
