@@ -607,10 +607,10 @@ fn judge(
                             matches!(&inputs.records[*x].body, Body::Rotate { old: o2, .. }
                                 if global.members.get(o2).map(|m| m.lineage) == Some(lineage))
                         })
-                        .filter(|x| {
-                            !inputs.checkpoint.contains(*x)
-                                && seen(x) > inputs.now_ms - ROTATION_WINDOW_MS
-                        })
+                        // Checkpoint rotations count too: the checkpoint's exception
+                        // is for enrollment timing only, and a device that just
+                        // joined errs towards asking for the code.
+                        .filter(|x| seen(x) > inputs.now_ms - ROTATION_WINDOW_MS)
                         .count();
                     let code_key = g
                         .newest(&sealed_before)
@@ -927,6 +927,25 @@ mod tests {
             self.compute_after(genesis, &BTreeSet::new()).unwrap()
         }
 
+        fn compute_with_checkpoint(
+            &self,
+            genesis: Hash32,
+            checkpoint: &BTreeSet<Hash32>,
+        ) -> Membership {
+            let held = |d: &DeviceId, s: u64| self.held.get(&(*d, s)).copied();
+            compute(&Inputs {
+                genesis,
+                records: &self.records,
+                first_seen: &self.seen,
+                confirmed: &self.confirmed,
+                checkpoint,
+                held: &held,
+                accepted: &BTreeSet::new(),
+                now_ms: NOW,
+            })
+            .unwrap()
+        }
+
         fn compute_after(
             &self,
             genesis: Hash32,
@@ -1140,6 +1159,10 @@ mod tests {
         let r3 = l.rotate(r2, &a3, &a4, None, NOW - 500);
         let m = l.compute(g);
         assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r3), Some(Verdict::Refused(Refusal::NeedsCode)));
+        // The same for a device that joined with the first two in its checkpoint.
+        let checkpoint: BTreeSet<Hash32> = [g, r1, r2].into_iter().collect();
+        let m = l.compute_with_checkpoint(g, &checkpoint);
         assert_eq!(m.verdict(&r3), Some(Verdict::Refused(Refusal::NeedsCode)));
     }
 
