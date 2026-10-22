@@ -25,3 +25,4 @@ pub mod merge;
 pub mod record;
 pub mod restore;
 pub mod retention;
+pub mod trust;
