@@ -162,6 +162,9 @@ pub struct Membership {
     pub state: State,
     /// The newest sealed head: the counting sealed head every other one leads to.
     pub newest_sealed: Option<Hash32>,
+    /// Counting records none of whose ancestors still waits: their verdict can't
+    /// change as the graph settles.
+    settled: BTreeSet<Hash32>,
 }
 
 impl Membership {
@@ -182,18 +185,20 @@ impl Membership {
     /// SP21: what the device store keeps so that a later graph lacking it is
     /// known to be stale: the newest sealed head, and every counting removal and
     /// rotation.
+    /// Only settled records: one counting while an ancestor still waits could turn
+    /// refused once that ancestor counts, and keeping it would make unchanged
+    /// storage look stale.
     pub fn accepted(&self, records: &BTreeMap<Hash32, Record>) -> BTreeSet<Hash32> {
-        self.verdicts
+        self.settled
             .iter()
-            .filter(|(_, v)| **v == Verdict::Counts)
-            .map(|(h, _)| *h)
+            .copied()
             .filter(|h| {
                 matches!(
                     records.get(h).map(|r| &r.body),
                     Some(Body::Remove { .. } | Body::Rotate { .. })
                 )
             })
-            .chain(self.newest_sealed)
+            .chain(self.newest_sealed.filter(|h| self.settled.contains(h)))
             .collect()
     }
 }
@@ -463,10 +468,22 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
             if !missing.is_empty() {
                 return Err(Stale { missing });
             }
+            let settled = g
+                .order
+                .iter()
+                .filter(|h| verdicts.get(*h) == Some(&Verdict::Counts))
+                .filter(|h| {
+                    g.ancestors[*h]
+                        .iter()
+                        .all(|a| !matches!(verdicts.get(a), Some(Verdict::Waits(_))))
+                })
+                .copied()
+                .collect();
             return Ok(Membership {
                 verdicts,
                 state,
                 newest_sealed,
+                settled,
             });
         }
         overtaken.extend(newly);
@@ -1318,6 +1335,28 @@ mod tests {
         for e in &waiting {
             assert_eq!(m.verdict(e), Some(Verdict::Counts), "{e:?}");
         }
+    }
+
+    #[test]
+    fn a_record_counting_over_a_waiting_ancestor_isnt_kept_as_accepted() {
+        let mut l = Lib::default();
+        let (a, a2, a3, c0) = (k(1), k(21), k(22), k(100));
+        let g = l.genesis(&a, &c0);
+        // A → A2 waits for the old chain; A → A3, built on it, counts meanwhile.
+        let r1 = l.rotate(g, &a, &a2, Some(4), OLD);
+        let r2 = l.rotate(r1, &a, &a3, None, OLD + 1);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r1), Some(Verdict::Waits(Wait::Chain)));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        let accepted = m.accepted(&l.records);
+        assert!(!accepted.contains(&r2));
+        // The chain arrives: A2 is A's successor and A3's rotation is refused, and
+        // the same storage isn't stale.
+        l.held
+            .insert((a.device(), 4), Hash32::parse(&"ee".repeat(32)).unwrap());
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Refused(Refusal::Rotated)));
     }
 
     #[test]
