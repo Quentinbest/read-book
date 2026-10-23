@@ -22,6 +22,11 @@ use serde_json::{Map, Value};
 pub const MAX_TRUST_FILE: usize = 64 << 10;
 pub const MAX_CLAIM_FILE: usize = 4 << 10;
 
+/// SP19: a merge consumes the unmerged sealed tips, and a library has at most 12
+/// devices, so a merge names at most 16 heads. PROVISIONAL (decisions.md, “The
+/// membership records”, (7)).
+pub const MAX_MERGE_PREVS: usize = 16;
+
 /// SP19: a label is what the reader confirmed for the device, at most 64
 /// characters. PROVISIONAL: a longer one is refused, not cut (decisions.md, (3)).
 pub const MAX_LABEL_CHARS: usize = 64;
@@ -370,7 +375,7 @@ fn body(type_: &str, b: &Map<String, Value>) -> Result<Body> {
                     .collect::<Result<Vec<_>>>()?;
                 // SP19: two or more sibling heads, each once.
                 let distinct: std::collections::BTreeSet<&Hash32> = p.iter().collect();
-                if p.len() < 2 || distinct.len() != p.len() {
+                if p.len() < 2 || p.len() > MAX_MERGE_PREVS || distinct.len() != p.len() {
                     return Err(TrustError::Shape);
                 }
                 p
@@ -889,6 +894,11 @@ mod tests {
         );
         assert!(matches!(
             merge(vec!["aa".repeat(32)]),
+            Err(TrustError::Shape)
+        ));
+        // Nor one of more heads than a merge can need.
+        assert!(matches!(
+            merge((0..=MAX_MERGE_PREVS).map(|i| format!("{i:064x}")).collect()),
             Err(TrustError::Shape)
         ));
         // Nor is one naming the same head twice.
