@@ -126,6 +126,8 @@ pub enum Refusal {
     /// SP20 (5): a `merge` whose `keeps` doesn't name exactly the devices enrolled
     /// after the fork below its heads.
     Keeps,
+    /// SP20 (5): a `merge` whose heads aren't the current unmerged tips, every one.
+    Heads,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -544,9 +546,14 @@ impl Pass {
         let mut next = self.clone();
         next.freed = state.removed.clone();
         // A record on a head that a sealed head judged after it overtook: judged
-        // again as refused.
-        next.overtaken
-            .extend(counting.iter().copied().filter(|h| g.overtaken(&sealed, h)));
+        // again as refused. Rebuilt each pass from the sealed heads counting now,
+        // so a head that counted for a pass and then stopped overtakes nothing.
+        next.overtaken = g
+            .order
+            .iter()
+            .copied()
+            .filter(|h| g.overtaken(&sealed, h))
+            .collect();
         next.confirmed.clear();
         next.admitted.clear();
         for h in &counting {
@@ -583,11 +590,26 @@ impl Pass {
                     .copied()
                     .collect()
             };
+            // Each lineage's counting enrollments: one key enrolled on two branches
+            // is one enrollment, on both (SP20).
+            let mut enrollments: BTreeMap<DeviceId, Vec<Hash32>> = BTreeMap::new();
+            for h in &counting {
+                if let Body::Enroll { device, .. } = &inputs.records[*h].body {
+                    enrollments.entry(*device).or_default().push(**h);
+                }
+            }
             let after: Vec<(DeviceId, BTreeSet<Hash32>)> = state
                 .members
                 .values()
-                .filter(|m| m.device == m.lineage && !fork.contains(&m.record))
-                .map(|m| (m.lineage, branches(&m.record)))
+                .filter(|m| m.device == m.lineage)
+                .filter_map(|m| {
+                    let recs = enrollments
+                        .get(&m.lineage)
+                        .cloned()
+                        .unwrap_or_else(|| vec![m.record]);
+                    (!recs.iter().any(|r| fork.contains(r)))
+                        .then(|| (m.lineage, recs.iter().flat_map(&branches).collect()))
+                })
                 .collect();
             let mine = inputs
                 .me
@@ -779,17 +801,25 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
             // `prev`.
             Body::Genesis { .. } | Body::Claim { .. } | Body::Escrow { .. } => continue,
             Body::Merge { prevs, keeps, .. } => {
-                // SP20 (5): each head a sealed head, none below another; a removal
-                // waiting here for a confirm is one, and the merge confirms it.
-                let heads = prevs.iter().all(|p| {
+                // SP20 (5): a sealed head counting or waiting here for a confirm (a
+                // removal a merge confirms).
+                let head = |p: &Hash32| {
                     inputs.records[p].seal().is_some()
                         && matches!(
                             verdicts.get(p),
                             Some(Verdict::Counts | Verdict::Waits(Wait::Confirm))
                         )
-                }) && !prevs
+                };
+                let heads = prevs.iter().all(head);
+                // It consumes the current unmerged tips: every one judged so far.
+                let judged: Vec<Hash32> = g
+                    .order
                     .iter()
-                    .any(|p| prevs.iter().any(|q| q != p && g.descends(q, p)));
+                    .filter(|x| *x != h && head(x))
+                    .copied()
+                    .collect();
+                let every_tip = prevs.iter().copied().collect::<BTreeSet<_>>()
+                    == g.tips(&judged).into_iter().collect();
                 let mut merged = verdicts.clone();
                 for p in prevs {
                     if merged.get(p) == Some(&Verdict::Waits(Wait::Confirm)) {
@@ -830,6 +860,8 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                     Verdict::Refused(Refusal::NotSealed)
                 } else if pass.overtaken.contains(h) || g.overtaken(&all_sealed, h) {
                     Verdict::Refused(Refusal::Overtaken)
+                } else if !every_tip {
+                    Verdict::Refused(Refusal::Heads)
                 } else if !prevs.iter().any(code_of) {
                     Verdict::Refused(Refusal::Signature)
                 } else if !fork_signer && !prevs.iter().all(code_of) {
@@ -2069,6 +2101,39 @@ mod tests {
     }
 
     #[test]
+    fn a_confirm_that_stops_counting_overtakes_nothing() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let e3 = l.enroll(e2, &a, &d, 3, OLD + 2);
+        let r1 = l.remove(e3, &b, &c0, &k(101), &[&c], OLD + 3);
+        let r2 = l.remove(e3, &c, &c0, &k(102), &[&b], OLD + 4);
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        // A code enrollment on B's removal; then D confirms C's, which would
+        // overtake it; then A removes D after the enrollment, which overtakes the
+        // confirm and removes its signer: the confirm stops counting.
+        let by_code = l.code_enroll(r1, &k(101), &k(5), OLD + 5);
+        l.confirmed.insert(by_code);
+        let cf = l.confirm(
+            r1,
+            &d,
+            &k(101),
+            &k(103),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 6,
+        );
+        let rm = l.remove(by_code, &a, &k(101), &k(104), &[&d], OLD + 7);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Overtaken)));
+        assert_eq!(m.verdict(&by_code), Some(Verdict::Counts));
+    }
+
+    #[test]
     fn a_confirm_needs_the_newest_head_its_code_a_removal_and_a_signer_it_spares() {
         let (mut l, g, r1, r2) = removed_each_other();
         let held = l.records.remove(&r2).unwrap();
@@ -2325,6 +2390,54 @@ mod tests {
             OLD + 6,
         );
         assert_eq!(l.compute(g).verdict(&by_x), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_merge_takes_every_unmerged_tip() {
+        let (mut l, g, [rx, ry, x1, y1]) = forked();
+        // A third branch: A removes D apart from the other two.
+        let e2 = match &l.records[&x1].body {
+            Body::Enroll { prev, .. } => *prev,
+            _ => unreachable!(),
+        };
+        let rz = l.remove(e2, &k(1), &k(100), &k(109), &[&k(4)], OLD + 6);
+        let keeps = [(&k(5), true), (&k(6), true)];
+        let two = l.merge(&[rx, ry], &k(1), &[&k(101)], &k(103), &keeps, OLD + 7);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rz), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&y1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&two), Some(Verdict::Refused(Refusal::Heads)));
+        l.records.remove(&two);
+        let three = l.merge(&[rx, ry, rz], &k(1), &[&k(101)], &k(104), &keeps, OLD + 7);
+        assert_eq!(l.compute(g).verdict(&three), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_device_enrolled_on_two_branches_is_on_both() {
+        let mut l = Lib::default();
+        let (a, b, c0) = (k(1), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &k(4), 2, OLD + 1);
+        // A enrols X on both branches: one enrollment. Y is on B's branch only.
+        let x1 = l.enroll(e2, &a, &k(5), 3, OLD + 2);
+        let y1 = l.enroll(e2, &b, &k(6), 1, OLD + 3);
+        let x2 = l.enroll_labelled(y1, &a, &k(5), 3, OLD + 4, "X again");
+        l.remove(x1, &a, &c0, &k(101), &[&k(4)], OLD + 5);
+        l.remove(x2, &b, &c0, &k(102), &[&k(4)], OLD + 6);
+        // Seen from X, on both branches, Y isn't suspended.
+        l.me = Some(k(5).device());
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&x2), Some(Verdict::Counts));
+        assert!(m.suspended.is_empty());
+        assert!(m.trusted(&k(6).device()).is_some());
+        // Seen from A, both are.
+        l.me = Some(a.device());
+        let m = l.compute(g);
+        assert_eq!(
+            m.suspended,
+            [k(5).device(), k(6).device()].into_iter().collect()
+        );
     }
 
     #[test]
