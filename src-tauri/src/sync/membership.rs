@@ -20,7 +20,7 @@
 //!
 //! PROVISIONAL: where SP20 leaves room, the reading here is Delegated to Claude,
 //! not approved (`docs/decisions.md`, “Computing membership” (1)–(7), “Sibling
-//! sealed heads” (1)–(6) and “Merge and suspension” (1)–(6)).
+//! sealed heads” (1)–(7) and “Merge and suspension” (1)–(6)).
 
 use super::envelope::Signer;
 use super::ids::{DeviceId, Hash32};
@@ -504,6 +504,24 @@ impl<'a> Graph<'a> {
         }
     }
 
+    /// SP20 (4), (4a): a removal on `base` (the newest sealed head at its
+    /// predecessor) that a counting confirm or merge among `sealed` overtook, one
+    /// neither below nor after it: that head consumed `base`'s code, so the code
+    /// never seals again. (A confirm built on `base` beside the removal doesn't
+    /// count: the removal overtakes it.)
+    fn removal_overtaken(&self, sealed: &[Hash32], base: Hash32, h: &Hash32) -> bool {
+        sealed.iter().any(|s| {
+            *s != base
+                && matches!(
+                    self.inputs.records[s].body,
+                    Body::Confirm { .. } | Body::Merge { .. }
+                )
+                && self.descends(s, &base)
+                && !self.descends(s, h)
+                && !self.descends(h, s)
+        })
+    }
+
     /// The newest sealed head at a record's predecessors.
     fn base(&self, verdicts: &BTreeMap<Hash32, Verdict>, h: &Hash32) -> Option<Hash32> {
         let before = self.upto(h);
@@ -552,7 +570,12 @@ impl Pass {
             .order
             .iter()
             .copied()
-            .filter(|h| g.overtaken(&sealed, h))
+            .filter(|h| {
+                g.overtaken(&sealed, h)
+                    || matches!(inputs.records[h].body, Body::Remove { .. })
+                        && g.base(verdicts, h)
+                            .is_some_and(|b| g.removal_overtaken(&sealed, b, h))
+            })
             .collect();
         next.confirmed.clear();
         next.admitted.clear();
@@ -1121,13 +1144,16 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                             Verdict::Refused(Refusal::Signer)
                         } else if !code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
                             Verdict::Refused(Refusal::Signature)
-                        } else if local.is_some_and(|n| !g.descends(&s, &n))
+                        } else if (local.is_some_and(|n| !g.descends(&s, &n))
+                            || pass.overtaken.contains(h)
+                            || g.removal_overtaken(&all_sealed, s, h))
                             && !inputs.accepted.contains(h)
                             && !pass.confirmed.contains(h)
                         {
                             // SP20 (4): built on a head this device knows a later
-                            // sealed head overtook. A sibling seen at once instead
-                            // counts, and the removals unite.
+                            // sealed head overtook, or whose code a confirm or merge
+                            // consumed. A sibling seen at once instead counts, and the
+                            // removals unite.
                             Verdict::Waits(Wait::Confirm)
                         } else {
                             Verdict::Counts
@@ -2110,27 +2136,54 @@ mod tests {
         let e3 = l.enroll(e2, &a, &d, 3, OLD + 2);
         let r1 = l.remove(e3, &b, &c0, &k(101), &[&c], OLD + 3);
         let r2 = l.remove(e3, &c, &c0, &k(102), &[&b], OLD + 4);
-        let held = l.records.remove(&r2).unwrap();
+        // This device accepted both siblings.
         let accepted = l.compute(g).accepted(&l.records);
-        l.records.insert(r2, held);
-        // A code enrollment on B's removal; then D confirms C's, which would
-        // overtake it; then A removes D after the enrollment, which overtakes the
-        // confirm and removes its signer: the confirm stops counting.
-        let by_code = l.code_enroll(r1, &k(101), &k(5), OLD + 5);
+        assert_eq!(accepted, [r1, r2].into_iter().collect());
+        // A third removal apart, then a code enrollment on B's; D confirms the third
+        // on B's, which overtakes the enrollment; then C, on its own removal,
+        // removes D: the confirm's signer is gone and the confirm stops counting.
+        let r4 = l.remove(e3, &d, &c0, &k(107), &[&b], OLD + 5);
+        let by_code = l.code_enroll(r1, &k(101), &k(5), OLD + 6);
         l.confirmed.insert(by_code);
         let cf = l.confirm(
             r1,
             &d,
             &k(101),
             &k(103),
-            json!({ "confirms": r2.to_string() }),
-            OLD + 6,
+            json!({ "confirms": r4.to_string() }),
+            OLD + 7,
         );
-        let rm = l.remove(by_code, &a, &k(101), &k(104), &[&d], OLD + 7);
+        let r5 = l.remove(r2, &c, &k(102), &k(104), &[&d], OLD + 8);
         let m = l.compute_after(g, &accepted).unwrap();
-        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
-        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Overtaken)));
+        assert_eq!(m.verdict(&r5), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Signer)));
         assert_eq!(m.verdict(&by_code), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_confirmed_removals_code_never_seals_again() {
+        let (mut l, g, r1, r2) = removed_each_other();
+        // The reader confirms C's removal on B's; then C, keeping C's stale code,
+        // builds another removal on its own.
+        let cf = l.confirm(
+            r1,
+            &k(1),
+            &k(101),
+            &k(103),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 5,
+        );
+        let r3 = l.remove(r2, &k(3), &k(102), &k(106), &[&k(2)], OLD + 6);
+        // Seen from a device that held neither sibling: the stale code doesn't seal.
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&cf), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r3), Some(Verdict::Waits(Wait::Confirm)));
+        assert_eq!(m.newest_sealed, Some(cf));
+        // Siblings made apart on one head still both count.
+        let (l, g, r1, r2) = removed_each_other();
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
     }
 
     #[test]
@@ -2248,6 +2301,9 @@ mod tests {
         assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::Confirms)));
         assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
         assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+        // A removal made apart on the confirm's own head is its sibling: it counts.
+        let rm = l.remove(h, &k(1), &k(100), &k(105), &[&k(15)], OLD + 25);
+        assert_eq!(l.compute(g).verdict(&rm), Some(Verdict::Counts));
     }
 
     #[test]
