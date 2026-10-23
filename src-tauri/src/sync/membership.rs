@@ -567,6 +567,11 @@ impl Pass {
                 }
             }
         }
+        // A contender refused for its own reasons leaves the pool; one refused
+        // because a confirm didn't admit it stays, as the reader's choice.
+        next.contended.retain(
+            |h| !matches!(verdicts.get(h), Some(Verdict::Refused(r)) if *r != Refusal::NotAdmitted),
+        );
         let theirs = enrolled(inputs, &next.contended);
         let others = state
             .members
@@ -730,12 +735,15 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                                 Some(Verdict::Counts | Verdict::Waits(Wait::Confirm))
                             ) =>
                         {
+                            // Its targets as lineages where it was made: an identity
+                            // rotated in on its branch alone is still the old lineage.
+                            let at = g.state(&verdicts, &g.upto(rm));
                             Some(closure(
-                                &st.members,
+                                &at.members,
                                 removes
                                     .iter()
                                     .map(|x| {
-                                        st.members.get(&x.device).map_or(x.device, |m| m.lineage)
+                                        at.members.get(&x.device).map_or(x.device, |m| m.lineage)
                                     })
                                     .collect(),
                             ))
@@ -1975,6 +1983,62 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
         assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_confirm_resolves_a_removal_of_a_successor_rotated_in_on_its_branch() {
+        let mut l = Lib::default();
+        let (a, b, b2, c, c0) = (k(1), k(2), k(22), k(3), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        // B removes C; apart, B rotates to B2 and C removes B2.
+        let r1 = l.remove(e2, &b, &c0, &k(101), &[&c], OLD + 2);
+        let rot = l.rotate(e2, &b, &b2, None, OLD + 3);
+        let r2 = l.remove(rot, &c, &c0, &k(102), &[&b2], OLD + 4);
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        // B's old identity, which the removal takes, can't confirm it. A wrong
+        // reading alternates between passes, so the graph is judged at several
+        // sizes, each stopping the passes at another point of the cycle.
+        let cf = l.confirm(
+            r1,
+            &b,
+            &k(101),
+            &k(103),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 5,
+        );
+        let mut prev = e2;
+        for n in 3..6u8 {
+            let m = l.compute_after(g, &accepted).unwrap();
+            assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Signer)));
+            assert_eq!(m.verdict(&r2), Some(Verdict::Waits(Wait::Confirm)));
+            prev = l.enroll(prev, &a, &k(60 + n), u64::from(n), OLD + 10 + i64::from(n));
+        }
+    }
+
+    #[test]
+    fn a_contender_refused_for_its_own_reasons_leaves_the_pool() {
+        let (mut l, g, h) = eleven();
+        // A removal, then an enrollment after it: eleven again.
+        let r0 = l.remove(h, &k(1), &k(100), &k(101), &[&k(19)], OLD + 20);
+        let h2 = l.enroll(r0, &k(10), &k(30), 1, OLD + 21);
+        // A code enrollment and a device enrollment contend for the twelfth slot.
+        let by_code = l.code_enroll(r0, &k(101), &k(40), OLD + 22);
+        l.confirmed.insert(by_code);
+        let w = l.enroll(h2, &k(11), &k(41), 1, OLD + 23);
+        // A later removal overtakes the code enrollment without freeing a slot.
+        let r2 = l.remove(h2, &k(1), &k(101), &k(102), &[&k(19)], OLD + 24);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        assert_eq!(
+            m.verdict(&by_code),
+            Some(Verdict::Refused(Refusal::Overtaken))
+        );
+        assert_eq!(m.verdict(&w), Some(Verdict::Counts));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
     }
 
     #[test]
