@@ -9,17 +9,21 @@
 //! when this device first saw them, so what one device first knew to be the newest
 //! sealed head stays its newest (SP20 (2), (4)).
 //!
-//! PROVISIONAL: where SP20 leaves room, the reading here is Delegated to Claude,
-//! not approved (`docs/decisions.md`, “Computing membership”), items (1)–(6).
+//! Sibling sealed heads (two removals made apart on one head) both count, and
+//! their removals unite, on a device that held neither. A device whose device
+//! store already held one of them as its newest sealed head treats the other as
+//! overtaken: that removal waits for a `confirm` (SP20 (2), (4), (4a)).
 //!
-//! 1c.4b judges a membership whose sealed heads form one line. Sibling sealed
-//! heads, `confirm` and `merge`, and the suspension of devices enrolled after a
-//! fork are 1c.4c's: until then such a record waits (`Wait::Fork`) and counts for
-//! nothing.
+//! PROVISIONAL: where SP20 leaves room, the reading here is Delegated to Claude,
+//! not approved (`docs/decisions.md`, “Computing membership” (1)–(7) and
+//! “Sibling sealed heads” (1)–(6)).
+//!
+//! `merge` and the suspension of devices enrolled after a fork are 1c.4c-ii's:
+//! until then a merge waits (`Wait::Fork`) and counts for nothing.
 
 use super::envelope::Signer;
 use super::ids::{DeviceId, Hash32};
-use super::trust::{Body, Mark, Record};
+use super::trust::{Body, Confirms, Mark, Record};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// SP20: a library has at most 12 devices.
@@ -73,7 +77,10 @@ pub enum Wait {
     Unconfirmed,
     /// SP20 (3): this device doesn't hold the old chain through `last` yet.
     Chain,
-    /// Sibling sealed heads, a `confirm` or a `merge` (1c.4c).
+    /// SP20 (4): a removal on a head this device knows a later sealed head to have
+    /// overtaken. It counts once a `confirm` confirms it.
+    Confirm,
+    /// A `merge`, or a record after sealed heads no merge has joined (1c.4c-ii).
     Fork,
     /// Not judged: a predecessor this device doesn't hold, or past `MAX_RECORDS`.
     Unjudged,
@@ -104,6 +111,12 @@ pub enum Refusal {
     LastConflict,
     /// A code record that doesn't build on a sealed head.
     NotSealed,
+    /// SP20 (1): a sibling enrollment the cap held back that a `confirm` didn't
+    /// admit, when it admitted others.
+    NotAdmitted,
+    /// SP20 (4a): a `confirm` of a record that isn't a removal, or admitting an
+    /// enrollment the cap didn't hold back, or more than fit under 12.
+    Confirms,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -203,12 +216,31 @@ impl Membership {
     }
 }
 
+/// What a record follows in the graph: its predecessors and, for a `confirm`, the
+/// removal or enrollments it names, which count from then on as if made on its
+/// `prev` (SP20 (4a)).
+fn links(r: &Record) -> Vec<Hash32> {
+    let mut l = r.prevs();
+    match &r.body {
+        Body::Confirm {
+            confirms: Confirms::Removal(h),
+            ..
+        } => l.push(*h),
+        Body::Confirm {
+            confirms: Confirms::Admits(hs),
+            ..
+        } => l.extend(hs.iter().copied()),
+        _ => {}
+    }
+    l
+}
+
 /// The graph of records reachable from the genesis.
 struct Graph<'a> {
     inputs: &'a Inputs<'a>,
     /// Topological order, ties by first sight.
     order: Vec<Hash32>,
-    /// Each record's ancestors, its predecessors among them.
+    /// Each record's ancestors, what it links to among them (`links`).
     ancestors: BTreeMap<Hash32, BTreeSet<Hash32>>,
 }
 
@@ -230,7 +262,7 @@ impl<'a> Graph<'a> {
             if *h == inputs.genesis {
                 continue;
             }
-            if let Some(first) = r.prevs().first() {
+            if let Some(first) = links(r).first() {
                 watching.entry(*first).or_default().push(*h);
             }
         }
@@ -245,8 +277,7 @@ impl<'a> Graph<'a> {
             std::cmp::Reverse<(i64, Hash32)>,
         >| {
             for c in watching.remove(h).unwrap_or_default() {
-                match inputs.records[&c]
-                    .prevs()
+                match links(&inputs.records[&c])
                     .into_iter()
                     .find(|p| !placed.contains_key(p))
                 {
@@ -263,7 +294,7 @@ impl<'a> Graph<'a> {
                 break;
             }
             let mut anc = BTreeSet::new();
-            for p in inputs.records[&h].prevs() {
+            for p in links(&inputs.records[&h]) {
                 anc.insert(p);
                 anc.extend(ancestors[&p].iter().copied());
             }
@@ -403,6 +434,129 @@ impl<'a> Graph<'a> {
         s.remove(h);
         s
     }
+
+    /// A record and its ancestors: the membership at it.
+    fn through(&self, h: &Hash32) -> BTreeSet<Hash32> {
+        let mut s = self.ancestors.get(h).cloned().unwrap_or_default();
+        s.insert(*h);
+        s
+    }
+
+    /// The newest sealed head at a record's predecessors.
+    fn base(&self, verdicts: &BTreeMap<Hash32, Verdict>, h: &Hash32) -> Option<Hash32> {
+        let before = self.upto(h);
+        self.newest(&self.sealed(verdicts, &before))
+    }
+}
+
+/// What a pass of judging learns for the next, until nothing changes.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct Pass {
+    /// Code enrollments and confirms that a sealed head judged after them overtakes.
+    overtaken: BTreeSet<Hash32>,
+    /// SP20: the cap is counted over the whole graph, so removals judged later in
+    /// it make room for enrollments judged earlier: the devices a counting removal
+    /// anywhere takes away.
+    freed: BTreeSet<DeviceId>,
+    /// Removals a counting `confirm` confirms (SP20 (4a)).
+    confirmed: BTreeSet<Hash32>,
+    /// Enrollments a counting `confirm` admits (SP20 (1)).
+    admitted: BTreeSet<Hash32>,
+    /// SP20 (1): enrollments on sibling branches that together passed the cap.
+    contended: BTreeSet<Hash32>,
+    /// Whether they now all fit under it, removals having made room.
+    contended_fit: bool,
+}
+
+impl Pass {
+    fn next(&self, g: &Graph<'_>, verdicts: &BTreeMap<Hash32, Verdict>) -> Pass {
+        let inputs = g.inputs;
+        let all: BTreeSet<Hash32> = g.order.iter().copied().collect();
+        let state = g.state(verdicts, &all);
+        let sealed = g.sealed(verdicts, &all);
+        let counting: Vec<&Hash32> = g
+            .order
+            .iter()
+            .filter(|h| verdicts.get(*h) == Some(&Verdict::Counts))
+            .collect();
+        let mut next = self.clone();
+        next.freed = state.removed.clone();
+        // A code enrollment or a confirm on a head that a sealed head judged after
+        // it overtook: judged again as refused.
+        next.overtaken.extend(counting.iter().copied().filter(|h| {
+            let prev = match &inputs.records[*h].body {
+                Body::Enroll { by: None, prev, .. } | Body::Confirm { prev, .. } => prev,
+                _ => return false,
+            };
+            sealed
+                .iter()
+                .any(|s| s != prev && g.descends(s, prev) && !g.descends(s, h))
+        }));
+        next.confirmed.clear();
+        next.admitted.clear();
+        for h in &counting {
+            match &inputs.records[*h].body {
+                Body::Confirm {
+                    confirms: Confirms::Removal(r),
+                    ..
+                } => {
+                    next.confirmed.insert(*r);
+                }
+                Body::Confirm {
+                    confirms: Confirms::Admits(e),
+                    ..
+                } => next.admitted.extend(e.iter().copied()),
+                _ => {}
+            }
+        }
+        // SP20 (1): an enrollment the cap holds back beside a counting one on a
+        // sibling branch: neither came first, so neither counts until removals
+        // make room or a `confirm` admits the reader's choice. Siblings are apart
+        // in the graph and built on one sealed head or on sibling ones; an
+        // enrollment on an older head than the other's isn't a sibling of it, so
+        // a device long trusted is never held back by a newcomer.
+        let enrollments = |v: Verdict| -> Vec<(Hash32, Option<Hash32>)> {
+            g.order
+                .iter()
+                .filter(|h| matches!(inputs.records[*h].body, Body::Enroll { .. }))
+                .filter(|h| verdicts.get(*h) == Some(&v) && !inputs.checkpoint.contains(*h))
+                .map(|h| (*h, g.base(verdicts, h)))
+                .collect()
+        };
+        let counted = enrollments(Verdict::Counts);
+        for (w, bw) in enrollments(Verdict::Waits(Wait::Cap)) {
+            for (e, be) in &counted {
+                let apart = !g.descends(&w, e) && !g.descends(e, &w);
+                let older = match (bw, be) {
+                    (Some(x), Some(y)) => x != *y && (g.descends(&x, y) || g.descends(y, &x)),
+                    _ => true,
+                };
+                if apart && !older {
+                    next.contended.insert(w);
+                    next.contended.insert(*e);
+                }
+            }
+        }
+        let theirs = enrolled(inputs, &next.contended);
+        let others = state
+            .members
+            .keys()
+            .filter(|d| state.trusted(d).is_some() && !theirs.contains(*d))
+            .count();
+        next.contended_fit = others + theirs.len() <= MAX_DEVICES;
+        next
+    }
+}
+
+/// The devices some enrollments enrol.
+fn enrolled(inputs: &Inputs<'_>, records: &BTreeSet<Hash32>) -> BTreeSet<DeviceId> {
+    records
+        .iter()
+        .filter_map(|h| match inputs.records.get(h).map(|r| &r.body) {
+            Some(Body::Enroll { device, .. }) => Some(*device),
+            _ => None,
+        })
+        .collect()
 }
 
 /// SP21: storage that lacks, or no longer counts, something this device has
@@ -416,96 +570,85 @@ pub struct Stale {
 /// don't count, something this device has accepted.
 pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     let g = Graph::new(inputs);
-    // Code enrollments found overtaken by a sealed head judged after them: judged
-    // again as refused, until nothing changes.
-    let mut overtaken: BTreeSet<Hash32> = BTreeSet::new();
-    // SP20: the cap is counted over the whole graph, so removals judged later in it
-    // make room for enrollments judged earlier: each pass counts the devices the
-    // previous pass found removed, until the removed set settles. Each pass that
-    // changes it unlocks at least one record, so the graph's size bounds the
-    // passes; the bound only keeps a pathological graph from looping.
-    let mut freed: BTreeSet<DeviceId> = BTreeSet::new();
+    // SP20 (2), (4): this device's own view, the newest of the sealed heads its
+    // device store holds. A sealed head that isn't it or after it has been
+    // overtaken here. With sibling heads held, there is none.
+    let held: Vec<Hash32> = inputs
+        .accepted
+        .iter()
+        .filter(|h| g.ancestors.contains_key(*h) && inputs.records[*h].seal().is_some())
+        .copied()
+        .collect();
+    let local = g.newest(&held);
+    // Each pass judges with what the previous one found (`Pass`), until nothing
+    // changes. Each pass that changes something unlocks or settles a record, so
+    // the graph's size bounds the passes; the bound only keeps a pathological
+    // graph from looping.
+    let mut pass = Pass::default();
     let mut passes = 0;
     loop {
         passes += 1;
-        let verdicts = judge(&g, &overtaken, &freed);
+        let verdicts = judge(&g, &pass, local);
         let all: BTreeSet<Hash32> = g.order.iter().copied().collect();
-        let removed = g.state(&verdicts, &all).removed;
-        if removed != freed && passes <= g.order.len() {
-            freed = removed;
+        let next = pass.next(&g, &verdicts);
+        if next != pass && passes <= 2 * g.order.len() {
+            pass = next;
             continue;
         }
         let sealed = g.sealed(&verdicts, &all);
-        let newly: Vec<Hash32> = verdicts
-            .iter()
-            .filter(|(_, v)| **v == Verdict::Counts)
-            .map(|(h, _)| *h)
-            .filter(|h| {
-                matches!(&inputs.records[h].body, Body::Enroll { by: None, prev, .. }
-                    if sealed.iter().any(|s| g.descends(s, prev) && s != prev && !g.descends(s, h)))
-            })
-            .filter(|h| !overtaken.contains(h))
-            .collect();
-        if newly.is_empty() {
-            let state = g.state(&verdicts, &all);
-            let newest_sealed = g.newest(&sealed);
-            let mut verdicts = verdicts;
-            // Another genesis counts for nothing; a record left out of the graph (a
-            // predecessor not held, or past the bound) isn't judged yet.
-            for (h, r) in inputs.records {
-                verdicts.entry(*h).or_insert(if r.prevs().is_empty() {
-                    Verdict::Refused(Refusal::OtherGenesis)
-                } else {
-                    Verdict::Waits(Wait::Unjudged)
-                });
-            }
-            let missing: Vec<Hash32> = inputs
-                .accepted
-                .iter()
-                .filter(|h| verdicts.get(*h) != Some(&Verdict::Counts))
-                .copied()
-                .collect();
-            if !missing.is_empty() {
-                return Err(Stale { missing });
-            }
-            let settled = g
-                .order
-                .iter()
-                .filter(|h| verdicts.get(*h) == Some(&Verdict::Counts))
-                .filter(|h| {
-                    g.ancestors[*h]
-                        .iter()
-                        .all(|a| !matches!(verdicts.get(a), Some(Verdict::Waits(_))))
-                })
-                // A rotation is unsettled while another rotation of the same identity
-                // waits, placed or not yet (its predecessor missing): that one stands
-                // once it counts (one successor, SP27).
-                .filter(|h| match &inputs.records[*h].body {
-                    Body::Rotate { old, .. } => !inputs.records.iter().any(|(o, r)| {
-                        o != *h
-                            && matches!(verdicts.get(o), Some(Verdict::Waits(_)))
-                            && matches!(&r.body, Body::Rotate { old: o2, .. } if o2 == old)
-                    }),
-                    _ => true,
-                })
-                .copied()
-                .collect();
-            return Ok(Membership {
-                verdicts,
-                state,
-                newest_sealed,
-                settled,
+        let state = g.state(&verdicts, &all);
+        let newest_sealed = g.newest(&sealed);
+        let mut verdicts = verdicts;
+        // Another genesis counts for nothing; a record left out of the graph (a
+        // predecessor not held, or past the bound) isn't judged yet.
+        for (h, r) in inputs.records {
+            verdicts.entry(*h).or_insert(if r.prevs().is_empty() {
+                Verdict::Refused(Refusal::OtherGenesis)
+            } else {
+                Verdict::Waits(Wait::Unjudged)
             });
         }
-        overtaken.extend(newly);
+        let missing: Vec<Hash32> = inputs
+            .accepted
+            .iter()
+            .filter(|h| verdicts.get(*h) != Some(&Verdict::Counts))
+            .copied()
+            .collect();
+        if !missing.is_empty() {
+            return Err(Stale { missing });
+        }
+        let settled = g
+            .order
+            .iter()
+            .filter(|h| verdicts.get(*h) == Some(&Verdict::Counts))
+            .filter(|h| {
+                g.ancestors[*h]
+                    .iter()
+                    .all(|a| !matches!(verdicts.get(a), Some(Verdict::Waits(_))))
+            })
+            // A rotation is unsettled while another rotation of the same identity
+            // waits, placed or not yet (its predecessor missing): that one stands
+            // once it counts (one successor, SP27).
+            .filter(|h| match &inputs.records[*h].body {
+                Body::Rotate { old, .. } => !inputs.records.iter().any(|(o, r)| {
+                    o != *h
+                        && matches!(verdicts.get(o), Some(Verdict::Waits(_)))
+                        && matches!(&r.body, Body::Rotate { old: o2, .. } if o2 == old)
+                }),
+                _ => true,
+            })
+            .copied()
+            .collect();
+        return Ok(Membership {
+            verdicts,
+            state,
+            newest_sealed,
+            settled,
+        });
     }
 }
 
-fn judge(
-    g: &Graph<'_>,
-    overtaken: &BTreeSet<Hash32>,
-    freed: &BTreeSet<DeviceId>,
-) -> BTreeMap<Hash32, Verdict> {
+fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, Verdict> {
     let inputs = g.inputs;
     let seen = |h: &Hash32| inputs.first_seen.get(h).copied().unwrap_or(inputs.now_ms);
     let recent = |h: &Hash32| !inputs.checkpoint.contains(h) && seen(h) > inputs.now_ms - DAY_MS;
@@ -541,8 +684,81 @@ fn judge(
             // Another genesis, a claim or an escrow is never in the graph: none has a
             // `prev`.
             Body::Genesis { .. } | Body::Claim { .. } | Body::Escrow { .. } => continue,
-            // Sibling sealed heads and what reconciles them are 1c.4c's.
-            Body::Confirm { .. } | Body::Merge { .. } => Verdict::Waits(Wait::Fork),
+            // Merges are 1c.4c-ii's.
+            Body::Merge { .. } => Verdict::Waits(Wait::Fork),
+            Body::Confirm { prev, confirms, .. } => {
+                // SP20 (4a): the membership at its `prev`, the newest sealed head.
+                let st = g.state(&verdicts, &g.through(prev));
+                let code = inputs.records[prev].seal().map(|c| c.code_key);
+                let target = match confirms {
+                    // A removal waiting for it (or counting already, as a sibling):
+                    // its own signatures held at its own `prev` when it was judged.
+                    Confirms::Removal(rm) => match &inputs.records[rm].body {
+                        Body::Remove { removes, .. }
+                            if matches!(
+                                verdicts.get(rm),
+                                Some(Verdict::Counts | Verdict::Waits(Wait::Confirm))
+                            ) =>
+                        {
+                            Some(closure(
+                                &st.members,
+                                removes
+                                    .iter()
+                                    .map(|x| {
+                                        st.members.get(&x.device).map_or(x.device, |m| m.lineage)
+                                    })
+                                    .collect(),
+                            ))
+                        }
+                        _ => None,
+                    },
+                    // Enrollments the cap held back, fitting together under 12.
+                    Confirms::Admits(list) => {
+                        let theirs = enrolled(inputs, &pass.contended);
+                        let others = global
+                            .members
+                            .keys()
+                            .filter(|d| {
+                                global.trusted(d).is_some()
+                                    && !pass.freed.contains(*d)
+                                    && !theirs.contains(*d)
+                            })
+                            .count();
+                        let admitted = enrolled(inputs, &list.iter().copied().collect());
+                        let fits = list.iter().all(|e| pass.contended.contains(e))
+                            && others + admitted.len() <= MAX_DEVICES;
+                        fits.then(BTreeSet::new)
+                    }
+                };
+                // Its device signer: trusted at `prev`, and removed neither by the
+                // removal it confirms nor by any removal that counts.
+                let signed = target.as_ref().is_some_and(|gone| {
+                    st.members.values().any(|m| {
+                        st.trusted(&m.device).is_some()
+                            && !gone.contains(&m.lineage)
+                            && !global.removed.contains(&m.device)
+                            && !pass.freed.contains(&m.device)
+                            && r.signed_by(&Signer::Device(m.device), &m.key, 0)
+                    })
+                });
+                if code.is_none() || verdicts.get(prev) != Some(&Verdict::Counts) {
+                    Verdict::Refused(Refusal::NotSealed)
+                } else if pass.overtaken.contains(h)
+                    || all_sealed
+                        .iter()
+                        .any(|s| s != prev && g.descends(s, prev) && !g.descends(s, h))
+                {
+                    Verdict::Refused(Refusal::Overtaken)
+                } else if !code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
+                    Verdict::Refused(Refusal::Signature)
+                } else if target.is_none() {
+                    Verdict::Refused(Refusal::Confirms)
+                } else if !signed {
+                    Verdict::Refused(Refusal::Signer)
+                } else {
+                    Verdict::Counts
+                }
+            }
             Body::Enroll {
                 device,
                 key,
@@ -584,10 +800,8 @@ fn judge(
                             || !enrollment_quota(g, &verdicts, &global, h, lineage, &recent);
                         if waits_for_quota {
                             Verdict::Waits(Wait::Quota)
-                        } else if cap_count(&global, freed) >= MAX_DEVICES {
-                            Verdict::Waits(Wait::Cap)
                         } else {
-                            Verdict::Counts
+                            under_cap(pass, &global, h)
                         }
                     }
                 }
@@ -600,11 +814,13 @@ fn judge(
                 ..
             } => match inputs.records.get(prev).and_then(Record::seal) {
                 None => Verdict::Refused(Refusal::NotSealed),
-                Some(_) if overtaken.contains(h) => Verdict::Refused(Refusal::Overtaken),
+                Some(_) if pass.overtaken.contains(h) => Verdict::Refused(Refusal::Overtaken),
                 // The code of the sealed head it builds on, which must be the newest.
                 Some(seal) if !r.signed_by(&Signer::Code, &seal.code_key, 0) => {
                     Verdict::Refused(Refusal::Signature)
                 }
+                // A sibling this device treats as overtaken waits for a confirm,
+                // so a code enrollment on it is refused here (SP20 (2)).
                 Some(_) if verdicts.get(prev) != Some(&Verdict::Counts) => {
                     Verdict::Refused(Refusal::NotSealed)
                 }
@@ -617,8 +833,7 @@ fn judge(
                 }
                 Some(_) if introduced(key, device) => Verdict::Refused(Refusal::KeyAgain),
                 Some(_) if !inputs.confirmed.contains(h) => Verdict::Waits(Wait::Unconfirmed),
-                Some(_) if cap_count(&global, freed) >= MAX_DEVICES => Verdict::Waits(Wait::Cap),
-                Some(_) => Verdict::Counts,
+                Some(_) => under_cap(pass, &global, h),
             },
             Body::Rotate {
                 old,
@@ -675,15 +890,10 @@ fn judge(
                 }
             },
             Body::Remove { removes, .. } => {
-                // The newest sealed head at its predecessor, whose code must sign; a
-                // sibling of a sealed head already counted is 1c.4c's.
+                // The newest sealed head at its predecessor, whose code must sign.
                 let newest = g.newest(&sealed_before);
-                let sibling = all_sealed
-                    .iter()
-                    .any(|s| !before.contains(s) && !g.descends(s, h));
                 match newest {
                     None => Verdict::Waits(Wait::Fork),
-                    Some(_) if sibling => Verdict::Waits(Wait::Fork),
                     Some(s) => {
                         let code = inputs.records[&s].seal().map(|c| c.code_key);
                         // What it removes, as lineages: removing any identity of a
@@ -713,6 +923,14 @@ fn judge(
                             Verdict::Refused(Refusal::Signer)
                         } else if !code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
                             Verdict::Refused(Refusal::Signature)
+                        } else if local.is_some_and(|n| !g.descends(&s, &n))
+                            && !inputs.accepted.contains(h)
+                            && !pass.confirmed.contains(h)
+                        {
+                            // SP20 (4): built on a head this device knows a later
+                            // sealed head overtook. A sibling seen at once instead
+                            // counts, and the removals unite.
+                            Verdict::Waits(Wait::Confirm)
                         } else {
                             Verdict::Counts
                         }
@@ -742,6 +960,28 @@ fn closure(
             return gone;
         }
         gone.extend(more);
+    }
+}
+
+/// SP20 (1), (2): an enrollment that passes everything else, against the cap. One
+/// of contending siblings counts once admitted, or once they all fit; when a
+/// `confirm` admitted others, it doesn't. PROVISIONAL (decisions.md, “Sibling
+/// sealed heads”, (4)): every contending enrollment is in one pool.
+fn under_cap(pass: &Pass, global: &State, h: &Hash32) -> Verdict {
+    if pass.admitted.contains(h) {
+        Verdict::Counts
+    } else if pass.contended.contains(h) {
+        if !pass.admitted.is_empty() {
+            Verdict::Refused(Refusal::NotAdmitted)
+        } else if pass.contended_fit {
+            Verdict::Counts
+        } else {
+            Verdict::Waits(Wait::Cap)
+        }
+    } else if cap_count(global, &pass.freed) >= MAX_DEVICES {
+        Verdict::Waits(Wait::Cap)
+    } else {
+        Verdict::Counts
     }
 }
 
@@ -922,6 +1162,33 @@ mod tests {
                         "by": by.device().to_string(), "n": n, "sas": "dd".repeat(32),
                         "reveal": b64url_encode(&reveal), "pop": b64url_encode(&pop) }),
                 &[(by, Signer::Device(by.device()), n)],
+                seen,
+            )
+        }
+
+        /// A `confirm` on `prev`: `what` is `{ "confirms": … }` or `{ "admits": […] }`.
+        fn confirm(
+            &mut self,
+            prev: Hash32,
+            signer: &Keypair,
+            current: &Keypair,
+            next: &Keypair,
+            what: Value,
+            seen: i64,
+        ) -> Hash32 {
+            let mut fields = json!({ "prev": prev.to_string(), "code": code(next) });
+            fields
+                .as_object_mut()
+                .unwrap()
+                .extend(what.as_object().unwrap().clone());
+            self.add(
+                "confirm",
+                fields,
+                &[
+                    (signer, Signer::Device(signer.device()), 0),
+                    (current, Signer::Code, 0),
+                    (next, Signer::Code, 0),
+                ],
                 seen,
             )
         }
@@ -1539,16 +1806,193 @@ mod tests {
         );
     }
 
-    #[test]
-    fn sibling_sealed_heads_and_their_reconciling_records_wait_for_1c4c() {
+    /// A, B and C; then B removes C and, apart, C removes B, both on one head.
+    fn removed_each_other() -> (Lib, Hash32, Hash32, Hash32) {
         let mut l = Lib::default();
-        let (a, b, c0) = (k(1), k(2), k(100));
+        let (a, b, c, c0) = (k(1), k(2), k(3), k(100));
         let g = l.genesis(&a, &c0);
         let e1 = l.enroll(g, &a, &b, 1, OLD);
-        let first = l.remove(e1, &a, &c0, &k(101), &[&b], OLD + 1);
-        let sibling = l.remove(e1, &b, &c0, &k(102), &[&k(6)], OLD + 2);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let r1 = l.remove(e2, &b, &c0, &k(101), &[&c], OLD + 2);
+        let r2 = l.remove(e2, &c, &c0, &k(102), &[&b], OLD + 3);
+        (l, g, r1, r2)
+    }
+
+    #[test]
+    fn removals_made_apart_both_count_and_unite() {
+        let (mut l, g, r1, r2) = removed_each_other();
         let m = l.compute(g);
-        assert_eq!(m.verdict(&first), Some(Verdict::Counts));
-        assert_eq!(m.verdict(&sibling), Some(Verdict::Waits(Wait::Fork)));
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        assert!(m.trusted(&k(2).device()).is_none());
+        assert!(m.trusted(&k(3).device()).is_none());
+        assert!(m.trusted(&k(1).device()).is_some());
+        // Sibling sealed heads: none is the newest.
+        assert_eq!(m.newest_sealed, None);
+        // The reader rejoins with either branch's code.
+        let back = l.code_enroll(r2, &k(102), &k(4), OLD + 4);
+        l.confirmed.insert(back);
+        assert_eq!(l.compute(g).verdict(&back), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_device_that_held_one_sibling_waits_for_a_confirm_of_the_other() {
+        let (mut l, g, r1, r2) = removed_each_other();
+        // This device saw B's removal first and kept it as its newest sealed head.
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        assert!(accepted.contains(&r1));
+        l.records.insert(r2, held);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&r2), Some(Verdict::Waits(Wait::Confirm)));
+        assert!(m.trusted(&k(2).device()).is_some());
+        assert_eq!(m.newest_sealed, Some(r1));
+        // A code enrollment on the other branch is refused here.
+        let back = l.code_enroll(r2, &k(102), &k(4), OLD + 4);
+        l.confirmed.insert(back);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&back), Some(Verdict::Refused(Refusal::NotSealed)));
+        // The reader confirms C's removal with the code of B's: it counts as if made
+        // there, and the confirm is the newest sealed head.
+        let cf = l.confirm(
+            r1,
+            &k(1),
+            &k(101),
+            &k(103),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 5,
+        );
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&cf), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        assert!(m.trusted(&k(2).device()).is_none());
+        assert_eq!(m.newest_sealed, Some(cf));
+        // The confirmed removal's own code never becomes a code.
+        assert_eq!(m.verdict(&back), Some(Verdict::Refused(Refusal::Overtaken)));
+    }
+
+    #[test]
+    fn a_confirm_needs_the_newest_head_its_code_a_removal_and_a_signer_it_spares() {
+        let (mut l, g, r1, r2) = removed_each_other();
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        let what = json!({ "confirms": r2.to_string() });
+        // Signed by B, whom the confirmed removal takes away.
+        let by_b = l.confirm(r1, &k(2), &k(101), &k(103), what.clone(), OLD + 5);
+        // Without the newest head's code.
+        let no_code = l.confirm(r1, &k(1), &k(100), &k(104), what.clone(), OLD + 5);
+        // On a head a later one overtook.
+        let old = l.confirm(g, &k(1), &k(100), &k(105), what, OLD + 5);
+        // Of a record that isn't a removal.
+        let e1 = l
+            .records
+            .iter()
+            .find(|(_, r)| matches!(r.body, Body::Enroll { .. }))
+            .map(|(h, _)| *h)
+            .unwrap();
+        let not_rm = l.confirm(
+            r1,
+            &k(1),
+            &k(101),
+            &k(106),
+            json!({ "confirms": e1.to_string() }),
+            OLD + 5,
+        );
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&by_b), Some(Verdict::Refused(Refusal::Signer)));
+        assert_eq!(
+            m.verdict(&no_code),
+            Some(Verdict::Refused(Refusal::Signature))
+        );
+        assert_eq!(m.verdict(&old), Some(Verdict::Refused(Refusal::Overtaken)));
+        assert_eq!(
+            m.verdict(&not_rm),
+            Some(Verdict::Refused(Refusal::Confirms))
+        );
+        assert_eq!(m.verdict(&r2), Some(Verdict::Waits(Wait::Confirm)));
+    }
+
+    /// Eleven devices in a line: A and ten it enrolled.
+    fn eleven() -> (Lib, Hash32, Hash32) {
+        let mut l = Lib::default();
+        let a = k(1);
+        let g = l.genesis(&a, &k(100));
+        let mut prev = g;
+        for i in 0..10u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        (l, g, prev)
+    }
+
+    #[test]
+    fn sibling_enrollments_past_the_cap_all_wait_until_removals_make_room() {
+        let (mut l, g, h) = eleven();
+        // Two devices enrol the twelfth device apart, on one head: neither came first.
+        let e = l.enroll(h, &k(10), &k(40), 1, OLD + 20);
+        let w = l.enroll(h, &k(11), &k(41), 1, OLD + 21);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&e), Some(Verdict::Waits(Wait::Cap)));
+        assert_eq!(m.verdict(&w), Some(Verdict::Waits(Wait::Cap)));
+        assert_eq!(m.state.trusted_count(), 11);
+        // A removal makes room for both.
+        l.remove(h, &k(1), &k(100), &k(101), &[&k(15)], OLD + 22);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&e), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&w), Some(Verdict::Counts));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+    }
+
+    #[test]
+    fn a_confirm_admits_the_readers_choice_of_sibling_enrollments() {
+        let (mut l, g, h) = eleven();
+        let e = l.enroll(h, &k(10), &k(40), 1, OLD + 20);
+        let w = l.enroll(h, &k(11), &k(41), 1, OLD + 21);
+        // Admitting both would pass the cap.
+        let both = l.confirm(
+            g,
+            &k(1),
+            &k(100),
+            &k(101),
+            json!({ "admits": [e.to_string(), w.to_string()] }),
+            OLD + 22,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&both), Some(Verdict::Refused(Refusal::Confirms)));
+        let one = l.confirm(
+            g,
+            &k(1),
+            &k(100),
+            &k(102),
+            json!({ "admits": [e.to_string()] }),
+            OLD + 23,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&one), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&e), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+        assert_eq!(m.newest_sealed, Some(one));
+    }
+
+    #[test]
+    fn an_enrollment_on_an_older_head_isnt_held_back_beside_a_newer_one() {
+        let (mut l, g, h) = eleven();
+        let e3 = l
+            .records
+            .iter()
+            .find(|(_, r)| matches!(&r.body, Body::Enroll { n: Some(3), .. }))
+            .map(|(h, _)| *h)
+            .unwrap();
+        // A removal, then an enrollment after it: eleven again.
+        let rm = l.remove(h, &k(1), &k(100), &k(101), &[&k(19)], OLD + 20);
+        let after = l.enroll(rm, &k(10), &k(30), 1, OLD + 21);
+        // One enrollment on an early record, seen first, and one after the removal.
+        let early = l.enroll(e3, &k(11), &k(40), 1, OLD + 22);
+        let late = l.enroll(after, &k(12), &k(41), 1, OLD + 23);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&after), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&early), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&late), Some(Verdict::Waits(Wait::Cap)));
     }
 }
