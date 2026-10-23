@@ -483,15 +483,22 @@ impl Pass {
         next.freed = state.removed.clone();
         // A code enrollment or a confirm on a head that a sealed head judged after
         // it overtook: judged again as refused.
-        next.overtaken.extend(counting.iter().copied().filter(|h| {
-            let prev = match &inputs.records[*h].body {
-                Body::Enroll { by: None, prev, .. } | Body::Confirm { prev, .. } => prev,
-                _ => return false,
-            };
-            sealed
-                .iter()
-                .any(|s| s != prev && g.descends(s, prev) && !g.descends(s, h))
-        }));
+        // Rebuilt each pass from the sealed heads counting now, so a head that
+        // counted for a pass and then stopped overtakes nothing.
+        next.overtaken = g
+            .order
+            .iter()
+            .copied()
+            .filter(|h| {
+                let prev = match &inputs.records[h].body {
+                    Body::Enroll { by: None, prev, .. } | Body::Confirm { prev, .. } => prev,
+                    _ => return false,
+                };
+                sealed
+                    .iter()
+                    .any(|s| s != prev && g.descends(s, prev) && !g.descends(s, h))
+            })
+            .collect();
         next.confirmed.clear();
         next.admitted.clear();
         for h in &counting {
@@ -1882,6 +1889,39 @@ mod tests {
         assert_eq!(m.newest_sealed, Some(cf));
         // The confirmed removal's own code never becomes a code.
         assert_eq!(m.verdict(&back), Some(Verdict::Refused(Refusal::Overtaken)));
+    }
+
+    #[test]
+    fn a_confirm_that_stops_counting_overtakes_nothing() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let e3 = l.enroll(e2, &a, &d, 3, OLD + 2);
+        let r1 = l.remove(e3, &b, &c0, &k(101), &[&c], OLD + 3);
+        let r2 = l.remove(e3, &c, &c0, &k(102), &[&b], OLD + 4);
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        // A code enrollment on B's removal; then D confirms C's, which would
+        // overtake it; then A removes D after the enrollment, which overtakes the
+        // confirm and removes its signer: the confirm stops counting.
+        let by_code = l.code_enroll(r1, &k(101), &k(5), OLD + 5);
+        l.confirmed.insert(by_code);
+        let cf = l.confirm(
+            r1,
+            &d,
+            &k(101),
+            &k(103),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 6,
+        );
+        let rm = l.remove(by_code, &a, &k(101), &k(104), &[&d], OLD + 7);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Overtaken)));
+        assert_eq!(m.verdict(&by_code), Some(Verdict::Counts));
     }
 
     #[test]
