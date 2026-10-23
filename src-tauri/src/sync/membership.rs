@@ -725,7 +725,20 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                             })
                             .count();
                         let admitted = enrolled(inputs, &list.iter().copied().collect());
-                        let fits = list.iter().all(|e| pass.contended.contains(e))
+                        // The reader's first choice stands: a later confirm can't
+                        // admit one it left out.
+                        let chosen = verdicts.iter().any(|(x, v)| {
+                            *v == Verdict::Counts
+                                && matches!(
+                                    inputs.records[x].body,
+                                    Body::Confirm {
+                                        confirms: Confirms::Admits(_),
+                                        ..
+                                    }
+                                )
+                        });
+                        let fits = !chosen
+                            && list.iter().all(|e| pass.contended.contains(e))
                             && others + admitted.len() <= MAX_DEVICES;
                         fits.then(BTreeSet::new)
                     }
@@ -1973,6 +1986,19 @@ mod tests {
         assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
         assert_eq!(m.state.trusted_count(), MAX_DEVICES);
         assert_eq!(m.newest_sealed, Some(one));
+        // The choice stands: a later confirm can't admit the one left out.
+        let again = l.confirm(
+            one,
+            &k(1),
+            &k(102),
+            &k(103),
+            json!({ "admits": [w.to_string()] }),
+            OLD + 24,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::Confirms)));
+        assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
     }
 
     #[test]
