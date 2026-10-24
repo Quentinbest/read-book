@@ -333,7 +333,10 @@ pub fn change_cutoff(
     let follow = |side: &Side| -> Option<Branch> {
         let mut at = std::collections::BTreeMap::new();
         at.insert(*seq, side.hash);
-        let (mut s, mut prev) = (*seq - 1, side.prev);
+        // A missing `prev` and an all-zero one are signed alike (SP6): no change
+        // hashes to zero, so the zero hash is no predecessor.
+        let prev = side.prev.filter(|p| *p != Hash32([0; 32]));
+        let (mut s, mut prev) = (*seq - 1, prev);
         loop {
             let Some(p) = prev else {
                 return (s == 0).then_some(Branch { at, joins: 0 });
@@ -614,6 +617,19 @@ mod tests {
         };
         assert_eq!(
             change_cutoff(&proof, &LIB, &a.public(), &[], &|_| None),
+            Ok(Cutoff::Found(None))
+        );
+        // The same proof with one side's missing `prev` written as zeros, which is
+        // signed alike, has the same cutoff.
+        let zeros = Proof::Twice {
+            device: a.device(),
+            type_: "change".into(),
+            seq: 1,
+            a: change_side(&x, None),
+            b: change_side(&y, Some(Hash32([0; 32]))),
+        };
+        assert_eq!(
+            change_cutoff(&zeros, &LIB, &a.public(), &[], &|_| None),
             Ok(Cutoff::Found(None))
         );
     }
