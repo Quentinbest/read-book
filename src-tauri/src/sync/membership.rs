@@ -161,6 +161,8 @@ pub struct State {
     pub removed: BTreeSet<DeviceId>,
     /// The cutoff each removal named for a device; the later counts (SP20).
     pub cutoffs: BTreeMap<DeviceId, Option<Mark>>,
+    /// Lineages a counting merge kept: no removal's cascade takes them (SP20).
+    pub kept: BTreeSet<DeviceId>,
 }
 
 impl State {
@@ -335,6 +337,8 @@ impl<'a> Graph<'a> {
         let mut st = State::default();
         // Every device a counting removal or merge removes, with its cutoff.
         let mut removals: Vec<(DeviceId, Option<Mark>)> = Vec::new();
+        // Devices a counting merge kept: the reader's choice, with the code.
+        let mut kept: BTreeSet<DeviceId> = BTreeSet::new();
         for h in self.order.iter().filter(|h| set.contains(*h)) {
             if verdicts.get(h) != Some(&Verdict::Counts) {
                 continue;
@@ -400,6 +404,7 @@ impl<'a> Graph<'a> {
                 }
                 // SP20 (5): a device the reader didn't keep is removed by the merge.
                 Body::Merge { keeps, .. } => {
+                    kept.extend(keeps.iter().filter(|k| k.keep).map(|k| k.device));
                     removals.extend(
                         keeps
                             .iter()
@@ -423,7 +428,12 @@ impl<'a> Graph<'a> {
                 *c = cutoff;
             }
         }
-        let gone = closure(&st.members, gone);
+        // SP20: what a removed device enrolled goes too, unless kept with the code.
+        st.kept = kept
+            .iter()
+            .filter_map(|d| st.members.get(d).map(|m| m.lineage))
+            .collect();
+        let gone = closure(&st.members, gone, &st.kept);
         st.removed = st
             .members
             .values()
@@ -854,12 +864,16 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
             Body::Merge { prevs, keeps, .. } => {
                 // SP20 (5): a sealed head counting or waiting here for a confirm (a
                 // removal a merge confirms).
+                // Not one on a code a confirm or merge consumed.
                 let head = |p: &Hash32| {
                     inputs.records[p].seal().is_some()
-                        && matches!(
-                            verdicts.get(p),
-                            Some(Verdict::Counts | Verdict::Waits(Wait::Confirm))
-                        )
+                        && match verdicts.get(p) {
+                            Some(Verdict::Counts) => true,
+                            Some(Verdict::Waits(Wait::Confirm)) => !g
+                                .base(&verdicts, p)
+                                .is_some_and(|b| g.removal_overtaken(&all_sealed, b, p)),
+                            _ => false,
+                        }
                 };
                 let heads = prevs.iter().all(head);
                 // It consumes the current unmerged tips: every one judged so far.
@@ -948,6 +962,7 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                                         at.members.get(&x.device).map_or(x.device, |m| m.lineage)
                                     })
                                     .collect(),
+                                &at.kept,
                             ))
                         }
                         _ => None,
@@ -1162,6 +1177,7 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                                 .iter()
                                 .map(|x| st.members.get(&x.device).map_or(x.device, |m| m.lineage))
                                 .collect(),
+                            &st.kept,
                         );
                         // One signer trusted at its predecessor and not removed by it.
                         let device_signed = st.members.values().any(|m| {
@@ -1199,15 +1215,16 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
 }
 
 /// SP20: the closure of removing `lineages`: them, and every lineage they enrolled,
-/// directly or through others.
+/// directly or through others, except those a merge kept.
 fn closure(
     members: &BTreeMap<DeviceId, Member>,
     mut gone: BTreeSet<DeviceId>,
+    kept: &BTreeSet<DeviceId>,
 ) -> BTreeSet<DeviceId> {
     loop {
         let more: Vec<DeviceId> = members
             .values()
-            .filter(|m| !gone.contains(&m.lineage))
+            .filter(|m| !gone.contains(&m.lineage) && !kept.contains(&m.lineage))
             .filter(|m| m.enroller.is_some_and(|e| gone.contains(&e)))
             .map(|m| m.lineage)
             .collect();
@@ -2388,9 +2405,12 @@ mod tests {
         assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::Confirms)));
         assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
         assert_eq!(m.state.trusted_count(), MAX_DEVICES);
-        // A removal made apart on the confirm's own head is its sibling: it counts.
-        let rm = l.remove(h, &k(1), &k(100), &k(105), &[&k(15)], OLD + 25);
-        assert_eq!(l.compute(g).verdict(&rm), Some(Verdict::Counts));
+        // A removal made apart on the confirm's own head, seen before it, conflicts
+        // with it: the removal, judged first, stands, and overtakes the confirm.
+        let rm = l.remove(h, &k(1), &k(100), &k(105), &[&k(15)], OLD + 22);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&one), Some(Verdict::Refused(Refusal::Overtaken)));
     }
 
     #[test]
@@ -2487,6 +2507,23 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&stale), Some(Verdict::Waits(Wait::Confirm)));
         assert!(m.suspended.is_empty());
+        // Nor is it a head a merge can take in.
+        let again = l.merge(
+            &[mg, stale],
+            &k(1),
+            &[&k(103)],
+            &k(120),
+            &[(&k(5), true)],
+            OLD + 8,
+        );
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&again),
+            Some(Verdict::Refused(Refusal::NotSealed))
+        );
+        assert_eq!(m.verdict(&stale), Some(Verdict::Waits(Wait::Confirm)));
+        assert_eq!(m.verdict(&mg), Some(Verdict::Counts));
+        l.records.remove(&again);
         l.records.remove(&stale);
         // Nor one built on it, a record further from the head the merge overtook.
         let later = l.enroll(late, &k(1), &k(9), 4, OLD + 8);
@@ -2628,5 +2665,28 @@ mod tests {
         assert_eq!(m.verdict(&ry), Some(Verdict::Counts));
         assert_eq!(m.newest_sealed, Some(mg));
         assert!(m.suspended.is_empty());
+    }
+
+    #[test]
+    fn a_device_kept_at_a_merge_stays_when_its_enroller_doesnt() {
+        let mut l = Lib::default();
+        let (a, b, c0) = (k(1), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &k(4), 2, OLD + 1);
+        // After the fork, A enrols X and X enrols Z; apart, B enrols Y.
+        let x1 = l.enroll(e2, &a, &k(5), 3, OLD + 2);
+        let z1 = l.enroll(x1, &k(5), &k(7), 1, OLD + 3);
+        let y1 = l.enroll(e2, &b, &k(6), 1, OLD + 4);
+        let rx = l.remove(z1, &a, &c0, &k(101), &[&k(4)], OLD + 5);
+        let ry = l.remove(y1, &b, &c0, &k(102), &[&k(4)], OLD + 6);
+        // The reader removes X but keeps Z, whom X enrolled, and Y.
+        let keeps = [(&k(5), false), (&k(7), true), (&k(6), true)];
+        let mg = l.merge(&[rx, ry], &a, &[&k(101)], &k(103), &keeps, OLD + 7);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&mg), Some(Verdict::Counts));
+        assert!(m.trusted(&k(5).device()).is_none());
+        assert!(m.trusted(&k(7).device()).is_some());
+        assert!(m.trusted(&k(6).device()).is_some());
     }
 }
