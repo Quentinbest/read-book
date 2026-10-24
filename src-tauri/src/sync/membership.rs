@@ -829,7 +829,8 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
             continue;
         }
         let sealed = g.sealed(&verdicts, &all);
-        let state = g.state(&verdicts, &all);
+        let mut state = g.state(&verdicts, &all);
+        state.cutoffs = approved_cutoffs(&g, &verdicts, &state, &pass.suspended);
         let newest_sealed = g.newest(&sealed);
         let mut verdicts = verdicts;
         // Another genesis counts for nothing; a record left out of the graph (a
@@ -1290,6 +1291,85 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
     verdicts
 }
 
+/// SP20, “When trust is lost”: when one device has two cutoffs the later counts,
+/// except a cutoff from a removal whose device signer the reader never approved:
+/// one suspended here as a device enrolled after a fork, or one a counting merge
+/// didn't keep. Such a removal still removes; only its cutoff doesn't count, and
+/// the latest among the other removals' stands. A device that only such removals
+/// name has no cutoff left (`None`): nothing of it beyond what everyone accepted
+/// stands. A merge's own cutoffs are the reader's. PROVISIONAL (decisions.md,
+/// “Cutoffs from unapproved signers”, (1)).
+fn approved_cutoffs(
+    g: &Graph<'_>,
+    verdicts: &BTreeMap<Hash32, Verdict>,
+    state: &State,
+    suspended: &BTreeSet<DeviceId>,
+) -> BTreeMap<DeviceId, Option<Mark>> {
+    let inputs = g.inputs;
+    let lineage = |d: &DeviceId| state.members.get(d).map_or(*d, |m| m.lineage);
+    let counting: Vec<&Hash32> = g
+        .order
+        .iter()
+        .filter(|h| verdicts.get(*h) == Some(&Verdict::Counts))
+        .collect();
+    let not_kept: BTreeSet<DeviceId> = counting
+        .iter()
+        .flat_map(|h| match &inputs.records[*h].body {
+            Body::Merge { keeps, .. } => keeps
+                .iter()
+                .filter(|k| !k.keep)
+                .map(|k| lineage(&k.device))
+                .collect(),
+            _ => Vec::new(),
+        })
+        .collect();
+    let unapproved = |l: &DeviceId| suspended.contains(l) || not_kept.contains(l);
+    let mut out: BTreeMap<DeviceId, Option<Mark>> = BTreeMap::new();
+    let mut put = |d: DeviceId, c: Option<Mark>| {
+        let e = out.entry(d).or_insert(c);
+        if c.map(|m| m.s) > e.map(|m| m.s) {
+            *e = c;
+        }
+    };
+    let mut named: Vec<DeviceId> = Vec::new();
+    for h in counting {
+        let r = &inputs.records[h];
+        match &r.body {
+            Body::Remove { removes, .. } => {
+                // Its device signers, trusted at its predecessor. A recovery's
+                // removal, signed by the recovering device and the code, is the
+                // reader's.
+                let st = g.state(verdicts, &g.upto(h));
+                let signers: Vec<DeviceId> = st
+                    .members
+                    .values()
+                    .filter(|m| st.trusted(&m.device).is_some())
+                    .filter(|m| r.signed_by(&Signer::Device(m.device), &m.key, 0))
+                    .map(|m| m.lineage)
+                    .collect();
+                named.extend(removes.iter().map(|x| x.device));
+                if !signers.is_empty() && signers.iter().all(unapproved) {
+                    continue;
+                }
+                for x in removes {
+                    put(x.device, x.cutoff);
+                }
+            }
+            Body::Merge { keeps, .. } => {
+                for k in keeps.iter().filter(|k| !k.keep) {
+                    named.push(k.device);
+                    put(k.device, k.cutoff);
+                }
+            }
+            _ => {}
+        }
+    }
+    for d in named {
+        out.entry(d).or_insert(None);
+    }
+    out
+}
+
 /// SP20: the closure of removing `lineages`: them, and every lineage they enrolled,
 /// directly or through others, except those a merge kept.
 fn closure(
@@ -1566,6 +1646,28 @@ mod tests {
                 json!({ "prevs": heads.iter().map(|h| h.to_string()).collect::<Vec<_>>(),
                         "clock": [NOW as u64, 4], "keeps": keeps, "code": code(next) }),
                 &signers,
+                seen,
+            )
+        }
+
+        /// A removal naming one device with a cutoff at `s` (of a made-up chain).
+        #[allow(clippy::too_many_arguments)]
+        fn remove_at(
+            &mut self,
+            prev: Hash32,
+            signer: &Keypair,
+            current: &Keypair,
+            next: &Keypair,
+            gone: &Keypair,
+            s: u64,
+            seen: i64,
+        ) -> Hash32 {
+            let removes = vec![json!({ "device": gone.device().to_string(),
+                "cutoff": { "s": s, "h": format!("{s:064x}") }, "view": null, "cascade": true })];
+            self.add(
+                "remove",
+                json!({ "prev": prev.to_string(), "removes": removes, "clock": [NOW as u64, 2], "code": code(next) }),
+                &[(signer, Signer::Device(signer.device()), 0), (current, Signer::Code, 0), (next, Signer::Code, 0)],
                 seen,
             )
         }
@@ -2973,5 +3075,59 @@ mod tests {
             l.compute(g).verdict(&rm),
             Some(Verdict::Refused(Refusal::Signer))
         );
+    }
+
+    #[test]
+    fn a_cutoff_from_a_signer_the_reader_never_approved_doesnt_count() {
+        let mut l = Lib::default();
+        let (a, b, d, x, y, c0) = (k(1), k(2), k(4), k(5), k(6), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &d, 2, OLD + 1);
+        // After the fork, A enrols X, and X removes D with a later cutoff; apart, B
+        // enrols Y and removes D with an earlier one.
+        let x1 = l.enroll(e2, &a, &x, 3, OLD + 2);
+        let rx = l.remove_at(x1, &x, &c0, &k(101), &d, 9, OLD + 3);
+        let y1 = l.enroll(e2, &b, &y, 1, OLD + 4);
+        let ry = l.remove_at(y1, &b, &c0, &k(102), &d, 3, OLD + 5);
+        l.me = Some(a.device());
+        let m = l.compute(g);
+        assert!(m.suspended.contains(&x.device()));
+        // X's removal still removes D, but X is suspended here: B's cutoff stands.
+        assert!(m.trusted(&d.device()).is_none());
+        assert_eq!(m.state.cutoffs[&d.device()].map(|c| c.s), Some(3));
+        // A merge that keeps X approves it: the later cutoff counts.
+        let keep = l.merge(
+            &[rx, ry],
+            &a,
+            &[&k(101)],
+            &k(103),
+            &[(&x, true), (&y, true)],
+            OLD + 6,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&keep), Some(Verdict::Counts));
+        assert_eq!(m.state.cutoffs[&d.device()].map(|c| c.s), Some(9));
+        // One that doesn't keep X: B's stands again.
+        l.records.remove(&keep);
+        let drop = l.merge(
+            &[rx, ry],
+            &a,
+            &[&k(101)],
+            &k(104),
+            &[(&x, false), (&y, true)],
+            OLD + 6,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&drop), Some(Verdict::Counts));
+        assert_eq!(m.state.cutoffs[&d.device()].map(|c| c.s), Some(3));
+        // A device only X's removal names has no cutoff left.
+        l.records.remove(&drop);
+        l.records.remove(&ry);
+        let ry2 = l.remove_at(y1, &b, &c0, &k(105), &y, 2, OLD + 7);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&ry2), Some(Verdict::Counts));
+        assert_eq!(m.state.cutoffs.get(&d.device()), Some(&None));
+        assert_eq!(m.state.cutoffs[&y.device()].map(|c| c.s), Some(2));
     }
 }
