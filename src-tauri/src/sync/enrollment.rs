@@ -70,6 +70,88 @@ pub fn ok_path(applicant: &DeviceId, device: &DeviceId) -> String {
     format!("enroll/{applicant}.{device}.ok.json")
 }
 
+/// SY34: at most 8 requests are read.
+pub const MAX_REQUESTS: usize = 8;
+const HOUR_MS: i64 = 60 * 60 * 1000;
+const DAY_MS: i64 = 24 * HOUR_MS;
+/// SY34: after this many abandoned or refused requests within an hour, an
+/// enrolled device stops answering for an hour.
+pub const REFUSALS: usize = 3;
+
+/// One name in `enroll/`, as a listing shows it, with when this device first saw it
+/// by the time it can vouch for (SY17).
+#[derive(Clone, Debug)]
+pub struct Listed {
+    pub path: String,
+    pub size: u64,
+    pub first_seen: i64,
+}
+
+/// SY34: what an enrolled device does with `enroll/` on a pass.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Sweep {
+    /// The requests it reads: at most 8 of at most 16 KB, newest first.
+    pub read: Vec<String>,
+    /// The files of every attempt whose request it first saw over a day ago.
+    pub remove: Vec<String>,
+}
+
+/// The applicant an `enroll/` name belongs to: `‹applicant›.json` and every
+/// `‹applicant›.….json` after it.
+fn applicant_of(path: &str) -> Option<(DeviceId, bool)> {
+    let rest = path.strip_prefix("enroll/")?.strip_suffix(".json")?;
+    let (first, more) = match rest.split_once('.') {
+        Some((a, m)) => (a, !m.is_empty()),
+        None => (rest, false),
+    };
+    Id16::parse(first).map(|a| (a, !more))
+}
+
+/// SY34: the requests to read, newest first, at most 8 of at most 16 KB; and the
+/// files of each attempt whose request was first seen more than a day ago, which
+/// any enrolled device removes. Newest first, since the reader is enrolling a
+/// device now; a folder writer can flood `enroll/` either way. PROVISIONAL
+/// (decisions.md, “Enrollment by a short code”, (8)).
+pub fn sweep(listing: &[Listed], now_ms: i64) -> Sweep {
+    let expired: std::collections::BTreeSet<DeviceId> = listing
+        .iter()
+        .filter_map(|l| match applicant_of(&l.path) {
+            Some((a, true)) if l.first_seen < now_ms - DAY_MS => Some(a),
+            _ => None,
+        })
+        .collect();
+    let mut requests: Vec<&Listed> = listing
+        .iter()
+        .filter(|l| {
+            matches!(applicant_of(&l.path), Some((a, true)) if !expired.contains(&a))
+                && l.size <= MAX_FILE as u64
+        })
+        .collect();
+    requests.sort_by(|a, b| b.first_seen.cmp(&a.first_seen).then(a.path.cmp(&b.path)));
+    Sweep {
+        read: requests
+            .into_iter()
+            .take(MAX_REQUESTS)
+            .map(|l| l.path.clone())
+            .collect(),
+        remove: listing
+            .iter()
+            .filter(|l| applicant_of(&l.path).is_some_and(|(a, _)| expired.contains(&a)))
+            .map(|l| l.path.clone())
+            .collect(),
+    }
+}
+
+/// SY34: whether an enrolled device answers a request now, given when it saw
+/// requests abandoned or refused. Three within an hour stop it answering for an
+/// hour after the third.
+pub fn may_answer(refused: &[i64], now_ms: i64) -> bool {
+    let mut t: Vec<i64> = refused.iter().copied().filter(|t| *t <= now_ms).collect();
+    t.sort_unstable();
+    !t.windows(REFUSALS)
+        .any(|w| w[REFUSALS - 1] - w[0] <= HOUR_MS && now_ms < w[REFUSALS - 1] + HOUR_MS)
+}
+
 /// Signs a single writer's file with sequence 0 (`trust::sign` adds `type`,
 /// `format` and `library`).
 fn write(type_: &str, library: &Id16, mut fields: Value, key: &Keypair, writer: &Id16) -> Vec<u8> {
@@ -1389,5 +1471,46 @@ mod tests {
         assert!(joined.checkpoint.frontier.is_empty());
         let f = &joined.floors()[&p.device().to_string()];
         assert_eq!((f.s, f.earlier.len()), (2, 0));
+    }
+
+    #[test]
+    fn a_sweep_reads_eight_new_requests_and_removes_attempts_over_a_day_old() {
+        let id = |n: u8| Id16([n; 16]);
+        let listed = |path: String, size: u64, first_seen: i64| Listed {
+            path,
+            size,
+            first_seen,
+        };
+        let mut listing: Vec<Listed> = (1..=10u8)
+            .map(|n| listed(request_path(&id(n)), 500, NOW_MS - i64::from(n) * 1000))
+            .collect();
+        // Applicant 11's attempt began over a day ago: its request and answer go.
+        listing.push(listed(request_path(&id(11)), 500, NOW_MS - 25 * HOUR_MS));
+        listing.push(listed(answer_path(&id(11), &id(12)), 500, NOW_MS - HOUR_MS));
+        // A request past 16 KB isn't read; an answer is never a request.
+        listing.push(listed(request_path(&id(13)), MAX_FILE as u64 + 1, NOW_MS));
+        listing.push(listed(answer_path(&id(1), &id(12)), 500, NOW_MS));
+        let s = sweep(&listing, NOW_MS);
+        let newest: Vec<String> = (1..=8u8).map(|n| request_path(&id(n))).collect();
+        assert_eq!(s.read, newest);
+        assert_eq!(
+            s.remove,
+            vec![request_path(&id(11)), answer_path(&id(11), &id(12))]
+        );
+    }
+
+    #[test]
+    fn three_refusals_in_an_hour_stop_answering_for_an_hour() {
+        let m = 60 * 1000;
+        assert!(may_answer(&[], NOW_MS));
+        // Three in forty minutes: no answer until an hour after the third.
+        let three = [NOW_MS - 40 * m, NOW_MS - 20 * m, NOW_MS];
+        assert!(!may_answer(&three, NOW_MS + 59 * m));
+        assert!(may_answer(&three, NOW_MS + 60 * m));
+        // Three spread over more than an hour: answering goes on.
+        assert!(may_answer(
+            &[NOW_MS - 70 * m, NOW_MS - 20 * m, NOW_MS],
+            NOW_MS
+        ));
     }
 }
