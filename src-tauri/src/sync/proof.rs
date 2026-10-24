@@ -3,9 +3,10 @@
 //! Two valid signatures by one device for the same type and sequence that differ
 //! in anything they sign are a proof; so is a `rotate` with a `change` signed after
 //! it closed the chain. Every device that holds one relays it and quarantines the
-//! device. This module reads, writes and checks a proof's signed core; finding the
-//! cutoff (`base`, `ancestry` and the copies a relayer attaches) is a later part,
-//! and those fields are read past here.
+//! device. This module reads, writes and checks a proof's signed core, and finds a
+//! change proof's cutoff from the change files a relayer attaches (its sides'
+//! copies and the `ancestry`); reading those files out of overflow copies and
+//! bundles, and a spine where the ancestry is long, are the callers'.
 //!
 //! PROVISIONAL: where SP30 leaves the bytes open, the reading here is Delegated to
 //! Claude, not approved (`docs/decisions.md`, “Equivocation proofs”).
@@ -278,6 +279,95 @@ impl Proof {
     }
 }
 
+/// Where a change proof's cutoff stands (SP30).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Cutoff {
+    /// The latest change both branches share, or `None` when they share none (a
+    /// fork at the device's first change: the cutoff is before any of them).
+    Found(Option<Mark>),
+    /// A change file a branch needs isn't among those given, so the branch can't
+    /// yet be followed back to a change both share or to the chain held here.
+    /// Until it resolves, the accepted-by-all mark is the cutoff (SP30).
+    Pending,
+}
+
+/// SP30: a change proof's cutoff, the two branches' latest common predecessor.
+/// Each branch is followed back by `prev` through the change files given, each
+/// opened and checked against the device's key, until it reaches the chain this
+/// device holds (`held`, the payload hash at each sequence) or its first change;
+/// below that it is the held chain. The cutoff is fixed by the two signed sides,
+/// so every device reaches the same one; the relayer's `base` is only a hint, and
+/// isn't trusted. A file that doesn't open as the device's change is no evidence.
+pub fn change_cutoff(
+    proof: &Proof,
+    library: &Id16,
+    key: &[u8; 32],
+    files: &[Vec<u8>],
+    held: &dyn Fn(u64) -> Option<Hash32>,
+) -> Result<Cutoff> {
+    let Proof::Twice {
+        device,
+        type_,
+        seq,
+        a,
+        b,
+    } = proof
+    else {
+        return Err(ProofError::Type);
+    };
+    if type_ != "change" {
+        return Err(ProofError::Type);
+    }
+    proof.check(library, key)?;
+    let by_hash: std::collections::BTreeMap<Hash32, super::chain::Change> = files
+        .iter()
+        .filter_map(|f| super::chain::open_change(f, library, device, key).ok())
+        .map(|c| (c.hash, c))
+        .collect();
+    // One branch, by sequence, from the side down to where it meets the held chain
+    // (`joins`), or to its first change (`joins` = 0).
+    struct Branch {
+        at: std::collections::BTreeMap<u64, Hash32>,
+        joins: u64,
+    }
+    let follow = |side: &Side| -> Option<Branch> {
+        let mut at = std::collections::BTreeMap::new();
+        at.insert(*seq, side.hash);
+        let (mut s, mut prev) = (*seq - 1, side.prev);
+        loop {
+            let Some(p) = prev else {
+                return (s == 0).then_some(Branch { at, joins: 0 });
+            };
+            if s == 0 {
+                return None;
+            }
+            if held(s) == Some(p) {
+                return Some(Branch { at, joins: s });
+            }
+            let c = by_hash.get(&p).filter(|c| c.seq == s)?;
+            at.insert(s, p);
+            prev = c.prev;
+            s -= 1;
+        }
+    };
+    let (Some(x), Some(y)) = (follow(a), follow(b)) else {
+        return Ok(Cutoff::Pending);
+    };
+    let get = |br: &Branch, s: u64| {
+        br.at
+            .get(&s)
+            .copied()
+            .or_else(|| (s <= br.joins).then(|| held(s)).flatten())
+    };
+    for s in (1..*seq).rev() {
+        match (get(&x, s), get(&y, s)) {
+            (Some(h), Some(k)) if h == k => return Ok(Cutoff::Found(Some(Mark { s, h }))),
+            _ => {}
+        }
+    }
+    Ok(Cutoff::Found(None))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -445,6 +535,86 @@ mod tests {
         assert_eq!(
             closed(2).check(&LIB, &a.public()),
             Err(ProofError::NotAfter)
+        );
+    }
+
+    #[test]
+    fn a_change_proofs_cutoff_is_the_latest_change_both_branches_share() {
+        let a = Keypair::from_seed(&[1; 32]);
+        // The chain held here: changes 1–3.
+        let c1 = chain::sign_change(&a, &LIB, &W, 1, None, &[]);
+        let c2 = chain::sign_change(&a, &LIB, &W, 2, Some(c1.hash), &[]);
+        let c3 = chain::sign_change(&a, &LIB, &W, 3, Some(c2.hash), &[]);
+        let held = |s: u64| [c1.hash, c2.hash, c3.hash].get(s as usize - 1).copied();
+        // Branch A: change 4 on change 3. Branch B forked at 3: another change 3,
+        // then a change 4 on it.
+        let a4 = chain::sign_change(&a, &LIB, &W, 4, Some(c3.hash), &[]);
+        let b3 = chain::sign_change(&a, &LIB, &Id16([9; 16]), 3, Some(c2.hash), &[]);
+        let b4 = chain::sign_change(&a, &LIB, &W, 4, Some(b3.hash), &[]);
+        let proof = Proof::Twice {
+            device: a.device(),
+            type_: "change".into(),
+            seq: 4,
+            a: change_side(&a4, Some(c3.hash)),
+            b: change_side(&b4, Some(b3.hash)),
+        };
+        let files = vec![a4.bytes.clone(), b4.bytes.clone(), b3.bytes.clone()];
+        assert_eq!(
+            change_cutoff(&proof, &LIB, &a.public(), &files, &held),
+            Ok(Cutoff::Found(Some(Mark { s: 2, h: c2.hash })))
+        );
+        // Without B's change 3, B can't be followed back yet.
+        let short = vec![a4.bytes.clone(), b4.bytes.clone()];
+        assert_eq!(
+            change_cutoff(&proof, &LIB, &a.public(), &short, &held),
+            Ok(Cutoff::Pending)
+        );
+        // Another device's file in its place is no evidence.
+        let other = Keypair::from_seed(&[2; 32]);
+        let forged = chain::sign_change(&other, &LIB, &W, 3, Some(c2.hash), &[]);
+        let wrong = vec![a4.bytes.clone(), b4.bytes.clone(), forged.bytes];
+        assert_eq!(
+            change_cutoff(&proof, &LIB, &a.public(), &wrong, &held),
+            Ok(Cutoff::Pending)
+        );
+        // A change 4 whose `prev` names change 2: the file it names isn't the
+        // change before it, so that branch can't be followed.
+        let skip = chain::sign_change(&a, &LIB, &Id16([9; 16]), 4, Some(c2.hash), &[]);
+        let skipping = Proof::Twice {
+            device: a.device(),
+            type_: "change".into(),
+            seq: 4,
+            a: change_side(&a4, Some(c3.hash)),
+            b: change_side(&skip, Some(c2.hash)),
+        };
+        let held_two = |s: u64| [c1.hash, c2.hash].get(s as usize - 1).copied();
+        assert_eq!(
+            change_cutoff(
+                &skipping,
+                &LIB,
+                &a.public(),
+                &[c2.bytes.clone(), c3.bytes.clone()],
+                &held_two
+            ),
+            Ok(Cutoff::Pending)
+        );
+    }
+
+    #[test]
+    fn a_fork_at_the_first_change_cuts_off_before_any() {
+        let a = Keypair::from_seed(&[1; 32]);
+        let x = chain::sign_change(&a, &LIB, &W, 1, None, &[]);
+        let y = chain::sign_change(&a, &LIB, &Id16([9; 16]), 1, None, &[]);
+        let proof = Proof::Twice {
+            device: a.device(),
+            type_: "change".into(),
+            seq: 1,
+            a: change_side(&x, None),
+            b: change_side(&y, None),
+        };
+        assert_eq!(
+            change_cutoff(&proof, &LIB, &a.public(), &[], &|_| None),
+            Ok(Cutoff::Found(None))
         );
     }
 }
