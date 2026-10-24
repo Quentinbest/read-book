@@ -106,7 +106,9 @@ fn open(bytes: &[u8], type_: &str, library: &Id16, key: &[u8; 32]) -> Result<env
         return Err(EnrollError::Shape);
     }
     let device = id(&e.body, "device")?;
-    if !e.verified(&Signer::Device(device), key, library, &Place::default()) {
+    // A single writer's file carries its writer's signature and nothing else, so
+    // the one signature is the one checked (and a reveal's is the `pop`).
+    if e.sigs.len() != 1 || !e.verified(&Signer::Device(device), key, library, &Place::default()) {
         return Err(EnrollError::Signature);
     }
     Ok(e)
@@ -158,6 +160,9 @@ pub struct Applicant {
 /// SP24 step 1: a new key, a fresh X25519 key and `na`, and the request committing
 /// to them. The request is signed by the new key, which names the applicant.
 pub fn request(library: &Id16, writer: &Id16, name: &str) -> Result<(Applicant, Vec<u8>)> {
+    // The name becomes the enrollment's label once the reader confirms it: cut to
+    // SP19's 64 characters, so what the reader sees is what is enrolled.
+    let name: String = name.chars().take(trust::MAX_LABEL_CHARS).collect();
     let key = Keypair::generate()?;
     let kx_secret: [u8; 32] = crypto::random()?;
     let na: [u8; 32] = crypto::random()?;
@@ -210,6 +215,7 @@ pub fn open_request(bytes: &[u8], library: &Id16) -> Result<Request> {
         name: b
             .get("name")
             .and_then(Value::as_str)
+            .filter(|n| n.chars().count() <= trust::MAX_LABEL_CHARS)
             .ok_or(EnrollError::Shape)?
             .to_string(),
         commit: hash(b, "commit")?,
@@ -620,10 +626,11 @@ pub struct Joined {
 
 impl Joined {
     /// SP18, SP28: the checkpoint as floors, installed before any library data is
-    /// read. The enrolling device's floor is its own change, view generation and
-    /// counter; every other device's is the counter of the latest device file the
-    /// enrolling device accepted from it, whose `own` and `view` the new device
-    /// learns by reading that file (SP18). Floors are never what it has applied.
+    /// read. The enrolling device's floor is its own change and view generation;
+    /// every device's counter is the one before the device file the checkpoint
+    /// names, since a floor's counter is the last file accepted (`device_file::
+    /// accept`), and that file is still to be read here: it is accepted, and
+    /// anything older refused (SP18). Floors are never what it has applied.
     pub fn floors(&self) -> BTreeMap<String, device_store::Floor> {
         let c = &self.checkpoint;
         let mut out: BTreeMap<String, device_store::Floor> = c
@@ -633,7 +640,7 @@ impl Joined {
                 (
                     f.device.to_string(),
                     device_store::Floor {
-                        counter: f.counter,
+                        counter: f.counter.saturating_sub(1),
                         ..Default::default()
                     },
                 )
@@ -645,7 +652,7 @@ impl Joined {
                 s: c.own.as_ref().map_or(0, |o| o.s),
                 h: c.own.as_ref().map(|o| o.h.to_string()),
                 gen: c.view.map_or(0, |(_, gen)| gen),
-                counter: c.counter,
+                counter: c.counter.saturating_sub(1),
                 earlier: Vec::new(),
             },
         );
@@ -796,6 +803,60 @@ mod tests {
             open_answer(&forged, &LIB, &d.public()).unwrap_err(),
             EnrollError::Signature
         );
+    }
+
+    #[test]
+    fn a_reveal_carries_its_applicants_signature_and_nothing_else() {
+        let (applicant, d, answering, read, _) = exchange();
+        // A stranger's signature listed before the applicant's: refused, so the
+        // `pop` can only be the applicant's own.
+        let s = Keypair::from_seed(&[66; 32]);
+        let fields = json!({ "applicant": applicant.request.applicant.to_string(),
+                "device": applicant.request.applicant.to_string(), "writer": W.to_string(),
+                "request": applicant.request.hash.to_string(), "answer": read.hash.to_string(),
+                "enroller": d.device().to_string(), "na": b64url_encode(&applicant.na) });
+        let two = trust::sign(
+            "enroll-reveal",
+            &LIB,
+            fields,
+            &[
+                (&s, Signer::Device(s.device()), 0),
+                (
+                    &applicant.key,
+                    Signer::Device(applicant.request.applicant),
+                    0,
+                ),
+            ],
+        )
+        .0;
+        assert_eq!(
+            open_reveal(&two, &LIB, &answering).unwrap_err(),
+            EnrollError::Signature
+        );
+    }
+
+    #[test]
+    fn a_name_is_cut_to_the_label_limit_and_a_longer_one_refused() {
+        let (applicant, req) = request(&LIB, &W, &"é".repeat(100)).unwrap();
+        assert_eq!(
+            applicant.request.name.chars().count(),
+            trust::MAX_LABEL_CHARS
+        );
+        assert_eq!(
+            open_request(&req, &LIB).unwrap().name,
+            applicant.request.name
+        );
+        let long = trust::sign(
+            "enroll-request",
+            &LIB,
+            json!({ "applicant": applicant.request.applicant.to_string(),
+                    "device": applicant.request.applicant.to_string(), "writer": W.to_string(),
+                    "key": b64url_encode(&applicant.request.key), "kx": b64url_encode(&applicant.request.kx),
+                    "name": "x".repeat(65), "commit": applicant.request.commit.to_string() }),
+            &[(&applicant.key, Signer::Device(applicant.request.applicant), 0)],
+        )
+        .0;
+        assert_eq!(open_request(&long, &LIB).unwrap_err(), EnrollError::Shape);
     }
 
     #[test]
@@ -1025,10 +1086,48 @@ mod tests {
         assert_eq!(joined.naming_key, [9; 32]);
         assert_eq!(joined.checkpoint, cp);
         let floors = joined.floors();
-        assert_eq!(floors[&p.device().to_string()].counter, 3);
         let mine = &floors[&d.device().to_string()];
-        assert_eq!((mine.s, mine.gen, mine.counter), (1, 2, 5));
+        assert_eq!((mine.s, mine.gen), (1, 2));
         assert_eq!(mine.h, Some(cp.own.as_ref().unwrap().h.to_string()));
+        // Installed, the floors let the device read P's checkpointed file 3, and
+        // refuse an older one.
+        use crate::sync::device_file::{accept, Accepted};
+        use crate::sync::device_store::{DeviceStore, Memory};
+        let ks = Memory::default();
+        let mut store = DeviceStore::default();
+        store.identity(&LIB).unwrap().floors = floors;
+        let file = |n: u64| {
+            crate::sync::device_file::write(&p, &LIB, &W, n, &Default::default())
+                .unwrap()
+                .bytes
+        };
+        let none = |_: &str| None;
+        assert!(matches!(
+            accept(
+                &ks,
+                &mut store,
+                &LIB,
+                &p.device(),
+                &p.public(),
+                &file(2),
+                &none
+            )
+            .unwrap(),
+            Accepted::Stale
+        ));
+        assert!(matches!(
+            accept(
+                &ks,
+                &mut store,
+                &LIB,
+                &p.device(),
+                &p.public(),
+                &file(3),
+                &none
+            )
+            .unwrap(),
+            Accepted::New(..)
+        ));
     }
 
     #[test]
