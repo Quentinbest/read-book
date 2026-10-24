@@ -259,9 +259,10 @@ struct Graph<'a> {
     order: Vec<Hash32>,
     /// Each record's ancestors, what it links to among them (`links`).
     ancestors: BTreeMap<Hash32, BTreeSet<Hash32>>,
-    /// Each record's ancestors through `prev` alone, without a confirm's links: the
-    /// branches records were made on. A confirm counts a removal as if made on its
-    /// `prev`, but only a merge joins branches (pending 116, (a)).
+    /// Each record's ancestors without a confirmed removal's link: the branches
+    /// records were made on. A confirm counts a removal as if made on its `prev`,
+    /// but only a merge joins branches (pending 116, (a)). An admission's links
+    /// stay: what it admitted was the library's before any later fork.
     made_on: BTreeMap<Hash32, BTreeSet<Hash32>>,
 }
 
@@ -323,7 +324,16 @@ impl<'a> Graph<'a> {
             }
             ancestors.insert(h, anc);
             let mut on = BTreeSet::new();
-            for p in inputs.records[&h].prevs() {
+            let r = &inputs.records[&h];
+            let mut made = r.prevs();
+            if let Body::Confirm {
+                confirms: Confirms::Admits(hs),
+                ..
+            } = &r.body
+            {
+                made.extend(hs.iter().copied());
+            }
+            for p in made {
                 on.insert(p);
                 on.extend(made_on[&p].iter().copied());
             }
@@ -2834,6 +2844,31 @@ mod tests {
         assert!(m.suspended.contains(&k(5).device()));
         assert!(m.suspended.contains(&k(6).device()));
         assert!(m.trusted(&k(5).device()).is_none());
+    }
+
+    #[test]
+    fn devices_a_confirm_admitted_before_a_fork_are_trusted_at_it() {
+        let (mut l, g, h) = eleven();
+        let e = l.enroll(h, &k(10), &k(40), 1, OLD + 20);
+        l.enroll(h, &k(11), &k(41), 1, OLD + 21);
+        let one = l.confirm(
+            g,
+            &k(1),
+            &k(100),
+            &k(102),
+            json!({ "admits": [e.to_string()] }),
+            OLD + 22,
+        );
+        // Then two removals made apart on the confirm.
+        let r1 = l.remove(one, &k(1), &k(102), &k(110), &[&k(15)], OLD + 23);
+        let r2 = l.remove(one, &k(10), &k(102), &k(111), &[&k(16)], OLD + 24);
+        l.me = Some(k(1).device());
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        // The admitted device was enrolled before the fork: nobody is suspended.
+        assert!(m.suspended.is_empty());
+        assert!(m.trusted(&k(40).device()).is_some());
     }
 
     #[test]
