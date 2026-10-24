@@ -17,7 +17,7 @@ use super::device_store;
 use super::envelope::{self, EnvelopeError, Place, Signer};
 use super::ids::{b64url_decode, b64url_encode, device_id, DeviceId, Hash32, Id16};
 use super::membership::Membership;
-use super::trust::{self, Body, Record};
+use super::trust::{self, Body, Mark, Record};
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 
@@ -490,9 +490,8 @@ pub struct SignedFile {
     pub sig: [u8; 64],
 }
 
-/// SP24 step 6: what the new device must never go below. The frontiers, accepted
-/// views and accepted-by-all marks SP24 also names are SP29's, and join it with
-/// 1c.6 (#136).
+/// SP24 step 6: what the new device must never go below. The accepted views SP24
+/// also names are SP17's, and join it when views are built.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Checkpoint {
     /// The enrolling device's membership head, and the removals it accepted.
@@ -506,6 +505,39 @@ pub struct Checkpoint {
     pub counter: u64,
     /// Every other device's floor.
     pub floors: Vec<SignedFile>,
+    /// SP29: its frontier, the latest change it applied of each other device, with
+    /// that device's signature and the `prev` and `vroot` it covers, so the new
+    /// device checks each without reading the change (decisions.md, (5)).
+    pub frontier: Vec<(DeviceId, SignedChange)>,
+    /// SP29: its accepted-by-all marks, which the new device takes only as floors,
+    /// never as accepted by all: it finds those itself from signed device files.
+    pub marks: Vec<(DeviceId, Mark)>,
+}
+
+fn change_json(c: &SignedChange) -> Value {
+    json!({
+        "s": c.s, "h": c.h.to_string(), "prev": c.prev.map(|p| p.to_string()),
+        "vroot": c.vroot.to_string(), "sig": b64url_encode(&c.sig),
+    })
+}
+
+fn change_from(c: &Value) -> Result<SignedChange> {
+    Ok(SignedChange {
+        s: u64_v(c.get("s"))?,
+        h: hash_v(c.get("h"))?,
+        prev: match c.get("prev") {
+            Some(Value::Null) => None,
+            p => Some(hash_v(p)?),
+        },
+        vroot: hash_v(c.get("vroot"))?,
+        sig: bytes64(c.get("sig"))?,
+    })
+}
+
+fn device_v(v: Option<&Value>) -> Result<DeviceId> {
+    v.and_then(Value::as_str)
+        .and_then(Id16::parse)
+        .ok_or(EnrollError::Shape)
 }
 
 impl Checkpoint {
@@ -513,16 +545,21 @@ impl Checkpoint {
         json!({
             "head": self.head.to_string(),
             "removals": self.removals.iter().map(|h| h.to_string()).collect::<Vec<_>>(),
-            "own": self.own.as_ref().map(|c| json!({
-                "s": c.s, "h": c.h.to_string(), "prev": c.prev.map(|p| p.to_string()),
-                "vroot": c.vroot.to_string(), "sig": b64url_encode(&c.sig),
-            })),
+            "own": self.own.as_ref().map(change_json),
             "view": self.view.map(|(h, gen)| json!({ "h": h.to_string(), "gen": gen })),
             "counter": self.counter,
             "floors": self.floors.iter().map(|f| json!({
                 "device": f.device.to_string(), "counter": f.counter,
                 "hash": f.hash.to_string(), "sig": b64url_encode(&f.sig),
             })).collect::<Vec<_>>(),
+            "frontier": self.frontier.iter().map(|(d, c)| {
+                let mut e = change_json(c);
+                e["d"] = Value::from(d.to_string());
+                e
+            }).collect::<Vec<_>>(),
+            "marks": self.marks.iter()
+                .map(|(d, m)| json!({ "d": d.to_string(), "s": m.s, "h": m.h.to_string() }))
+                .collect::<Vec<_>>(),
         })
     }
 
@@ -531,16 +568,7 @@ impl Checkpoint {
         let list = |k: &str| o.get(k).and_then(Value::as_array).ok_or(EnrollError::Shape);
         let own = match o.get("own") {
             Some(Value::Null) => None,
-            Some(c) => Some(SignedChange {
-                s: u64_v(c.get("s"))?,
-                h: hash_v(c.get("h"))?,
-                prev: match c.get("prev") {
-                    Some(Value::Null) => None,
-                    p => Some(hash_v(p)?),
-                },
-                vroot: hash_v(c.get("vroot"))?,
-                sig: bytes64(c.get("sig"))?,
-            }),
+            Some(c) => Some(change_from(c)?),
             None => return Err(EnrollError::Shape),
         };
         let view = match o.get("view") {
@@ -570,6 +598,22 @@ impl Checkpoint {
                         hash: hash_v(f.get("hash"))?,
                         sig: bytes64(f.get("sig"))?,
                     })
+                })
+                .collect::<Result<_>>()?,
+            frontier: list("frontier")?
+                .iter()
+                .map(|e| Ok((device_v(e.get("d"))?, change_from(e)?)))
+                .collect::<Result<_>>()?,
+            marks: list("marks")?
+                .iter()
+                .map(|m| {
+                    Ok((
+                        device_v(m.get("d"))?,
+                        Mark {
+                            s: u64_v(m.get("s"))?,
+                            h: hash_v(m.get("h"))?,
+                        },
+                    ))
                 })
                 .collect::<Result<_>>()?,
         })
@@ -631,6 +675,9 @@ impl Joined {
     /// names, since a floor's counter is the last file accepted (`device_file::
     /// accept`), and that file is still to be read here: it is accepted, and
     /// anything older refused (SP18). Floors are never what it has applied.
+    /// A device's frontier entry and accepted-by-all mark are changes its chain must
+    /// pass with those hashes: the highest is the floor's change, the others its
+    /// earlier checkpoints (SP18).
     pub fn floors(&self) -> BTreeMap<String, device_store::Floor> {
         let c = &self.checkpoint;
         let mut out: BTreeMap<String, device_store::Floor> = c
@@ -656,6 +703,34 @@ impl Joined {
                 earlier: Vec::new(),
             },
         );
+        let changes = c
+            .frontier
+            .iter()
+            .map(|(d, ch)| (*d, ch.s, ch.h))
+            .chain(c.marks.iter().map(|(d, m)| (*d, m.s, m.h)));
+        for (d, s, h) in changes {
+            if d == self.enroller {
+                continue;
+            }
+            let f = out.entry(d.to_string()).or_default();
+            let mut all: Vec<(u64, String)> = f
+                .earlier
+                .iter()
+                .map(|e| (e.s, e.h.clone()))
+                .chain(f.h.clone().map(|fh| (f.s, fh)))
+                .chain(std::iter::once((s, h.to_string())))
+                .collect();
+            all.sort();
+            all.dedup();
+            let (top_s, top_h) = all.pop().expect("one was just added");
+            f.s = top_s;
+            f.h = Some(top_h);
+            f.earlier = all
+                .into_iter()
+                .filter(|(es, _)| *es < top_s)
+                .map(|(s, h)| device_store::Checkpoint { s, h })
+                .collect();
+        }
         out
     }
 }
@@ -743,6 +818,20 @@ pub fn join(
                 signed(&key, "device", f.device, &place, &f.hash, &f.sig)
             })
     });
+    // A frontier entry, by the device it names, with that device's signature.
+    checkpoint.frontier.retain(|(d, c)| {
+        *d != answer.device
+            && *d != me
+            && membership.key(d).is_some_and(|key| {
+                let place = Place {
+                    seq: c.s,
+                    prev: c.prev,
+                    vroot: Some(c.vroot),
+                };
+                signed(&key, "change", *d, &place, &c.h, &c.sig)
+            })
+    });
+    checkpoint.marks.retain(|(d, m)| *d != me && m.s > 0);
     Ok(Joined {
         enroller: answer.device,
         enrollment,
@@ -1071,6 +1160,8 @@ mod tests {
                 hash: file.hash,
                 sig: fsig,
             }],
+            frontier: vec![],
+            marks: vec![],
         }
     }
 
@@ -1234,5 +1325,69 @@ mod tests {
             join(&ok, &LIB, &applicant, &read, &d.public(), &m, &l.records).unwrap_err(),
             EnrollError::NamingKey
         );
+    }
+
+    #[test]
+    fn the_checkpoints_frontier_and_marks_become_floors_once_their_signatures_hold() {
+        let (applicant, d, answering, read, revealed) = exchange();
+        let p = Keypair::from_seed(&[2; 32]);
+        let l = library(&d, &p, &answering, &revealed);
+        let m = membership(&l, applicant.request.applicant);
+        let mut cp = checkpoint(&d, &p, l.genesis);
+        // D applied P through change 3, and holds P's changes through 2 as accepted
+        // by all.
+        let mut prev = None;
+        let mut signed = Vec::new();
+        for s in 1..=3u64 {
+            let c = crate::sync::chain::sign_change(&p, &LIB, &W, s, prev, &[]);
+            let sig = envelope::open(&c.bytes, "change", &LIB).unwrap().sigs[0].sig;
+            signed.push(SignedChange {
+                s,
+                h: c.hash,
+                prev,
+                vroot: envelope::vroot(&[]),
+                sig,
+            });
+            prev = Some(c.hash);
+        }
+        cp.frontier = vec![(p.device(), signed[2].clone())];
+        cp.marks = vec![(
+            p.device(),
+            Mark {
+                s: 2,
+                h: signed[1].h,
+            },
+        )];
+        let ok = enroll_ok(&LIB, &answering, &l.t, &l.enrollment, &cp, &[9; 32], &d, &W).unwrap();
+        let joined = join(&ok, &LIB, &applicant, &read, &d.public(), &m, &l.records).unwrap();
+        let f = &joined.floors()[&p.device().to_string()];
+        assert_eq!((f.s, f.h.clone()), (3, Some(signed[2].h.to_string())));
+        assert_eq!(
+            f.earlier,
+            vec![device_store::Checkpoint {
+                s: 2,
+                h: signed[1].h.to_string()
+            }]
+        );
+        assert_eq!(f.counter, 2);
+        // A frontier entry with another change's signature is dropped; the mark
+        // alone stays a floor.
+        let mut forged = cp.clone();
+        forged.frontier[0].1.sig = signed[0].sig;
+        let ok = enroll_ok(
+            &LIB,
+            &answering,
+            &l.t,
+            &l.enrollment,
+            &forged,
+            &[9; 32],
+            &d,
+            &W,
+        )
+        .unwrap();
+        let joined = join(&ok, &LIB, &applicant, &read, &d.public(), &m, &l.records).unwrap();
+        assert!(joined.checkpoint.frontier.is_empty());
+        let f = &joined.floors()[&p.device().to_string()];
+        assert_eq!((f.s, f.earlier.len()), (2, 0));
     }
 }
