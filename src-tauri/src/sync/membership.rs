@@ -2156,9 +2156,12 @@ mod tests {
         assert_eq!(m.verdict(&again), Some(Verdict::Refused(Refusal::Confirms)));
         assert_eq!(m.verdict(&w), Some(Verdict::Refused(Refusal::NotAdmitted)));
         assert_eq!(m.state.trusted_count(), MAX_DEVICES);
-        // A removal made apart on the confirm's own head is its sibling: it counts.
-        let rm = l.remove(h, &k(1), &k(100), &k(105), &[&k(15)], OLD + 25);
-        assert_eq!(l.compute(g).verdict(&rm), Some(Verdict::Counts));
+        // A removal made apart on the confirm's own head, seen before it, conflicts
+        // with it: the removal, judged first, stands, and overtakes the confirm.
+        let rm = l.remove(h, &k(1), &k(100), &k(105), &[&k(15)], OLD + 22);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&one), Some(Verdict::Refused(Refusal::Overtaken)));
     }
 
     #[test]
