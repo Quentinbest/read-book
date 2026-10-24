@@ -15,6 +15,7 @@ pub mod crypto;
 pub mod device_file;
 pub mod device_store;
 pub mod envelope;
+pub mod frontier;
 pub mod guard;
 pub mod identity;
 pub mod ids;
