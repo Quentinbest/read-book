@@ -20,7 +20,8 @@
 //!
 //! PROVISIONAL: where SP20 leaves room, the reading here is Delegated to Claude,
 //! not approved (`docs/decisions.md`, “Computing membership” (1)–(7), “Sibling
-//! sealed heads” (1)–(7) and “Merge and suspension” (1)–(6)).
+//! sealed heads” (1)–(7), “Merge and suspension” (1)–(6) and “Settling
+//! membership” (1)–(3); its (4) the owner answered).
 
 use super::envelope::Signer;
 use super::ids::{DeviceId, Hash32};
@@ -86,8 +87,6 @@ pub enum Wait {
     Confirm,
     /// A record after sealed heads that no counting record joins.
     Fork,
-    /// SP20 (5): signed by a device suspended here, until a merge decides it.
-    Suspended,
     /// Not judged: a predecessor this device doesn't hold, or past `MAX_RECORDS`.
     Unjudged,
 }
@@ -260,6 +259,11 @@ struct Graph<'a> {
     order: Vec<Hash32>,
     /// Each record's ancestors, what it links to among them (`links`).
     ancestors: BTreeMap<Hash32, BTreeSet<Hash32>>,
+    /// Each record's ancestors without a confirmed removal's link: the branches
+    /// records were made on. A confirm counts a removal as if made on its `prev`,
+    /// but only a merge joins branches (pending 116, (a)). An admission's links
+    /// stay: what it admitted was the library's before any later fork.
+    made_on: BTreeMap<Hash32, BTreeSet<Hash32>>,
 }
 
 impl<'a> Graph<'a> {
@@ -267,8 +271,10 @@ impl<'a> Graph<'a> {
         let seen = |h: &Hash32| inputs.first_seen.get(h).copied().unwrap_or(inputs.now_ms);
         let mut order = Vec::new();
         let mut ancestors: BTreeMap<Hash32, BTreeSet<Hash32>> = BTreeMap::new();
+        let mut made_on: BTreeMap<Hash32, BTreeSet<Hash32>> = BTreeMap::new();
         if inputs.records.contains_key(&inputs.genesis) {
             ancestors.insert(inputs.genesis, BTreeSet::new());
+            made_on.insert(inputs.genesis, BTreeSet::new());
             order.push(inputs.genesis);
         }
         // Each record waits on one of its predecessors not yet placed, and moves to
@@ -317,6 +323,21 @@ impl<'a> Graph<'a> {
                 anc.extend(ancestors[&p].iter().copied());
             }
             ancestors.insert(h, anc);
+            let mut on = BTreeSet::new();
+            let r = &inputs.records[&h];
+            let mut made = r.prevs();
+            if let Body::Confirm {
+                confirms: Confirms::Admits(hs),
+                ..
+            } = &r.body
+            {
+                made.extend(hs.iter().copied());
+            }
+            for p in made {
+                on.insert(p);
+                on.extend(made_on[&p].iter().copied());
+            }
+            made_on.insert(h, on);
             order.push(h);
             release(&h, &ancestors, &mut watching, &mut ready);
         }
@@ -324,12 +345,18 @@ impl<'a> Graph<'a> {
             inputs,
             order,
             ancestors,
+            made_on,
         }
     }
 
     /// `a` descends from `b` (or is it).
     fn descends(&self, a: &Hash32, b: &Hash32) -> bool {
         a == b || self.ancestors.get(a).is_some_and(|s| s.contains(b))
+    }
+
+    /// `a` was made on `b`'s branch, after it (or is it): through `prev` alone.
+    fn made_after(&self, a: &Hash32, b: &Hash32) -> bool {
+        a == b || self.made_on.get(a).is_some_and(|s| s.contains(b))
     }
 
     /// The membership the counting records among `set` make.
@@ -476,18 +503,23 @@ impl<'a> Graph<'a> {
         s
     }
 
-    /// The sealed heads among `sealed` that no other one descends from.
+    /// The branch tips among `sealed`: those no other one was made after. A
+    /// confirm's links don't join branches; a merge does.
     fn tips(&self, sealed: &[Hash32]) -> Vec<Hash32> {
         sealed
             .iter()
-            .filter(|a| !sealed.iter().any(|b| b != *a && self.descends(b, a)))
+            .filter(|a| !sealed.iter().any(|b| b != *a && self.made_after(b, a)))
             .copied()
             .collect()
     }
 
-    /// Where `heads` forked: the records below every one of them.
+    /// Where `heads` forked: the records every one of them was made after.
     fn fork(&self, heads: &[Hash32]) -> BTreeSet<Hash32> {
-        let mut it = heads.iter().map(|h| self.through(h));
+        let mut it = heads.iter().map(|h| {
+            let mut s = self.made_on.get(h).cloned().unwrap_or_default();
+            s.insert(*h);
+            s
+        });
         let first = it.next().unwrap_or_default();
         it.fold(first, |acc, s| acc.intersection(&s).copied().collect())
     }
@@ -642,7 +674,7 @@ impl Pass {
             let fork = g.fork(&tips);
             let branches = |rec: &Hash32| -> BTreeSet<Hash32> {
                 tips.iter()
-                    .filter(|t| g.descends(rec, t) || g.descends(t, rec))
+                    .filter(|t| g.made_after(rec, t) || g.made_after(t, rec))
                     .copied()
                     .collect()
             };
@@ -742,9 +774,27 @@ pub struct Stale {
     pub missing: Vec<Hash32>,
 }
 
-/// SP20: computes the membership, or `Stale` (SP21) when the records lack, or
-/// don't count, something this device has accepted.
-pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
+/// Why no membership comes out. Either way the caller keeps the membership it
+/// accepted last and trusts nothing new.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum NoMembership {
+    /// SP21: storage lacking, or no longer counting, what this device accepted.
+    Stale(Stale),
+    /// The passes didn't settle within their bound: records judge one another in a
+    /// cycle, and no pass of it is safe to return (#131).
+    Unsettled,
+}
+
+/// SP20: computes the membership, or why none comes out: `Stale` (SP21) when the
+/// records lack, or don't count, something this device has accepted, and
+/// `Unsettled` when judging doesn't settle.
+pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, NoMembership> {
+    settle(inputs, None)
+}
+
+/// `compute`, with at most `bound` passes (twice the graph's size, and two more,
+/// by default).
+fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMembership> {
     let g = Graph::new(inputs);
     // SP20 (2), (4): this device's own view, the newest of the sealed heads its
     // device store holds. A sealed head that isn't it or after it has been
@@ -758,8 +808,12 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
     let local = g.newest(&held);
     // Each pass judges with what the previous one found (`Pass`), until nothing
     // changes. Each pass that changes something unlocks or settles a record, so
-    // the graph's size bounds the passes; the bound only keeps a pathological
-    // graph from looping.
+    // the graph's size bounds the passes. A graph that is still changing at the
+    // bound has records judging one another in a cycle: failing closed, no pass
+    // of it is returned.
+    // Every graph takes two passes, even an empty one: the first always learns
+    // something for the next (whether contenders fit).
+    let bound = bound.unwrap_or(2 * g.order.len() + 2);
     let mut pass = Pass::default();
     let mut passes = 0;
     loop {
@@ -767,7 +821,10 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
         let verdicts = judge(&g, &pass, local);
         let all: BTreeSet<Hash32> = g.order.iter().copied().collect();
         let next = pass.next(&g, &verdicts);
-        if next != pass && passes <= 2 * g.order.len() {
+        if next != pass {
+            if passes >= bound {
+                return Err(NoMembership::Unsettled);
+            }
             pass = next;
             continue;
         }
@@ -791,7 +848,7 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, Stale> {
             .copied()
             .collect();
         if !missing.is_empty() {
-            return Err(Stale { missing });
+            return Err(NoMembership::Stale(Stale { missing }));
         }
         let settled = g
             .order
@@ -954,15 +1011,23 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                             // Its targets as lineages where it was made: an identity
                             // rotated in on its branch alone is still the old lineage.
                             let at = g.state(&verdicts, &g.upto(rm));
+                            // Its cascade follows what they enrolled on either branch:
+                            // where it was made, and where it is confirmed.
+                            let mut members = at.members.clone();
+                            for (d, m) in &st.members {
+                                members.entry(*d).or_insert_with(|| m.clone());
+                            }
+                            let kept: BTreeSet<DeviceId> =
+                                at.kept.union(&st.kept).copied().collect();
                             Some(closure(
-                                &at.members,
+                                &members,
                                 removes
                                     .iter()
                                     .map(|x| {
                                         at.members.get(&x.device).map_or(x.device, |m| m.lineage)
                                     })
                                     .collect(),
-                                &at.kept,
+                                &kept,
                             ))
                         }
                         _ => None,
@@ -1040,9 +1105,6 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                     // SP20 (5): built on a head a merge overtook, not below it.
                     Some(_) if pass.overtaken.contains(h) || g.overtaken(&all_sealed, h) => {
                         Verdict::Refused(Refusal::Overtaken)
-                    }
-                    Some(s) if pass.suspended.contains(&s.lineage) => {
-                        Verdict::Waits(Wait::Suspended)
                     }
                     Some(s) => {
                         let lineage = s.lineage;
@@ -1135,8 +1197,6 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                         .and_then(|s| inputs.records[&s].seal().map(|c| c.code_key));
                     if !r.signed_by(&Signer::Device(*old), &o.key, seq) {
                         Verdict::Refused(Refusal::Signature)
-                    } else if pass.suspended.contains(&lineage) {
-                        Verdict::Waits(Wait::Suspended)
                     } else if introduced(key, new) {
                         Verdict::Refused(Refusal::KeyAgain)
                     } else if recent_rotations >= ROTATIONS_WITHOUT_CODE
@@ -1573,11 +1633,33 @@ mod tests {
             .unwrap()
         }
 
+        fn compute_bounded(
+            &self,
+            genesis: Hash32,
+            bound: usize,
+        ) -> Result<Membership, NoMembership> {
+            let held = |d: &DeviceId, s: u64| self.held.get(&(*d, s)).copied();
+            settle(
+                &Inputs {
+                    genesis,
+                    records: &self.records,
+                    first_seen: &self.seen,
+                    confirmed: &self.confirmed,
+                    checkpoint: &BTreeSet::new(),
+                    held: &held,
+                    accepted: &BTreeSet::new(),
+                    now_ms: NOW,
+                    me: self.me,
+                },
+                Some(bound),
+            )
+        }
+
         fn compute_after(
             &self,
             genesis: Hash32,
             accepted: &BTreeSet<Hash32>,
-        ) -> Result<Membership, Stale> {
+        ) -> Result<Membership, NoMembership> {
             let held = |d: &DeviceId, s: u64| self.held.get(&(*d, s)).copied();
             compute(&Inputs {
                 genesis,
@@ -1999,7 +2081,7 @@ mod tests {
         l.records.remove(&rm);
         assert_eq!(
             l.compute_after(g, &accepted).unwrap_err(),
-            Stale { missing: vec![rm] }
+            NoMembership::Stale(Stale { missing: vec![rm] })
         );
     }
 
@@ -2460,11 +2542,15 @@ mod tests {
         let m = l.compute(g);
         assert_eq!(m.verdict(&x1), Some(Verdict::Counts));
         assert_eq!(m.verdict(&y1), Some(Verdict::Counts));
-        assert_eq!(m.suspended, [x, y].into_iter().collect());
+        assert_eq!(m.suspended, [x, y, k(7).device()].into_iter().collect());
         assert!(m.trusted(&x).is_none());
         assert!(m.trusted(&k(2).device()).is_some());
-        assert_eq!(m.verdict(&z1), Some(Verdict::Waits(Wait::Suspended)));
-        assert_eq!(m.verdict(&rot), Some(Verdict::Waits(Wait::Suspended)));
+        // What X enrols and rotates to counts in the graph, but is enrolled after the
+        // fork, or is X's lineage: suspended too.
+        assert_eq!(m.verdict(&z1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&rot), Some(Verdict::Counts));
+        assert!(m.trusted(&k(7).device()).is_none());
+        assert!(m.trusted(&k(9).device()).is_none());
         // Seen from X: its own branch's devices are trusted, the other's suspended.
         l.me = Some(x);
         let m = l.compute(g);
@@ -2688,5 +2774,151 @@ mod tests {
         assert!(m.trusted(&k(5).device()).is_none());
         assert!(m.trusted(&k(7).device()).is_some());
         assert!(m.trusted(&k(6).device()).is_some());
+    }
+
+    #[test]
+    fn a_device_that_doesnt_hold_its_genesis_gets_an_empty_membership() {
+        let mut l = Lib::default();
+        let g = l.genesis(&k(1), &k(100));
+        l.records.remove(&g);
+        let m = l.compute_after(g, &BTreeSet::new()).unwrap();
+        assert!(m.trusted(&k(1).device()).is_none());
+        assert_eq!(m.newest_sealed, None);
+    }
+
+    #[test]
+    fn judging_that_doesnt_settle_gives_no_membership() {
+        // A removal later in the graph makes room for an enrollment judged before
+        // it: the second pass settles that. Stopped after one pass, judging hasn't
+        // settled, and no membership comes out.
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        let mut prev = g;
+        for i in 0..11u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        let waiting = l.enroll(prev, &a, &k(50), 12, OLD + 20);
+        l.remove(waiting, &a, &c0, &k(101), &[&k(15)], OLD + 21);
+        assert_eq!(
+            l.compute_bounded(g, 1).unwrap_err(),
+            NoMembership::Unsettled
+        );
+        assert_eq!(l.compute(g).verdict(&waiting), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_confirm_signer_enrolled_on_its_own_branch_by_a_removed_device_is_removed_too() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let r1 = l.remove(e2, &b, &c0, &k(101), &[&c], OLD + 2);
+        let r2 = l.remove(e2, &c, &c0, &k(102), &[&b], OLD + 3);
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        // On B's branch, B enrols D, and A seals again; D then confirms C's
+        // removal of B, whose cascade takes D.
+        let e3 = l.enroll(r1, &b, &d, 1, OLD + 4);
+        let r3 = l.remove(e3, &a, &k(101), &k(105), &[&c], OLD + 5);
+        let cf = l.confirm(
+            r3,
+            &d,
+            &k(105),
+            &k(106),
+            json!({ "confirms": r2.to_string() }),
+            OLD + 6,
+        );
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Signer)));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Waits(Wait::Confirm)));
+    }
+
+    #[test]
+    fn suspending_a_device_doesnt_hide_the_fork_it_was_enrolled_on() {
+        let mut l = Lib::default();
+        let (a, b, c0) = (k(1), k(2), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &k(4), 2, OLD + 1);
+        // After the fork, A enrols X and X enrols Z, whom A then removes; apart, B
+        // enrols Y and removes D.
+        let x1 = l.enroll(e2, &a, &k(5), 3, OLD + 2);
+        let z1 = l.enroll(x1, &k(5), &k(7), 1, OLD + 3);
+        let rx = l.remove(z1, &a, &c0, &k(101), &[&k(7)], OLD + 4);
+        let y1 = l.enroll(e2, &b, &k(6), 1, OLD + 5);
+        let ry = l.remove(y1, &b, &c0, &k(102), &[&k(4)], OLD + 6);
+        l.me = Some(a.device());
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rx), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&ry), Some(Verdict::Counts));
+        assert!(m.suspended.contains(&k(5).device()));
+        assert!(m.suspended.contains(&k(6).device()));
+        assert!(m.trusted(&k(5).device()).is_none());
+    }
+
+    #[test]
+    fn devices_a_confirm_admitted_before_a_fork_are_trusted_at_it() {
+        let (mut l, g, h) = eleven();
+        let e = l.enroll(h, &k(10), &k(40), 1, OLD + 20);
+        l.enroll(h, &k(11), &k(41), 1, OLD + 21);
+        let one = l.confirm(
+            g,
+            &k(1),
+            &k(100),
+            &k(102),
+            json!({ "admits": [e.to_string()] }),
+            OLD + 22,
+        );
+        // Then two removals made apart on the confirm.
+        let r1 = l.remove(one, &k(1), &k(102), &k(110), &[&k(15)], OLD + 23);
+        let r2 = l.remove(one, &k(10), &k(102), &k(111), &[&k(16)], OLD + 24);
+        l.me = Some(k(1).device());
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&r1), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&r2), Some(Verdict::Counts));
+        // The admitted device was enrolled before the fork: nobody is suspended.
+        assert!(m.suspended.is_empty());
+        assert!(m.trusted(&k(40).device()).is_some());
+    }
+
+    #[test]
+    fn a_confirm_that_joins_siblings_keeps_their_new_devices_suspended_until_a_merge() {
+        let (mut l, g, [rx, ry, ..]) = forked();
+        // This device held A's removal; the reader confirms B's on it.
+        let held = l.records.remove(&ry).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(ry, held);
+        l.me = Some(k(1).device());
+        let cf = l.confirm(
+            rx,
+            &k(1),
+            &k(101),
+            &k(103),
+            json!({ "confirms": ry.to_string() }),
+            OLD + 6,
+        );
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&cf), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&ry), Some(Verdict::Counts));
+        // Pending 116 (a): only a merge's keeps end the suspension.
+        assert_eq!(
+            m.suspended,
+            [k(5).device(), k(6).device()].into_iter().collect()
+        );
+        let mg = l.merge(
+            &[cf, ry],
+            &k(1),
+            &[&k(103)],
+            &k(104),
+            &[(&k(5), true), (&k(6), true)],
+            OLD + 7,
+        );
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&mg), Some(Verdict::Counts));
+        assert!(m.suspended.is_empty());
+        assert_eq!(m.newest_sealed, Some(mg));
     }
 }
