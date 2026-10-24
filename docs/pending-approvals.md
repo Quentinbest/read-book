@@ -378,3 +378,11 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(b)** Build a simpler Resume now: “make this copy win” only, re-versioning every record that differs from what storage sends.
     *Recommendation:* (a). Choice (b) alone would undo every change made elsewhere since the backup, which SY27's first choice exists to avoid. Until then a restored library stays paused, so nothing is lost.
     **Approved 2026-10-20: (a).**
+
+## Sync Stage 1c.4c (2026-10-24, #131)
+
+116. **A confirm that joins sibling branches (SP20 (4a), (5); Stage 1c.4c).** A `confirm` counts a removal from a sibling branch as if it were made on the confirm's own head. That joins the two branches, so the fork ends and the devices enrolled on the other branch after the fork stop being suspended, without the reader choosing Keep or Remove for each. A `merge` must record that choice (`keeps`); a confirm has no `keeps`. Options:
+    - **(a)** A confirm that joins siblings keeps their post-fork devices suspended until a merge records `keeps` for them.
+    - **(b)** A confirm that joins siblings must carry `keeps` like a merge, and counts only when it names every such device.
+    *Recommendation:* (a). The confirm stays as SP19 defines it, the merge stays the one record where the reader decides each post-fork device, and nothing is trusted that the reader hasn't looked at. Until this is answered, it is built as neither: #131 tracks it, and sync has no caller yet.
+    **Approved 2026-10-24: (a).**
