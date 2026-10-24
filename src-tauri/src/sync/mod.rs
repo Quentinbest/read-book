@@ -14,6 +14,7 @@ pub mod clock;
 pub mod crypto;
 pub mod device_file;
 pub mod device_store;
+pub mod enrollment;
 pub mod envelope;
 pub mod guard;
 pub mod identity;
