@@ -25,6 +25,7 @@ pub mod json;
 pub mod local;
 pub mod membership;
 pub mod merge;
+pub mod proof;
 pub mod record;
 pub mod recovery;
 pub mod restore;
