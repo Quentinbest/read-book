@@ -1242,6 +1242,22 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                                 && !removed.contains(&m.lineage)
                                 && r.signed_by(&Signer::Device(m.device), &m.key, 0)
                         });
+                        // SP20 (2), SP25: during a recovery from a full library, the
+                        // current code and the recovering device's own key sign in
+                        // place of an enrolled device. The removal counts only if
+                        // that device's enrollment by code builds on it, with the
+                        // code the removal seals. PROVISIONAL (decisions.md, “The
+                        // recovery code as protocol”, (4)).
+                        let next_code = r.seal().map(|c| c.code_key);
+                        let recovering = g.order.iter().any(|e| {
+                            let er = &inputs.records[e];
+                            matches!(&er.body, Body::Enroll { by: None, prev, device, key, .. }
+                                if prev == h
+                                    && !st.members.contains_key(device)
+                                    && r.signed_by(&Signer::Device(*device), key, 0)
+                                    && next_code.is_some_and(|k| er.signed_by(&Signer::Code, &k, 0)))
+                        });
+                        let device_signed = device_signed || recovering;
                         if unknown {
                             Verdict::Refused(Refusal::UnknownTarget)
                         } else if !device_signed {
@@ -2907,5 +2923,42 @@ mod tests {
         assert_eq!(m.verdict(&mg), Some(Verdict::Counts));
         assert!(m.suspended.is_empty());
         assert_eq!(m.newest_sealed, Some(mg));
+    }
+
+    #[test]
+    fn a_full_library_is_recovered_by_removing_first_then_enrolling_on_the_removal() {
+        // Twelve devices: A and eleven it enrolled.
+        let mut l = Lib::default();
+        let (a, c0) = (k(1), k(100));
+        let g = l.genesis(&a, &c0);
+        let mut prev = g;
+        for i in 0..11u8 {
+            prev = l.enroll(prev, &a, &k(10 + i), u64::from(i) + 1, OLD + i64::from(i));
+        }
+        // The recovering device R removes one with the current code and its own key,
+        // then enrols by the code that removal seals.
+        let r = k(60);
+        let rm = l.remove(prev, &r, &c0, &k(101), &[&k(15)], OLD + 20);
+        let by_code = l.code_enroll(rm, &k(101), &r, OLD + 21);
+        l.confirmed.insert(by_code);
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&by_code), Some(Verdict::Counts));
+        assert!(m.trusted(&r.device()).is_some());
+        assert!(m.trusted(&k(15).device()).is_none());
+        assert_eq!(m.state.trusted_count(), MAX_DEVICES);
+        // Without its enrollment on it, such a removal has no signer.
+        l.records.remove(&by_code);
+        assert_eq!(
+            l.compute(g).verdict(&rm),
+            Some(Verdict::Refused(Refusal::Signer))
+        );
+        // Nor with one by another key than the one that signed the removal.
+        let other = l.code_enroll(rm, &k(101), &k(61), OLD + 22);
+        l.confirmed.insert(other);
+        assert_eq!(
+            l.compute(g).verdict(&rm),
+            Some(Verdict::Refused(Refusal::Signer))
+        );
     }
 }
