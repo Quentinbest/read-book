@@ -188,14 +188,17 @@ impl Proof {
         if device_id(key) != device {
             return Err(ProofError::Signature);
         }
-        let signed = |type_: &str, seq: u64, s: &Side| {
+        // The exact bytes a side's signature covers (SP6).
+        let message = |type_: &str, seq: u64, s: &Side| {
             let place = Place {
                 seq,
                 prev: s.prev,
                 vroot: s.vroot,
             };
-            let m = envelope::message(type_, library, &Signer::Device(device), &place, &s.hash);
-            super::crypto::verify(key, &m, &s.sig)
+            envelope::message(type_, library, &Signer::Device(device), &place, &s.hash)
+        };
+        let signed = |type_: &str, seq: u64, s: &Side| {
+            super::crypto::verify(key, &message(type_, seq, s), &s.sig)
         };
         match self {
             Proof::Twice {
@@ -204,11 +207,21 @@ impl Proof {
                 if !TYPES.contains(&type_.as_str()) || *seq == 0 {
                     return Err(ProofError::Type);
                 }
-                // Only a change's signature covers `prev` and `vroot` (SP6).
-                if type_ != "change" && (a.vroot.is_some() || b.vroot.is_some()) {
+                // Only a change's signature covers `prev` and `vroot` (SP6), and a
+                // change's always covers its `vroot`.
+                let shaped = |s: &Side| {
+                    if type_ == "change" {
+                        s.vroot.is_some()
+                    } else {
+                        s.prev.is_none() && s.vroot.is_none()
+                    }
+                };
+                if !shaped(a) || !shaped(b) {
                     return Err(ProofError::Shape);
                 }
-                if (a.hash, a.prev, a.vroot) == (b.hash, b.prev, b.vroot) {
+                // The sides must differ in what is signed, not in how it is written:
+                // a missing `prev` and an all-zero one are signed alike.
+                if message(type_, *seq, a) == message(type_, *seq, b) {
                     return Err(ProofError::Same);
                 }
                 if signed(type_, *seq, a) && signed(type_, *seq, b) {
@@ -312,6 +325,16 @@ mod tests {
             b: change_side(&x, Some(one.hash)),
         };
         assert_eq!(same.check(&LIB, &a.public()), Err(ProofError::Same));
+        // Nor does one signature copied with its missing `prev` written as zeros:
+        // both are signed alike.
+        let zeros = Proof::Twice {
+            device: a.device(),
+            type_: "change".into(),
+            seq: 1,
+            a: change_side(&one, None),
+            b: change_side(&one, Some(Hash32([0; 32]))),
+        };
+        assert_eq!(zeros.check(&LIB, &a.public()), Err(ProofError::Same));
         let b = Keypair::from_seed(&[2; 32]);
         assert_eq!(proof.check(&LIB, &b.public()), Err(ProofError::Signature));
         let Proof::Twice { a: sa, b: sb, .. } = proof.clone() else {
@@ -351,6 +374,22 @@ mod tests {
             b: side_of("Other"),
         };
         assert_eq!(proof.check(&LIB, &a.public()), Ok(None));
+        // A device file's signature covers no `prev`: a side naming one isn't
+        // SP30's shape, so one signature can't be made to look like two.
+        let Proof::Twice { a: sa, .. } = proof.clone() else {
+            unreachable!()
+        };
+        let with_prev = Proof::Twice {
+            device: a.device(),
+            type_: "device".into(),
+            seq: 4,
+            a: sa.clone(),
+            b: Side {
+                prev: Some(Hash32([0; 32])),
+                ..sa
+            },
+        };
+        assert_eq!(with_prev.check(&LIB, &a.public()), Err(ProofError::Shape));
         // A sequence of 0 has no place in a history.
         let Proof::Twice { a: sa, b: sb, .. } = proof else {
             unreachable!()
