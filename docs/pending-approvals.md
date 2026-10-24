@@ -385,3 +385,4 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(a)** A confirm that joins siblings keeps their post-fork devices suspended until a merge records `keeps` for them.
     - **(b)** A confirm that joins siblings must carry `keeps` like a merge, and counts only when it names every such device.
     *Recommendation:* (a). The confirm stays as SP19 defines it, the merge stays the one record where the reader decides each post-fork device, and nothing is trusted that the reader hasn't looked at. Until this is answered, it is built as neither: #131 tracks it, and sync has no caller yet.
+    **Approved 2026-10-24: (a).**
