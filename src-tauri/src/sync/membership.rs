@@ -792,7 +792,8 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, NoMembership> {
     settle(inputs, None)
 }
 
-/// `compute`, with at most `bound` passes (twice the graph's size by default).
+/// `compute`, with at most `bound` passes (twice the graph's size, and two more,
+/// by default).
 fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMembership> {
     let g = Graph::new(inputs);
     // SP20 (2), (4): this device's own view, the newest of the sealed heads its
@@ -810,7 +811,9 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
     // the graph's size bounds the passes. A graph that is still changing at the
     // bound has records judging one another in a cycle: failing closed, no pass
     // of it is returned.
-    let bound = bound.unwrap_or(2 * g.order.len());
+    // Every graph takes two passes, even an empty one: the first always learns
+    // something for the next (whether contenders fit).
+    let bound = bound.unwrap_or(2 * g.order.len() + 2);
     let mut pass = Pass::default();
     let mut passes = 0;
     loop {
@@ -2771,6 +2774,16 @@ mod tests {
         assert!(m.trusted(&k(5).device()).is_none());
         assert!(m.trusted(&k(7).device()).is_some());
         assert!(m.trusted(&k(6).device()).is_some());
+    }
+
+    #[test]
+    fn a_device_that_doesnt_hold_its_genesis_gets_an_empty_membership() {
+        let mut l = Lib::default();
+        let g = l.genesis(&k(1), &k(100));
+        l.records.remove(&g);
+        let m = l.compute_after(g, &BTreeSet::new()).unwrap();
+        assert!(m.trusted(&k(1).device()).is_none());
+        assert_eq!(m.newest_sealed, None);
     }
 
     #[test]
