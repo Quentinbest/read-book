@@ -458,6 +458,8 @@ mod tests {
             accepted: &none,
             now_ms: NOW as i64,
             me: Some(me),
+            quarantined: &BTreeMap::new(),
+            agreed: None,
         })
         .unwrap()
     }

@@ -69,6 +69,13 @@ pub struct Inputs<'a> {
     /// This device's identity, which decides whom it suspends (SP20 (5)): none
     /// before it has joined, when it suspends as a device trusted at the fork.
     pub me: Option<DeviceId>,
+    /// SP30: the identities a checked equivocation proof quarantines, each with
+    /// the proof's cutoff (`None` before any of its changes).
+    pub quarantined: &'a BTreeMap<DeviceId, Option<Mark>>,
+    /// SP30: the membership head every enrolled device's device file names. A
+    /// quarantined signer's `confirm`, `merge`, `enroll` or `rotate` counts only at
+    /// or below it.
+    pub agreed: Option<Hash32>,
 }
 
 /// Why a record doesn't count yet; it is judged again as things change.
@@ -127,6 +134,9 @@ pub enum Refusal {
     Keeps,
     /// SP20 (5): a `merge` whose heads aren't the current unmerged tips, every one.
     Heads,
+    /// SP30: a `confirm`, `merge`, `enroll` or `rotate` signed by a quarantined
+    /// identity, not at or below the membership head every enrolled device names.
+    Quarantined,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -842,12 +852,34 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
                 Verdict::Waits(Wait::Unjudged)
             });
         }
-        let missing: Vec<Hash32> = inputs
+        // A record a proof's quarantine (SP30) stops counting, directly or through
+        // what it built on, stops for a reason the storage didn't cause: not a
+        // rollback. Those are the accepted records that count without it.
+        let mut missing: Vec<Hash32> = inputs
             .accepted
             .iter()
-            .filter(|h| verdicts.get(*h) != Some(&Verdict::Counts))
+            .filter(|h| {
+                !matches!(
+                    verdicts.get(*h),
+                    Some(Verdict::Counts | Verdict::Refused(Refusal::Quarantined))
+                )
+            })
             .copied()
             .collect();
+        if !missing.is_empty() && !inputs.quarantined.is_empty() {
+            let none = BTreeMap::new();
+            let unquarantined = settle(
+                &Inputs {
+                    quarantined: &none,
+                    agreed: None,
+                    ..*inputs
+                },
+                None,
+            );
+            if let Ok(m) = unquarantined {
+                missing.retain(|h| m.verdict(h) != Some(Verdict::Counts));
+            }
+        }
         if !missing.is_empty() {
             return Err(NoMembership::Stale(Stale { missing }));
         }
@@ -915,6 +947,10 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 _ => false,
             })
         };
+        // SP30: for a `confirm` or `merge`, whether a device signer that authorizes
+        // it by SP20's own rules is quarantined, and whether one isn't.
+        let mut eligible_signers: Option<(bool, bool)> = None;
+        let quarantined = inputs.quarantined;
         let v = match &r.body {
             // Another genesis, a claim or an escrow is never in the graph: none has a
             // `prev`.
@@ -960,14 +996,34 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                         .is_some_and(|c| r.signed_by(&Signer::Code, &c.code_key, 0))
                 };
                 // A device of a lineage trusted at the fork, removed on no branch.
-                let fork_signer = branches.members.values().any(|m| {
+                let from_fork = |m: &Member| {
                     branches.trusted(&m.device).is_some()
                         && at_fork
                             .members
                             .values()
                             .any(|f| f.lineage == m.lineage && at_fork.trusted(&f.device).is_some())
                         && r.signed_by(&Signer::Device(m.device), &m.key, 0)
-                });
+                };
+                let fork_signer = branches.members.values().any(from_fork);
+                // With every branch's code, any device still trusted on the branches
+                // may be its device signer.
+                let every_code = prevs.iter().all(code_of);
+                let authorizes = |m: &Member| {
+                    from_fork(m)
+                        || every_code
+                            && branches.trusted(&m.device).is_some()
+                            && r.signed_by(&Signer::Device(m.device), &m.key, 0)
+                };
+                eligible_signers = Some((
+                    branches
+                        .members
+                        .values()
+                        .any(|m| authorizes(m) && quarantined.contains_key(&m.device)),
+                    branches
+                        .members
+                        .values()
+                        .any(|m| authorizes(m) && !quarantined.contains_key(&m.device)),
+                ));
                 // Every device enrolled after the fork below its heads, named once.
                 let after: BTreeSet<DeviceId> = below
                     .iter()
@@ -987,7 +1043,7 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                     Verdict::Refused(Refusal::Heads)
                 } else if !prevs.iter().any(code_of) {
                     Verdict::Refused(Refusal::Signature)
-                } else if !fork_signer && !prevs.iter().all(code_of) {
+                } else if !fork_signer && !every_code {
                     Verdict::Refused(Refusal::Signer)
                 } else if named != after || named.len() != keeps.len() {
                     Verdict::Refused(Refusal::Keeps)
@@ -1066,14 +1122,23 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 };
                 // Its device signer: trusted at `prev`, and removed neither by the
                 // removal it confirms nor by any removal that counts.
-                let signed = target.as_ref().is_some_and(|gone| {
-                    st.members.values().any(|m| {
-                        st.trusted(&m.device).is_some()
-                            && !gone.contains(&m.lineage)
-                            && !global.removed.contains(&m.device)
-                            && !pass.freed.contains(&m.device)
-                            && r.signed_by(&Signer::Device(m.device), &m.key, 0)
-                    })
+                let eligible = |m: &Member, gone: &BTreeSet<DeviceId>| {
+                    st.trusted(&m.device).is_some()
+                        && !gone.contains(&m.lineage)
+                        && !global.removed.contains(&m.device)
+                        && !pass.freed.contains(&m.device)
+                        && r.signed_by(&Signer::Device(m.device), &m.key, 0)
+                };
+                let signed = target
+                    .as_ref()
+                    .is_some_and(|gone| st.members.values().any(|m| eligible(m, gone)));
+                eligible_signers = target.as_ref().map(|gone| {
+                    let by = |q: bool| {
+                        st.members
+                            .values()
+                            .any(|m| eligible(m, gone) && quarantined.contains_key(&m.device) == q)
+                    };
+                    (by(true), by(false))
                 });
                 if code.is_none() || verdicts.get(prev) != Some(&Verdict::Counts) {
                     Verdict::Refused(Refusal::NotSealed)
@@ -1114,10 +1179,17 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                         // enroller's signature doesn't hold proves no history.
                         let by_n = |k: u64| {
                             // Among the records judged so far, which the graph's
-                            // bound limits: never a scan of everything held.
+                            // bound limits: never a scan of everything held. One a
+                            // quarantine refuses still used its `n`: a successor
+                            // goes on from it (SP20, SP30).
                             verdicts
                                 .iter()
-                                .filter(|(_, v)| **v == Verdict::Counts)
+                                .filter(|(_, v)| {
+                                    matches!(
+                                        v,
+                                        Verdict::Counts | Verdict::Refused(Refusal::Quarantined)
+                                    )
+                                })
                                 .map(|(x, _)| (x, &inputs.records[x]))
                                 .find(|(_, o)| {
                                     matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
@@ -1286,9 +1358,64 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 }
             }
         };
+        let v = if v == Verdict::Counts {
+            quarantine(g, &sealed_before, h, r, eligible_signers)
+        } else {
+            v
+        };
         verdicts.insert(*h, v);
     }
     verdicts
+}
+
+/// SP30: a record that would count, decided by what it is when a quarantined
+/// identity signed it. A removal still counts (removals only take trust away). A
+/// `confirm`, `merge`, `enroll` or `rotate` counts only at or below the membership
+/// head every enrolled device names, so an accepted merge stays authoritative and
+/// nothing new comes from the key that forked. The one exception is the identity's
+/// own `rotate`, when the current code's key signs it too and its `last` is
+/// exactly the cutoff: everything up to the cutoff stands, and the device goes on
+/// under its successor.
+/// `eligible_signers` is, for a `confirm` or `merge`, whether a device signer that
+/// authorizes it by SP20's own rules is quarantined, and whether one isn't. It is
+/// the quarantined signer's when the first holds and the second doesn't: a
+/// signature that verifies but couldn't authorize it (a removed or rotated
+/// identity) doesn't lift the quarantine, and a merge with every branch's code and
+/// no device signer at all is nobody's.
+fn quarantine(
+    g: &Graph<'_>,
+    sealed_before: &[Hash32],
+    h: &Hash32,
+    r: &Record,
+    eligible_signers: Option<(bool, bool)>,
+) -> Verdict {
+    let q = g.inputs.quarantined;
+    if q.is_empty() {
+        return Verdict::Counts;
+    }
+    let by_quarantined = match &r.body {
+        Body::Enroll { by: Some(b), .. } => q.contains_key(b),
+        Body::Rotate { old, .. } => q.contains_key(old),
+        Body::Confirm { .. } | Body::Merge { .. } => {
+            matches!(eligible_signers, Some((true, false)))
+        }
+        _ => false,
+    };
+    if !by_quarantined {
+        return Verdict::Counts;
+    }
+    if g.inputs.agreed.is_some_and(|a| g.descends(&a, h)) {
+        return Verdict::Counts;
+    }
+    if let Body::Rotate { old, last, .. } = &r.body {
+        let code = g
+            .newest(sealed_before)
+            .and_then(|s| g.inputs.records[&s].seal().map(|c| c.code_key));
+        if q.get(old) == Some(last) && code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
+            return Verdict::Counts;
+        }
+    }
+    Verdict::Refused(Refusal::Quarantined)
 }
 
 /// SP20, “When trust is lost”: when one device has two cutoffs the later counts,
@@ -1524,6 +1651,8 @@ mod tests {
         confirmed: BTreeSet<Hash32>,
         held: BTreeMap<(DeviceId, u64), Hash32>,
         me: Option<DeviceId>,
+        quarantined: BTreeMap<DeviceId, Option<Mark>>,
+        agreed: Option<Hash32>,
     }
 
     impl Lib {
@@ -1747,6 +1876,8 @@ mod tests {
                 accepted: &BTreeSet::new(),
                 now_ms: NOW,
                 me: self.me,
+                quarantined: &self.quarantined,
+                agreed: self.agreed,
             })
             .unwrap()
         }
@@ -1768,6 +1899,8 @@ mod tests {
                     accepted: &BTreeSet::new(),
                     now_ms: NOW,
                     me: self.me,
+                    quarantined: &self.quarantined,
+                    agreed: self.agreed,
                 },
                 Some(bound),
             )
@@ -1789,6 +1922,8 @@ mod tests {
                 accepted,
                 now_ms: NOW,
                 me: self.me,
+                quarantined: &self.quarantined,
+                agreed: self.agreed,
             })
         }
     }
@@ -3129,5 +3264,244 @@ mod tests {
         assert_eq!(m.verdict(&ry2), Some(Verdict::Counts));
         assert_eq!(m.state.cutoffs.get(&d.device()), Some(&None));
         assert_eq!(m.state.cutoffs[&y.device()].map(|c| c.s), Some(2));
+    }
+
+    #[test]
+    fn a_quarantined_identity_counts_only_for_removals_and_what_everyone_accepted() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &d, 2, OLD + 1);
+        // B, proven to have forked, enrols C, and removes D.
+        let by_b = l.enroll(e2, &b, &c, 1, OLD + 2);
+        let rm = l.remove(e2, &b, &c0, &k(101), &[&d], OLD + 3);
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        // Removals only take trust away: B's still counts.
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        // An enrollment at or below the head every enrolled device names stands.
+        l.agreed = Some(by_b);
+        assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
+        l.agreed = Some(e2);
+        assert_eq!(
+            l.compute(g).verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+    }
+
+    #[test]
+    fn a_record_accepted_before_its_signers_quarantine_isnt_stale_storage() {
+        let mut l = Lib::default();
+        let (a, b, b2, c0) = (k(1), k(2), k(22), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // This device accepted B's rotation; then a proof against B arrives.
+        let rot = l.rotate(e1, &b, &b2, None, OLD + 1);
+        let accepted = l.compute(g).accepted(&l.records);
+        assert!(accepted.contains(&rot));
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(
+            m.verdict(&rot),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert!(m.trusted(&b2.device()).is_none());
+    }
+
+    #[test]
+    fn a_signature_that_couldnt_authorize_a_confirm_doesnt_lift_the_quarantine() {
+        let (mut l, g, r1, r2) = removed_each_other();
+        let held = l.records.remove(&r2).unwrap();
+        let accepted = l.compute(g).accepted(&l.records);
+        l.records.insert(r2, held);
+        // A (quarantined) confirms C's removal on B's; C, which B's removal took,
+        // signs it too.
+        let (a, c) = (k(1), k(3));
+        let cf = l.add(
+            "confirm",
+            json!({ "prev": r1.to_string(), "confirms": r2.to_string(), "code": code(&k(103)) }),
+            &[
+                (&a, Signer::Device(a.device()), 0),
+                (&c, Signer::Device(c.device()), 0),
+                (&k(101), Signer::Code, 0),
+                (&k(103), Signer::Code, 0),
+            ],
+            OLD + 5,
+        );
+        // Every enrolled device names B's removal: what A signed up to it stands.
+        l.quarantined.insert(a.device(), None);
+        l.agreed = Some(r1);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(m.verdict(&cf), Some(Verdict::Refused(Refusal::Quarantined)));
+    }
+
+    #[test]
+    fn a_signature_that_couldnt_authorize_a_merge_doesnt_lift_the_quarantine() {
+        let (mut l, g, [rx, ry, ..]) = forked();
+        // A (quarantined) merges with one branch's code; X, enrolled after the fork
+        // and so no merge signer with one code, signs it too.
+        let (a, x) = (k(1), k(5));
+        let keeps: Vec<Value> = [k(5), k(6)]
+            .iter()
+            .map(|d| json!({ "device": d.device().to_string(), "keep": true, "cutoff": null, "view": null }))
+            .collect();
+        let mg = l.add(
+            "merge",
+            json!({ "prevs": [rx.to_string(), ry.to_string()], "clock": [NOW as u64, 4],
+                    "keeps": keeps, "code": code(&k(103)) }),
+            &[
+                (&a, Signer::Device(a.device()), 0),
+                (&x, Signer::Device(x.device()), 0),
+                (&k(101), Signer::Code, 0),
+                (&k(103), Signer::Code, 0),
+            ],
+            OLD + 6,
+        );
+        l.quarantined.insert(a.device(), None);
+        l.agreed = Some(rx);
+        assert_eq!(
+            l.compute(g).verdict(&mg),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+    }
+
+    #[test]
+    fn a_merge_with_every_branchs_code_and_no_device_signer_is_nobodys() {
+        let (mut l, g, [rx, ry, ..]) = forked();
+        let keeps: Vec<Value> = [k(5), k(6)]
+            .iter()
+            .map(|d| json!({ "device": d.device().to_string(), "keep": true, "cutoff": null, "view": null }))
+            .collect();
+        let mg = l.add(
+            "merge",
+            json!({ "prevs": [rx.to_string(), ry.to_string()], "clock": [NOW as u64, 4],
+                    "keeps": keeps, "code": code(&k(103)) }),
+            &[
+                (&k(101), Signer::Code, 0),
+                (&k(102), Signer::Code, 0),
+                (&k(103), Signer::Code, 0),
+            ],
+            OLD + 6,
+        );
+        assert_eq!(l.compute(g).verdict(&mg), Some(Verdict::Counts));
+        // A quarantine of a device that didn't sign it changes nothing.
+        l.quarantined.insert(k(4).device(), None);
+        assert_eq!(l.compute(g).verdict(&mg), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn an_accepted_record_a_quarantine_undoes_further_down_isnt_stale_storage() {
+        let mut l = Lib::default();
+        let (a, b, c, c2, c0) = (k(1), k(2), k(3), k(23), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // B enrols C, C rotates, and this device accepts the rotation; then a proof
+        // against B arrives, and C's enrollment no longer counts.
+        let by_b = l.enroll(e1, &b, &c, 1, OLD + 1);
+        let rot = l.rotate(by_b, &c, &c2, None, OLD + 2);
+        let accepted = l.compute(g).accepted(&l.records);
+        assert!(accepted.contains(&rot));
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert_ne!(m.verdict(&rot), Some(Verdict::Counts));
+        // A storage that truly lost an accepted record is still stale.
+        l.records.remove(&rot);
+        assert!(matches!(
+            l.compute_after(g, &accepted),
+            Err(NoMembership::Stale(_))
+        ));
+    }
+
+    #[test]
+    fn a_quarantined_identitys_successor_goes_on_from_its_enrollment_count() {
+        let mut l = Lib::default();
+        let (a, b, b2, c, d, c0) = (k(1), k(2), k(22), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // B enrols C (its first), is then proven to have forked, and rotates to B2
+        // with the code at its cutoff; B2 enrols D as the lineage's second.
+        let by_b = l.enroll(e1, &b, &c, 1, OLD + 1);
+        let rot = l.add(
+            "rotate",
+            json!({ "prev": by_b.to_string(), "old": b.device().to_string(), "last": null,
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 1),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 2,
+        );
+        let by_b2 = l.enroll(rot, &b2, &d, 2, OLD + 3);
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert_eq!(m.verdict(&rot), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&by_b2), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_quarantined_identity_rotates_only_with_the_code_at_its_cutoff() {
+        let mut l = Lib::default();
+        let (a, b, b2, c0) = (k(1), k(2), k(22), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        l.quarantined.insert(b.device(), None);
+        // B rotates with `last` its cutoff (no change), signed by the current code.
+        let with_code = l.add(
+            "rotate",
+            json!({ "prev": e1.to_string(), "old": b.device().to_string(), "last": null,
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 1),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 1,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&with_code), Some(Verdict::Counts));
+        assert!(m.trusted(&b2.device()).is_some());
+        // Without the code, or with a `last` past the cutoff, it counts for nothing.
+        l.records.remove(&with_code);
+        let bare = l.rotate(e1, &b, &b2, None, OLD + 1);
+        assert_eq!(
+            l.compute(g).verdict(&bare),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        l.records.remove(&bare);
+        l.held
+            .insert((b.device(), 3), Hash32::parse(&"ee".repeat(32)).unwrap());
+        let past = l.add(
+            "rotate",
+            json!({ "prev": e1.to_string(), "old": b.device().to_string(),
+                    "last": { "s": 3, "h": "ee".repeat(32) },
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 4),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 1,
+        );
+        assert_eq!(
+            l.compute(g).verdict(&past),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
     }
 }

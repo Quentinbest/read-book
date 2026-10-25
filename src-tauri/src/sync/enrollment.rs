@@ -1213,6 +1213,8 @@ mod tests {
             accepted: &none,
             now_ms: NOW_MS,
             me: Some(me),
+            quarantined: &BTreeMap::new(),
+            agreed: None,
         })
         .unwrap()
     }
