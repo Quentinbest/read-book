@@ -852,9 +852,10 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
                 Verdict::Waits(Wait::Unjudged)
             });
         }
-        // A record a proof's quarantine refuses (SP30) stops counting for a reason
-        // the storage didn't cause: not a rollback.
-        let missing: Vec<Hash32> = inputs
+        // A record a proof's quarantine (SP30) stops counting, directly or through
+        // what it built on, stops for a reason the storage didn't cause: not a
+        // rollback. Those are the accepted records that count without it.
+        let mut missing: Vec<Hash32> = inputs
             .accepted
             .iter()
             .filter(|h| {
@@ -865,6 +866,20 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
             })
             .copied()
             .collect();
+        if !missing.is_empty() && !inputs.quarantined.is_empty() {
+            let none = BTreeMap::new();
+            let unquarantined = settle(
+                &Inputs {
+                    quarantined: &none,
+                    agreed: None,
+                    ..*inputs
+                },
+                None,
+            );
+            if let Ok(m) = unquarantined {
+                missing.retain(|h| m.verdict(h) != Some(Verdict::Counts));
+            }
+        }
         if !missing.is_empty() {
             return Err(NoMembership::Stale(Stale { missing }));
         }
@@ -933,8 +948,8 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
             })
         };
         // SP30: for a `confirm` or `merge`, whether a device signer that authorizes
-        // it, by SP20's own rules, isn't quarantined.
-        let mut unquarantined_signer: Option<bool> = None;
+        // it by SP20's own rules is quarantined, and whether one isn't.
+        let mut eligible_signers: Option<(bool, bool)> = None;
         let quarantined = inputs.quarantined;
         let v = match &r.body {
             // Another genesis, a claim or an escrow is never in the graph: none has a
@@ -993,13 +1008,22 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 // With every branch's code, any device still trusted on the branches
                 // may be its device signer.
                 let every_code = prevs.iter().all(code_of);
-                unquarantined_signer = Some(branches.members.values().any(|m| {
-                    !quarantined.contains_key(&m.device)
-                        && (from_fork(m)
-                            || every_code
-                                && branches.trusted(&m.device).is_some()
-                                && r.signed_by(&Signer::Device(m.device), &m.key, 0))
-                }));
+                let authorizes = |m: &Member| {
+                    from_fork(m)
+                        || every_code
+                            && branches.trusted(&m.device).is_some()
+                            && r.signed_by(&Signer::Device(m.device), &m.key, 0)
+                };
+                eligible_signers = Some((
+                    branches
+                        .members
+                        .values()
+                        .any(|m| authorizes(m) && quarantined.contains_key(&m.device)),
+                    branches
+                        .members
+                        .values()
+                        .any(|m| authorizes(m) && !quarantined.contains_key(&m.device)),
+                ));
                 // Every device enrolled after the fork below its heads, named once.
                 let after: BTreeSet<DeviceId> = below
                     .iter()
@@ -1108,11 +1132,14 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 let signed = target
                     .as_ref()
                     .is_some_and(|gone| st.members.values().any(|m| eligible(m, gone)));
-                unquarantined_signer = Some(target.as_ref().is_some_and(|gone| {
-                    st.members
-                        .values()
-                        .any(|m| eligible(m, gone) && !quarantined.contains_key(&m.device))
-                }));
+                eligible_signers = target.as_ref().map(|gone| {
+                    let by = |q: bool| {
+                        st.members
+                            .values()
+                            .any(|m| eligible(m, gone) && quarantined.contains_key(&m.device) == q)
+                    };
+                    (by(true), by(false))
+                });
                 if code.is_none() || verdicts.get(prev) != Some(&Verdict::Counts) {
                     Verdict::Refused(Refusal::NotSealed)
                 } else if pass.overtaken.contains(h) || g.overtaken(&all_sealed, h) {
@@ -1332,7 +1359,7 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
             }
         };
         let v = if v == Verdict::Counts {
-            quarantine(g, &sealed_before, h, r, unquarantined_signer)
+            quarantine(g, &sealed_before, h, r, eligible_signers)
         } else {
             v
         };
@@ -1349,16 +1376,18 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
 /// own `rotate`, when the current code's key signs it too and its `last` is
 /// exactly the cutoff: everything up to the cutoff stands, and the device goes on
 /// under its successor.
-/// `unquarantined_signer` is, for a `confirm` or `merge`, whether a device signer
-/// that authorizes it by SP20's own rules isn't quarantined: another signature that
-/// verifies but couldn't authorize it (a removed or rotated identity) doesn't lift
-/// the quarantine.
+/// `eligible_signers` is, for a `confirm` or `merge`, whether a device signer that
+/// authorizes it by SP20's own rules is quarantined, and whether one isn't. It is
+/// the quarantined signer's when the first holds and the second doesn't: a
+/// signature that verifies but couldn't authorize it (a removed or rotated
+/// identity) doesn't lift the quarantine, and a merge with every branch's code and
+/// no device signer at all is nobody's.
 fn quarantine(
     g: &Graph<'_>,
     sealed_before: &[Hash32],
     h: &Hash32,
     r: &Record,
-    unquarantined_signer: Option<bool>,
+    eligible_signers: Option<(bool, bool)>,
 ) -> Verdict {
     let q = g.inputs.quarantined;
     if q.is_empty() {
@@ -1367,7 +1396,9 @@ fn quarantine(
     let by_quarantined = match &r.body {
         Body::Enroll { by: Some(b), .. } => q.contains_key(b),
         Body::Rotate { old, .. } => q.contains_key(old),
-        Body::Confirm { .. } | Body::Merge { .. } => unquarantined_signer == Some(false),
+        Body::Confirm { .. } | Body::Merge { .. } => {
+            matches!(eligible_signers, Some((true, false)))
+        }
         _ => false,
     };
     if !by_quarantined {
@@ -3337,6 +3368,57 @@ mod tests {
             l.compute(g).verdict(&mg),
             Some(Verdict::Refused(Refusal::Quarantined))
         );
+    }
+
+    #[test]
+    fn a_merge_with_every_branchs_code_and_no_device_signer_is_nobodys() {
+        let (mut l, g, [rx, ry, ..]) = forked();
+        let keeps: Vec<Value> = [k(5), k(6)]
+            .iter()
+            .map(|d| json!({ "device": d.device().to_string(), "keep": true, "cutoff": null, "view": null }))
+            .collect();
+        let mg = l.add(
+            "merge",
+            json!({ "prevs": [rx.to_string(), ry.to_string()], "clock": [NOW as u64, 4],
+                    "keeps": keeps, "code": code(&k(103)) }),
+            &[
+                (&k(101), Signer::Code, 0),
+                (&k(102), Signer::Code, 0),
+                (&k(103), Signer::Code, 0),
+            ],
+            OLD + 6,
+        );
+        assert_eq!(l.compute(g).verdict(&mg), Some(Verdict::Counts));
+        // A quarantine of a device that didn't sign it changes nothing.
+        l.quarantined.insert(k(4).device(), None);
+        assert_eq!(l.compute(g).verdict(&mg), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn an_accepted_record_a_quarantine_undoes_further_down_isnt_stale_storage() {
+        let mut l = Lib::default();
+        let (a, b, c, c2, c0) = (k(1), k(2), k(3), k(23), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // B enrols C, C rotates, and this device accepts the rotation; then a proof
+        // against B arrives, and C's enrollment no longer counts.
+        let by_b = l.enroll(e1, &b, &c, 1, OLD + 1);
+        let rot = l.rotate(by_b, &c, &c2, None, OLD + 2);
+        let accepted = l.compute(g).accepted(&l.records);
+        assert!(accepted.contains(&rot));
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert_ne!(m.verdict(&rot), Some(Verdict::Counts));
+        // A storage that truly lost an accepted record is still stale.
+        l.records.remove(&rot);
+        assert!(matches!(
+            l.compute_after(g, &accepted),
+            Err(NoMembership::Stale(_))
+        ));
     }
 
     #[test]
