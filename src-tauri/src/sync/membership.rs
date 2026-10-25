@@ -852,10 +852,17 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
                 Verdict::Waits(Wait::Unjudged)
             });
         }
+        // A record a proof's quarantine refuses (SP30) stops counting for a reason
+        // the storage didn't cause: not a rollback.
         let missing: Vec<Hash32> = inputs
             .accepted
             .iter()
-            .filter(|h| verdicts.get(*h) != Some(&Verdict::Counts))
+            .filter(|h| {
+                !matches!(
+                    verdicts.get(*h),
+                    Some(Verdict::Counts | Verdict::Refused(Refusal::Quarantined))
+                )
+            })
             .copied()
             .collect();
         if !missing.is_empty() {
@@ -3228,6 +3235,25 @@ mod tests {
             l.compute(g).verdict(&by_b),
             Some(Verdict::Refused(Refusal::Quarantined))
         );
+    }
+
+    #[test]
+    fn a_record_accepted_before_its_signers_quarantine_isnt_stale_storage() {
+        let mut l = Lib::default();
+        let (a, b, b2, c0) = (k(1), k(2), k(22), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // This device accepted B's rotation; then a proof against B arrives.
+        let rot = l.rotate(e1, &b, &b2, None, OLD + 1);
+        let accepted = l.compute(g).accepted(&l.records);
+        assert!(accepted.contains(&rot));
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute_after(g, &accepted).unwrap();
+        assert_eq!(
+            m.verdict(&rot),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert!(m.trusted(&b2.device()).is_none());
     }
 
     #[test]
