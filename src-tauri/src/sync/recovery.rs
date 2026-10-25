@@ -13,13 +13,15 @@
 use super::clock::Hlc;
 use super::crypto::{self, CodeKeys, CryptoError, Keypair, RecoveryCode};
 use super::envelope::Signer;
-use super::ids::{b64url_encode, Hash32, Id16};
-use super::trust::{self, Body, Record};
+use super::ids::{b64url_encode, DeviceId, Hash32, Id16};
+use super::membership::Membership;
+use super::trust::{self, Body, Mark, Record};
 use serde_json::{json, Value};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// SP22 (prov.): a device joining by code tries at most this many sealed heads.
 pub const MAX_CODE_TRIES: usize = 64;
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
 /// SP22: the sealed head `code` opens among `records`, and the code's keys for it.
 /// The heads first seen last are tried first, since a code is most often the
@@ -166,6 +168,139 @@ pub fn enroll_by_code(
     )
 }
 
+/// SP25: a device the reader is asked about (“Keep ‹device›? · Keep · Remove”)
+/// before anything is applied: its label, enrollment date and key fingerprint.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ToDecide {
+    pub device: DeviceId,
+    pub label: String,
+    /// When the record that enrolled it (or rotated it in) was made, by its clock.
+    pub enrolled_ms: u64,
+    pub fingerprint: String,
+}
+
+/// SP25: every device the membership trusts but this one, oldest enrollment
+/// first. A device suspended here is asked about too: the reader decides it.
+pub fn to_decide(
+    membership: &Membership,
+    records: &BTreeMap<Hash32, Record>,
+    me: &DeviceId,
+) -> Vec<ToDecide> {
+    let st = &membership.state;
+    let mut out: Vec<ToDecide> = st
+        .members
+        .values()
+        .filter(|m| m.device != *me && st.trusted(&m.device).is_some())
+        .map(|m| ToDecide {
+            device: m.device,
+            label: m.label.clone(),
+            enrolled_ms: match records.get(&m.record).map(|r| &r.body) {
+                Some(
+                    Body::Genesis { clock, .. }
+                    | Body::Enroll { clock, .. }
+                    | Body::Rotate { clock, .. },
+                ) => clock.ms(),
+                _ => 0,
+            },
+            fingerprint: crypto::fingerprint(&m.key),
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.enrolled_ms
+            .cmp(&b.enrolled_ms)
+            .then(a.device.cmp(&b.device))
+    });
+    out
+}
+
+/// SP25: a removed device's cutoff when joining by code: the latest change of it
+/// that every other enrolled device's frontier includes (`vouched`, what each
+/// device file vouches for, SP29), the joining device not counted among them since
+/// it has applied nothing. With no other enrolled device, its whole verified
+/// history (`latest`, the latest change of it this device holds and has checked).
+/// `None` when nothing of it stands. `held` names the device's change at a
+/// sequence.
+pub fn recovery_cutoff(
+    removed: &DeviceId,
+    me: &DeviceId,
+    enrolled: &BTreeSet<DeviceId>,
+    vouched: &BTreeMap<DeviceId, BTreeMap<DeviceId, u64>>,
+    latest: u64,
+    held: &dyn Fn(u64) -> Option<Hash32>,
+) -> Option<Mark> {
+    let others: Vec<&DeviceId> = enrolled
+        .iter()
+        .filter(|e| *e != removed && *e != me)
+        .collect();
+    let s = if others.is_empty() {
+        latest
+    } else {
+        others
+            .iter()
+            .map(|e| {
+                vouched
+                    .get(*e)
+                    .and_then(|v| v.get(removed))
+                    .copied()
+                    .unwrap_or(0)
+            })
+            .min()
+            .unwrap_or(0)
+    };
+    (s > 0).then(|| held(s).map(|h| Mark { s, h })).flatten()
+}
+
+/// SP25, SP23: the reader's Removes, as one `remove` on `prev` sealed with a new
+/// code: signed by the joining device and the code entered (`code`), each device
+/// with its cutoff, no view, and its cascade (SP26). Written as `stage` says: the
+/// escrow, then the record.
+#[allow(clippy::too_many_arguments)]
+pub fn stage_removal(
+    library: &Id16,
+    prev: &Hash32,
+    removes: &[(DeviceId, Option<Mark>)],
+    device: &Keypair,
+    code: &CodeKeys,
+    naming_key: &[u8; 32],
+    clock: Hlc,
+) -> Result<Staged, CryptoError> {
+    let removes: Vec<Value> = removes
+        .iter()
+        .map(|(d, c)| {
+            json!({ "device": d.to_string(),
+                    "cutoff": c.map(|m| json!({ "s": m.s, "h": m.h.to_string() })),
+                    "view": null, "cascade": true })
+        })
+        .collect();
+    stage(
+        "remove",
+        library,
+        json!({ "prev": prev.to_string(), "removes": removes, "clock": [clock.ms(), clock.n()] }),
+        &[
+            (device, Signer::Device(device.device()), 0),
+            (&code.signing, Signer::Code, 0),
+        ],
+        naming_key,
+    )
+}
+
+/// SP23: escrows naming a head that never appeared, first seen over a day ago:
+/// they count for nothing, and any device removes them.
+pub fn stale_escrows(
+    records: &BTreeMap<Hash32, Record>,
+    first_seen: &BTreeMap<Hash32, i64>,
+    now_ms: i64,
+) -> Vec<Hash32> {
+    records
+        .iter()
+        .filter(|(h, r)| {
+            matches!(&r.body, Body::Escrow { head, .. } if !records.contains_key(head))
+                && first_seen.get(*h).is_some_and(|t| *t < now_ms - DAY_MS)
+        })
+        .map(|(h, _)| *h)
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,5 +412,154 @@ mod tests {
         assert!(matches!(&e.body, Body::Enroll { by: None, prev, .. } if *prev == head));
         assert!(e.signed_by(&Signer::Code, &keys.signing.public(), 0));
         assert!(e.signed_by(&Signer::Device(joining.device()), &joining.public(), 0));
+    }
+
+    /// A's library joined by B with the code: A's genesis (sealed by code key
+    /// `c`), and B's enrollment by code on it, confirmed.
+    fn joined() -> (BTreeMap<Hash32, Record>, Hash32, Keypair, Keypair, CodeKeys) {
+        let (a, b) = (Keypair::from_seed(&[1; 32]), Keypair::from_seed(&[2; 32]));
+        let keys = crypto::code_keys(&[3; 32]);
+        let mut records = BTreeMap::new();
+        let g = trust::sign(
+            "genesis",
+            &LIB,
+            json!({ "device": a.device().to_string(), "key": b64url_encode(&a.public()), "label": "Mac",
+                    "clock": [NOW, 0], "code": { "nonce": b64url_encode(&[5; 16]),
+                    "codeKey": b64url_encode(&keys.signing.public()) } }),
+            &[
+                (&a, Signer::Device(a.device()), 0),
+                (&keys.signing, Signer::Code, 0),
+            ],
+        );
+        records.insert(g.1, open(&g));
+        let e = enroll_by_code(&LIB, &g.1, &keys, &b, "iPad", Hlc(NOW + 5, 1));
+        records.insert(e.1, open(&e));
+        (records, g.1, a, b, keys)
+    }
+
+    fn membership_of(
+        records: &BTreeMap<Hash32, Record>,
+        genesis: Hash32,
+        me: DeviceId,
+    ) -> Membership {
+        let none = BTreeSet::new();
+        let confirmed: BTreeSet<Hash32> = records
+            .iter()
+            .filter(|(_, r)| matches!(r.body, Body::Enroll { by: None, .. }))
+            .map(|(h, _)| *h)
+            .collect();
+        crate::sync::membership::compute(&crate::sync::membership::Inputs {
+            genesis,
+            records,
+            first_seen: &BTreeMap::new(),
+            confirmed: &confirmed,
+            checkpoint: &none,
+            held: &|_, _| None,
+            accepted: &none,
+            now_ms: NOW as i64,
+            me: Some(me),
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn the_reader_is_asked_about_every_trusted_device_but_this_one() {
+        let (records, g, a, b, _) = joined();
+        let m = membership_of(&records, g, b.device());
+        let list = to_decide(&m, &records, &b.device());
+        assert_eq!(
+            list,
+            vec![ToDecide {
+                device: a.device(),
+                label: "Mac".into(),
+                enrolled_ms: NOW,
+                fingerprint: crypto::fingerprint(&a.public()),
+            }]
+        );
+    }
+
+    #[test]
+    fn a_removal_by_the_joining_device_and_the_code_counts() {
+        let (mut records, g, a, b, keys) = joined();
+        let cut = Mark {
+            s: 4,
+            h: Hash32([4; 32]),
+        };
+        // Built on B's own enrollment, where B is a member; sealed by the code it
+        // entered, the genesis's.
+        let joined_at = *records
+            .iter()
+            .find(|(_, r)| matches!(r.body, Body::Enroll { .. }))
+            .unwrap()
+            .0;
+        let staged = stage_removal(
+            &LIB,
+            &joined_at,
+            &[(a.device(), Some(cut))],
+            &b,
+            &keys,
+            &[9; 32],
+            Hlc(NOW + 9, 0),
+        )
+        .unwrap();
+        let rm = open(&staged.record);
+        assert!(matches!(&rm.body, Body::Remove { removes, .. }
+            if removes.len() == 1 && removes[0].device == a.device() && removes[0].cutoff == Some(cut)));
+        records.insert(staged.record.1, rm);
+        let m = membership_of(&records, g, b.device());
+        assert!(m.trusted(&a.device()).is_none());
+        assert!(m.trusted(&b.device()).is_some());
+        assert_eq!(m.state.cutoffs[&a.device()], Some(cut));
+        // Its escrow names the new head, so it isn't stale.
+        records.insert(staged.escrow.1, open(&staged.escrow));
+        let day = 24 * 60 * 60 * 1000;
+        let seen: BTreeMap<Hash32, i64> = [(staged.escrow.1, NOW as i64 - 2 * day)]
+            .into_iter()
+            .collect();
+        assert!(stale_escrows(&records, &seen, NOW as i64).is_empty());
+        // Without its head, a day after it was first seen, it is.
+        records.remove(&staged.record.1);
+        assert_eq!(
+            stale_escrows(&records, &seen, NOW as i64),
+            vec![staged.escrow.1]
+        );
+        let fresh: BTreeMap<Hash32, i64> = [(staged.escrow.1, NOW as i64 - day / 2)]
+            .into_iter()
+            .collect();
+        assert!(stale_escrows(&records, &fresh, NOW as i64).is_empty());
+    }
+
+    #[test]
+    fn a_removed_devices_cutoff_is_what_every_other_device_included() {
+        let id = |n: u8| Id16([n; 16]);
+        let (d, me, e, f) = (id(1), id(2), id(3), id(4));
+        let held = |s: u64| (s <= 9).then_some(Hash32([s as u8; 32]));
+        let enrolled: BTreeSet<DeviceId> = [d, me, e, f].into_iter().collect();
+        let mut vouched: BTreeMap<DeviceId, BTreeMap<DeviceId, u64>> = BTreeMap::new();
+        vouched.insert(e, [(d, 7)].into_iter().collect());
+        vouched.insert(f, [(d, 5)].into_iter().collect());
+        // The joining device, which has applied nothing, isn't waited for.
+        assert_eq!(
+            recovery_cutoff(&d, &me, &enrolled, &vouched, 9, &held),
+            Some(Mark {
+                s: 5,
+                h: Hash32([5; 32])
+            })
+        );
+        // A device whose file names none of it: nothing of it stands.
+        vouched.insert(f, BTreeMap::new());
+        assert_eq!(
+            recovery_cutoff(&d, &me, &enrolled, &vouched, 9, &held),
+            None
+        );
+        // No other enrolled device: its whole verified history.
+        let two: BTreeSet<DeviceId> = [d, me].into_iter().collect();
+        assert_eq!(
+            recovery_cutoff(&d, &me, &two, &vouched, 9, &held),
+            Some(Mark {
+                s: 9,
+                h: Hash32([9; 32])
+            })
+        );
     }
 }
