@@ -1131,10 +1131,17 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                         // enroller's signature doesn't hold proves no history.
                         let by_n = |k: u64| {
                             // Among the records judged so far, which the graph's
-                            // bound limits: never a scan of everything held.
+                            // bound limits: never a scan of everything held. One a
+                            // quarantine refuses still used its `n`: a successor
+                            // goes on from it (SP20, SP30).
                             verdicts
                                 .iter()
-                                .filter(|(_, v)| **v == Verdict::Counts)
+                                .filter(|(_, v)| {
+                                    matches!(
+                                        v,
+                                        Verdict::Counts | Verdict::Refused(Refusal::Quarantined)
+                                    )
+                                })
                                 .map(|(x, _)| (x, &inputs.records[x]))
                                 .find(|(_, o)| {
                                     matches!(&o.body, Body::Enroll { by: Some(b), n: Some(m), .. }
@@ -3254,6 +3261,38 @@ mod tests {
             Some(Verdict::Refused(Refusal::Quarantined))
         );
         assert!(m.trusted(&b2.device()).is_none());
+    }
+
+    #[test]
+    fn a_quarantined_identitys_successor_goes_on_from_its_enrollment_count() {
+        let mut l = Lib::default();
+        let (a, b, b2, c, d, c0) = (k(1), k(2), k(22), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        // B enrols C (its first), is then proven to have forked, and rotates to B2
+        // with the code at its cutoff; B2 enrols D as the lineage's second.
+        let by_b = l.enroll(e1, &b, &c, 1, OLD + 1);
+        let rot = l.add(
+            "rotate",
+            json!({ "prev": by_b.to_string(), "old": b.device().to_string(), "last": null,
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 1),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 2,
+        );
+        let by_b2 = l.enroll(rot, &b2, &d, 2, OLD + 3);
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        assert_eq!(m.verdict(&rot), Some(Verdict::Counts));
+        assert_eq!(m.verdict(&by_b2), Some(Verdict::Counts));
     }
 
     #[test]
