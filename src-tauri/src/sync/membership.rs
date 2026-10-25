@@ -69,6 +69,13 @@ pub struct Inputs<'a> {
     /// This device's identity, which decides whom it suspends (SP20 (5)): none
     /// before it has joined, when it suspends as a device trusted at the fork.
     pub me: Option<DeviceId>,
+    /// SP30: the identities a checked equivocation proof quarantines, each with
+    /// the proof's cutoff (`None` before any of its changes).
+    pub quarantined: &'a BTreeMap<DeviceId, Option<Mark>>,
+    /// SP30: the membership head every enrolled device's device file names. A
+    /// quarantined signer's `confirm`, `merge`, `enroll` or `rotate` counts only at
+    /// or below it.
+    pub agreed: Option<Hash32>,
 }
 
 /// Why a record doesn't count yet; it is judged again as things change.
@@ -127,6 +134,9 @@ pub enum Refusal {
     Keeps,
     /// SP20 (5): a `merge` whose heads aren't the current unmerged tips, every one.
     Heads,
+    /// SP30: a `confirm`, `merge`, `enroll` or `rotate` signed by a quarantined
+    /// identity, not at or below the membership head every enrolled device names.
+    Quarantined,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1286,9 +1296,62 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                 }
             }
         };
+        let v = if v == Verdict::Counts {
+            quarantine(g, &st, &sealed_before, h, r)
+        } else {
+            v
+        };
         verdicts.insert(*h, v);
     }
     verdicts
+}
+
+/// SP30: a record that would count, decided by what it is when a quarantined
+/// identity signed it. A removal still counts (removals only take trust away). A
+/// `confirm`, `merge`, `enroll` or `rotate` counts only at or below the membership
+/// head every enrolled device names, so an accepted merge stays authoritative and
+/// nothing new comes from the key that forked. The one exception is the identity's
+/// own `rotate`, when the current code's key signs it too and its `last` is
+/// exactly the cutoff: everything up to the cutoff stands, and the device goes on
+/// under its successor.
+fn quarantine(
+    g: &Graph<'_>,
+    st: &State,
+    sealed_before: &[Hash32],
+    h: &Hash32,
+    r: &Record,
+) -> Verdict {
+    let q = g.inputs.quarantined;
+    if q.is_empty() {
+        return Verdict::Counts;
+    }
+    // The device signers that made it count.
+    let signers: Vec<DeviceId> = match &r.body {
+        Body::Enroll { by: Some(b), .. } => vec![*b],
+        Body::Rotate { old, .. } => vec![*old],
+        Body::Confirm { .. } | Body::Merge { .. } => st
+            .members
+            .values()
+            .filter(|m| r.signed_by(&Signer::Device(m.device), &m.key, 0))
+            .map(|m| m.device)
+            .collect(),
+        _ => return Verdict::Counts,
+    };
+    if signers.is_empty() || !signers.iter().all(|d| q.contains_key(d)) {
+        return Verdict::Counts;
+    }
+    if g.inputs.agreed.is_some_and(|a| g.descends(&a, h)) {
+        return Verdict::Counts;
+    }
+    if let Body::Rotate { old, last, .. } = &r.body {
+        let code = g
+            .newest(sealed_before)
+            .and_then(|s| g.inputs.records[&s].seal().map(|c| c.code_key));
+        if q.get(old) == Some(last) && code.is_some_and(|k| r.signed_by(&Signer::Code, &k, 0)) {
+            return Verdict::Counts;
+        }
+    }
+    Verdict::Refused(Refusal::Quarantined)
 }
 
 /// SP20, “When trust is lost”: when one device has two cutoffs the later counts,
@@ -1524,6 +1587,8 @@ mod tests {
         confirmed: BTreeSet<Hash32>,
         held: BTreeMap<(DeviceId, u64), Hash32>,
         me: Option<DeviceId>,
+        quarantined: BTreeMap<DeviceId, Option<Mark>>,
+        agreed: Option<Hash32>,
     }
 
     impl Lib {
@@ -1747,6 +1812,8 @@ mod tests {
                 accepted: &BTreeSet::new(),
                 now_ms: NOW,
                 me: self.me,
+                quarantined: &self.quarantined,
+                agreed: self.agreed,
             })
             .unwrap()
         }
@@ -1768,6 +1835,8 @@ mod tests {
                     accepted: &BTreeSet::new(),
                     now_ms: NOW,
                     me: self.me,
+                    quarantined: &self.quarantined,
+                    agreed: self.agreed,
                 },
                 Some(bound),
             )
@@ -1789,6 +1858,8 @@ mod tests {
                 accepted,
                 now_ms: NOW,
                 me: self.me,
+                quarantined: &self.quarantined,
+                agreed: self.agreed,
             })
         }
     }
@@ -3129,5 +3200,85 @@ mod tests {
         assert_eq!(m.verdict(&ry2), Some(Verdict::Counts));
         assert_eq!(m.state.cutoffs.get(&d.device()), Some(&None));
         assert_eq!(m.state.cutoffs[&y.device()].map(|c| c.s), Some(2));
+    }
+
+    #[test]
+    fn a_quarantined_identity_counts_only_for_removals_and_what_everyone_accepted() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &d, 2, OLD + 1);
+        // B, proven to have forked, enrols C, and removes D.
+        let by_b = l.enroll(e2, &b, &c, 1, OLD + 2);
+        let rm = l.remove(e2, &b, &c0, &k(101), &[&d], OLD + 3);
+        l.quarantined.insert(b.device(), None);
+        let m = l.compute(g);
+        assert_eq!(
+            m.verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        // Removals only take trust away: B's still counts.
+        assert_eq!(m.verdict(&rm), Some(Verdict::Counts));
+        // An enrollment at or below the head every enrolled device names stands.
+        l.agreed = Some(by_b);
+        assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
+        l.agreed = Some(e2);
+        assert_eq!(
+            l.compute(g).verdict(&by_b),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+    }
+
+    #[test]
+    fn a_quarantined_identity_rotates_only_with_the_code_at_its_cutoff() {
+        let mut l = Lib::default();
+        let (a, b, b2, c0) = (k(1), k(2), k(22), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        l.quarantined.insert(b.device(), None);
+        // B rotates with `last` its cutoff (no change), signed by the current code.
+        let with_code = l.add(
+            "rotate",
+            json!({ "prev": e1.to_string(), "old": b.device().to_string(), "last": null,
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 1),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 1,
+        );
+        let m = l.compute(g);
+        assert_eq!(m.verdict(&with_code), Some(Verdict::Counts));
+        assert!(m.trusted(&b2.device()).is_some());
+        // Without the code, or with a `last` past the cutoff, it counts for nothing.
+        l.records.remove(&with_code);
+        let bare = l.rotate(e1, &b, &b2, None, OLD + 1);
+        assert_eq!(
+            l.compute(g).verdict(&bare),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
+        l.records.remove(&bare);
+        l.held
+            .insert((b.device(), 3), Hash32::parse(&"ee".repeat(32)).unwrap());
+        let past = l.add(
+            "rotate",
+            json!({ "prev": e1.to_string(), "old": b.device().to_string(),
+                    "last": { "s": 3, "h": "ee".repeat(32) },
+                    "new": b2.device().to_string(), "key": b64url_encode(&b2.public()),
+                    "clock": [NOW as u64, 3] }),
+            &[
+                (&b, Signer::Device(b.device()), 4),
+                (&b2, Signer::Device(b2.device()), 0),
+                (&c0, Signer::Code, 0),
+            ],
+            OLD + 1,
+        );
+        assert_eq!(
+            l.compute(g).verdict(&past),
+            Some(Verdict::Refused(Refusal::Quarantined))
+        );
     }
 }
