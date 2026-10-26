@@ -1214,7 +1214,7 @@ mod tests {
             now_ms: NOW_MS,
             me: Some(me),
             quarantined: &BTreeMap::new(),
-            agreed: None,
+            heads: &BTreeMap::new(),
         })
         .unwrap()
     }
