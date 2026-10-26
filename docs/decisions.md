@@ -312,6 +312,19 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-26 (sync's screens and timing, items 99–101, 103, 104 and 107)
+
+The owner approved the six remaining sync items as recommended (2026-10-26). Each item's text is in `docs/pending-approvals.md`. With item 98 (below), no sync item is open; Stages 3 (#94) and 5 (#96) can build from them.
+
+| What | Approved |
+|---|---|
+| Where sync is set up (99, SY6, SY31) | A Settings section, Sync, after Library (amends G2): the storage menu (None, iCloud Drive, Google Drive and its account), the setup sheet, one status line, Sync Now, Turn Off and Recently deleted…. The two providers are listed as Built-in in Settings › Extensions. Built provisional and captured for approval in Stage 3. |
+| Where the reader decides a conflict (100, SY13) | A “Changed on two devices” group at the top of the Notes tab, as “Couldn't place” is (A8): both versions with device and time, and Keep this under each; one quiet message after the sync that finds them. Until the reader chooses, the version changed last shows and the other is kept. |
+| Recently deleted and removed-book conflicts (101, SY18, SY19) | Settings › Sync › Recently deleted…: the last 7 days, newest first, with device, age and Restore. A removed book in conflict is listed at the top on every device it concerns (Keep the book · Remove) until the reader decides, and stays in the library marked “Removed on ‹device›” on a device that changed it. |
+| Which settings sync (103, SY15) | As listed in item 103. A new setting stays on the device until it is added to the list; text size and margins between a Mac and an iPad are decided with #80. |
+| A newer place for the open book (104, SY12) | The open book never moves under the reader; a message (M1) offers “Your place on ‹device›: ‹chapter› · Go there”, and Back returns (N1). |
+| When it syncs (107, SY32) | At launch, 10 s after the last local change, every 5 minutes while Linen is open, on quit (at most 2 s), and on Sync Now. The values stay provisional: (prov.) in the plan, PROVISIONAL in the code when built. |
+
 ## Approved 2026-10-25 (sync's permissions, item 98)
 
 The owner approved item 98 as recommended (2026-10-25). Stage 2 (#93) can build SY1 and SY2 from it.
@@ -319,7 +332,7 @@ The owner approved item 98 as recommended (2026-10-25). Stage 2 (#93) can build 
 | What | Approved |
 |---|---|
 | The new permissions (98, SY1, SY2) | `sync.provider` lets an extension offer a sync provider, shown at install with a strong warning (“Can store all your books, highlights, notes and settings”). `folder:icloud-drive` and `folder:google-drive` give read and write to a `Linen` folder at the top of that storage and nothing else, consented to in the setup sheet that names the folder. Bodies reach a provider as handles it cannot read (SY3). The permissions are not limited to the built-in providers. |
-| Not decided by this | Items 99–101, 103, 104 and 107 (Stages 3–5) stay open. |
+| Not decided by this | Items 99–101, 103, 104 and 107 (Stages 3–5), approved on 2026-10-26 (above). |
 
 ## Approved 2026-10-18 (the sync protocol, #101)
 

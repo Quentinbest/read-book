@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: items 99–101, 103, 104 and 107 (sync, needed by Stages 3–5). Item 98 was approved on 2026-10-25. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: none. Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -312,17 +312,22 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet.
     **Approved 2026-10-25: as recommended.**
 99. **Where sync is set up (SY6, SY31; Stage 3).** No screen in the design has sync. Proposed: a new Settings section, Sync, after Library (amends G2): a storage menu (None, iCloud Drive, Google Drive and its account), the setup sheet, one status line, Sync Now, Turn Off and Recently deleted…. The two providers are also listed as Built-in in Settings › Extensions.
     *Recommendation:* approve; built provisional and captured for approval in Stage 3.
+    **Approved 2026-10-26: as recommended.**
 100. **Where the reader decides a conflict (SY13; Stage 5).** Proposed: a “Changed on two devices” group at the top of the Notes tab, as “Couldn't place” is (A8). Each entry shows both versions, with the device and time, and Keep this under each. After the sync that finds them, one quiet message: “2 highlights changed on two devices · Review”. Until the reader chooses, the version changed last shows in the text and the other is kept.
     *Recommendation:* approve.
+    **Approved 2026-10-26: as recommended.**
 101. **Where deleted things are restored, and removed-book conflicts decided (SY18, SY19; Stage 5).** Proposed: Settings › Sync › Recently deleted…, a sheet listing the books, highlights and notes deleted in the last 7 days, newest first, with the device, the age and Restore. A book whose removal is in conflict (item 102) is listed at the top of that sheet on every device it concerns (“Removed on ‹device›, changed on ‹device›” · Keep the book · Remove), whatever the week, until the reader decides. On a device that changed it, the book also stays in the library, marked “Removed on ‹device›”, until then. The message after the sync that finds such a conflict opens the sheet. Otherwise the library and the Notes tab don't change.
     *Recommendation:* approve. Deleting is rare, and one place for restoring keeps the reading screens as they are.
+    **Approved 2026-10-26: as recommended.**
 102. **A change and a deletion made apart (SY13, SY20; Stage 1).** One device deletes a highlight (or removes a book); another changed it before they synced. For a book, any change counts: a highlight or note added or changed, a new edition imported, reading further, a per-book setting. Proposed: a conflict the reader decides (item 100), but only when the second device changed it after the last sync it shared with the deleting device. Otherwise the deletion applies without asking. This also covers a device away for more than a week: what was deleted elsewhere never comes back unless the reader keeps it.
     *Recommendation:* approve. It keeps both of your rules: the reader decides between changes, and nothing deleted returns on its own.
     **Approved 2026-10-17: as recommended.**
 103. **Which settings sync (SY15; Stage 3).** Proposed: theme, text size, line spacing, font, page width, publisher styles, single-key shortcuts, remapped shortcuts (without extension commands), page-turn crossfade and announcements, the UI language, the library's sort and view, the reading pace, and per book its Pages or Scroll and Simplify styles. Device-only: open at launch, pinned extension commands (extensions don't sync), the docked Navigator tab (it depends on the window's width), safe mode and the sync setup. A new setting stays on the device until it is added to the list. Text size and margins between a Mac and an iPad (the tablet uses 20 px text, P§4) are decided with #80.
     *Recommendation:* approve.
+    **Approved 2026-10-26: as recommended.**
 104. **A newer place for the open book (SY12; Stage 3).** Opening a book uses the newest place (#73). If the book is already open, proposed: it never moves under the reader; a message (M1) says “Your place on ‹device›: ‹chapter› · Go there” (it may be further on or earlier, SY12), and Back returns (N1).
     *Recommendation:* approve.
+    **Approved 2026-10-26: as recommended.**
 105. **Merge rules other than highlights and notes (SY12, SY14, SY16; Stage 1).** Proposed: the newest place wins, even when it is earlier in the book; each setting, last opened and finished: the newest wins; a merge never undoes adding a book (only a deletion removes one); when two devices import different updated files of one book while apart (B3), the newest import wins, highlights re-anchor and unplaceable ones go to “Couldn't place”.
     *Recommendation:* approve.
     **Approved 2026-10-17: as recommended.**
@@ -335,6 +340,7 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet.
     **Approved 2026-10-17: as recommended.**
 107. **When it syncs (SY32; Stage 3).** Proposed (provisional): at launch, 10 s after the last local change, every 5 minutes while Linen is open, on quit (at most 2 s), and on Sync Now.
     *Recommendation:* approve.
+    **Approved 2026-10-26: as recommended.**
 108. **Encrypting what is in storage (Stage 1: it shapes the protocol's formats).** Linen would store books, highlights and notes in iCloud Drive or Google Drive as they are; Apple or Google keep them under their own encryption. Linen could add a passphrase, but a forgotten passphrase loses the synced copy, and the two built-in providers can't read the bodies anyway (SY3). The cost of not encrypting: a lost or sold Mac still signed in to the account can read what is in the folder, including what is added after it was removed from sync; only encryption with a key replaced on each removal would stop that, so the Remove sheet tells the reader to sign that Mac out or erase it.
     *Recommendation:* no encryption in this plan; decide again before any provider other than the two folders is allowed.
     **Approved 2026-10-17: as recommended.**
