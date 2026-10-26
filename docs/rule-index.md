@@ -66,7 +66,7 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | F7 | L153 | Esc returns to the original page if you only browsed; after choosing a result you stay and Back returns |  |
 | F8 | L154 | The index is built in a background worker on first search and persisted |  |
 | G1 | L749 | Extension install and permission consent dialog, including the re-prompt when an update asks for more (Phase… | Approved 2026-09-26 (Phases 7–8 review) |
-| G2 | L750 | Preferences sections other than Extensions: General, Reading, Library, Shortcuts, About (Phase 6). | Approved 2026-09-25 (Phases 3–6 review)<br>Approved 2026-10-10 (Reading Lens, items 77–81) |
+| G2 | L750 | Preferences sections other than Extensions: General, Reading, Library, Shortcuts, About (Phase 6). | Approved 2026-09-25 (Phases 3–6 review)<br>Approved 2026-10-10 (Reading Lens, items 77–81)<br>Approved 2026-10-26 (sync's screens and timing, items 99–101, 103, 104 and 107) |
 | G3 | L751 | Book info sheet: read-only (Q4), with EPUB accessibility metadata (E10) (Phase 6). | Approved 2026-09-25 (Phases 3–6 review) |
 | G4 | L752 | Library states: sort menu open, item menu, remove confirmation or Undo (and whether Remove deletes the copied… | Approved 2026-09-25 (Phases 3–6 review) |
 | G5 | L753 | Navigator, popovers, ⌘K, sheets, library and Preferences in Sepia and Night. S4 now supplies every token, so… | Approved 2026-09-25 (Phases 3–6 review) |
