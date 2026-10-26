@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: items 98–101, 103, 104 and 107 (sync, needed by Stages 2–5). Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: items 99–101, 103, 104 and 107 (sync, needed by Stages 3–5). Item 98 was approved on 2026-10-25. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -309,6 +309,7 @@ The plan is `docs/sync-plan.md`; its rules are SY1–SY34. Nothing is built yet.
 
 98. **The new permissions (SY1, SY2; Stage 2).** The design says extensions get no file system (P§19, plan §7.2), so writing into these folders needs a brokered permission. Proposed: `sync.provider` lets an extension offer a sync provider; it is shown at install, strongly warned (“Can store all your books, highlights, notes and settings”). `folder:icloud-drive` and `folder:google-drive` let it read and write a `Linen` folder at the top of that storage, and nothing else; they are consented to in Linen's setup sheet when the reader turns sync on, which names the folder. Bodies reach the provider as handles it cannot read (SY3), so the two built-in providers never see a book or a note.
     *Recommendation:* approve.
+    **Approved 2026-10-25: as recommended.**
 99. **Where sync is set up (SY6, SY31; Stage 3).** No screen in the design has sync. Proposed: a new Settings section, Sync, after Library (amends G2): a storage menu (None, iCloud Drive, Google Drive and its account), the setup sheet, one status line, Sync Now, Turn Off and Recently deleted…. The two providers are also listed as Built-in in Settings › Extensions.
     *Recommendation:* approve; built provisional and captured for approval in Stage 3.
 100. **Where the reader decides a conflict (SY13; Stage 5).** Proposed: a “Changed on two devices” group at the top of the Notes tab, as “Couldn't place” is (A8). Each entry shows both versions, with the device and time, and Keep this under each. After the sync that finds them, one quiet message: “2 highlights changed on two devices · Review”. Until the reader chooses, the version changed last shows in the text and the other is kept.

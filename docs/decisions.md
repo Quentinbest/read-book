@@ -312,6 +312,15 @@ The owner approved items 77–81 as recommended (`docs/pending-approvals.md`). T
 | Nightly fuzzing (80) | Nightly Rust and cargo-fuzz installed; the cargo-fuzz target runs for 30 minutes before Stage 2b ships. |
 | Dictionary screens and strings (81) | `rl-11-dictionary-entry-paper`, `rl-11-dictionary-entry-night` and `rl-14-settings-dictionaries` are baselines; the English is approved; the four translations go to the native reviewers with item 74's. |
 
+## Approved 2026-10-25 (sync's permissions, item 98)
+
+The owner approved item 98 as recommended (2026-10-25). Stage 2 (#93) can build SY1 and SY2 from it.
+
+| What | Approved |
+|---|---|
+| The new permissions (98, SY1, SY2) | `sync.provider` lets an extension offer a sync provider, shown at install with a strong warning (“Can store all your books, highlights, notes and settings”). `folder:icloud-drive` and `folder:google-drive` give read and write to a `Linen` folder at the top of that storage and nothing else, consented to in the setup sheet that names the folder. Bodies reach a provider as handles it cannot read (SY3). The permissions are not limited to the built-in providers. |
+| Not decided by this | Items 99–101, 103, 104 and 107 (Stages 3–5) stay open. |
+
 ## Approved 2026-10-18 (the sync protocol, #101)
 
 The owner reviewed the protocol, merged it (“gh pr merge 101”) and answered its two items (2026-10-18). Stage 1's code (1a, 1b, 1c) can now be built from it.
