@@ -73,10 +73,11 @@ pub struct Inputs<'a> {
     /// the proof's cutoff (`None` before any of its changes).
     pub quarantined: &'a BTreeMap<DeviceId, Option<Mark>>,
     /// SP20, SP30: the head in each device's latest accepted device file, this
-    /// device included. A file naming no head has no entry. The caller accepts no
-    /// later files from a quarantined identity, so its head stays frozen at the
-    /// latest file accepted before quarantine and still participates in agreement.
-    pub heads: &'a BTreeMap<DeviceId, Hash32>,
+    /// device included: `None` for a file naming no head, and no entry for a
+    /// device with no file. The caller accepts no later files from a quarantined
+    /// identity, so its head stays frozen at the latest file accepted before
+    /// quarantine and still participates in agreement.
+    pub heads: &'a BTreeMap<DeviceId, Option<Hash32>>,
 }
 
 /// Why a record doesn't count yet; it is judged again as things change.
@@ -269,6 +270,9 @@ struct Graph<'a> {
     /// SP30: for each lineage that must agree, the head it names, if any: that
     /// of its newest identity with a device file (`settle`).
     agreeing: BTreeMap<DeviceId, Option<Hash32>>,
+    /// SP30: judge each rotation as if its old chain through `last` were held
+    /// (finding who must agree, `settle`).
+    chains_held: bool,
     /// Topological order, ties by first sight.
     order: Vec<Hash32>,
     /// Each record's ancestors, what it links to among them (`links`).
@@ -358,6 +362,7 @@ impl<'a> Graph<'a> {
         Graph {
             inputs,
             agreeing: BTreeMap::new(),
+            chains_held: false,
             order,
             ancestors,
             made_on,
@@ -819,7 +824,17 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, NoMembership> {
 /// `compute`, with at most `bound` passes (twice the graph's size, and two more,
 /// by default).
 fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMembership> {
+    settle_with(inputs, bound, false)
+}
+
+/// `settle`, judging every rotation's old chain as held when `chains_held`.
+fn settle_with(
+    inputs: &Inputs<'_>,
+    bound: Option<usize>,
+    chains_held: bool,
+) -> Result<Membership, NoMembership> {
     let mut g = Graph::new(inputs);
+    g.chains_held = chains_held;
     // SP21: the staleness check below excuses an accepted record that counts
     // without the quarantine. With no quarantine, there is nothing to compute.
     let unquarantined = (!inputs.quarantined.is_empty()).then(|| {
@@ -845,22 +860,12 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
         let all: BTreeSet<Hash32> = inputs.records.keys().copied().collect();
         // SP20 (3), SP27: a rotation counts once its old chain through `last` is
         // held, which devices hold to different degrees, and a lineage keeps
-        // what it is across rotations. So every rotation's `last` is taken as
-        // held, and each trusted lineage agrees through the newest of its
-        // identities that has a device file: the same on every device, however
-        // much of a chain it holds, and never waiting on a key no longer used.
-        let lasts: BTreeMap<(DeviceId, u64), Hash32> = inputs
-            .records
-            .values()
-            .filter_map(|r| match &r.body {
-                Body::Rotate {
-                    old, last: Some(l), ..
-                } => Some(((*old, l.s), l.h)),
-                _ => None,
-            })
-            .collect();
-        let every_last = |d: &DeviceId, s: u64| lasts.get(&(*d, s)).copied();
-        if let Ok(m) = settle(
+        // what it is across rotations. So each rotation is judged as if its own
+        // `last` were held, and each trusted lineage agrees through the newest
+        // of its identities that has a device file: the same on every device,
+        // however much of a chain it holds, and never waiting on a key no longer
+        // used. A newest file naming no head agrees to nothing.
+        if let Ok(m) = settle_with(
             &Inputs {
                 quarantined: &BTreeMap::new(),
                 accepted: &none,
@@ -868,10 +873,10 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
                 first_seen: &long_ago,
                 confirmed: &all,
                 checkpoint: &none,
-                held: &every_last,
                 ..*inputs
             },
             None,
+            true,
         ) {
             for member in m.state.members.values() {
                 if m.state.trusted(&member.device).is_none() {
@@ -881,7 +886,9 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
                 let mut head = None;
                 let mut id = member.lineage;
                 for _ in 0..=m.state.members.len() {
-                    head = inputs.heads.get(&id).copied().or(head);
+                    if let Some(named) = inputs.heads.get(&id) {
+                        head = *named;
+                    }
                     match m.state.rotated.get(&id) {
                         Some((next, _)) => id = *next,
                         None => break,
@@ -1363,7 +1370,11 @@ fn judge(g: &Graph<'_>, pass: &Pass, local: Option<Hash32>) -> BTreeMap<Hash32, 
                         Verdict::Refused(Refusal::NeedsCode)
                     } else {
                         // The old chain must be held through exactly `last`.
-                        match last.map(|m| ((inputs.held)(old, m.s), m.h)) {
+                        let held = |m: &Mark| match g.chains_held {
+                            true => Some(m.h),
+                            false => (inputs.held)(old, m.s),
+                        };
+                        match last.map(|m| (held(&m), m.h)) {
                             None => Verdict::Counts,
                             Some((None, _)) => Verdict::Waits(Wait::Chain),
                             Some((Some(held), named)) if held != named => {
@@ -1737,12 +1748,12 @@ mod tests {
         held: BTreeMap<(DeviceId, u64), Hash32>,
         me: Option<DeviceId>,
         quarantined: BTreeMap<DeviceId, Option<Mark>>,
-        heads: BTreeMap<DeviceId, Hash32>,
+        heads: BTreeMap<DeviceId, Option<Hash32>>,
     }
 
     impl Lib {
         fn all_name(&mut self, head: Hash32, devices: &[&Keypair]) {
-            self.heads = devices.iter().map(|d| (d.device(), head)).collect();
+            self.heads = devices.iter().map(|d| (d.device(), Some(head))).collect();
         }
 
         fn add(
@@ -3376,15 +3387,15 @@ mod tests {
         // device participates even if quarantine would undo its enrollment.
         let later = l.enroll(mg, &b, &z, 2, OLD + 7);
         l.all_name(later, &[&a, &b, &x, &y, &z]);
-        l.heads.insert(b.device(), mg);
+        l.heads.insert(b.device(), Some(mg));
         assert_eq!(l.compute(g).verdict(&mg), Some(Verdict::Counts));
         for device in [&a, &b, &x, &y, &z] {
-            l.heads.insert(device.device(), rx);
+            l.heads.insert(device.device(), Some(rx));
             assert_eq!(
                 l.compute(g).verdict(&mg),
                 Some(Verdict::Refused(Refusal::Quarantined))
             );
-            l.heads.insert(device.device(), later);
+            l.heads.insert(device.device(), Some(later));
         }
     }
 
@@ -3400,7 +3411,7 @@ mod tests {
         l.all_name(by_b, &[&a, &b, &c, &d]);
         assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
         // SP30: B's frozen head bounds its own enrollment; A's needs no agreement.
-        l.heads.insert(b.device(), e1);
+        l.heads.insert(b.device(), Some(e1));
         let m = l.compute(g);
         assert_eq!(
             m.verdict(&by_b),
@@ -3423,8 +3434,8 @@ mod tests {
         let e2 = l.records[&x1].prevs()[0];
         l.quarantined.insert(a.device(), None);
         l.all_name(rx, &[&a, &b]);
-        l.heads.insert(x.device(), x1);
-        l.heads.insert(y.device(), ry);
+        l.heads.insert(x.device(), Some(x1));
+        l.heads.insert(y.device(), Some(ry));
         // SP30: each device decides alike. A's enrollment before the fork is in
         // every head; its enrollment of X, on one branch, isn't in Y's, though a
         // device on X's branch suspends Y (SP20 (5)).
@@ -3450,7 +3461,7 @@ mod tests {
         let re = l.remove(by_b, &a, &c0, &k(102), &[&e], OLD + 5);
         l.quarantined.insert(b.device(), None);
         l.all_name(by_b, &[&a, &b, &d, &e]);
-        l.heads.insert(c.device(), g);
+        l.heads.insert(c.device(), Some(g));
         // SP30: one device accepted C's removal, another E's. Both decide B's
         // enrollment of D alike.
         let verdicts: Vec<_> = [rc, re]
@@ -3474,7 +3485,7 @@ mod tests {
         let by_code = l.code_enroll(g, &c0, &c, OLD + 2);
         l.quarantined.insert(b.device(), None);
         l.all_name(by_b, &[&a, &b, &d]);
-        l.heads.insert(c.device(), g);
+        l.heads.insert(c.device(), Some(g));
         // SP30: C names only the genesis. A device that has confirmed C's code
         // enrollment refuses B's enrollment of D, and so does one that hasn't yet.
         for confirmed in [true, false] {
@@ -3488,7 +3499,7 @@ mod tests {
             );
         }
         // Once C names it too, every device counts it.
-        l.heads.insert(c.device(), by_b);
+        l.heads.insert(c.device(), Some(by_b));
         assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
     }
 
@@ -3506,7 +3517,7 @@ mod tests {
         let rot2 = l.rotate(rot, &c2, &c3, Some(2), OLD + 4);
         l.quarantined.insert(b.device(), None);
         l.all_name(by_b, &[&a, &b, &d]);
-        l.heads.insert(c.device(), e2);
+        l.heads.insert(c.device(), Some(e2));
         let chains = [
             vec![],
             vec![(c.device(), 3)],
@@ -3525,15 +3536,34 @@ mod tests {
         // SP27, SP30: C's lineage agrees through its newest identity with a
         // device file, whichever of C, C2 and C3 a device trusts. C2 names only
         // the head before the enrollment, and C3 has no file yet: refused alike.
-        l.heads.insert(c2.device(), e2);
+        l.heads.insert(c2.device(), Some(e2));
         assert_eq!(verdicts(&mut l), vec![refused; 3]);
         // C3's file names the second rotation: counted alike, though C and C2
         // named older heads.
-        l.heads.insert(c3.device(), rot2);
+        l.heads.insert(c3.device(), Some(rot2));
         assert_eq!(verdicts(&mut l), vec![Some(Verdict::Counts); 3]);
         // C2 naming it, with no file from C3: counted alike too.
         l.heads.remove(&c3.device());
-        l.heads.insert(c2.device(), rot);
+        l.heads.insert(c2.device(), Some(rot));
+        assert_eq!(verdicts(&mut l), vec![Some(Verdict::Counts); 3]);
+        // C3's file naming no head speaks for the lineage: it agrees to nothing.
+        l.heads.insert(c3.device(), None);
+        assert_eq!(verdicts(&mut l), vec![refused; 3]);
+        l.heads.remove(&c3.device());
+        // Rotations of C naming another change 3, which C never signed, change
+        // nothing: each rotation is judged with its own `last` held.
+        for n in 0..8u8 {
+            let other = k(60 + n);
+            l.add(
+                "rotate",
+                json!({ "prev": by_b.to_string(), "old": c.device().to_string(),
+                        "last": { "s": 3, "h": Hash32([n; 32]).to_string() },
+                        "new": other.device().to_string(), "key": b64url_encode(&other.public()),
+                        "clock": [NOW as u64, 3] }),
+                &[(&other, Signer::Device(other.device()), 0)],
+                OLD + 5,
+            );
+        }
         assert_eq!(verdicts(&mut l), vec![Some(Verdict::Counts); 3]);
     }
 
@@ -3554,13 +3584,13 @@ mod tests {
         );
         // SP30: an unknown head, or a held record outside the graph, vouches for
         // nothing either. C is still required by the unquarantined membership.
-        l.heads.insert(c.device(), Hash32([9; 32]));
+        l.heads.insert(c.device(), Some(Hash32([9; 32])));
         assert_eq!(
             l.compute(g).verdict(&by_b),
             Some(Verdict::Refused(Refusal::Quarantined))
         );
         let orphan = l.enroll(Hash32([9; 32]), &a, &k(4), 2, OLD + 2);
-        l.heads.insert(c.device(), orphan);
+        l.heads.insert(c.device(), Some(orphan));
         assert_eq!(
             l.compute(g).verdict(&by_b),
             Some(Verdict::Refused(Refusal::Quarantined))
