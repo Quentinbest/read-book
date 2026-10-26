@@ -822,67 +822,41 @@ pub fn compute(inputs: &Inputs<'_>) -> Result<Membership, NoMembership> {
 /// by default).
 fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMembership> {
     let mut g = Graph::new(inputs);
-    // SP30: every device trusted before quarantine participates, including
-    // quarantined identities with frozen heads. With no quarantine, don't compute
-    // it again. SP21's staleness check keeps this first attempt's result.
-    let unquarantined = if inputs.quarantined.is_empty() {
-        None
-    } else {
-        Some(settle(
+    // SP21: the staleness check below excuses an accepted record that counts
+    // without the quarantine. With no quarantine, there is nothing to compute.
+    let unquarantined = (!inputs.quarantined.is_empty()).then(|| {
+        settle(
             &Inputs {
                 quarantined: &BTreeMap::new(),
                 ..*inputs
             },
             None,
-        ))
-    };
-    // SP21, SP30: an accepted recovery rotation may not count without quarantine.
-    // Retry without stale accepted records to find agreement, but never use those
-    // retries to excuse stale storage below. Each retry removes at least one
-    // accepted record; an unsettled computation still gives no agreement.
-    let mut retried = None;
-    if let Some(Err(NoMembership::Stale(stale))) = &unquarantined {
-        let mut accepted = inputs.accepted.clone();
-        let mut missing = stale.missing.clone();
-        loop {
-            let before = accepted.len();
-            for h in &missing {
-                accepted.remove(h);
-            }
-            if accepted.len() == before {
-                break;
-            }
-            match settle(
-                &Inputs {
-                    quarantined: &BTreeMap::new(),
-                    accepted: &accepted,
-                    ..*inputs
-                },
-                None,
-            ) {
-                Ok(m) => {
-                    retried = Some(m);
-                    break;
-                }
-                Err(NoMembership::Stale(stale)) => missing = stale.missing,
-                Err(NoMembership::Unsettled) => break,
-            }
+        )
+    });
+    // SP30: every device trusted before the quarantine must agree, quarantined
+    // identities included, with their frozen heads. Every device decides alike,
+    // so what makes membership depend on who is looking is left out: which
+    // sealed heads this device accepted, and whom it suspends (SP20 (5)). An
+    // unsettled computation agrees to nothing.
+    if !inputs.quarantined.is_empty() {
+        let none = BTreeSet::new();
+        if let Ok(m) = settle(
+            &Inputs {
+                quarantined: &BTreeMap::new(),
+                accepted: &none,
+                me: None,
+                ..*inputs
+            },
+            None,
+        ) {
+            g.agreeing = m
+                .state
+                .members
+                .keys()
+                .filter(|d| m.state.trusted(d).is_some())
+                .copied()
+                .collect();
         }
-    }
-    if let Some(m) = unquarantined
-        .as_ref()
-        .and_then(|r| r.as_ref().ok())
-        .or(retried.as_ref())
-    {
-        g.agreeing = m
-            .state
-            .members
-            .keys()
-            // SP30: every device decides alike, so suspension, which depends on
-            // who is looking (SP20 (5)), doesn't take a device out of agreement.
-            .filter(|d| m.state.trusted(d).is_some())
-            .copied()
-            .collect();
     }
     // SP20 (2), (4): this device's own view, the newest of the sealed heads its
     // device store holds. A sealed head that isn't it or after it has been
@@ -3427,6 +3401,34 @@ mod tests {
             assert_eq!(m.verdict(&e2), Some(Verdict::Counts));
             assert_eq!(m.verdict(&x1), Some(Verdict::Refused(Refusal::Quarantined)));
         }
+    }
+
+    #[test]
+    fn every_device_decides_agreement_alike_whichever_sibling_it_accepted() {
+        let mut l = Lib::default();
+        let (a, b, c, d, e, c0) = (k(1), k(2), k(3), k(4), k(5), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let e3 = l.enroll(e2, &a, &e, 3, OLD + 2);
+        let by_b = l.enroll(e3, &b, &d, 1, OLD + 3);
+        // A removes C, and apart, E: two sibling sealed heads.
+        let rc = l.remove(by_b, &a, &c0, &k(101), &[&c], OLD + 4);
+        let re = l.remove(by_b, &a, &c0, &k(102), &[&e], OLD + 5);
+        l.quarantined.insert(b.device(), None);
+        l.all_name(by_b, &[&a, &b, &d, &e]);
+        l.heads.insert(c.device(), g);
+        // SP30: one device accepted C's removal, another E's. Both decide B's
+        // enrollment of D alike.
+        let verdicts: Vec<_> = [rc, re]
+            .iter()
+            .map(|h| {
+                let accepted = BTreeSet::from([*h]);
+                l.compute_after(g, &accepted).unwrap().verdict(&by_b)
+            })
+            .collect();
+        assert_eq!(verdicts[0], verdicts[1]);
+        assert_eq!(verdicts[0], Some(Verdict::Counts));
     }
 
     #[test]
