@@ -836,15 +836,23 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
     // SP30: every device trusted before the quarantine must agree, quarantined
     // identities included, with their frozen heads. Every device decides alike,
     // so what makes membership depend on who is looking is left out: which
-    // sealed heads this device accepted, and whom it suspends (SP20 (5)). An
-    // unsettled computation agrees to nothing.
+    // sealed heads this device accepted, and whom it suspends (SP20 (5)). What
+    // only time or a confirmation would settle (the quota, SP20 (1); a code
+    // enrollment, SP20 (2)) is taken as settled: a device that may yet count
+    // must agree too, the stricter set. An unsettled computation agrees to
+    // nothing.
     if !inputs.quarantined.is_empty() {
         let none = BTreeSet::new();
+        let long_ago: BTreeMap<Hash32, i64> = inputs.records.keys().map(|h| (*h, 0)).collect();
+        let all: BTreeSet<Hash32> = inputs.records.keys().copied().collect();
         if let Ok(m) = settle(
             &Inputs {
                 quarantined: &BTreeMap::new(),
                 accepted: &none,
                 me: None,
+                first_seen: &long_ago,
+                confirmed: &all,
+                checkpoint: &none,
                 ..*inputs
             },
             None,
@@ -3429,6 +3437,34 @@ mod tests {
             .collect();
         assert_eq!(verdicts[0], verdicts[1]);
         assert_eq!(verdicts[0], Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn a_device_that_may_yet_count_must_agree_too() {
+        let mut l = Lib::default();
+        let (a, b, c, d, c0) = (k(1), k(2), k(3), k(4), k(100));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let by_b = l.enroll(e1, &b, &d, 1, OLD + 1);
+        let by_code = l.code_enroll(g, &c0, &c, OLD + 2);
+        l.quarantined.insert(b.device(), None);
+        l.all_name(by_b, &[&a, &b, &d]);
+        l.heads.insert(c.device(), g);
+        // SP30: C names only the genesis. A device that has confirmed C's code
+        // enrollment refuses B's enrollment of D, and so does one that hasn't yet.
+        for confirmed in [true, false] {
+            l.confirmed.clear();
+            if confirmed {
+                l.confirmed.insert(by_code);
+            }
+            assert_eq!(
+                l.compute(g).verdict(&by_b),
+                Some(Verdict::Refused(Refusal::Quarantined))
+            );
+        }
+        // Once C names it too, every device counts it.
+        l.heads.insert(c.device(), by_b);
+        assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
     }
 
     #[test]
