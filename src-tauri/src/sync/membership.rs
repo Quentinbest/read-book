@@ -266,7 +266,8 @@ fn links(r: &Record) -> Vec<Hash32> {
 /// The graph of records reachable from the genesis.
 struct Graph<'a> {
     inputs: &'a Inputs<'a>,
-    /// SP30: devices trusted in the membership computed without quarantine.
+    /// SP30: devices trusted in the membership computed without quarantine,
+    /// suspended ones included.
     agreeing: BTreeSet<DeviceId>,
     /// Topological order, ties by first sight.
     order: Vec<Hash32>,
@@ -877,7 +878,9 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
             .state
             .members
             .keys()
-            .filter(|d| m.trusted(d).is_some())
+            // SP30: every device decides alike, so suspension, which depends on
+            // who is looking (SP20 (5)), doesn't take a device out of agreement.
+            .filter(|d| m.state.trusted(d).is_some())
             .copied()
             .collect();
     }
@@ -3404,6 +3407,26 @@ mod tests {
             Some(Verdict::Refused(Refusal::Quarantined))
         );
         assert_eq!(m.verdict(&by_a), Some(Verdict::Counts));
+    }
+
+    #[test]
+    fn every_device_decides_agreement_alike_whoever_it_suspends() {
+        let (mut l, g, [rx, ry, x1, _]) = forked();
+        let (a, b, x, y) = (k(1), k(2), k(5), k(6));
+        let e2 = l.records[&x1].prevs()[0];
+        l.quarantined.insert(a.device(), None);
+        l.all_name(rx, &[&a, &b]);
+        l.heads.insert(x.device(), x1);
+        l.heads.insert(y.device(), ry);
+        // SP30: each device decides alike. A's enrollment before the fork is in
+        // every head; its enrollment of X, on one branch, isn't in Y's, though a
+        // device on X's branch suspends Y (SP20 (5)).
+        for me in [&a, &b, &x, &y] {
+            l.me = Some(me.device());
+            let m = l.compute(g);
+            assert_eq!(m.verdict(&e2), Some(Verdict::Counts));
+            assert_eq!(m.verdict(&x1), Some(Verdict::Refused(Refusal::Quarantined)));
+        }
     }
 
     #[test]
