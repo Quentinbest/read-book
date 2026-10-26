@@ -845,26 +845,54 @@ fn settle(inputs: &Inputs<'_>, bound: Option<usize>) -> Result<Membership, NoMem
         let none = BTreeSet::new();
         let long_ago: BTreeMap<Hash32, i64> = inputs.records.keys().map(|h| (*h, 0)).collect();
         let all: BTreeSet<Hash32> = inputs.records.keys().copied().collect();
-        if let Ok(m) = settle(
-            &Inputs {
-                quarantined: &BTreeMap::new(),
-                accepted: &none,
-                me: None,
-                first_seen: &long_ago,
-                confirmed: &all,
-                checkpoint: &none,
-                ..*inputs
-            },
-            None,
-        ) {
-            g.agreeing = m
-                .state
-                .members
-                .keys()
-                .filter(|d| m.state.trusted(d).is_some())
-                .copied()
-                .collect();
+        // SP20 (3): a rotation waits for its old chain through `last`, which
+        // devices hold to different degrees. Both answers are taken: with no
+        // chain held, and with every rotation's `last` held, so the old identity
+        // and its successor must both agree while that can still differ.
+        let lasts: BTreeMap<(DeviceId, u64), Hash32> = inputs
+            .records
+            .values()
+            .filter_map(|r| match &r.body {
+                Body::Rotate {
+                    old, last: Some(l), ..
+                } => Some(((*old, l.s), l.h)),
+                _ => None,
+            })
+            .collect();
+        let nothing = |_: &DeviceId, _: u64| -> Option<Hash32> { None };
+        let every_last = |d: &DeviceId, s: u64| lasts.get(&(*d, s)).copied();
+        type Chain<'c> = &'c dyn Fn(&DeviceId, u64) -> Option<Hash32>;
+        let chains: [Chain<'_>; 2] = [&nothing, &every_last];
+        let mut agreeing = BTreeSet::new();
+        for held in chains {
+            match settle(
+                &Inputs {
+                    quarantined: &BTreeMap::new(),
+                    accepted: &none,
+                    me: None,
+                    first_seen: &long_ago,
+                    confirmed: &all,
+                    checkpoint: &none,
+                    held,
+                    ..*inputs
+                },
+                None,
+            ) {
+                Ok(m) => agreeing.extend(
+                    m.state
+                        .members
+                        .keys()
+                        .filter(|d| m.state.trusted(d).is_some())
+                        .copied(),
+                ),
+                // Either unsettled: nothing is agreed.
+                Err(_) => {
+                    agreeing.clear();
+                    break;
+                }
+            }
         }
+        g.agreeing = agreeing;
     }
     // SP20 (2), (4): this device's own view, the newest of the sealed heads its
     // device store holds. A sealed head that isn't it or after it has been
@@ -3468,6 +3496,39 @@ mod tests {
     }
 
     #[test]
+    fn every_device_decides_agreement_alike_however_much_of_a_chain_it_holds() {
+        let mut l = Lib::default();
+        let (a, b, c, c2, d) = (k(1), k(2), k(3), k(33), k(4));
+        let g = l.genesis(&a, &k(100));
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let by_b = l.enroll(e2, &b, &d, 1, OLD + 2);
+        let rot = l.rotate(by_b, &c, &c2, Some(3), OLD + 3);
+        l.quarantined.insert(b.device(), None);
+        l.all_name(by_b, &[&a, &b, &d]);
+        l.heads.insert(c.device(), e2);
+        l.heads.insert(c2.device(), rot);
+        // SP20 (3), SP30: the rotation counts only where C's change 3 is held.
+        // C names only its predecessor, so B's enrollment of D is refused on a
+        // device holding that change and on one that doesn't.
+        for chain in [false, true] {
+            l.held.clear();
+            if chain {
+                l.held.insert((c.device(), 3), Hash32([0xee; 32]));
+            }
+            assert_eq!(
+                l.compute(g).verdict(&by_b),
+                Some(Verdict::Refused(Refusal::Quarantined))
+            );
+        }
+        // Once C names it too, both count it.
+        l.heads.insert(c.device(), by_b);
+        assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
+        l.held.clear();
+        assert_eq!(l.compute(g).verdict(&by_b), Some(Verdict::Counts));
+    }
+
+    #[test]
     fn a_device_naming_no_head_agrees_to_nothing() {
         let mut l = Lib::default();
         let (a, b, c) = (k(1), k(2), k(3));
@@ -3758,9 +3819,10 @@ mod tests {
             m.verdict(&recovery),
             Some(Verdict::Refused(Refusal::Rotated))
         );
-        // SP30: without quarantine B2 is trusted; every such device names the
-        // enrollment, but neither rotation is agreed. Only the code recovers B.
-        l.all_name(by_b, &[&a, &c, &b2]);
+        // SP30: without quarantine B2 is trusted, and so is B where its chain
+        // isn't held; every such device names the enrollment, but neither
+        // rotation is agreed. Only the code recovers B.
+        l.all_name(by_b, &[&a, &b, &c, &b2]);
         l.quarantined.insert(b.device(), Some(last));
         let m = l.compute(g);
         assert_eq!(
