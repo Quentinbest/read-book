@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: item 117 (Reading Lens, the offline check's items). Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: none. Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) and 117 (Reading Lens) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -401,3 +401,4 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(b)** Build the items another way: the owner and the two reviewers pick passages from English technical books, coded with Report 1's types. This changes the plan's source for G2's items.
     - **(c)** Drop the offline run for now. G2 stays unmeasured and Explain stays private and unoffered.
     *Recommendation:* (a). It keeps G2 as planned and costs nothing while Explain is private; (b) is a quicker route but the items would be the reviewers' guesses at what is hard, not readers' stuck points.
+    **Approved 2026-10-26: (a).**
