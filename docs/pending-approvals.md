@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: none. Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: item 117 (Reading Lens, the offline check's items). Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -393,3 +393,11 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(b)** A confirm that joins siblings must carry `keeps` like a merge, and counts only when it names every such device.
     *Recommendation:* (a). The confirm stays as SP19 defines it, the merge stays the one record where the reader decides each post-fork device, and nothing is trusted that the reader hasn't looked at. Until this is answered, it is built as neither: #131 tracks it, and sync has no caller yet.
     **Approved 2026-10-24: (a).**
+
+## Reading Lens Gate 0 (2026-10-26, #52)
+
+117. **Where the offline check's items come from (G2; Stage 3).** The offline run (G2) takes its at least 60 items from the coded diary sheets, and the diary gave one uncoded stuck point (Gate 0 not measured, 2026-10-26). Explain stays private either way.
+    - **(a)** G2 waits. A later diary, with readers found first, gives the items; it becomes its own issue when the owner wants it.
+    - **(b)** Build the items another way: the owner and the two reviewers pick passages from English technical books, coded with Report 1's types. This changes the plan's source for G2's items.
+    - **(c)** Drop the offline run for now. G2 stays unmeasured and Explain stays private and unoffered.
+    *Recommendation:* (a). It keeps G2 as planned and costs nothing while Explain is private; (b) is a quicker route but the items would be the reviewers' guesses at what is hard, not readers' stuck points.
