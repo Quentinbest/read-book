@@ -2239,6 +2239,36 @@ mod tests {
     }
 
     #[test]
+    fn a_keep_of_a_held_version_applies_on_another_device_holding_it() {
+        // SP26: D's version reached two devices before its body; both hold it after
+        // the removal. One keeps it once the body arrives; the other applies that
+        // Keep, since the held version's ancestry was checked before it was held.
+        let (mut d, ld) = device(1, "d");
+        let (t1, l1) = device(2, "t1");
+        let (t2, l2) = device(3, "t2");
+        notes(&mut d, "d", 1);
+        let first = publish_next(d.conn(), &ld).unwrap().unwrap();
+        accept(&t1, &l1, &first);
+        accept(&t2, &l2, &first);
+        edit(&d, &ld, &key(0), "late");
+        let mut late = publish_next(d.conn(), &ld).unwrap().unwrap();
+        let body = late.bodies.pop().unwrap();
+        accept(&t1, &l1, &late);
+        accept(&t2, &l2, &late);
+        let removed = BTreeMap::from([(ld.device, Some(mark(&first)))]);
+        for (t, l) in [(&t1, &l1), (&t2, &l2)] {
+            revert_past(t.conn(), l, &removed, &BTreeMap::new(), "removed", now()).unwrap();
+            assert_eq!(version_state(t, ld.device, 2), -5);
+        }
+        journal::put_body(t1.conn(), &body).unwrap();
+        keep(t1.conn(), &l1, ld.device, &key(0), 2, now()).unwrap();
+        assert_eq!(text(&t1, 0), "late");
+        accept(&t2, &l2, &publish_next(t1.conn(), &l1).unwrap().unwrap());
+        assert_eq!(text(&t2, 0), "late");
+        assert_eq!(version_state(&t2, l1.device, 1), 1);
+    }
+
+    #[test]
     fn a_reader_edit_hidden_by_a_reverted_deletion_comes_back() {
         // SY13, #109: D's deletion hid the reader's unsent edit, which was held for
         // the reader's choice; once the deletion is reverted, the edit shows.

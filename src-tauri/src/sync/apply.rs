@@ -348,6 +348,14 @@ impl JournalChains<'_> {
     }
 }
 
+/// A version's state for ancestry: a late hold (-5, SP26, SP30) counts as the state
+/// it was held from (`sync_late_seen.was`), so one whose ancestry was checked (a
+/// pending version) is still checked ancestry, and a Keep naming it can apply.
+/// A hold with no record of its state stays unresolved.
+const CHECKED: &str = "CASE WHEN v.applied = -5 THEN COALESCE((SELECT s.was FROM sync_late_seen s
+    WHERE s.library = v.library AND s.device = v.device AND s.seq = v.seq AND s.key = v.key), -5)
+    ELSE v.applied END";
+
 impl Chains for JournalChains<'_> {
     fn version_at(&self, device: DeviceId, seq: u64, key: &str) -> Lookup {
         if self.held(device) < seq {
@@ -356,8 +364,10 @@ impl Chains for JournalChains<'_> {
         let row: Option<(String, i64)> = self
             .conn
             .query_row(
-                "SELECT hash, applied FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+                &format!(
+                    "SELECT hash, {CHECKED} FROM sync_versions v
+                     WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4"
+                ),
                 params![self.lib.id.to_string(), device.to_string(), seq as i64, key],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -367,7 +377,7 @@ impl Chains for JournalChains<'_> {
         match row {
             // Waiting itself (its ancestry, or a clock ahead): unresolved. A version
             // excluded for its body (-4), or reverted after applying (-6), is
-            // still checked ancestry. A never-applied late hold (-5) is unknown.
+            // still checked ancestry; a late hold (-5) is as it was when held.
             Some((_, applied)) if applied < 0 && !matches!(applied, -4 | -6) => Lookup::Unknown,
             Some((h, _)) => Hash32::parse(&h).map_or(Lookup::Absent, Lookup::Present),
             None => Lookup::Absent,
@@ -399,9 +409,11 @@ impl Chains for JournalChains<'_> {
         let row: Option<(i64, String, i64)> = self
             .conn
             .query_row(
-                "SELECT seq, hash, applied FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT seq, hash, {CHECKED} FROM sync_versions v
+                     WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![
                     self.lib.id.to_string(),
                     device.to_string(),
