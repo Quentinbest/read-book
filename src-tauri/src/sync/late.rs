@@ -500,6 +500,22 @@ pub fn reapply_upto(
     upto: Mark,
     now_ms: i64,
 ) -> Result<usize> {
+    // SP30: the resolved predecessor names a change by its hash. Unless this device
+    // holds that very change at that sequence, what it applied up to there is
+    // another branch (the device equivocated): nothing is released, and those
+    // versions stay held for the reader.
+    let on_chain = conn
+        .query_row(
+            "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
+            params![lib.id.to_string(), device.to_string(), upto.s as i64],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?
+        .and_then(|h| Hash32::parse(&h))
+        == Some(upto.h);
+    if !on_chain {
+        return Ok(0);
+    }
     let tx = conn.unchecked_transaction()?;
     let recovering: Vec<(String, i64, i64)> = tx
         .prepare(
@@ -1951,9 +1967,25 @@ mod tests {
         assert_eq!(pending_state(first + 2), -5);
         // A removed offer is not overflow when the reader decided it.
         discard(t.conn(), &lt, ld.device, &key(1000), 2, now()).unwrap();
-        let upto = |s| Mark {
-            s,
-            h: Hash32([0; 32]),
+        // The journal was seeded directly; record the changes it names, so the
+        // resolved predecessor is a change this device holds (SP30).
+        let upto = |s: u64| {
+            t.conn()
+                .execute(
+                    "INSERT OR IGNORE INTO sync_changes (library, device, seq, hash)
+                     VALUES (?1, ?2, ?3, ?4)",
+                    params![
+                        lt.id.to_string(),
+                        ld.device.to_string(),
+                        s as i64,
+                        Hash32([0; 32]).to_string()
+                    ],
+                )
+                .unwrap();
+            Mark {
+                s,
+                h: Hash32([0; 32]),
+            }
         };
         assert_eq!(
             reapply_upto(t.conn(), &lt, ld.device, upto(first), now()).unwrap(),
@@ -2132,6 +2164,23 @@ mod tests {
         }
     }
 
+    /// SP29, SP30: a cutoff or resolved predecessor names a change, by its
+    /// payload hash (`sync_changes`), not a version.
+    fn change_mark(store: &Store, device: DeviceId, seq: u64) -> Mark {
+        let hash: String = store
+            .conn()
+            .query_row(
+                "SELECT hash FROM sync_changes WHERE device = ?1 AND seq = ?2",
+                params![device.to_string(), seq as i64],
+                |r| r.get(0),
+            )
+            .unwrap();
+        Mark {
+            s: seq,
+            h: Hash32::parse(&hash).unwrap(),
+        }
+    }
+
     #[test]
     fn reapplying_b_then_a_ends_on_bs_version() {
         let (t, lt, la, lb, initial) = cascade(1, 2);
@@ -2164,8 +2213,22 @@ mod tests {
                 assert!(journal::has_body(t.conn(), &hash).unwrap());
             }
         }
-        reapply_upto(t.conn(), &lt, lb.device, at(&t, lb.device, 1), now()).unwrap();
-        reapply_upto(t.conn(), &lt, la.device, at(&t, la.device, 2), now()).unwrap();
+        reapply_upto(
+            t.conn(),
+            &lt,
+            lb.device,
+            change_mark(&t, lb.device, 1),
+            now(),
+        )
+        .unwrap();
+        reapply_upto(
+            t.conn(),
+            &lt,
+            la.device,
+            change_mark(&t, la.device, 2),
+            now(),
+        )
+        .unwrap();
         assert_eq!(text(&t, 0), "B late");
         assert!(publish_next(t.conn(), &lt).unwrap().is_none());
     }
@@ -2200,7 +2263,26 @@ mod tests {
         .unwrap();
         let removed = BTreeMap::from([(la.device, Some(mark(&initial))), (lb.device, None)]);
         revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
-        reapply_upto(t.conn(), &lt, la.device, at(&t, la.device, 3), now()).unwrap();
+        // A's change 3 was stored directly above; record it as received, so the
+        // resolved predecessor names a change this device holds (SP30).
+        t.conn()
+            .execute(
+                "INSERT INTO sync_changes (library, device, seq, hash) VALUES (?1, ?2, 3, ?3)",
+                params![
+                    lt.id.to_string(),
+                    la.device.to_string(),
+                    Hash32([3; 32]).to_string()
+                ],
+            )
+            .unwrap();
+        reapply_upto(
+            t.conn(),
+            &lt,
+            la.device,
+            change_mark(&t, la.device, 3),
+            now(),
+        )
+        .unwrap();
         assert_eq!(text(&t, 0), "A late");
         assert_eq!(version_state(&t, lb.device, 1), -6);
         assert_eq!(version_state(&t, la.device, 3), 0);
@@ -2323,6 +2405,35 @@ mod tests {
             )
             .unwrap();
         assert_eq!(third, -6);
+    }
+
+    #[test]
+    fn a_resolved_predecessor_on_another_branch_releases_nothing() {
+        // SP30: the proof's branches resolve to change 3, but this device's change 3
+        // is another one (the device equivocated): nothing is released.
+        let (t, lt, ld, batches) = fork();
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, None)]),
+            &BTreeMap::from([(ld.device, mark(&batches[0]))]),
+            "quarantined",
+            now(),
+        )
+        .unwrap();
+        let other_branch = Mark {
+            s: 3,
+            h: Hash32([7; 32]),
+        };
+        assert_eq!(
+            reapply_upto(t.conn(), &lt, ld.device, other_branch, now()).unwrap(),
+            0
+        );
+        assert_eq!(version_state(&t, ld.device, 2), -6);
+        assert_eq!(text(&t, 0), "before");
+        // This device's own change 3 releases 2 and 3.
+        assert!(reapply_upto(t.conn(), &lt, ld.device, mark(&batches[2]), now()).unwrap() > 0);
+        assert!(version_state(&t, ld.device, 2) > 0);
     }
 
     #[test]
@@ -2517,7 +2628,7 @@ mod tests {
             let h: String = t
                 .conn()
                 .query_row(
-                    "SELECT hash FROM sync_versions WHERE device = ?1 AND seq = ?2",
+                    "SELECT hash FROM sync_changes WHERE device = ?1 AND seq = ?2",
                     params![d.to_string(), s],
                     |r| r.get(0),
                 )
