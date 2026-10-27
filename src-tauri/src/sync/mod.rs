@@ -22,6 +22,7 @@ pub mod identity;
 pub mod ids;
 pub mod journal;
 pub mod json;
+pub mod late;
 pub mod local;
 pub mod membership;
 pub mod merge;

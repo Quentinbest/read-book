@@ -348,6 +348,14 @@ impl JournalChains<'_> {
     }
 }
 
+/// A version's state for ancestry: a late hold (-5, SP26, SP30) counts as the state
+/// it was held from (`sync_late_seen.was`), so one whose ancestry was checked (a
+/// pending version) is still checked ancestry, and a Keep naming it can apply.
+/// A hold with no record of its state stays unresolved.
+const CHECKED: &str = "CASE WHEN v.applied = -5 THEN COALESCE((SELECT s.was FROM sync_late_seen s
+    WHERE s.library = v.library AND s.device = v.device AND s.seq = v.seq AND s.key = v.key), -5)
+    ELSE v.applied END";
+
 impl Chains for JournalChains<'_> {
     fn version_at(&self, device: DeviceId, seq: u64, key: &str) -> Lookup {
         if self.held(device) < seq {
@@ -356,8 +364,10 @@ impl Chains for JournalChains<'_> {
         let row: Option<(String, i64)> = self
             .conn
             .query_row(
-                "SELECT hash, applied FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+                &format!(
+                    "SELECT hash, {CHECKED} FROM sync_versions v
+                     WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4"
+                ),
                 params![self.lib.id.to_string(), device.to_string(), seq as i64, key],
                 |r| Ok((r.get(0)?, r.get(1)?)),
             )
@@ -365,10 +375,10 @@ impl Chains for JournalChains<'_> {
             .ok()
             .flatten();
         match row {
-            // Still waiting itself (its ancestry, or a clock ahead): unresolved.
             // Waiting itself (its ancestry, or a clock ahead): unresolved. A version
-            // excluded for its body (-4) is still in its writer's chain.
-            Some((_, applied)) if applied < 0 && applied != -4 => Lookup::Unknown,
+            // excluded for its body (-4), or reverted after applying (-6), is
+            // still checked ancestry; a late hold (-5) is as it was when held.
+            Some((_, applied)) if applied < 0 && !matches!(applied, -4 | -6) => Lookup::Unknown,
             Some((h, _)) => Hash32::parse(&h).map_or(Lookup::Absent, Lookup::Present),
             None => Lookup::Absent,
         }
@@ -399,9 +409,11 @@ impl Chains for JournalChains<'_> {
         let row: Option<(i64, String, i64)> = self
             .conn
             .query_row(
-                "SELECT seq, hash, applied FROM sync_versions
-                 WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4
-                 ORDER BY seq DESC LIMIT 1",
+                &format!(
+                    "SELECT seq, hash, {CHECKED} FROM sync_versions v
+                     WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq < ?4
+                     ORDER BY seq DESC LIMIT 1"
+                ),
                 params![
                     self.lib.id.to_string(),
                     device.to_string(),
@@ -414,7 +426,7 @@ impl Chains for JournalChains<'_> {
             .ok()
             .flatten();
         match row {
-            Some((_, _, applied)) if applied < 0 && applied != -4 => Prior::Unknown,
+            Some((_, _, applied)) if applied < 0 && !matches!(applied, -4 | -6) => Prior::Unknown,
             Some((s, h, _)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
             None => Prior::None,
         }
@@ -491,7 +503,7 @@ fn set_aside(
 
 /// SY28: this device stops receiving from `device`, for good until the reader's
 /// Remove (Stage 3), which Settings › Sync offers by naming it.
-fn stop(
+pub(crate) fn stop(
     conn: &Connection,
     lib: &Library,
     device: DeviceId,
@@ -871,6 +883,46 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
             HistoryCheck::Wait => {
                 set_waiting(conn, lib, &placed, -1)?;
             }
+        }
+    }
+    // SP26, SP30: a late hold made while its version still waited (its ancestry,
+    // or a clock ahead) is checked like one: once its ancestry resolves, it counts
+    // as checked ancestry (`CHECKED`), so a Keep naming it can apply. Its content
+    // stays out of the merge; only the state it was held from changes.
+    let held: Vec<(String, i64, String, String)> = conn
+        .prepare(
+            "SELECT v.device, v.seq, v.key, v.raw FROM sync_versions v
+             JOIN sync_late_seen s ON s.library = v.library AND s.device = v.device
+                AND s.seq = v.seq AND s.key = v.key
+             WHERE v.library = ?1 AND v.applied = -5 AND s.was IN (-1, -2) ORDER BY v.seq",
+        )?
+        .query_map([lib.id.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    for (device_text, seq, key, raw) in held {
+        let Some(device) = super::ids::Id16::parse(&device_text) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let Ok(Checked::Version(v)) = check_version(value, device) else {
+            continue;
+        };
+        let placed = Placed {
+            version: v,
+            seq: seq as u64,
+        };
+        if too_far_ahead(&placed.version, now_ms) {
+            continue;
+        }
+        if matches!(ancestry(conn, lib, &placed), HistoryCheck::Ok) {
+            conn.execute(
+                "UPDATE sync_late_seen SET was = 0 WHERE library = ?1 AND device = ?2
+                 AND seq = ?3 AND key = ?4",
+                params![lib.id.to_string(), device_text, seq, key],
+            )?;
         }
     }
     Ok(joined)
@@ -1396,17 +1448,15 @@ pub(crate) fn write(
                 // first, so Stop syncing can put it back (SY26).
                 // A note with no record in this library at all (deleted before it
                 // joined, say) stays as kept on the row; it counts with the highlight.
-                let has_record: bool = conn
-                    .query_row(
-                        // An applied note version, or this device's own edit (held or
-                        // not); one still pending (its body missing, say) isn't yet.
-                        "SELECT 1 FROM sync_versions WHERE library = ?1 AND key = ?2
-                         AND (applied IN (1, 2) OR seq IS NULL)",
-                        params![lib.id.to_string(), format!("note:{}", a.id)],
-                        |_| Ok(()),
-                    )
-                    .optional()?
-                    .is_some();
+                let (has_record, late_note): (bool, bool) = conn.query_row(
+                    // SP26: a reverted note is still a journalled record. Its
+                    // cached text on a deleted highlight must not become a fallback.
+                    "SELECT COUNT(*) > 0, COALESCE(MAX(applied = -6), 0) FROM sync_versions
+                     WHERE library = ?1 AND key = ?2
+                     AND (applied IN (1, 2, -6) OR seq IS NULL)",
+                    params![lib.id.to_string(), format!("note:{}", a.id)],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )?;
                 let shown = if has_record {
                     shown_note(conn, lib, &a.id)?
                 } else {
@@ -1433,13 +1483,14 @@ pub(crate) fn write(
                          quote_prefix = excluded.quote_prefix, quote_suffix = excluded.quote_suffix,
                          updated_at = CASE WHEN ?12 THEN MAX(excluded.updated_at, ?14)
                              ELSE MAX(updated_at, excluded.updated_at, ?14) END,
-                         note = CASE WHEN deleted_at IS NOT NULL AND NOT ?12 THEN ?13 ELSE note END,
+                         note = CASE WHEN deleted_at IS NOT NULL AND (NOT ?12 OR ?15) THEN ?13 ELSE note END,
                          deleted_at = NULL, anchor_status = excluded.anchor_status",
                     // SY26: Stop syncing restores the highlight with the note it hid.
                     // Its time is the version's (a restoration's too), on every device.
+                    // SP26: a reverted note stays out even when recomputing a highlight.
                     params![a.id, a.book_id, a.anchored_content_hash, a.color, a.cfi_range, a.quote_exact,
                         a.quote_prefix, a.quote_suffix, a.created_at, a.updated_at, a.anchor_status,
-                        aside.restoring, shown, ms],
+                        aside.restoring, shown, ms, late_note],
                 )?;
             }
             None => {
@@ -1528,7 +1579,7 @@ fn mark_applied(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Res
 }
 
 /// What one record comes to now, written into the library. `true` if it changed.
-fn apply_key(
+pub(crate) fn apply_key(
     conn: &Connection,
     lib: &Library,
     key: &Key,
@@ -1655,6 +1706,143 @@ fn apply_key(
     Ok(changed)
 }
 
+// SP26, SP30: compare the library's content, not journal heads (which have
+// already changed). A note's text is separate from its highlight's fields.
+fn library_content(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+) -> Result<Vec<rusqlite::types::Value>> {
+    let sql = match key.kind() {
+        Kind::Note => "SELECT note FROM annotations WHERE id = ?1",
+        Kind::Annotation => {
+            "SELECT book_id, anchored_content_hash, color, cfi_range,
+            quote_exact, quote_prefix, quote_suffix, created_at, anchor_status
+            FROM annotations WHERE id = ?1 AND deleted_at IS NULL"
+        }
+        Kind::Place => {
+            "SELECT cfi, fraction, chapter_label FROM positions WHERE book_id IN
+            (SELECT book_id FROM sync_books WHERE sync_id = ?1 AND library = ?2)"
+        }
+        Kind::BookOpened => {
+            "SELECT opened_at FROM books WHERE id IN
+            (SELECT book_id FROM sync_books WHERE sync_id = ?1 AND library = ?2)"
+        }
+        Kind::BookFinished => {
+            "SELECT finished_at FROM books WHERE id IN
+            (SELECT book_id FROM sync_books WHERE sync_id = ?1 AND library = ?2)"
+        }
+        _ => return Ok(Vec::new()), // write does not apply these kinds yet.
+    };
+    let mut stmt = conn.prepare(sql)?;
+    let columns = stmt.column_count();
+    let row = |r: &rusqlite::Row<'_>| (0..columns).map(|i| r.get(i)).collect();
+    let values: Option<Vec<rusqlite::types::Value>> = if stmt.parameter_count() == 1 {
+        stmt.query_row([subject(key)], row).optional()?
+    } else {
+        stmt.query_row(params![subject(key), lib.id.to_string()], row)
+            .optional()?
+    };
+    Ok(values.unwrap_or_default())
+}
+
+/// SP26, SP30: rebuild this library's record from surviving applied versions.
+/// Pending versions wait for apply_pending; no version, undo entry or SY26 count
+/// is created. Returns whether the library's shown content changed.
+pub(crate) fn recompute(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    now_ms: i64,
+    tally: &mut Tally,
+) -> Result<bool> {
+    tally.restoring = true;
+    conn.execute(
+        "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND key = ?2 AND applied = 2",
+        params![lib.id.to_string(), key.as_str()],
+    )?;
+    // SY13, #109: an edit held for the reader's choice is merged again like any
+    // unsent edit only once the versions left no longer conflict: the conflict it
+    // was held against had a version now out of the merge. While they still
+    // conflict, it stays held: released, it descends from every head and would
+    // settle the conflict without the reader choosing.
+    if journal::held(conn, lib, key)? {
+        let rest = journal::record_of(conn, lib, key, Which::Applied)?;
+        if !matches!(
+            rest.outcome(&HashSet::new()),
+            Some(Outcome::Conflict { .. })
+        ) {
+            journal::release_held(conn, lib, key)?;
+        }
+    }
+    let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
+    let next = own_seq(conn, lib)? + 1;
+    if let Some(version) = journal::unsent_of(conn, lib, key)? {
+        record.add(Placed { version, seq: next });
+    }
+    let before = library_content(conn, lib, key)?;
+    let (winner, heads, settled) = match record.outcome(&HashSet::new()) {
+        Some(Outcome::Settled(p)) => (p, record.heads(&HashSet::new()), true),
+        Some(Outcome::Conflict { shown, all }) => (shown, all, false),
+        None => {
+            if journal::held(conn, lib, key)? {
+                return Ok(false);
+            }
+            // SP26: this tombstone exists only for write's per-kind removal rules.
+            // Storing it would hide a later re-applied version forever.
+            let raw = serde_json::json!({ "format": 1, "key": key.as_str(),
+                "device": lib.device.to_string(), "clock": [now_ms.max(0), 0],
+                "history": [], "deleted": { "covers": [] } });
+            if let Checked::Version(v) = check_version(raw, lib.device)? {
+                write(conn, lib, &v, tally)?;
+            }
+            return Ok(before != library_content(conn, lib, key)?);
+        }
+    };
+    // SY13, #109: an unsent edit hidden by a conflict remains the reader's work.
+    if !settled
+        && heads
+            .iter()
+            .any(|h| h.version.device == lib.device && h.seq == next && h.id() != winner.id())
+    {
+        conn.execute(
+            "UPDATE sync_versions SET applied = -3 WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+            params![lib.id.to_string(), key.as_str()],
+        )?;
+    }
+    if journal::held(conn, lib, key)?
+        && !(winner.version.device != lib.device && winner.is_deleted())
+    {
+        return Ok(false);
+    }
+    // SP26: a missing surviving body cannot silently leave the reverted content
+    // on screen. The caller's transaction rolls the exclusion back for retry.
+    if let Content::Body { hash, .. } = &winner.version.content {
+        if !journal::has_body(conn, hash)? {
+            return Err(super::record::RecordError::Body.into());
+        }
+    }
+    if !write(conn, lib, &winner.version, tally)? {
+        return Ok(false);
+    }
+    // SP11: same 1/2 bookkeeping as apply_key, including its unsent exception.
+    let all_seen = settled || !reader_decides(winner.version.kind);
+    let unsent = |q: &Placed| q.version.device == lib.device && q.seq == next;
+    let seen: Vec<&Placed> = std::iter::once(winner)
+        .chain(heads.iter().copied().filter(|_| all_seen))
+        .collect();
+    for p in record.versions() {
+        if !seen.iter().any(|q| q.descends_from(p)) {
+            continue;
+        }
+        let superseded = seen
+            .iter()
+            .any(|q| q.id() != p.id() && !unsent(q) && q.descends_from(p));
+        mark_applied(conn, lib, p, if superseded { 2 } else { 1 })?;
+    }
+    Ok(before != library_content(conn, lib, key)?)
+}
+
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
@@ -1726,6 +1914,83 @@ pub(crate) mod tests {
 
     pub(crate) fn note_of(s: &Store, book: &str) -> Option<Option<String>> {
         s.annotations(book).unwrap().first().map(|a| a.note.clone())
+    }
+
+    #[test]
+    fn recompute_writes_own_winner_and_removes_an_empty_record_without_journalling() {
+        let (mut t, lt) = device(2, "t");
+        t.save_position("t", "epubcfi(/6/14!/4/2/1:0)", 0.31, Some("Loomings"))
+            .unwrap();
+        publish_next(t.conn(), &lt).unwrap().unwrap();
+        let key = Key::parse(&format!("place:{SYNC_BOOK}")).unwrap().0;
+        t.conn()
+            .execute(
+                "UPDATE positions SET fraction = 0.75 WHERE book_id = 't'",
+                [],
+            )
+            .unwrap();
+        t.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = 2 WHERE key = ?1",
+                [key.as_str()],
+            )
+            .unwrap();
+        let versions = || {
+            t.conn()
+                .query_row("SELECT COUNT(*) FROM sync_versions", [], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .unwrap()
+        };
+        let before = versions();
+        let mut tally = Tally {
+            restoring: true,
+            ..Tally::default()
+        };
+        assert!(recompute(t.conn(), &lt, &key, crate::store::now_ms(), &mut tally).unwrap());
+        let fraction: f64 = t
+            .conn()
+            .query_row(
+                "SELECT fraction FROM positions WHERE book_id = 't'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(fraction, 0.31);
+        assert!(!recompute(t.conn(), &lt, &key, crate::store::now_ms(), &mut tally).unwrap());
+        t.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = -6 WHERE key = ?1",
+                [key.as_str()],
+            )
+            .unwrap();
+        assert!(recompute(t.conn(), &lt, &key, crate::store::now_ms(), &mut tally).unwrap());
+        assert_eq!(
+            t.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM positions WHERE book_id = 't'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        assert_eq!(versions(), before);
+        assert!(journal::unsent(t.conn(), &lt).unwrap().is_empty());
+        assert!(!recompute(t.conn(), &lt, &key, crate::store::now_ms(), &mut tally).unwrap());
+        assert_eq!(
+            t.conn()
+                .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+        assert_eq!(
+            t.conn()
+                .query_row("SELECT COUNT(*) FROM sync_counted", [], |r| r
+                    .get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
