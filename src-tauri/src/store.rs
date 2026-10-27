@@ -283,7 +283,7 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, key, device, hash)
     );
     "#,
-    // 11: SP26, SP30: late changes, restoration identities and repeat processing.
+    // 11: SP26, SP30: late changes, original states and repeat processing.
     r#"
     CREATE TABLE sync_late (
         library TEXT NOT NULL,              -- SP1: library ID
@@ -309,8 +309,7 @@ pub const MIGRATIONS: &[&str] = &[
         device TEXT NOT NULL,               -- SP26: late writer
         seq INTEGER NOT NULL,               -- SP11: processed version's sequence
         key TEXT NOT NULL,                  -- SP11: processed version's record
-        was INTEGER,                       -- SP30: original pending state; NULL if applied
-        restored TEXT,                     -- SP30: restoration hash, even beyond the offer cap
+        was INTEGER NOT NULL,              -- SP30: original state, applied or pending
         decided INTEGER NOT NULL DEFAULT 0, -- SP12: reader kept or discarded this version
         PRIMARY KEY (library, device, seq, key) -- survives choices and overflow
     );
@@ -320,21 +319,6 @@ pub const MIGRATIONS: &[&str] = &[
         cutoff INTEGER NOT NULL,            -- SP29: effective cutoff of this processing pass
         seq INTEGER NOT NULL,               -- last processed sequence at that cutoff
         PRIMARY KEY (library, device, cutoff) -- repeat calls remain no-ops after recovery
-    );
-    "#,
-    // 12: SP26 (#163): what each restoration stands for, so a later removal or an
-    // earlier cutoff can revert it again
-    r#"
-    CREATE TABLE sync_late_restored (
-        library TEXT NOT NULL,              -- SP1: library ID
-        key TEXT NOT NULL,                  -- SP11: restored record
-        restoration TEXT NOT NULL,          -- SP26: exact local restoration hash
-        source_device TEXT,                 -- SP26: version put back; all NULL for no ancestor
-        source_seq INTEGER,
-        source_hash TEXT,
-        PRIMARY KEY (library, key, restoration),
-        CHECK ((source_device IS NULL AND source_seq IS NULL AND source_hash IS NULL)
-            OR (source_device IS NOT NULL AND source_seq IS NOT NULL AND source_hash IS NOT NULL))
     );
     "#,
 ];

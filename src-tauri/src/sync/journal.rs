@@ -288,10 +288,12 @@ pub enum Which {
 /// and those received from others. Unsent local versions aren't in it, nor are
 /// received ones still waiting for their ancestry to be checked (`applied = -1`).
 /// The states of `sync_versions.applied`: 1 applied; 2 applied and superseded (a
-/// version applied here descends from it, so it is never a head again and isn't
-/// loaded to merge); 0 pending; −1 waiting for its ancestry; −2 its clock too far
+/// version applied here descends from it, so it isn't loaded to merge); 0 pending;
+/// −1 waiting for its ancestry; −2 its clock too far
 /// ahead; −3 a local edit held for the reader (#109); −4 excluded for its body;
-/// −5 held as a late change (SP26, SP30), outside merging and waiting rechecks.
+/// −5 held as a late change, never applied; −6 a reverted late change, previously
+/// applied (SP26, SP30). Both stay outside merging and waiting rechecks; −6
+/// remains checked ancestry. Recomputing after a revert can revive state 2.
 pub fn record_of(conn: &Connection, lib: &Library, key: &Key, which: Which) -> Result<Record> {
     let mut stmt = conn.prepare(
         "SELECT device, seq, raw FROM sync_versions

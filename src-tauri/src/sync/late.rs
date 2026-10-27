@@ -4,15 +4,14 @@
 //! including superseded versions, supplies ancestry and bodies, never sync_undo.
 
 use super::apply::{self, Tally};
-use super::guard::stamp_column;
 use super::ids::{DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, LocalContent, Which};
 use super::merge::{Outcome, Placed, Record};
-use super::record::{check_version, Checked, Content, Entry, Key, Kind, RecordError, Version};
+use super::record::{check_version, Checked, Content, Entry, Key, RecordError, Version};
 use super::trust::Mark;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 /// SP26: at most this many late versions per device.
 pub const MAX_LATE: usize = 500;
@@ -33,19 +32,18 @@ pub enum LateError {
     MissingVersion(Entry, Key),
     #[error("body {0} is not held")]
     MissingBody(Hash32),
-    #[error("restoration of {0} could not be applied")]
+    #[error("local choice for {0} could not be applied")]
     NotWritten(Key),
-    #[error("published restorations of {0:?} need discard-choice merging before recovery")]
-    PublishedRestorations(Vec<Key>),
 }
 
 pub type Result<T> = std::result::Result<T, LateError>;
 
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Reverted {
-    /// Records written back (several late versions can belong to one record).
+    /// Records whose shown library content changed (several versions may share one).
     pub reverted: usize,
-    /// Late versions whose record was left alone because another writer changed it.
+    /// Late versions whose shown record still descends from them through a writer
+    /// not being reverted. Concurrent surviving versions do not count.
     pub left: usize,
     pub listed: usize,
     pub dropped: usize,
@@ -64,7 +62,7 @@ fn version(conn: &Connection, lib: &Library, key: &Key, id: Entry) -> Result<Pla
     let raw: Option<String> = conn
         .query_row(
             "SELECT raw FROM sync_versions WHERE library = ?1 AND device = ?2
-             AND seq = ?3 AND key = ?4 AND hash = ?5 AND applied IN (1, 2, -5)",
+             AND seq = ?3 AND key = ?4 AND hash = ?5 AND applied IN (1, 2, -5, -6)",
             params![
                 lib.id.to_string(),
                 id.device.to_string(),
@@ -86,20 +84,31 @@ fn version(conn: &Connection, lib: &Library, key: &Key, id: Entry) -> Result<Pla
 // only for local ordering and never becomes a history entry or a published ID.
 fn shown(conn: &Connection, lib: &Library, key: &Key) -> Result<Option<Placed>> {
     let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
-    let local: Option<String> = conn
-        .query_row(
-            "SELECT raw FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
-            params![lib.id.to_string(), key.as_str()],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if let Some(raw) = local {
-        record.add(Placed {
+    let local: Option<(String, i64)> = conn.query_row(
+        "SELECT raw, applied FROM sync_versions WHERE library = ?1 AND key = ?2 AND seq IS NULL",
+        params![lib.id.to_string(), key.as_str()], |r| Ok((r.get(0)?, r.get(1)?)),
+    ).optional()?;
+    let mut held = None;
+    if let Some((raw, state)) = local {
+        let p = Placed {
             version: checked(&raw, lib.device)?,
             seq: u64::MAX,
-        });
+        };
+        if state == -3 {
+            held = Some(p.clone());
+        }
+        record.add(p);
     }
-    Ok(outcome(&record).cloned())
+    let current = outcome(&record).cloned();
+    // SY13: match recompute/apply_key's held-edit rule when counting `left`.
+    if held.is_some()
+        && !current
+            .as_ref()
+            .is_some_and(|p| p.version.device != lib.device && p.is_deleted())
+    {
+        return Ok(held);
+    }
+    Ok(current)
 }
 
 fn outcome(record: &Record) -> Option<&Placed> {
@@ -109,109 +118,52 @@ fn outcome(record: &Record) -> Option<&Placed> {
     }
 }
 
-// SP26: only exact restorations made here stand for their source. A reader's
-// subsequent edit has another hash, even if it repeats the restored content.
-fn represented(conn: &Connection, lib: &Library, mut p: Placed) -> Result<Option<Placed>> {
-    loop {
-        let source: Option<(Option<String>, Option<i64>, Option<String>)> = conn
-            .query_row(
-                "SELECT source_device, source_seq, source_hash FROM sync_late_restored
-                 WHERE library = ?1 AND key = ?2 AND restoration = ?3",
-                params![
-                    lib.id.to_string(),
-                    p.version.key.as_str(),
-                    p.version.hash.to_string()
-                ],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
-            .optional()?;
-        match source {
-            None => return Ok(Some(p)),
-            Some((None, None, None)) => return Ok(None),
-            Some((Some(device), Some(seq), Some(hash))) => {
-                p = version(
-                    conn,
-                    lib,
-                    &p.version.key,
-                    Entry {
-                        device: DeviceId::parse(&device).ok_or(RecordError::Field("device"))?,
-                        seq: seq as u64,
-                        hash: Hash32::parse(&hash).ok_or(RecordError::Field("hash"))?,
-                    },
-                )?;
-            }
-            _ => return Err(RecordError::Field("restoration").into()),
-        }
-    }
-}
-
-fn past(p: &Placed, cutoffs: &BTreeMap<DeviceId, u64>) -> bool {
-    cutoffs
-        .get(&p.version.device)
-        .is_some_and(|cutoff| p.seq > *cutoff)
-}
-
-// SP26, SP30: retain provenance after publication and recovery too. Keep does
-// not call this: it is a reader decision, not an automatic restoration.
-fn remember(conn: &Connection, lib: &Library, v: &Version, source: Option<&Placed>) -> Result<()> {
-    conn.execute(
-        "INSERT INTO sync_late_restored
-         (library, key, restoration, source_device, source_seq, source_hash)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![
-            lib.id.to_string(),
-            v.key.as_str(),
-            v.hash.to_string(),
-            source.map(|p| p.version.device.to_string()),
-            source.map(|p| p.seq as i64),
-            source.map(|p| p.version.hash.to_string())
-        ],
-    )?;
-    Ok(())
-}
-
-// SP11, SP26: follow removed ancestors until reaching surviving ones. History
-// contains transitive entries too; heads eliminate those further back. Concurrent
-// surviving ancestors use the same ordering/conflict rule as the reader's record.
-fn before(
+// SP11, SP26: losing a checked ancestor is not permission to erase the
+// record. Recompute checks the body it needs, not bodies of superseded versions.
+fn check_ancestors(
     conn: &Connection,
     lib: &Library,
     p: &Placed,
-    cutoffs: &BTreeMap<DeviceId, u64>,
-) -> Result<Option<Placed>> {
-    let mut pending = p.version.history.clone();
-    let mut visited = HashSet::new();
-    let mut surviving = Record::default();
+    visited: &mut HashSet<Entry>,
+) -> Result<()> {
+    let mut pending = vec![p.id()];
     while let Some(id) = pending.pop() {
         if !visited.insert(id) {
             continue;
         }
-        let Some(ancestor) = represented(conn, lib, version(conn, lib, &p.version.key, id)?)?
-        else {
-            continue;
+        let raw: Option<String> = conn
+            .query_row(
+                "SELECT raw FROM sync_versions WHERE library = ?1 AND device = ?2
+             AND seq = ?3 AND key = ?4 AND hash = ?5",
+                params![
+                    lib.id.to_string(),
+                    id.device.to_string(),
+                    id.seq as i64,
+                    p.version.key.as_str(),
+                    id.hash.to_string()
+                ],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let raw = raw.ok_or_else(|| LateError::MissingVersion(id, p.version.key.clone()))?;
+        let ancestor = Placed {
+            version: checked(&raw, id.device)?,
+            seq: id.seq,
         };
-        if past(&ancestor, cutoffs) {
-            pending.extend(ancestor.version.history.iter().copied());
-        } else {
-            surviving.add(ancestor);
-        }
+        pending.extend(ancestor.version.history);
     }
-    Ok(outcome(&surviving).cloned())
+    Ok(())
 }
 
-fn content(conn: &Connection, lib: &Library, p: Option<&Placed>) -> Result<LocalContent> {
-    Ok(match p.map(|p| &p.version.content) {
-        Some(Content::Body { hash, .. }) => {
+fn content(conn: &Connection, p: &Placed) -> Result<LocalContent> {
+    Ok(match &p.version.content {
+        Content::Body { hash, .. } => {
             LocalContent::Body(journal::body(conn, hash)?.ok_or(LateError::MissingBody(*hash))?)
         }
-        Some(Content::Inline(v)) => LocalContent::Inline(v.clone()),
-        Some(Content::Deleted { covers, identity }) => LocalContent::Deleted {
+        Content::Inline(v) => LocalContent::Inline(v.clone()),
+        Content::Deleted { covers, identity } => LocalContent::Deleted {
             covers: covers.clone(),
             identity: identity.clone(),
-        },
-        None => LocalContent::Deleted {
-            covers: super::local::covers(conn, lib)?,
-            identity: None,
         },
     })
 }
@@ -226,7 +178,7 @@ fn local(
     let wall = now_ms.max(0) as u64;
     Ok(
         match journal::record_local(conn, lib, key, content.clone(), wall) {
-            // SY13: the restoration/choice settles an otherwise hidden local head,
+            // SY13: the choice settles an otherwise hidden local head,
             // following guard::revert's hold-and-release pattern.
             Err(JournalError::Conflicted(_)) => {
                 let v = journal::hold_local(conn, lib, key, content, wall)?;
@@ -245,11 +197,10 @@ fn put(
     conn: &Connection,
     lib: &Library,
     key: &Key,
-    source: Option<&Placed>,
     parent: &Placed,
     now_ms: i64,
 ) -> Result<Version> {
-    let content = content(conn, lib, source)?;
+    let content = content(conn, parent)?;
     journal::observe(conn, lib, parent.version.clock, now_ms.max(0) as u64)?;
     let mut v = local(conn, lib, key, content, now_ms)?;
     let mut history = BTreeMap::<DeviceId, Entry>::new();
@@ -283,33 +234,6 @@ fn entry(id: &Entry) -> Value {
     json!({ "d": id.device.to_string(), "s": id.seq, "h": id.hash.to_string() })
 }
 
-// SY26, SP26: reading-state bodies carry state, not the old time. As in
-// guard::revert, only this library gets the ancestor's time; peers see the new
-// restoration version's time. Missing content is an error, never an empty state.
-fn restore_time(conn: &Connection, lib: &Library, key: &Key, prior: Option<&Placed>) -> Result<()> {
-    let Some(column) = stamp_column(key.kind()) else {
-        return Ok(());
-    };
-    let at = match (prior, content(conn, lib, prior)?) {
-        (Some(p), LocalContent::Body(body)) => {
-            let finished = key.kind() != Kind::BookFinished
-                || serde_json::from_slice::<Value>(&body).map_err(|_| RecordError::Body)?
-                    ["finished"]
-                    == true;
-            finished.then_some(p.version.clock.ms() as i64)
-        }
-        _ => None,
-    };
-    conn.execute(
-        &format!(
-            "UPDATE books SET {column} = ?2 WHERE id IN
-            (SELECT book_id FROM sync_books WHERE library = ?1 AND sync_id = ?3)"
-        ),
-        params![lib.id.to_string(), at, key.as_str().split(':').nth(1)],
-    )?;
-    Ok(())
-}
-
 /// SP26, SP29, SP30: stop all removed writers together and revert their applied
 /// changes beyond each writer's later cutoff. All marks must already be verified.
 /// Unapplied versions are held outside merging/rechecks until Keep or reapply.
@@ -340,7 +264,8 @@ pub fn revert_past(
         .collect();
     let tx = conn.unchecked_transaction()?;
     let mut result = Reverted::default();
-    let mut restored = BTreeMap::<Key, Option<String>>::new();
+    let mut affected = BTreeMap::<Key, Vec<Placed>>::new();
+    let mut visited = HashSet::new();
     for (&device, &cutoff) in &cutoffs {
         let dropped_before = result.dropped;
         apply::stop(&tx, lib, device, reason, now_ms)?;
@@ -369,7 +294,7 @@ pub fn revert_past(
         .collect::<std::result::Result<_, _>>()?;
         let through: Option<i64> = tx.query_row(
             "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq > ?3
-         AND applied IN (1, 2, 0, -1, -2, -4, -5)",
+         AND applied IN (1, 2, 0, -1, -2, -4, -5, -6)",
             params![lib.id.to_string(), device.to_string(), cutoff as i64],
             |r| r.get(0),
         )?;
@@ -390,49 +315,23 @@ pub fn revert_past(
                 seq: seq as u64,
                 hash: Hash32::parse(&hash).ok_or(RecordError::Field("hash"))?,
             };
-            let pending = applied <= 0;
-            if pending {
-                // SP26, SP30: block even overflow versions. Process only new rows:
-                // an already resolved prefix must not be held again on a repeat call.
-                tx.execute(
-                    "UPDATE sync_versions SET applied = -5 WHERE library = ?1
-                AND device = ?2 AND seq = ?3 AND key = ?4 AND applied IN (0, -1, -2, -4)",
-                    params![lib.id.to_string(), device.to_string(), seq, key.as_str()],
-                )?;
-            }
+            // SP26: both applied and pending late versions leave the merge,
+            // including the unlisted tail. Keep the original state for recovery.
+            tx.execute(
+                "UPDATE sync_versions SET applied = ?5 WHERE library = ?1
+                 AND device = ?2 AND seq = ?3 AND key = ?4",
+                params![
+                    lib.id.to_string(),
+                    device.to_string(),
+                    seq,
+                    key.as_str(),
+                    if applied > 0 { -6 } else { -5 }
+                ],
+            )?;
             let late = version(&tx, lib, &key, id)?;
-            if !pending && !restored.contains_key(&key) {
-                let current = shown(&tx, lib, &key)?;
-                let old_hash = current.as_ref().map(|p| p.version.hash.to_string());
-                let current = current
-                    .map(|p| represented(&tx, lib, p))
-                    .transpose()?
-                    .flatten();
-                let marker = match current {
-                    Some(p) if past(&p, &cutoffs) => {
-                        let prior = before(&tx, lib, &p, &cutoffs)?;
-                        let v = put(&tx, lib, &key, prior.as_ref(), &p, now_ms)?;
-                        remember(&tx, lib, &v, prior.as_ref())?;
-                        tx.execute(
-                        "UPDATE sync_late_seen SET restored = ?4 WHERE library = ?1 AND key = ?2
-                         AND restored = ?3 AND decided = 0 AND was IS NULL",
-                        params![lib.id.to_string(), key.as_str(), old_hash, v.hash.to_string()],
-                    )?;
-                        restore_time(&tx, lib, &key, prior.as_ref())?;
-                        result.reverted += 1;
-                        Some(v.hash.to_string())
-                    }
-                    _ => None,
-                };
-                restored.insert(key.clone(), marker);
-            }
-            let marker = if pending {
-                None
-            } else {
-                restored[&key].as_deref()
-            };
-            if !pending && marker.is_none() {
-                result.left += 1;
+            if applied > 0 {
+                check_ancestors(&tx, lib, &late, &mut visited)?;
+                affected.entry(key.clone()).or_default().push(late.clone());
             }
             let size = match &late.version.content {
                 Content::Body { size, .. } => *size,
@@ -463,15 +362,14 @@ pub fn revert_past(
                 result.dropped += 1;
             }
             tx.execute(
-                "INSERT INTO sync_late_seen (library, device, seq, key, was, restored)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                "INSERT INTO sync_late_seen (library, device, seq, key, was)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
                 params![
                     lib.id.to_string(),
                     device.to_string(),
                     seq,
                     key.as_str(),
-                    pending.then_some(applied),
-                    marker
+                    applied
                 ],
             )?;
         }
@@ -496,6 +394,17 @@ pub fn revert_past(
             )?;
         }
     }
+    // SP26: remove every writer first, then merge what survives together.
+    let mut tally = Tally::default();
+    tally.restoring = true;
+    for (key, late) in affected {
+        result.reverted += usize::from(apply::recompute(&tx, lib, &key, now_ms, &mut tally)?);
+        if let Some(current) = shown(&tx, lib, &key)? {
+            if !removed.contains_key(&current.version.device) {
+                result.left += late.iter().filter(|p| current.descends_from(p)).count();
+            }
+        }
+    }
     tx.commit()?;
     Ok(result)
 }
@@ -504,8 +413,6 @@ struct Late {
     key: Key,
     id: Entry,
     state: String,
-    #[cfg(test)]
-    restored: Option<String>,
     kept: Option<String>,
     at: i64,
     #[cfg(test)]
@@ -515,7 +422,7 @@ struct Late {
 fn rows(conn: &Connection, lib: &Library, device: Option<DeviceId>) -> Result<Vec<Late>> {
     let raw = conn
         .prepare(
-            "SELECT l.key, l.device, l.seq, l.hash, l.state, s.restored, l.kept, l.at, s.was IS NOT NULL
+            "SELECT l.key, l.device, l.seq, l.hash, l.state, l.kept, l.at, s.was <= 0
          FROM sync_late l JOIN sync_late_seen s
            ON s.library = l.library AND s.device = l.device AND s.seq = l.seq AND s.key = l.key
          WHERE l.library = ?1 AND (?2 IS NULL OR l.device = ?2) ORDER BY l.seq, l.key",
@@ -530,33 +437,28 @@ fn rows(conn: &Connection, lib: &Library, device: Option<DeviceId>) -> Result<Ve
                     r.get::<_, String>(3)?,
                     r.get::<_, String>(4)?,
                     r.get::<_, Option<String>>(5)?,
-                    r.get::<_, Option<String>>(6)?,
-                    r.get::<_, i64>(7)?,
-                    r.get::<_, bool>(8)?,
+                    r.get::<_, i64>(6)?,
+                    r.get::<_, bool>(7)?,
                 ))
             },
         )?
         .collect::<std::result::Result<Vec<_>, _>>()?;
     raw.into_iter()
-        .map(
-            |(key, device, seq, hash, state, _restored, kept, at, _pending)| {
-                Ok(Late {
-                    key: Key::parse(&key).ok_or(RecordError::Key)?.0,
-                    id: Entry {
-                        device: DeviceId::parse(&device).ok_or(RecordError::Field("device"))?,
-                        seq,
-                        hash: Hash32::parse(&hash).ok_or(RecordError::Field("hash"))?,
-                    },
-                    state,
-                    #[cfg(test)]
-                    restored: _restored,
-                    kept,
-                    at,
-                    #[cfg(test)]
-                    pending: _pending,
-                })
-            },
-        )
+        .map(|(key, device, seq, hash, state, kept, at, _pending)| {
+            Ok(Late {
+                key: Key::parse(&key).ok_or(RecordError::Key)?.0,
+                id: Entry {
+                    device: DeviceId::parse(&device).ok_or(RecordError::Field("device"))?,
+                    seq,
+                    hash: Hash32::parse(&hash).ok_or(RecordError::Field("hash"))?,
+                },
+                state,
+                kept,
+                at,
+                #[cfg(test)]
+                pending: _pending,
+            })
+        })
         .collect()
 }
 
@@ -573,15 +475,10 @@ fn remove(conn: &Connection, lib: &Library, row: &Late) -> Result<()> {
     Ok(())
 }
 
-/// SP30: recover the resolved prefix, including versions beyond the offer cap.
-/// Applied content returns only while our restoration still shows. Never-applied
-/// versions regain their original waiting state and aren't counted as writes.
-/// Reader decisions are left alone; no choice is made here. The count is applied
-/// versions recovered, though each record is written only once.
-/// A published restoration cannot yield to a released newer version until merging
-/// supports Discard choices. Such a record is left as it is, its versions still
-/// held and listed for a later call; every other record is recovered, and then
-/// `PublishedRestorations` names the records left.
+/// SP30: recover undecided versions through the resolved prefix, including
+/// overflow. Previously applied versions return to the merge; pending versions
+/// regain their original state for apply_pending. Returns the number of applied
+/// versions recovered, even if a surviving reader edit still shows.
 pub fn reapply_upto(
     conn: &Connection,
     lib: &Library,
@@ -590,141 +487,58 @@ pub fn reapply_upto(
     now_ms: i64,
 ) -> Result<usize> {
     let tx = conn.unchecked_transaction()?;
-    let mut n = 0;
-    let mut left = Vec::new();
-    let recovering: Vec<(String, i64)> = tx
+    let recovering: Vec<(String, i64, i64)> = tx
         .prepare(
-            "SELECT key, seq FROM sync_late_seen WHERE library = ?1 AND device = ?2
+            "SELECT key, seq, was FROM sync_late_seen WHERE library = ?1 AND device = ?2
          AND seq <= ?3 AND decided = 0 ORDER BY seq, key",
         )?
         .query_map(
             params![lib.id.to_string(), device.to_string(), upto.s as i64],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?
         .collect::<std::result::Result<_, _>>()?;
-    struct Resolved {
-        p: Placed,
-        was: Option<i64>,
-        restored: Option<String>,
-    }
-    let mut records = BTreeMap::<Key, Vec<Resolved>>::new();
-    for (key, seq) in recovering {
+    let mut affected = BTreeSet::new();
+    let mut n = 0;
+    for (key, seq, was) in recovering {
         let key = Key::parse(&key).ok_or(RecordError::Key)?.0;
-        let (was, restored): (Option<i64>, Option<String>) = tx.query_row(
-            "SELECT was, restored FROM sync_late_seen WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
-            params![lib.id.to_string(), device.to_string(), seq, key.as_str()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+        let released = tx.execute(
+            "UPDATE sync_versions SET applied = ?5 WHERE library = ?1 AND device = ?2
+             AND seq = ?3 AND key = ?4 AND applied = ?6",
+            params![
+                lib.id.to_string(),
+                device.to_string(),
+                seq,
+                key.as_str(),
+                if was > 0 { 1 } else { was },
+                if was > 0 { -6 } else { -5 }
+            ],
         )?;
-        let hash: String = tx.query_row(
-            "SELECT hash FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
-            params![lib.id.to_string(), device.to_string(), seq, key.as_str()], |r| r.get(0),
-        )?;
-        let id = Entry {
-            device,
-            seq: seq as u64,
-            hash: Hash32::parse(&hash).ok_or(RecordError::Field("hash"))?,
-        };
-        records.entry(key.clone()).or_default().push(Resolved {
-            p: version(&tx, lib, &key, id)?,
-            was,
-            restored,
-        });
-    }
-    for (key, resolved) in records {
-        let current = shown(&tx, lib, &key)?;
-        let applied: Vec<_> = resolved.iter().filter(|r| r.was.is_none()).collect();
-        let newest = applied.last();
-        let ours = current.as_ref().is_some_and(|p| {
-            applied
-                .iter()
-                .any(|r| r.restored.as_deref() == Some(&p.version.hash.to_string()))
-        });
-        if ours {
-            let newest = newest.expect("restoration belongs to an applied late version");
-            let released_newer = resolved
-                .iter()
-                .any(|r| r.was.is_some() && r.p.seq > newest.p.seq);
-            if released_newer {
-                if current.as_ref().is_some_and(|p| p.seq != u64::MAX) {
-                    left.push(key);
-                    continue;
-                }
-                journal::drop_unsent(&tx, lib, &key)?;
-                for row in &applied {
-                    tx.execute(
-                        "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND device = ?2
-                         AND key = ?3 AND seq = ?4 AND applied = 2",
-                        params![
-                            lib.id.to_string(),
-                            device.to_string(),
-                            key.as_str(),
-                            row.p.seq as i64
-                        ],
-                    )?;
-                }
-                // SP30: use the normal writer and its 1/2 head bookkeeping while
-                // the released successors are still held outside merging.
-                let mut tally = Tally::default();
-                tally.restoring = true;
-                if !apply::apply_key(&tx, lib, &key, now_ms, &mut tally)? {
-                    return Err(LateError::NotWritten(key));
-                }
-            } else {
-                let v = put(&tx, lib, &key, Some(&newest.p), &newest.p, now_ms)?;
-                remember(&tx, lib, &v, Some(&newest.p))?;
-                // SP30: a later resolved prefix can still replace this restoration.
-                // Every device's rows naming the replaced restoration, as in
-                // `revert_past`: a cascade's devices can share one (#163).
-                tx.execute(
-                    "UPDATE sync_late_seen SET restored = ?4 WHERE library = ?1
-                     AND key = ?2 AND restored = ?3 AND decided = 0 AND was IS NULL",
-                    params![
-                        lib.id.to_string(),
-                        key.as_str(),
-                        current.as_ref().map(|p| p.version.hash.to_string()),
-                        v.hash.to_string()
-                    ],
-                )?;
-            }
-            n += applied.len();
+        if was > 0 && released > 0 {
+            affected.insert(key.clone());
+            n += 1;
         }
-        for row in resolved {
-            let seq = row.p.seq as i64;
-            if let Some(was) = row.was {
-                tx.execute(
-                    "UPDATE sync_versions SET applied = ?5 WHERE library = ?1 AND device = ?2
-                     AND seq = ?3 AND key = ?4 AND applied = -5",
-                    params![
-                        lib.id.to_string(),
-                        device.to_string(),
-                        seq,
-                        key.as_str(),
-                        was
-                    ],
-                )?;
-            }
-            let listed = tx.execute(
+        let listed = tx.execute(
             "DELETE FROM sync_late WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
             params![lib.id.to_string(), device.to_string(), seq, key.as_str()],
         )?;
-            if listed == 0 {
-                // SP30: an undecided version without an offer was over the cap.
-                // Once resolved it is no longer late, so it no longer blocks cleanup.
-                tx.execute("UPDATE sync_late_over SET dropped = dropped - 1 WHERE library = ?1 AND device = ?2 AND dropped > 0",
+        if listed == 0 {
+            // SP30: only the resolved unlisted tail reduces overflow.
+            tx.execute("UPDATE sync_late_over SET dropped = dropped - 1 WHERE library = ?1 AND device = ?2 AND dropped > 0",
                 params![lib.id.to_string(), device.to_string()])?;
-                tx.execute(
-                    "DELETE FROM sync_late_over WHERE library = ?1 AND device = ?2 AND dropped = 0",
-                    params![lib.id.to_string(), device.to_string()],
-                )?;
-            }
-            tx.execute("DELETE FROM sync_late_seen WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
-            params![lib.id.to_string(), device.to_string(), seq, key.as_str()])?;
+            tx.execute(
+                "DELETE FROM sync_late_over WHERE library = ?1 AND device = ?2 AND dropped = 0",
+                params![lib.id.to_string(), device.to_string()],
+            )?;
         }
+        tx.execute("DELETE FROM sync_late_seen WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+            params![lib.id.to_string(), device.to_string(), seq, key.as_str()])?;
+    }
+    let mut tally = Tally::default();
+    tally.restoring = true;
+    for key in affected {
+        apply::recompute(&tx, lib, &key, now_ms, &mut tally)?;
     }
     tx.commit()?;
-    if !left.is_empty() {
-        return Err(LateError::PublishedRestorations(left));
-    }
     Ok(n)
 }
 
@@ -744,7 +558,7 @@ pub fn keep(
         .find(|r| &r.key == key && r.id.seq == seq && r.state == "held")
     {
         let p = version(&tx, lib, key, row.id)?;
-        let v = put(&tx, lib, key, Some(&p), &p, now_ms)?;
+        let v = put(&tx, lib, key, &p, now_ms)?;
         tx.execute(
             "UPDATE sync_late SET state = 'kept', kept = ?5, at = ?6
             WHERE library = ?1 AND device = ?2 AND key = ?3 AND seq = ?4",
@@ -871,6 +685,7 @@ mod tests {
     use crate::sync::apply::tests::{device, highlight, publish_next, SYNC_BOOK};
     use crate::sync::apply::{apply_pending, receive, receive_body, Batch, Received};
     use crate::sync::ids::Id16;
+    use crate::sync::record::Kind;
 
     fn now() -> i64 {
         crate::store::now_ms()
@@ -1114,7 +929,7 @@ mod tests {
                 .unwrap(),
             "quarantined"
         );
-        publish_next(t.conn(), &lt).unwrap().unwrap();
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
         assert_eq!(
             reapply_upto(t.conn(), &lt, ld.device, mark(&batches[2]), now() + 2).unwrap(),
             2
@@ -1183,7 +998,7 @@ mod tests {
             )
             .unwrap(),
             Reverted {
-                reverted: 501,
+                reverted: 0,
                 left: 0,
                 listed: 500,
                 dropped: 1
@@ -1323,7 +1138,6 @@ mod tests {
         assert_eq!(state(), -5);
         let offers = rows(t.conn(), &lt, Some(ld.device)).unwrap();
         assert!(offers[0].pending);
-        assert!(offers[0].restored.is_none());
         assert!(
             !receive_body(t.conn(), &lt, &body).unwrap(),
             "normal body fetching excludes late holds"
@@ -1419,7 +1233,7 @@ mod tests {
             4
         );
         let offers = rows(t.conn(), &lt, Some(ld.device)).unwrap();
-        assert!(offers.iter().all(|r| r.pending && r.restored.is_none()));
+        assert!(offers.iter().all(|r| r.pending));
         for i in 0..4 {
             assert_eq!(text(&t, i), "before");
         }
@@ -1621,7 +1435,7 @@ mod tests {
         accept(&t, &lt, &publish_next(r.conn(), &lr).unwrap().unwrap());
         assert_eq!(
             reapply_upto(t.conn(), &lt, ld.device, mark(&batches[2]), now() + 2).unwrap(),
-            0
+            2
         );
         assert_eq!(text(&t, 0), "reader changed it");
         assert_eq!(text(&t, 1), "another device changed it");
@@ -1667,6 +1481,57 @@ mod tests {
     }
 
     #[test]
+    fn an_applied_descendant_can_be_reverted_without_an_unneeded_ancestor_body() {
+        for remove_descendant in [false, true] {
+            let (mut d, ld) = device(1, "d");
+            let (t, lt) = device(2, "t");
+            notes(&mut d, "d", 1);
+            let initial = publish_next(d.conn(), &ld).unwrap().unwrap();
+            accept(&t, &lt, &initial);
+            edit(&d, &ld, &key(0), "missing body");
+            let mut pending = publish_next(d.conn(), &ld).unwrap().unwrap();
+            pending.bodies.clear();
+            accept(&t, &lt, &pending);
+            edit(&d, &ld, &key(0), "applied descendant");
+            let late = publish_next(d.conn(), &ld).unwrap().unwrap();
+            accept(&t, &lt, &late);
+            assert_eq!(text(&t, 0), "applied descendant");
+            // SP11: superseded by the descendant without ever needing its own body.
+            assert_eq!(version_state(&t, ld.device, pending.seq as i64), 2);
+            edit(&d, &ld, &key(0), "latest late");
+            accept(&t, &lt, &publish_next(d.conn(), &ld).unwrap().unwrap());
+            revert_past(
+                t.conn(),
+                &lt,
+                &BTreeMap::from([(
+                    ld.device,
+                    Some(mark(if remove_descendant { &initial } else { &late })),
+                )]),
+                &BTreeMap::new(),
+                "removed",
+                now(),
+            )
+            .unwrap();
+            assert_eq!(
+                text(&t, 0),
+                if remove_descendant {
+                    "before"
+                } else {
+                    "applied descendant"
+                }
+            );
+            assert_eq!(
+                version_state(&t, ld.device, pending.seq as i64),
+                if remove_descendant { -6 } else { 2 }
+            );
+            assert_eq!(
+                version_state(&t, ld.device, late.seq as i64),
+                if remove_descendant { -6 } else { 1 }
+            );
+        }
+    }
+
+    #[test]
     fn missing_ancestry_or_body_rolls_back_the_entire_revert() {
         for missing_body in [false, true] {
             let (t, lt, ld, batches) = fork();
@@ -1700,7 +1565,10 @@ mod tests {
             )
             .unwrap_err();
             assert!(if missing_body {
-                matches!(error, LateError::MissingBody(_))
+                matches!(
+                    error,
+                    LateError::Journal(JournalError::Record(RecordError::Body))
+                )
             } else {
                 matches!(error, LateError::MissingVersion(..))
             });
@@ -1712,7 +1580,7 @@ mod tests {
     }
 
     #[test]
-    fn new_records_become_deletions_and_reading_times_are_restored() {
+    fn new_records_disappear_and_reading_times_are_restored() {
         let (mut d, ld) = device(1, "d");
         let (t, lt) = device(2, "t");
         notes(&mut d, "d", 1);
@@ -1727,7 +1595,8 @@ mod tests {
         )
         .unwrap();
         assert!(t.annotations("t").unwrap().is_empty());
-        assert!(shown(t.conn(), &lt, &key(0)).unwrap().unwrap().is_deleted());
+        assert!(shown(t.conn(), &lt, &key(0)).unwrap().is_none());
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
         for kind in ["opened", "finished"] {
             let (a, la) = device(1, "a");
             let (b, lb) = device(2, "b");
@@ -1782,14 +1651,14 @@ mod tests {
     }
 
     #[test]
-    fn a_restoration_settles_a_conflict_with_a_hidden_local_head() {
+    fn reverting_a_conflict_shows_the_surviving_local_head() {
         let (mut d, ld) = device(1, "d");
         let (t, lt) = device(2, "t");
         notes(&mut d, "d", 1);
         let initial = publish_next(d.conn(), &ld).unwrap().unwrap();
         accept(&t, &lt, &initial);
         edit(&t, &lt, &key(0), "local concurrent edit");
-        let own = publish_next(t.conn(), &lt).unwrap().unwrap();
+        let _own = publish_next(t.conn(), &lt).unwrap().unwrap();
         journal::record_local(
             d.conn(),
             &ld,
@@ -1819,17 +1688,12 @@ mod tests {
             .reverted,
             1
         );
-        assert_eq!(text(&t, 0), "before");
+        assert_eq!(text(&t, 0), "local concurrent edit");
         assert!(!journal::held(t.conn(), &lt, &key(0)).unwrap());
-        let restored = journal::unsent_of(t.conn(), &lt, &key(0)).unwrap().unwrap();
-        assert!(restored
-            .history
-            .iter()
-            .any(|e| e.device == lt.device && e.seq == own.seq));
-        assert!(restored
-            .history
-            .iter()
-            .any(|e| e.device == ld.device && e.seq == remote.seq));
+        assert!(journal::unsent_of(t.conn(), &lt, &key(0))
+            .unwrap()
+            .is_none());
+        assert_eq!(version_state(&t, ld.device, remote.seq as i64), -6);
     }
 
     #[test]
@@ -1866,7 +1730,7 @@ mod tests {
             .unwrap(),
             Reverted {
                 reverted: 0,
-                left: 1,
+                left: 0,
                 listed: 1,
                 dropped: 0
             }
@@ -2239,6 +2103,253 @@ mod tests {
         (t, lt, la, lb, initial)
     }
 
+    fn at(store: &Store, device: DeviceId, seq: u64) -> Mark {
+        let hash: String = store
+            .conn()
+            .query_row(
+                "SELECT hash FROM sync_versions WHERE device = ?1 AND seq = ?2 AND key = ?3",
+                params![device.to_string(), seq as i64, key(0).as_str()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        Mark {
+            s: seq,
+            h: Hash32::parse(&hash).unwrap(),
+        }
+    }
+
+    #[test]
+    fn reapplying_b_then_a_ends_on_bs_version() {
+        let (t, lt, la, lb, initial) = cascade(1, 2);
+        let removed = BTreeMap::from([(la.device, Some(mark(&initial))), (lb.device, None)]);
+        revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
+        for (device, seq, was) in [(la.device, 2, 2), (lb.device, 1, 1)] {
+            assert_eq!(version_state(&t, device, seq), -6);
+            let original: i64 = t
+                .conn()
+                .query_row(
+                    "SELECT was FROM sync_late_seen WHERE device = ?1 AND seq = ?2 AND key = ?3",
+                    params![device.to_string(), seq, key(0).as_str()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(original, was);
+            let p = version(
+                t.conn(),
+                &lt,
+                &key(0),
+                Entry {
+                    device,
+                    seq: seq as u64,
+                    hash: at(&t, device, seq as u64).h,
+                },
+            )
+            .unwrap();
+            if let Content::Body { hash, .. } = p.version.content {
+                journal::drop_body_if_unnamed(t.conn(), &hash).unwrap();
+                assert!(journal::has_body(t.conn(), &hash).unwrap());
+            }
+        }
+        reapply_upto(t.conn(), &lt, lb.device, at(&t, lb.device, 1), now()).unwrap();
+        reapply_upto(t.conn(), &lt, la.device, at(&t, la.device, 2), now()).unwrap();
+        assert_eq!(text(&t, 0), "B late");
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
+    }
+
+    #[test]
+    fn reapplying_one_device_keeps_another_devices_late_version_out() {
+        let (t, lt, la, lb, initial) = cascade(1, 2);
+        let parent = version(
+            t.conn(),
+            &lt,
+            &key(0),
+            Entry {
+                device: la.device,
+                seq: 2,
+                hash: at(&t, la.device, 2).h,
+            },
+        )
+        .unwrap();
+        let bytes = br#"{"text":"A held"}"#;
+        let hash = journal::put_body(t.conn(), bytes).unwrap();
+        let raw = json!({ "format": 1, "key": key(0).as_str(), "device": la.device.to_string(),
+            "clock": [now(), 0], "history": [entry(&parent.id())],
+            "body": { "hash": hash.to_string(), "size": bytes.len() } });
+        journal::store_remote(
+            t.conn(),
+            &lt,
+            &Placed {
+                version: checked(&raw.to_string(), la.device).unwrap(),
+                seq: 3,
+            },
+        )
+        .unwrap();
+        let removed = BTreeMap::from([(la.device, Some(mark(&initial))), (lb.device, None)]);
+        revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
+        reapply_upto(t.conn(), &lt, la.device, at(&t, la.device, 3), now()).unwrap();
+        assert_eq!(text(&t, 0), "A late");
+        assert_eq!(version_state(&t, lb.device, 1), -6);
+        assert_eq!(version_state(&t, la.device, 3), 0);
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_reader_edit_after_a_late_change_stays_after_the_revert() {
+        for (held, cutoff) in [(false, true), (true, true), (true, false)] {
+            let (t, lt, ld, batches) = fork();
+            edit(&t, &lt, &key(0), "reader's edit");
+            if held {
+                t.conn()
+                    .execute(
+                        "UPDATE sync_versions SET applied = -3 WHERE seq IS NULL",
+                        [],
+                    )
+                    .unwrap();
+            }
+            let own: String = t
+                .conn()
+                .query_row("SELECT raw FROM sync_versions WHERE seq IS NULL", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            revert_past(
+                t.conn(),
+                &lt,
+                &BTreeMap::from([(ld.device, cutoff.then(|| mark(&batches[0])))]),
+                &BTreeMap::new(),
+                "removed",
+                now(),
+            )
+            .unwrap();
+            assert_eq!(text(&t, 0), "reader's edit");
+            let after: String = t
+                .conn()
+                .query_row(
+                    "SELECT raw FROM sync_versions WHERE seq IS NULL AND key = ?1",
+                    [key(0).as_str()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(after, own);
+            assert_eq!(version_state(&t, ld.device, 2), -6);
+            // SY13, #109: the version it was held against is out of the merge, so the
+            // edit is the reader's ordinary unsent one again.
+            assert!(!journal::held(t.conn(), &lt, &key(0)).unwrap());
+        }
+    }
+
+    #[test]
+    fn a_reader_edit_hidden_by_a_reverted_deletion_comes_back() {
+        // SY13, #109: D's deletion hid the reader's unsent edit, which was held for
+        // the reader's choice; once the deletion is reverted, the edit shows.
+        let (d, ld) = device(1, "d");
+        let (t, lt) = device(2, "t");
+        let mut d = d;
+        notes(&mut d, "d", 1);
+        let first = publish_next(d.conn(), &ld).unwrap().unwrap();
+        accept(&t, &lt, &first);
+        edit(&t, &lt, &key(0), "reader's edit");
+        let covers = super::super::local::covers(d.conn(), &ld).unwrap();
+        let v = journal::record_local(
+            d.conn(),
+            &ld,
+            &key(0),
+            LocalContent::Deleted {
+                covers,
+                identity: None,
+            },
+            now() as u64 + 10,
+        )
+        .unwrap();
+        let mut tally = Tally::default();
+        tally.restoring = true;
+        apply::write(d.conn(), &ld, &v, &mut tally).unwrap();
+        accept(&t, &lt, &publish_next(d.conn(), &ld).unwrap().unwrap());
+        assert!(journal::held(t.conn(), &lt, &key(0)).unwrap());
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, Some(mark(&first)))]),
+            &BTreeMap::new(),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        assert_eq!(text(&t, 0), "reader's edit");
+        assert!(!journal::held(t.conn(), &lt, &key(0)).unwrap());
+    }
+
+    #[test]
+    fn a_later_version_by_a_device_not_removed_still_applies_on_a_reverted_one() {
+        let (mut a, la) = device(1, "a");
+        let (b, lb) = device(2, "b");
+        let (t, lt) = device(3, "t");
+        notes(&mut a, "a", 1);
+        let initial = publish_next(a.conn(), &la).unwrap().unwrap();
+        accept(&b, &lb, &initial);
+        accept(&t, &lt, &initial);
+        edit(&a, &la, &key(0), "A late");
+        let late = publish_next(a.conn(), &la).unwrap().unwrap();
+        accept(&b, &lb, &late);
+        accept(&t, &lt, &late);
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(la.device, Some(mark(&initial)))]),
+            &BTreeMap::new(),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        edit(&b, &lb, &key(0), "B later");
+        let later = publish_next(b.conn(), &lb).unwrap().unwrap();
+        accept(&t, &lt, &later);
+        assert_eq!(text(&t, 0), "B later");
+        assert_eq!(version_state(&t, lb.device, later.seq as i64), 1);
+        assert_eq!(version_state(&t, la.device, late.seq as i64), -6);
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_restored_highlight_does_not_bring_back_a_still_reverted_note() {
+        for reapply in [false, true] {
+            let (mut a, la) = device(1, "a");
+            let (b, lb) = device(2, "b");
+            let (t, lt) = device(3, "t");
+            let (mut c, lc) = device(4, "c");
+            let mut annotation = highlight("a", None, now());
+            annotation.id = key(0).as_str().strip_prefix("note:").unwrap().to_owned();
+            a.save_annotation(&annotation).unwrap();
+            let initial = publish_next(a.conn(), &la).unwrap().unwrap();
+            for (store, lib) in [(&b, &lb), (&t, &lt), (&c, &lc)] {
+                accept(store, lib, &initial);
+            }
+            edit(&b, &lb, &key(0), "B late note");
+            let late = publish_next(b.conn(), &lb).unwrap().unwrap();
+            accept(&t, &lt, &late);
+            revert_past(
+                t.conn(),
+                &lt,
+                &BTreeMap::from([(la.device, None), (lb.device, None)]),
+                &BTreeMap::new(),
+                "removed",
+                now(),
+            )
+            .unwrap();
+            assert!(t.annotations("t").unwrap().is_empty());
+            if reapply {
+                reapply_upto(t.conn(), &lt, la.device, mark(&initial), now()).unwrap();
+            } else {
+                let mut changed = c.annotations("c").unwrap().remove(0);
+                changed.color = "green".into();
+                c.save_annotation(&changed).unwrap();
+                accept(&t, &lt, &publish_next(c.conn(), &lc).unwrap().unwrap());
+            }
+            assert_eq!(t.annotations("t").unwrap()[0].note, None);
+            assert_eq!(version_state(&t, lb.device, late.seq as i64), -6);
+        }
+    }
+
     #[test]
     fn a_cascade_removal_restores_what_came_before_both() {
         // SP26: neither device iteration order may leave the other's late edit.
@@ -2271,9 +2382,9 @@ mod tests {
     }
 
     #[test]
-    fn a_cascades_shared_restoration_reapplies_for_each_device() {
-        // #163: A and B have late versions of one record, so one restoration stands
-        // for both. Re-applying A, then B, ends on B's version.
+    fn a_cascade_reapplies_for_each_device() {
+        // #163: A and B have late versions of one record. Re-applying A, then B,
+        // ends on B's version without creating a local edit.
         let (t, lt, la, lb, initial) = cascade(1, 2);
         let removed = BTreeMap::from([(la.device, Some(mark(&initial))), (lb.device, None)]);
         revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
@@ -2302,7 +2413,7 @@ mod tests {
     }
 
     #[test]
-    fn a_removed_writers_restoration_is_reverted_when_a_related_device_is_removed_later() {
+    fn a_related_device_removed_later_is_recomputed() {
         for published in [false, true] {
             for reader_edit in [false, true] {
                 let (t, lt, la, lb, initial) = cascade(1, 2);
@@ -2310,7 +2421,7 @@ mod tests {
                 revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
                 assert_eq!(text(&t, 0), "A late");
                 if published {
-                    publish_next(t.conn(), &lt).unwrap().unwrap();
+                    assert!(publish_next(t.conn(), &lt).unwrap().is_none());
                 }
                 if reader_edit {
                     edit(&t, &lt, &key(0), "reader's later edit");
@@ -2338,7 +2449,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cutoff_that_moves_earlier_reverts_the_restoration_again() {
+    fn a_cutoff_that_moves_earlier_recomputes_again() {
         for published in [false, true] {
             let (mut d, ld) = device(1, "d");
             let (t, lt) = device(2, "t");
@@ -2354,7 +2465,7 @@ mod tests {
             revert_past(t.conn(), &lt, &removed, &BTreeMap::new(), "removed", now()).unwrap();
             assert_eq!(text(&t, 0), "version 2");
             if published {
-                publish_next(t.conn(), &lt).unwrap().unwrap();
+                assert!(publish_next(t.conn(), &lt).unwrap().is_none());
             }
             removed.insert(ld.device, Some(mark(&first)));
             assert_eq!(
@@ -2413,7 +2524,7 @@ mod tests {
     }
 
     #[test]
-    fn a_released_newer_version_supersedes_the_restoration() {
+    fn a_released_newer_version_supersedes_the_reapplied_version() {
         let (t, lt, ld, third, body) = applied_then_held();
         assert_eq!(
             reapply_upto(t.conn(), &lt, ld.device, mark(&third), now()).unwrap(),
@@ -2439,9 +2550,9 @@ mod tests {
     }
 
     #[test]
-    fn a_published_restoration_leaves_only_its_own_record() {
-        // SP30: one record whose restoration was published waits; the call still
-        // recovers every other record.
+    fn recovery_recomputes_all_records_and_releases_pending_versions() {
+        // SP30: a publication attempt cannot block recovery of any record;
+        // the missing-body successor waits through the normal pending path.
         let (mut d, ld) = device(1, "d");
         let (t, lt) = device(2, "t");
         notes(&mut d, "d", 2);
@@ -2467,58 +2578,15 @@ mod tests {
             (text(&t, 0), text(&t, 1)),
             ("before".into(), "before".into())
         );
-        while publish_next(t.conn(), &lt).unwrap().is_some() {}
-        assert!(matches!(
-            reapply_upto(t.conn(), &lt, ld.device, mark(&third), now()),
-            Err(LateError::PublishedRestorations(k)) if k == vec![key(0)]
-        ));
-        assert_eq!(text(&t, 1), "other 2");
-        assert_eq!(text(&t, 0), "before");
-        assert_eq!(version_state(&t, ld.device, 3), -5);
-    }
-
-    #[test]
-    fn a_published_restoration_isnt_superseded_silently() {
-        let (t, lt, ld, third, body) = applied_then_held();
-        publish_next(t.conn(), &lt).unwrap().unwrap();
-        // SP30: compare all table contents, including the clock and bookkeeping.
-        let snapshot = || {
-            let tables: Vec<String> = t
-                .conn()
-                .prepare("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-                .unwrap()
-                .query_map([], |r| r.get(0))
-                .unwrap()
-                .collect::<std::result::Result<_, _>>()
-                .unwrap();
-            tables
-                .into_iter()
-                .map(|table| {
-                    let mut stmt = t
-                        .conn()
-                        .prepare(&format!("SELECT * FROM {table} ORDER BY rowid"))
-                        .unwrap();
-                    let columns = stmt.column_count();
-                    stmt.query_map([], |r| {
-                        (0..columns)
-                            .map(|i| r.get::<_, rusqlite::types::Value>(i))
-                            .collect::<std::result::Result<Vec<_>, _>>()
-                    })
-                    .unwrap()
-                    .collect::<std::result::Result<Vec<_>, _>>()
-                    .unwrap()
-                })
-                .collect::<Vec<_>>()
-        };
-        let before = snapshot();
-        assert!(
-            matches!(reapply_upto(t.conn(), &lt, ld.device, mark(&third), now()), Err(LateError::PublishedRestorations(k)) if k == vec![key(0)])
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
+        assert_eq!(
+            reapply_upto(t.conn(), &lt, ld.device, mark(&third), now()).unwrap(),
+            2
         );
-        assert_eq!(snapshot(), before);
-        journal::put_body(t.conn(), &body).unwrap();
+        assert_eq!(text(&t, 1), "other 2");
+        assert_eq!(text(&t, 0), "version 2");
+        assert_eq!(version_state(&t, ld.device, 3), 0);
         assert_eq!(apply_pending(t.conn(), &lt, now()).unwrap(), 0);
-        assert_eq!(text(&t, 0), "before");
-        assert_eq!(version_state(&t, ld.device, 3), -5);
     }
 
     #[test]
@@ -2529,7 +2597,30 @@ mod tests {
             .execute_batch(include_str!("../../tests/fixtures/schema-v11.sql"))
             .unwrap();
         let migrated = Store::open_in_memory().unwrap();
-        for table in ["sync_late", "sync_late_over", "sync_late_seen"] {
+        assert_eq!(
+            migrated
+                .conn()
+                .query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            11
+        );
+        assert_eq!(
+            migrated
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE name = 'sync_late_restored'",
+                    [],
+                    |r| r.get::<_, i64>(0)
+                )
+                .unwrap(),
+            0
+        );
+        for table in [
+            "sync_late",
+            "sync_late_over",
+            "sync_late_seen",
+            "sync_late_passes",
+        ] {
             let schema = |c: &Connection| -> String {
                 c.query_row(
                     "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?1",
@@ -2547,34 +2638,13 @@ mod tests {
             .execute_batch(include_str!("../../tests/fixtures/schema-v11.sql"))
             .unwrap();
         let reopened = Store::open(&path).unwrap();
-        for table in ["sync_late", "sync_late_over", "sync_late_seen"] {
+        for table in [
+            "sync_late",
+            "sync_late_over",
+            "sync_late_seen",
+            "sync_late_passes",
+        ] {
             assert_eq!(count(&reopened, table), 1);
         }
-    }
-    #[test]
-    fn migration_twelve_fixture_matches_and_preserves_restorations() {
-        // SP26 (#163): migration 12 adds what each restoration stands for.
-        let fixture = Connection::open_in_memory().unwrap();
-        fixture
-            .execute_batch(include_str!("../../tests/fixtures/schema-v12.sql"))
-            .unwrap();
-        let migrated = Store::open_in_memory().unwrap();
-        let schema = |c: &Connection| -> String {
-            c.query_row(
-                "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sync_late_restored'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap()
-        };
-        assert_eq!(schema(&fixture), schema(migrated.conn()));
-        let tmp = tempfile::tempdir().unwrap();
-        let path = tmp.path().join("fixture.db");
-        Connection::open(&path)
-            .unwrap()
-            .execute_batch(include_str!("../../tests/fixtures/schema-v12.sql"))
-            .unwrap();
-        let reopened = Store::open(&path).unwrap();
-        assert_eq!(count(&reopened, "sync_late_restored"), 1);
     }
 }

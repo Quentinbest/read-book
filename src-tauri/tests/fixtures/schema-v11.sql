@@ -99,8 +99,7 @@ INSERT INTO sync_deleted VALUES ('00112233445566778899aabbccddeeff', 'note:1a2b3
         device TEXT NOT NULL,               -- SP26: late writer
         seq INTEGER NOT NULL,               -- SP11: processed version's sequence
         key TEXT NOT NULL,                  -- SP11: processed version's record
-        was INTEGER,                       -- SP30: original pending state; NULL if applied
-        restored TEXT,                     -- SP30: restoration hash, even beyond the offer cap
+        was INTEGER NOT NULL,              -- SP30: original state, applied or pending
         decided INTEGER NOT NULL DEFAULT 0, -- SP12: reader kept or discarded this version
         PRIMARY KEY (library, device, seq, key) -- survives choices and overflow
     );
@@ -114,5 +113,5 @@ INSERT INTO sync_deleted VALUES ('00112233445566778899aabbccddeeff', 'note:1a2b3
 
 INSERT INTO sync_late VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 3, 'aa', 3, 'removed', 6500, 'held', NULL);
 INSERT INTO sync_late_over VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 1);
-INSERT INTO sync_late_seen VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', NULL, NULL, 0);
+INSERT INTO sync_late_seen VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 3, 'place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6', 1, 0);
 INSERT INTO sync_late_passes VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 0, 3);
