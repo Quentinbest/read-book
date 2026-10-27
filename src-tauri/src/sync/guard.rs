@@ -402,7 +402,7 @@ pub(crate) fn before(
 }
 
 /// The library's column for a reading state, which a version sets to its time.
-fn stamp_column(kind: Kind) -> Option<&'static str> {
+pub(crate) fn stamp_column(kind: Kind) -> Option<&'static str> {
     match kind {
         Kind::BookOpened => Some("opened_at"),
         Kind::BookFinished => Some("finished_at"),

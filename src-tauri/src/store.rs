@@ -283,6 +283,45 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, key, device, hash)
     );
     "#,
+    // 11: SP26, SP30: late changes, restoration identities and repeat processing.
+    r#"
+    CREATE TABLE sync_late (
+        library TEXT NOT NULL,              -- SP1: library ID
+        device TEXT NOT NULL,               -- SP26: removed or quarantined writer
+        key TEXT NOT NULL,                  -- SP11: the late version's record
+        seq INTEGER NOT NULL,               -- SP11: the late version's sequence
+        hash TEXT NOT NULL,                 -- SP11: the late version's hash
+        bytes INTEGER NOT NULL,             -- SP26: body bytes; zero for a deletion
+        reason TEXT NOT NULL CHECK(reason IN ('removed', 'quarantined')), -- SP26, SP30
+        at INTEGER NOT NULL,                -- local time listed or Keep chosen
+        state TEXT NOT NULL DEFAULT 'held' CHECK(state IN ('held', 'kept')), -- SP12: pending Keep
+        kept TEXT,                          -- SP12: replacement hash, awaiting a sequence
+        PRIMARY KEY (library, device, seq, key)
+    );
+    CREATE TABLE sync_late_over (
+        library TEXT NOT NULL,              -- SP1: library ID
+        device TEXT NOT NULL,               -- SP26: writer whose list overflowed
+        dropped INTEGER NOT NULL,           -- SP26: unlisted changes blocking cleanup
+        PRIMARY KEY (library, device)
+    );
+    CREATE TABLE sync_late_seen (
+        library TEXT NOT NULL,              -- SP1: library ID
+        device TEXT NOT NULL,               -- SP26: late writer
+        seq INTEGER NOT NULL,               -- SP11: processed version's sequence
+        key TEXT NOT NULL,                  -- SP11: processed version's record
+        was INTEGER,                       -- SP30: original pending state; NULL if applied
+        restored TEXT,                     -- SP30: restoration hash, even beyond the offer cap
+        decided INTEGER NOT NULL DEFAULT 0, -- SP12: reader kept or discarded this version
+        PRIMARY KEY (library, device, seq, key) -- survives choices and overflow
+    );
+    CREATE TABLE sync_late_passes (
+        library TEXT NOT NULL,              -- SP1: library ID
+        device TEXT NOT NULL,               -- SP26, SP30: stopped writer
+        cutoff INTEGER NOT NULL,            -- SP29: effective cutoff of this processing pass
+        seq INTEGER NOT NULL,               -- last processed sequence at that cutoff
+        PRIMARY KEY (library, device, cutoff) -- repeat calls remain no-ops after recovery
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

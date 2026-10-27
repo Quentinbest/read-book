@@ -491,7 +491,7 @@ fn set_aside(
 
 /// SY28: this device stops receiving from `device`, for good until the reader's
 /// Remove (Stage 3), which Settings › Sync offers by naming it.
-fn stop(
+pub(crate) fn stop(
     conn: &Connection,
     lib: &Library,
     device: DeviceId,
