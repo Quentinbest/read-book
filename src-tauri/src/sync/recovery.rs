@@ -459,7 +459,7 @@ mod tests {
             now_ms: NOW as i64,
             me: Some(me),
             quarantined: &BTreeMap::new(),
-            agreed: None,
+            heads: &BTreeMap::new(),
         })
         .unwrap()
     }
