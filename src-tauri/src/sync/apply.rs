@@ -1746,6 +1746,28 @@ fn library_content(
     Ok(values.unwrap_or_default())
 }
 
+/// SY13: the versions a reader's conflict is among: applied ones and those not
+/// yet applied, as `apply_key` merges them (`Which::All`), since a head hidden in
+/// a conflict stays unapplied. One whose body hasn't arrived isn't one yet.
+fn conflict_candidates(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+) -> Result<super::merge::Record> {
+    let all = journal::record_of(conn, lib, key, Which::All)?;
+    let mut record = super::merge::Record::default();
+    for p in all.versions() {
+        let body_here = match &p.version.content {
+            Content::Body { hash, .. } => journal::has_body(conn, hash)?,
+            _ => true,
+        };
+        if body_here {
+            record.add(p.clone());
+        }
+    }
+    Ok(record)
+}
+
 /// SP26, SP30: rebuild this library's record from surviving applied versions.
 /// Pending versions wait for apply_pending; no version, undo entry or SY26 count
 /// is created. Returns whether the library's shown content changed.
@@ -1767,7 +1789,7 @@ pub(crate) fn recompute(
     // conflict, it stays held: released, it descends from every head and would
     // settle the conflict without the reader choosing.
     if journal::held(conn, lib, key)? {
-        let rest = journal::record_of(conn, lib, key, Which::Applied)?;
+        let rest = conflict_candidates(conn, lib, key)?;
         if !matches!(
             rest.outcome(&HashSet::new()),
             Some(Outcome::Conflict { .. })
