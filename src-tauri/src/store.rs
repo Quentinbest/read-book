@@ -322,6 +322,21 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device, cutoff) -- repeat calls remain no-ops after recovery
     );
     "#,
+    // 12: SP26 (#163): what each restoration stands for, so a later removal or an
+    // earlier cutoff can revert it again
+    r#"
+    CREATE TABLE sync_late_restored (
+        library TEXT NOT NULL,              -- SP1: library ID
+        key TEXT NOT NULL,                  -- SP11: restored record
+        restoration TEXT NOT NULL,          -- SP26: exact local restoration hash
+        source_device TEXT,                 -- SP26: version put back; all NULL for no ancestor
+        source_seq INTEGER,
+        source_hash TEXT,
+        PRIMARY KEY (library, key, restoration),
+        CHECK ((source_device IS NULL AND source_seq IS NULL AND source_hash IS NULL)
+            OR (source_device IS NOT NULL AND source_seq IS NOT NULL AND source_hash IS NOT NULL))
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

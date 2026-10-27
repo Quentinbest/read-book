@@ -1528,7 +1528,7 @@ fn mark_applied(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Res
 }
 
 /// What one record comes to now, written into the library. `true` if it changed.
-fn apply_key(
+pub(crate) fn apply_key(
     conn: &Connection,
     lib: &Library,
     key: &Key,
