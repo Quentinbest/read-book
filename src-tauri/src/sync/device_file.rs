@@ -110,6 +110,15 @@ pub struct Overflow {
     pub size: u64,
 }
 
+/// SP30, SP16: exact copied bytes or an encoded ancestry bundle to name beside
+/// the list parts. A bundle's wrapper must carry this same `part`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Extra {
+    pub field: String,
+    pub part: u64,
+    pub bytes: Vec<u8>,
+}
+
 /// A device file, opened and checked against its device's key.
 #[derive(Clone, Debug)]
 pub struct DeviceFile {
@@ -219,6 +228,19 @@ pub fn write(
     counter: u64,
     fields: &Fields,
 ) -> Result<Written> {
+    write_with_overflow(key, library, writer, counter, fields, &[])
+}
+
+/// SP30, SP16: `write` with proof copies and bundles. With no extras this writes
+/// exactly the same bytes as `write`; existing callers need not carry attachments.
+pub fn write_with_overflow(
+    key: &Keypair,
+    library: &Id16,
+    writer: &Id16,
+    counter: u64,
+    fields: &Fields,
+    extras: &[Extra],
+) -> Result<Written> {
     let device = key.device();
     let w = Writer {
         library,
@@ -233,6 +255,33 @@ pub fn write(
         .collect();
     let mut overflow = Vec::new();
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for extra in extras {
+        if !matches!(extra.field.as_str(), "copy" | "bundle") {
+            return Err(DeviceError::Overflow);
+        }
+        if extra.bytes.len() > MAX_OVERFLOW_FILE || extra.part > MAX_SAFE_INTEGER {
+            return Err(DeviceError::TooLarge);
+        }
+        if extra.field == "bundle" {
+            let v = json::parse_within(&extra.bytes, Numbers::Integers, MAX_OVERFLOW_VALUES)
+                .map_err(|_| DeviceError::Overflow)?
+                .0;
+            if v.get("field").and_then(Value::as_str) != Some("bundle")
+                || v.get("part").and_then(Value::as_u64) != Some(extra.part)
+                || v.get("items").and_then(Value::as_array).is_none()
+            {
+                return Err(DeviceError::Overflow);
+            }
+        }
+        let hash = identity_hash(&extra.bytes);
+        overflow.push(Overflow {
+            field: extra.field.clone(),
+            part: extra.part,
+            hash,
+            size: extra.bytes.len() as u64,
+        });
+        files.push((overflow_path(&device, &hash), extra.bytes.clone()));
+    }
     loop {
         let body = payload(&w, fields, &lists, &overflow);
         let sig = envelope::sign(
@@ -251,7 +300,7 @@ pub fn write(
             // The parts must fit a reader's value budget (`lists`), or no peer would
             // take the file.
             let mut values = 0u64;
-            for (_, b) in &files {
+            for (_, b) in files.iter().skip(extras.len()) {
                 let v = json::parse(b, Numbers::Integers).map_err(|_| DeviceError::Overflow)?;
                 values += json::count_values(&v);
             }
@@ -389,7 +438,7 @@ pub fn open(bytes: &[u8], library: &Id16, device: &DeviceId, key: &[u8; 32]) -> 
                 .get("field")
                 .and_then(Value::as_str)
                 .ok_or(DeviceError::Shape)?;
-            if !LISTS.contains(&field) {
+            if !LISTS.contains(&field) && !matches!(field, "copy" | "bundle") {
                 // A manifest (SP16) is read by a Linen that writes one.
                 return Err(DeviceError::Shape);
             }
@@ -466,6 +515,12 @@ impl DeviceFile {
         let mut lists = self.fields.lists.clone();
         let mut by_field: BTreeMap<&str, Vec<&Overflow>> = BTreeMap::new();
         for o in &self.overflow {
+            // SP30: a proof's copies and bundles aren't lists. Reading the lists
+            // never fetches them: only the proof reader does (`relay::read`), and
+            // it checks each one's hash and size before using it.
+            if matches!(o.field.as_str(), "copy" | "bundle") {
+                continue;
+            }
             by_field.entry(o.field.as_str()).or_default().push(o);
         }
         for (field, mut ps) in by_field {
