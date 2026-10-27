@@ -885,6 +885,46 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
             }
         }
     }
+    // SP26, SP30: a late hold made while its version still waited (its ancestry,
+    // or a clock ahead) is checked like one: once its ancestry resolves, it counts
+    // as checked ancestry (`CHECKED`), so a Keep naming it can apply. Its content
+    // stays out of the merge; only the state it was held from changes.
+    let held: Vec<(String, i64, String, String)> = conn
+        .prepare(
+            "SELECT v.device, v.seq, v.key, v.raw FROM sync_versions v
+             JOIN sync_late_seen s ON s.library = v.library AND s.device = v.device
+                AND s.seq = v.seq AND s.key = v.key
+             WHERE v.library = ?1 AND v.applied = -5 AND s.was IN (-1, -2) ORDER BY v.seq",
+        )?
+        .query_map([lib.id.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    for (device_text, seq, key, raw) in held {
+        let Some(device) = super::ids::Id16::parse(&device_text) else {
+            continue;
+        };
+        let Ok(value) = serde_json::from_str::<Value>(&raw) else {
+            continue;
+        };
+        let Ok(Checked::Version(v)) = check_version(value, device) else {
+            continue;
+        };
+        let placed = Placed {
+            version: v,
+            seq: seq as u64,
+        };
+        if too_far_ahead(&placed.version, now_ms) {
+            continue;
+        }
+        if matches!(ancestry(conn, lib, &placed), HistoryCheck::Ok) {
+            conn.execute(
+                "UPDATE sync_late_seen SET was = 0 WHERE library = ?1 AND device = ?2
+                 AND seq = ?3 AND key = ?4",
+                params![lib.id.to_string(), device_text, seq, key],
+            )?;
+        }
+    }
     Ok(joined)
 }
 

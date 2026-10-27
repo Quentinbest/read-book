@@ -250,18 +250,32 @@ pub fn revert_past(
     if !matches!(reason, "removed" | "quarantined") {
         return Err(LateError::Reason);
     }
-    let cutoffs: BTreeMap<_, _> = removed
-        .iter()
-        .map(|(&device, cutoff)| {
-            let cutoff = cutoff
-                .iter()
-                .chain(accepted_by_all.get(&device))
-                .map(|m| m.s)
-                .max()
-                .unwrap_or(0);
-            (device, cutoff)
-        })
-        .collect();
+    // SP30: a cutoff names a change by its hash, not only its sequence. Where this
+    // device holds another change at that sequence (the device equivocated, and
+    // showed the remover a different branch), the cutoff isn't on this chain: the
+    // accepted-by-all mark, which a cutoff is never earlier than, stands instead.
+    let mut cutoffs = BTreeMap::new();
+    for (&device, cutoff) in removed {
+        let on_chain = match cutoff {
+            Some(m) => conn
+                .query_row(
+                    "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
+                    params![lib.id.to_string(), device.to_string(), m.s as i64],
+                    |r| r.get::<_, String>(0),
+                )
+                .optional()?
+                .map_or(true, |h| Hash32::parse(&h) == Some(m.h)),
+            None => true,
+        };
+        let cutoff = cutoff
+            .iter()
+            .filter(|_| on_chain)
+            .chain(accepted_by_all.get(&device))
+            .map(|m| m.s)
+            .max()
+            .unwrap_or(0);
+        cutoffs.insert(device, cutoff);
+    }
     let tx = conn.unchecked_transaction()?;
     let mut result = Reverted::default();
     let mut affected = BTreeMap::<Key, Vec<Placed>>::new();
@@ -2266,6 +2280,86 @@ mod tests {
         accept(&t2, &l2, &publish_next(t1.conn(), &l1).unwrap().unwrap());
         assert_eq!(text(&t2, 0), "late");
         assert_eq!(version_state(&t2, l1.device, 1), 1);
+    }
+
+    #[test]
+    fn a_cutoff_naming_another_branch_falls_back_to_what_everyone_accepted() {
+        // SP30: D equivocated at 2. The removal's cutoff names a change 2 that isn't
+        // the one this device applied, so the accepted-by-all mark (1) is the cutoff
+        // and this device's change 2 is reverted too.
+        let (t, lt, ld, batches) = fork();
+        let other_branch = Mark {
+            s: 2,
+            h: Hash32([7; 32]),
+        };
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, Some(other_branch))]),
+            &BTreeMap::from([(ld.device, mark(&batches[0]))]),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        assert_eq!(version_state(&t, ld.device, 2), -6);
+        // The same sequence with this device's own change 2 keeps it.
+        let (t, lt, ld, batches) = fork();
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, Some(mark(&batches[1])))]),
+            &BTreeMap::from([(ld.device, mark(&batches[0]))]),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        assert!(version_state(&t, ld.device, 2) > 0);
+        let third: i64 = t
+            .conn()
+            .query_row(
+                "SELECT applied FROM sync_versions WHERE device = ?1 AND seq = 3",
+                [ld.device.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(third, -6);
+    }
+
+    #[test]
+    fn a_hold_made_while_waiting_for_ancestry_is_checked_when_it_arrives() {
+        // SP26, SP30: D's version reached this device before X's version it builds
+        // on, so it was waiting (-1) when the removal held it. Once X's arrives, the
+        // hold counts as checked ancestry, and stays out of the merge.
+        let (mut x, lx) = device(1, "x");
+        let (d, ld) = device(2, "d");
+        let (t, lt) = device(3, "t");
+        notes(&mut x, "x", 1);
+        let from_x = publish_next(x.conn(), &lx).unwrap().unwrap();
+        accept(&d, &ld, &from_x);
+        edit(&d, &ld, &key(0), "D's edit");
+        accept(&t, &lt, &publish_next(d.conn(), &ld).unwrap().unwrap());
+        assert_eq!(version_state(&t, ld.device, 1), -1);
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, None)]),
+            &BTreeMap::new(),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        let was = |t: &Store| -> i64 {
+            t.conn()
+                .query_row("SELECT was FROM sync_late_seen WHERE seq = 1", [], |r| {
+                    r.get(0)
+                })
+                .unwrap()
+        };
+        assert_eq!(was(&t), -1);
+        accept(&t, &lt, &from_x);
+        apply_pending(t.conn(), &lt, now()).unwrap();
+        assert_eq!(was(&t), 0);
+        assert_eq!(version_state(&t, ld.device, 1), -5);
     }
 
     #[test]
