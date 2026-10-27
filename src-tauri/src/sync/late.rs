@@ -250,21 +250,25 @@ pub fn revert_past(
     if !matches!(reason, "removed" | "quarantined") {
         return Err(LateError::Reason);
     }
-    // SP30: a cutoff names a change by its hash, not only its sequence. Where this
-    // device holds another change at that sequence (the device equivocated, and
-    // showed the remover a different branch), the cutoff isn't on this chain: the
-    // accepted-by-all mark, which a cutoff is never earlier than, stands instead.
+    // SP30: a cutoff names a change by its hash, not only its sequence. Unless this
+    // device holds that very change (it may hold another at that sequence, or none:
+    // the device equivocated, and showed the remover a different branch), the
+    // cutoff isn't known to be on this chain, and the accepted-by-all mark, which a
+    // cutoff is never earlier than, stands instead. What lies beyond it is held and
+    // listed, and can be re-applied once a proof resolves.
     let mut cutoffs = BTreeMap::new();
     for (&device, cutoff) in removed {
         let on_chain = match cutoff {
-            Some(m) => conn
-                .query_row(
+            Some(m) => {
+                conn.query_row(
                     "SELECT hash FROM sync_changes WHERE library = ?1 AND device = ?2 AND seq = ?3",
                     params![lib.id.to_string(), device.to_string(), m.s as i64],
                     |r| r.get::<_, String>(0),
                 )
                 .optional()?
-                .map_or(true, |h| Hash32::parse(&h) == Some(m.h)),
+                .and_then(|h| Hash32::parse(&h))
+                    == Some(m.h)
+            }
             None => true,
         };
         let cutoff = cutoff
@@ -2405,6 +2409,75 @@ mod tests {
             )
             .unwrap();
         assert_eq!(third, -6);
+    }
+
+    #[test]
+    fn a_cutoff_this_device_doesnt_hold_falls_back_to_what_everyone_accepted() {
+        // SP30: the removal's cutoff is a change 9 this device never received, so
+        // nothing shows it is on this device's branch: the accepted-by-all mark (1)
+        // is the cutoff, and 2 to 4 are reverted.
+        let (t, lt, ld, batches) = fork();
+        let beyond = Mark {
+            s: 9,
+            h: Hash32([7; 32]),
+        };
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(ld.device, Some(beyond))]),
+            &BTreeMap::from([(ld.device, mark(&batches[0]))]),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        assert_eq!(version_state(&t, ld.device, 2), -6);
+    }
+
+    #[test]
+    fn a_held_edit_stays_held_while_its_conflict_survives() {
+        // SY13: A's version is reverted, but this device's edit and B's, both made on
+        // it, still conflict; the reader's edit held during that conflict stays held.
+        let (mut a, la) = device(1, "a");
+        let (b, lb) = device(2, "b");
+        let (t, lt) = device(3, "t");
+        notes(&mut a, "a", 1);
+        let first = publish_next(a.conn(), &la).unwrap().unwrap();
+        for (s, l) in [(&b, &lb), (&t, &lt)] {
+            accept(s, l, &first);
+        }
+        edit(&a, &la, &key(0), "A's edit");
+        let from_a = publish_next(a.conn(), &la).unwrap().unwrap();
+        for (s, l) in [(&b, &lb), (&t, &lt)] {
+            accept(s, l, &from_a);
+        }
+        edit(&t, &lt, &key(0), "T's edit");
+        publish_next(t.conn(), &lt).unwrap().unwrap();
+        edit(&b, &lb, &key(0), "B's edit");
+        accept(&t, &lt, &publish_next(b.conn(), &lb).unwrap().unwrap());
+        journal::hold_local(
+            t.conn(),
+            &lt,
+            &key(0),
+            LocalContent::Body(
+                json!({ "text": "reader's choice" })
+                    .to_string()
+                    .into_bytes(),
+            ),
+            now() as u64,
+        )
+        .unwrap();
+        assert!(journal::held(t.conn(), &lt, &key(0)).unwrap());
+        revert_past(
+            t.conn(),
+            &lt,
+            &BTreeMap::from([(la.device, Some(mark(&first)))]),
+            &BTreeMap::new(),
+            "removed",
+            now(),
+        )
+        .unwrap();
+        assert!(journal::held(t.conn(), &lt, &key(0)).unwrap());
+        assert!(publish_next(t.conn(), &lt).unwrap().is_none());
     }
 
     #[test]

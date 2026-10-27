@@ -1761,11 +1761,19 @@ pub(crate) fn recompute(
         "UPDATE sync_versions SET applied = 1 WHERE library = ?1 AND key = ?2 AND applied = 2",
         params![lib.id.to_string(), key.as_str()],
     )?;
-    // SY13, #109: an edit held because a version now out of the merge hid it is
-    // merged again like any unsent edit; if what hid it survives, it is held again
-    // below.
+    // SY13, #109: an edit held for the reader's choice is merged again like any
+    // unsent edit only once the versions left no longer conflict: the conflict it
+    // was held against had a version now out of the merge. While they still
+    // conflict, it stays held: released, it descends from every head and would
+    // settle the conflict without the reader choosing.
     if journal::held(conn, lib, key)? {
-        journal::release_held(conn, lib, key)?;
+        let rest = journal::record_of(conn, lib, key, Which::Applied)?;
+        if !matches!(
+            rest.outcome(&HashSet::new()),
+            Some(Outcome::Conflict { .. })
+        ) {
+            journal::release_held(conn, lib, key)?;
+        }
     }
     let mut record = journal::record_of(conn, lib, key, Which::Applied)?;
     let next = own_seq(conn, lib)? + 1;
