@@ -29,6 +29,7 @@ pub mod merge;
 pub mod proof;
 pub mod record;
 pub mod recovery;
+pub mod relay;
 pub mod restore;
 pub mod retention;
 pub mod trust;
