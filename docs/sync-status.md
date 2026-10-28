@@ -1,6 +1,6 @@
 # Sync status
 
-The state on 2026-10-27, against `main`, for #152. Stage 0 is done. Stage 1's protocol merged 2026-10-18 (#101); 1a and 1b are merged, and 1c.6 is merged (#160, #162, #164, #167). #147 is closed; follow-up #166 is open. Items 98–116 are all answered; no sync item is open. Approval dates are in `docs/sync-plan.md` and `docs/pending-approvals.md`.
+The state on 2026-10-27, against `main`, for #152. Stage 0 is done. Stage 1's protocol merged 2026-10-18 (#101); 1a and 1b are merged, and 1c.6 is merged (#160, #162, #164, #167). #147 is closed, and so is its follow-up #166 (no change needed after #167). Items 98–116 are all answered; no sync item is open. Approval dates are in `docs/sync-plan.md` and `docs/pending-approvals.md`.
 
 The rows follow the 31 Stage 1 checks in `docs/sync-plan.md` §6. Covered means every part has test evidence. Partly names the remaining gaps; Not yet means no test covers the scenario. These are source checks of test bodies, not a new Rust test run. The paths below name unit tests in `src-tauri/src/sync/`.
 
