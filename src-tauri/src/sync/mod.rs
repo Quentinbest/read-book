@@ -7,6 +7,7 @@
 //! app yet (Stage 2 adds the providers, Stage 3 turns sync on).
 
 pub mod a9;
+pub mod ages;
 pub mod apply;
 pub mod backup;
 pub mod chain;
