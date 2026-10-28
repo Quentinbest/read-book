@@ -18,6 +18,7 @@ pub mod enrollment;
 pub mod envelope;
 pub mod frontier;
 pub mod guard;
+pub mod hold;
 pub mod identity;
 pub mod ids;
 pub mod journal;

@@ -12,13 +12,14 @@ use super::apply::{self, Batch, Received};
 use super::crypto::Keypair;
 use super::device_store::{DeviceStore, Keystore, StoreError, Unsent};
 use super::envelope::{self, EnvelopeError, Place, Signer};
+use super::hold::{self, Hold, Ledger, Reserve};
 use super::ids::{b64url_encode, DeviceId, Hash32, Id16};
 use super::journal::{self, JournalError, Library};
 use super::json::{self, MAX_SAFE_INTEGER};
-use super::record::version_hash;
+use super::record::{version_hash, Key};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashSet};
 
 /// SP8: a change file is at most 8 MB.
 pub const MAX_CHANGE_BYTES: usize = 8 << 20;
@@ -67,6 +68,8 @@ pub enum ChainError {
     Link,
     #[error("the device store has no identity for this library and device")]
     NoIdentity,
+    #[error(transparent)]
+    Hold(#[from] hold::HoldError),
 }
 
 type Result<T> = std::result::Result<T, ChainError>;
@@ -81,6 +84,7 @@ fn vroot_of(versions: &[Value]) -> Hash32 {
 }
 
 /// SP14: the payload, in canonical form.
+#[allow(clippy::too_many_arguments)]
 fn payload(
     library: &Id16,
     device: &DeviceId,
@@ -88,6 +92,8 @@ fn payload(
     seq: u64,
     prev: Option<&Hash32>,
     versions: &[Value],
+    reserve: &[Reserve],
+    hold: &[Hold],
 ) -> Vec<u8> {
     json::canonical(&json!({
         "type": "change",
@@ -98,9 +104,9 @@ fn payload(
         "seq": seq,
         "prev": prev.map(|h| h.to_string()),
         "versions": versions,
-        // Reservations and holds (SP33, SP34) come with the rest of Stage 1c.
-        "reserve": [],
-        "hold": [],
+        // SP33, SP34: empty lists retain the original signed bytes.
+        "reserve": reserve.iter().map(Reserve::write).collect::<Vec<_>>(),
+        "hold": hold.iter().map(Hold::write).collect::<Vec<_>>(),
     }))
 }
 
@@ -123,8 +129,34 @@ pub fn sign_change(
     prev: Option<Hash32>,
     versions: &[Value],
 ) -> Signed {
+    sign_change_with(key, library, writer, seq, prev, versions, &[], &[])
+}
+
+/// SP33, SP34: signs the supplied lists along with the versions. Like
+/// `sign_change`, this is a low-level signer; publication checks the ledger's
+/// limits first, and reception checks the complete change before fetching.
+#[allow(clippy::too_many_arguments)]
+pub fn sign_change_with(
+    key: &Keypair,
+    library: &Id16,
+    writer: &Id16,
+    seq: u64,
+    prev: Option<Hash32>,
+    versions: &[Value],
+    reserve: &[Reserve],
+    hold: &[Hold],
+) -> Signed {
     let device = key.device();
-    let body = payload(library, &device, writer, seq, prev.as_ref(), versions);
+    let body = payload(
+        library,
+        &device,
+        writer,
+        seq,
+        prev.as_ref(),
+        versions,
+        reserve,
+        hold,
+    );
     let place = Place {
         seq,
         prev,
@@ -174,6 +206,64 @@ fn publish_within(
     max_bytes: usize,
     max_values: u64,
 ) -> Result<Option<Signed>> {
+    publish_within_with(
+        conn,
+        lib,
+        ks,
+        store,
+        max_bytes,
+        max_values,
+        &[],
+        &[],
+        &Ledger::default(),
+        &BTreeSet::new(),
+    )
+}
+
+/// SP33, SP34, SP15: publishes lists after checking this device's open ledger.
+/// Lists can form a change without versions. The caller keeps copies of the
+/// objects and uses `Ledger::may_publish_naming` before a later naming change;
+/// syncing and persisting the ledger belong to Stage 2.
+/// `withheld` includes new holds' target keys and `Ledger::withheld_keys` for
+/// earlier holds, plus keys whose content still needs restoring in storage.
+#[allow(clippy::too_many_arguments)]
+pub fn publish_with(
+    conn: &Connection,
+    lib: &Library,
+    ks: &dyn Keystore,
+    store: &mut DeviceStore,
+    reserve: &[Reserve],
+    hold: &[Hold],
+    ledger: &Ledger,
+    withheld: &BTreeSet<Key>,
+) -> Result<Option<Signed>> {
+    publish_within_with(
+        conn,
+        lib,
+        ks,
+        store,
+        MAX_VERSION_BYTES,
+        MAX_CHANGE_VALUES - PAYLOAD_VALUES,
+        reserve,
+        hold,
+        ledger,
+        withheld,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn publish_within_with(
+    conn: &Connection,
+    lib: &Library,
+    ks: &dyn Keystore,
+    store: &mut DeviceStore,
+    max_bytes: usize,
+    max_values: u64,
+    reserve: &[Reserve],
+    hold: &[Hold],
+    ledger: &Ledger,
+    withheld: &BTreeSet<Key>,
+) -> Result<Option<Signed>> {
     let state = store.library(&lib.id).ok_or(ChainError::NoIdentity)?;
     if state.device_id()? != lib.device {
         return Err(ChainError::NoIdentity);
@@ -187,15 +277,34 @@ fn publish_within(
     if (last == 0) != last_hash.is_none() || last >= MAX_SAFE_INTEGER {
         return Err(ChainError::Store(StoreError::Unreadable));
     }
-    // Step 2: number (the journal fixes the rows) and sign.
-    let Some((seq, versions)) =
-        journal::take_unsent_within(conn, lib, last, max_bytes, max_values)?
+    // SP15: the journal fixes versions and lists together. A retry returns
+    // those exact inputs, ignoring lists and withheld keys passed on this call.
+    let Some(numbered) = journal::take_unsent_within_with(
+        conn, lib, last, max_bytes, max_values, reserve, hold, withheld, ledger,
+    )
+    .map_err(|e| match e {
+        JournalError::Lists(e) => ChainError::Hold(e),
+        e => ChainError::Journal(e),
+    })?
     else {
         return Ok(None);
     };
+    let seq = numbered.seq;
     debug_assert_eq!(seq, last + 1);
-    let raws: Vec<Value> = versions.iter().map(|v| v.raw.clone()).collect();
-    let signed = sign_change(&key, &lib.id, &writer, seq, last_hash, &raws);
+    let raws: Vec<Value> = numbered.versions.iter().map(|v| v.raw.clone()).collect();
+    let signed = sign_change_with(
+        &key,
+        &lib.id,
+        &writer,
+        seq,
+        last_hash,
+        &raws,
+        &numbered.reserve,
+        &numbered.hold,
+    );
+    if signed.bytes.len() > MAX_CHANGE_BYTES {
+        return Err(ChainError::TooLarge);
+    }
     // SP13: covers name this change by its payload hash.
     conn.execute(
         "INSERT OR REPLACE INTO sync_changes (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)",
@@ -353,6 +462,8 @@ pub fn open_change(
             .ok_or(ChainError::Shape)
     };
     let (versions, reserve, hold) = (list("versions")?, list("reserve")?, list("hold")?);
+    // SP33, SP34, #122: refuse malformed or oversized lists before application.
+    hold::read_lists(&reserve, &hold)?;
     let mut keys = HashSet::new();
     for v in &versions {
         if !v.is_object() {
@@ -573,6 +684,594 @@ mod tests {
     use crate::store::Store;
     use crate::sync::apply::tests::{device_with, highlight, note_of};
     use crate::sync::device_store::Memory;
+
+    fn replacement(a: &Store, lib: &Library) -> (Key, Hold) {
+        let key = Key::parse("setting:fontPx").unwrap().0;
+        let body = br#"{"value":"18"}"#.to_vec();
+        let hash = super::super::crypto::payload_hash(&body);
+        let hold = Hold {
+            kind: hold::Kind::Blob,
+            name: Hash32([3; 32]),
+            hash,
+            size: body.len() as u64,
+            for_key: key.clone(),
+        };
+        journal::record_local(
+            a.conn(),
+            lib,
+            &key,
+            journal::LocalContent::Body(body),
+            1_760_000_001_000,
+        )
+        .unwrap();
+        (key, hold)
+    }
+
+    #[test]
+    fn a_naming_version_isnt_published_with_its_hold() {
+        use crate::sync::{frontier, hold::Progress, retention::Vouched};
+        use std::collections::BTreeMap;
+        let (a, lib, ks, mut store) = signed_device("book-a");
+        let (b, peer, _, _) = signed_device("book-b");
+        let public = key_of(&store, &lib);
+        // Restore/Keep already journalled their replacement before publishing.
+        let (key, item) = replacement(&a, &lib);
+        let mut ledger = Ledger::default();
+        let first = super::publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            &[item],
+            &ledger,
+            &BTreeSet::from([key.clone()]),
+        )
+        .unwrap()
+        .unwrap();
+        let opened = open_change(&first.bytes, &lib.id, &lib.device, &public).unwrap();
+        assert_eq!(opened.hold.len(), 1);
+        assert!(opened.versions.is_empty());
+        assert_eq!(journal::unsent(a.conn(), &lib).unwrap()[0].key, key);
+        receive_change(
+            b.conn(),
+            &peer,
+            &first.bytes,
+            &lib.device,
+            &public,
+            &[],
+            vec![],
+            1_760_000_001_000,
+        )
+        .unwrap();
+        assert_eq!(
+            apply::seen(b.conn(), &peer, lib.device).unwrap(),
+            first.seq,
+            "the receive path accepts the hold-only change"
+        );
+        ledger
+            .receive(&opened, &[], false, &Vouched::new(0))
+            .unwrap();
+        let held = |d: &DeviceId, s: u64| {
+            (*d == lib.device && s == first.seq).then_some(frontier::Held {
+                h: first.hash,
+                prev: None,
+                vroot: opened.vroot,
+            })
+        };
+        let accepted = BTreeMap::new();
+        let empty = BTreeSet::new();
+        let make_progress = |accepted| Progress {
+            accepted,
+            held: &held,
+            removed: &empty,
+            all_listed_read: &empty,
+            late_decided: &empty,
+            choices: &[],
+        };
+        let withheld = ledger.withheld_keys(lib.device, &make_progress(&accepted));
+        assert_eq!(withheld, BTreeSet::from([key.clone()]));
+        assert!(ledger
+            .withheld_keys(peer.device, &make_progress(&accepted))
+            .is_empty());
+        assert!(super::publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            &[],
+            &ledger,
+            &withheld
+        )
+        .unwrap()
+        .is_none());
+        let accepted = frontier::accepted_by_all(
+            &BTreeSet::from([lib.device, peer.device]),
+            &lib.device,
+            &BTreeMap::new(),
+            &BTreeMap::from([(peer.device, BTreeMap::from([(lib.device, first.seq)]))]),
+            &BTreeMap::from([(lib.device, first.seq)]),
+            &held,
+            &accepted,
+        );
+        let withheld = ledger.withheld_keys(lib.device, &make_progress(&accepted));
+        assert!(withheld.is_empty());
+        let next = super::publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            &[],
+            &ledger,
+            &withheld,
+        )
+        .unwrap()
+        .unwrap();
+        let opened = open_change(&next.bytes, &lib.id, &lib.device, &public).unwrap();
+        assert_eq!(opened.seq, first.seq + 1);
+        assert_eq!(opened.prev, Some(first.hash));
+        assert_eq!(opened.versions.len(), 1);
+        assert_eq!(opened.versions[0]["key"], key.as_str());
+        assert!(opened.hold.is_empty());
+        assert!(journal::unsent(a.conn(), &lib).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_retry_after_a_crash_signs_the_same_reservations_and_holds() {
+        use std::sync::Mutex;
+        struct Crash(Mutex<Option<Vec<u8>>>);
+        impl Keystore for Crash {
+            fn load(&self) -> std::result::Result<Option<Vec<u8>>, StoreError> {
+                Ok(None)
+            }
+            fn save(&self, bytes: &[u8]) -> std::result::Result<(), StoreError> {
+                // Observe the first attempted bytes, then simulate failing to save.
+                *self.0.lock().unwrap() = Some(bytes.to_vec());
+                Err(StoreError::Keychain(-25308))
+            }
+        }
+        for lists_only in [false, true] {
+            for legacy_retry in [false, true] {
+                let (a, lib, ks, mut store) = signed_device("book-a");
+                let (key, item) = replacement(&a, &lib);
+                let withheld = if lists_only {
+                    BTreeSet::from([key.clone()])
+                } else {
+                    BTreeSet::new()
+                };
+                let reserve = Reserve {
+                    kind: hold::Kind::Book,
+                    name: Hash32([4; 32]),
+                    size: 10,
+                };
+                let before = store.clone();
+                let crash = Crash(Mutex::new(None));
+                assert!(matches!(
+                    super::publish_with(
+                        a.conn(),
+                        &lib,
+                        &crash,
+                        &mut store,
+                        std::slice::from_ref(&reserve),
+                        std::slice::from_ref(&item),
+                        &Ledger::default(),
+                        &withheld
+                    ),
+                    Err(ChainError::Store(StoreError::Keychain(_)))
+                ));
+                assert_eq!(store, before);
+                assert!(pending(&store, &lib.id).unwrap().is_empty());
+                let capture = Memory::default();
+                capture
+                    .save(crash.0.lock().unwrap().as_ref().unwrap())
+                    .unwrap();
+                let attempted = DeviceStore::load(&capture).unwrap();
+                let expected = pending(&attempted, &lib.id).unwrap().remove(0).1;
+                let saved: (String, String) = a.conn().query_row(
+                    "SELECT reserve, hold FROM sync_change_lists WHERE library = ?1 AND seq = 1",
+                    [lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+                assert_eq!(
+                    saved.0.as_bytes(),
+                    json::canonical(&json!([reserve.write()]))
+                );
+                assert_eq!(saved.1.as_bytes(), json::canonical(&json!([item.write()])));
+                let retry = if legacy_retry {
+                    publish(a.conn(), &lib, &ks, &mut store)
+                } else {
+                    // Even invalid new lists and newly withheld keys are irrelevant
+                    // to the already numbered payload.
+                    let different = Hold {
+                        size: u64::MAX,
+                        ..item.clone()
+                    };
+                    super::publish_with(
+                        a.conn(),
+                        &lib,
+                        &ks,
+                        &mut store,
+                        &[],
+                        &[different],
+                        &Ledger::default(),
+                        &BTreeSet::from([key]),
+                    )
+                }
+                .unwrap()
+                .unwrap();
+                assert_eq!(retry.bytes, expected);
+                assert_eq!(
+                    retry.hash,
+                    attempted
+                        .library(&lib.id)
+                        .unwrap()
+                        .last_hash()
+                        .unwrap()
+                        .unwrap()
+                );
+                assert_eq!(pending(&store, &lib.id).unwrap()[0].1, expected);
+                let opened =
+                    open_change(&retry.bytes, &lib.id, &lib.device, &key_of(&store, &lib)).unwrap();
+                assert_eq!(opened.versions.is_empty(), lists_only);
+                assert_eq!(opened.reserve, vec![reserve.write()]);
+                assert_eq!(opened.hold, vec![item.write()]);
+            }
+        }
+    }
+
+    #[test]
+    fn withholding_either_tombstone_keeps_the_highlight_and_note_together() {
+        for prefix in ["annotation", "note"] {
+            let (a, lib, ks, mut store) = signed_device("book-a");
+            let uuid = "7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
+            let keys: Vec<Key> = ["annotation", "note"]
+                .iter()
+                .map(|p| Key::parse(&format!("{p}:{uuid}")).unwrap().0)
+                .collect();
+            for key in &keys {
+                journal::record_local(
+                    a.conn(),
+                    &lib,
+                    key,
+                    journal::LocalContent::Deleted {
+                        covers: vec![],
+                        identity: None,
+                    },
+                    1_760_000_001_000,
+                )
+                .unwrap();
+            }
+            let withheld = BTreeSet::from([Key::parse(&format!("{prefix}:{uuid}")).unwrap().0]);
+            assert!(super::publish_with(
+                a.conn(),
+                &lib,
+                &ks,
+                &mut store,
+                &[],
+                &[],
+                &Ledger::default(),
+                &withheld
+            )
+            .unwrap()
+            .is_none());
+            assert_eq!(journal::unsent(a.conn(), &lib).unwrap().len(), 2);
+            let sent = publish_within(a.conn(), &lib, &ks, &mut store, 1, 1)
+                .unwrap()
+                .unwrap();
+            let opened =
+                open_change(&sent.bytes, &lib.id, &lib.device, &key_of(&store, &lib)).unwrap();
+            assert_eq!(
+                opened.versions.len(),
+                2,
+                "SP13 pairing survives a one-value budget"
+            );
+        }
+    }
+
+    #[test]
+    fn list_storage_and_numbering_roll_back_together_and_old_rows_retry_empty() {
+        let (a, lib, ks, mut store) = signed_device("book-a");
+        let (_, item) = replacement(&a, &lib);
+        a.conn()
+            .execute_batch(
+                "CREATE TEMP TRIGGER refuse_lists BEFORE INSERT ON sync_change_lists
+            BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END;",
+            )
+            .unwrap();
+        assert!(super::publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            std::slice::from_ref(&item),
+            &Ledger::default(),
+            &BTreeSet::new()
+        )
+        .is_err());
+        assert_eq!(journal::unsent(a.conn(), &lib).unwrap().len(), 1);
+        assert_eq!(store.library(&lib.id).unwrap().seq, 0);
+        a.conn()
+            .execute_batch("DROP TRIGGER refuse_lists;")
+            .unwrap();
+        let (seq, versions) = journal::take_unsent(a.conn(), &lib, 0).unwrap().unwrap();
+        // Simulate a pre-migration numbered row, which had no persisted lists.
+        a.conn()
+            .execute(
+                "DELETE FROM sync_change_lists WHERE library = ?1",
+                [lib.id.to_string()],
+            )
+            .unwrap();
+        let key = store.library(&lib.id).unwrap().key().unwrap();
+        let writer = store.library(&lib.id).unwrap().writer_id().unwrap();
+        let expected = sign_change(
+            &key,
+            &lib.id,
+            &writer,
+            seq,
+            None,
+            &versions.into_iter().map(|v| v.raw).collect::<Vec<_>>(),
+        );
+        let retried = super::publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            &[item],
+            &Ledger::default(),
+            &BTreeSet::new(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(retried, expected);
+    }
+
+    // Keep the earlier tests' calls unchanged; new withholding tests use the
+    // production entry point explicitly, with their withheld keys.
+    fn publish_with(
+        conn: &Connection,
+        lib: &Library,
+        ks: &dyn Keystore,
+        store: &mut DeviceStore,
+        reserve: &[Reserve],
+        hold: &[Hold],
+        ledger: &Ledger,
+    ) -> Result<Option<Signed>> {
+        super::publish_with(
+            conn,
+            lib,
+            ks,
+            store,
+            reserve,
+            hold,
+            ledger,
+            &BTreeSet::new(),
+        )
+    }
+
+    #[test]
+    fn signed_changes_without_reservations_or_holds_are_unchanged() {
+        let key = Keypair::from_seed(&[1; 32]);
+        let (library, writer) = (Id16([2; 16]), Id16([3; 16]));
+        for (seq, prev, versions) in [
+            (1, None, vec![]),
+            (
+                2,
+                Some(Hash32([4; 32])),
+                vec![
+                    json!({"key": "setting:fontPx", "device": key.device().to_string(), "body": {"hash": Hash32([5; 32]).to_string(), "size": 12}}),
+                ],
+            ),
+        ] {
+            // Frozen pre-SP33 payload construction: do not use payload() here.
+            let original = json::canonical(&json!({
+                "type": "change", "format": 1, "library": library.to_string(),
+                "device": key.device().to_string(), "writer": writer.to_string(),
+                "seq": seq, "prev": prev.map(|h| h.to_string()),
+                "versions": versions, "reserve": [], "hold": [],
+            }));
+            let sig = envelope::sign(
+                &key,
+                Signer::Device(key.device()),
+                "change",
+                &library,
+                &Place {
+                    seq,
+                    prev,
+                    vroot: Some(vroot_of(&versions)),
+                },
+                &original,
+            );
+            let expected = envelope::write("change", &original, &[sig]);
+            let legacy = sign_change(&key, &library, &writer, seq, prev, &versions);
+            let with = sign_change_with(&key, &library, &writer, seq, prev, &versions, &[], &[]);
+            assert_eq!(legacy.bytes, expected);
+            assert_eq!(legacy, with);
+        }
+    }
+
+    // A correctly signed peer can still send malformed lists. Signing raw JSON
+    // here ensures rejection isn't just a failed signature or local preflight.
+    fn peer_lists(reserve: Value, hold: Value) -> Result<Change> {
+        let key = Keypair::from_seed(&[1; 32]);
+        let library = Id16([2; 16]);
+        let mut raw: Value = serde_json::from_slice(&payload(
+            &library,
+            &key.device(),
+            &Id16([3; 16]),
+            1,
+            None,
+            &[],
+            &[],
+            &[],
+        ))
+        .unwrap();
+        raw["reserve"] = reserve;
+        raw["hold"] = hold;
+        let body = json::canonical(&raw);
+        let sig = envelope::sign(
+            &key,
+            Signer::Device(key.device()),
+            "change",
+            &library,
+            &Place {
+                seq: 1,
+                prev: None,
+                vroot: Some(vroot_of(&[])),
+            },
+            &body,
+        );
+        open_change(
+            &envelope::write("change", &body, &[sig]),
+            &library,
+            &key.device(),
+            &key.public(),
+        )
+    }
+
+    #[test]
+    fn a_change_with_too_many_reserve_or_hold_items_is_refused_when_opened() {
+        let r = json!({"kind": "book", "name": Hash32([1; 32]).to_string(), "size": 1});
+        let h = json!({"kind": "blob", "name": Hash32([2; 32]).to_string(), "size": 1,
+            "hash": Hash32([3; 32]).to_string(), "for": "setting:fontPx"});
+        assert!(peer_lists(
+            json!(vec![r.clone(); hold::MAX_RESERVATIONS]),
+            json!(vec![h.clone(); hold::MAX_HOLDS])
+        )
+        .is_ok());
+        assert!(matches!(
+            peer_lists(json!(vec![r; hold::MAX_RESERVATIONS + 1]), json!([])),
+            Err(ChainError::Hold(hold::HoldError::Reservations))
+        ));
+        assert!(matches!(
+            peer_lists(json!([]), json!(vec![h; hold::MAX_HOLDS + 1])),
+            Err(ChainError::Hold(hold::HoldError::Holds))
+        ));
+    }
+
+    #[test]
+    fn malformed_reservations_and_holds_refuse_the_whole_change() {
+        let r = json!({"kind": "book", "name": Hash32([1; 32]).to_string(), "size": 1});
+        let h = json!({"kind": "blob", "name": Hash32([2; 32]).to_string(), "size": 1,
+            "hash": Hash32([3; 32]).to_string(), "for": "setting:fontPx"});
+        for (field, value) in [
+            ("kind", json!("other")),
+            ("name", json!("../book")),
+            ("name", json!("A".repeat(64))),
+            ("size", json!(-1)),
+            ("size", json!(1.5)),
+            ("size", Value::Null),
+        ] {
+            let mut bad_r = r.clone();
+            let mut bad_h = h.clone();
+            bad_r[field] = value.clone();
+            bad_h[field] = value;
+            assert!(
+                peer_lists(json!([bad_r]), json!([])).is_err(),
+                "reserve {field}"
+            );
+            assert!(
+                peer_lists(json!([]), json!([bad_h])).is_err(),
+                "hold {field}"
+            );
+        }
+        for (field, value) in [
+            ("hash", json!("bad")),
+            ("for", json!("note:bad")),
+            ("size", json!(64 * 1024 + 1)),
+        ] {
+            let mut bad = h.clone();
+            bad[field] = value;
+            assert!(peer_lists(json!([]), json!([bad])).is_err(), "hold {field}");
+        }
+        for original in [&r, &h] {
+            for field in original.as_object().unwrap().keys() {
+                let mut bad = original.clone();
+                bad.as_object_mut().unwrap().remove(field);
+                let result = if original == &r {
+                    peer_lists(json!([bad]), json!([]))
+                } else {
+                    peer_lists(json!([]), json!([bad]))
+                };
+                assert!(result.is_err(), "missing {field}");
+            }
+        }
+        assert!(peer_lists(json!([null]), json!([])).is_err());
+        assert!(peer_lists(json!([]), json!([0])).is_err());
+        let opened = peer_lists(json!([r.clone()]), json!([h.clone()])).unwrap();
+        let (reserve, holds) = hold::read_lists(&opened.reserve, &opened.hold).unwrap();
+        assert_eq!(reserve[0].write(), r);
+        assert_eq!(holds[0].write(), h);
+    }
+
+    #[test]
+    fn publishing_lists_checks_the_local_ledger_and_saves_replayable_bytes() {
+        let (a, lib, ks, mut store) = signed_device("book-a");
+        let key = store.library(&lib.id).unwrap().key().unwrap();
+        let item = Hold {
+            kind: hold::Kind::Book,
+            name: Hash32([1; 32]),
+            hash: Hash32([2; 32]),
+            size: 1,
+            for_key: super::super::record::Key::parse(
+                "bookFile:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6",
+            )
+            .unwrap()
+            .0,
+        };
+        let mut ledger = Ledger::default();
+        let signed = publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            &[],
+            &vec![item.clone(); hold::MAX_HOLDS],
+            &ledger,
+        )
+        .unwrap()
+        .unwrap();
+        let opened = open_change(&signed.bytes, &lib.id, &lib.device, &key.public()).unwrap();
+        assert_eq!(opened.hold.len(), hold::MAX_HOLDS);
+        assert!(opened.versions.is_empty());
+        ledger
+            .receive(
+                &opened,
+                &[],
+                false,
+                &super::super::retention::Vouched::new(0),
+            )
+            .unwrap();
+        let before = store.library(&lib.id).unwrap().seq;
+        assert!(matches!(
+            publish_with(a.conn(), &lib, &ks, &mut store, &[], &[item], &ledger),
+            Err(ChainError::Hold(hold::HoldError::Holds))
+        ));
+        assert_eq!(store.library(&lib.id).unwrap().seq, before);
+        let queued = pending(&store, &lib.id).unwrap();
+        assert_eq!(queued, vec![(signed.path, signed.bytes)]);
+        assert!(publish(a.conn(), &lib, &ks, &mut store).unwrap().is_none());
+        let reserved = Reserve {
+            kind: hold::Kind::Book,
+            name: Hash32([3; 32]),
+            size: 12,
+        };
+        let next = publish_with(
+            a.conn(),
+            &lib,
+            &ks,
+            &mut store,
+            std::slice::from_ref(&reserved),
+            &[],
+            &ledger,
+        )
+        .unwrap()
+        .unwrap();
+        let opened = open_change(&next.bytes, &lib.id, &lib.device, &key.public()).unwrap();
+        assert_eq!(opened.seq, before + 1);
+        assert_eq!(opened.reserve, vec![reserved.write()]);
+    }
 
     /// A device whose ID its key names, with its device store.
     fn signed_device(book: &str) -> (Store, Library, Memory, DeviceStore) {
