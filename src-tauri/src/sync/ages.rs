@@ -126,21 +126,36 @@ pub fn read(
     marks: &mut Marks,
     now: u64,
 ) {
+    // #122: a peer's report is kept only for a retiring version this device
+    // knows itself (it has its own age), so what a peer can make it hold is bounded
+    // by this device's own state, however many files the peer sends. A report for
+    // a version learned later comes again: a peer republishes its ages in every
+    // file, and a mark that has moved on is in that peer's view (SP17).
+    let known = |v: &Entry| ages.own_age(v, now).is_some();
+    let mut reports = Vec::new();
     if let Some(items) = lists.get("ages") {
         for item in items.iter().take(MAX_AGES) {
             if let Some((v, ms)) = item
                 .get("v")
                 .and_then(parse_entry)
                 .zip(item.get("ms").and_then(Value::as_u64))
+                .filter(|(v, _)| known(v))
             {
-                ages.report(v, file.device, ms, now);
+                reports.push((v, ms));
             }
         }
     }
-    if let Some(items) = lists.get("marks") {
-        for v in items.iter().take(MAX_MARKS).filter_map(parse_entry) {
-            marks.reported.entry(v).or_default().insert(file.device);
-        }
+    let marked: Vec<Entry> = lists
+        .get("marks")
+        .into_iter()
+        .flat_map(|items| items.iter().take(MAX_MARKS).filter_map(parse_entry))
+        .filter(|v| known(v))
+        .collect();
+    for (v, ms) in reports {
+        ages.report(v, file.device, ms, now);
+    }
+    for v in marked {
+        marks.reported.entry(v).or_default().insert(file.device);
     }
 }
 
@@ -212,7 +227,10 @@ mod tests {
         let (file, received) = opened(expected.clone());
         assert_eq!(received["ages"], expected["ages"]);
         assert_eq!(received["marks"], expected["marks"]);
+        // #122: the reader keeps reports only for retiring versions it knows.
         let (mut ages, mut marks) = (Ages::default(), Marks::default());
+        ages.saw(old, 90);
+        ages.saw(recent, 90);
         read(&file, &received, &mut ages, &mut marks, 100);
         assert_eq!(
             ages.reported_age(&old, file.device, 100),
@@ -222,7 +240,8 @@ mod tests {
         assert_eq!(ages.reported_age(&unknown, file.device, 100), None);
         assert!(marks.marked_by(&old, &file.device));
         assert!(!marks.marked_by(&recent, &file.device));
-        assert_eq!(ages.own_age(&old, 100), None);
+        // Reading a report never changes this device's own age.
+        assert_eq!(ages.own_age(&old, 100), Some(10));
     }
 
     #[test]
@@ -234,6 +253,7 @@ mod tests {
         )]));
         let (mut ages, mut marks) = (Ages::default(), Marks::default());
         let mut time = clock(300);
+        ages.saw(v, 0);
         read(&file, &received, &mut ages, &mut marks, time.now());
         assert_eq!(ages.reported_age(&v, file.device, time.now()), Some(25));
         time.tick(350, 350);
@@ -261,6 +281,7 @@ mod tests {
         assert_eq!(after["marks"], vec![entry(&v)]);
         let (file, received) = opened(after);
         let (mut peer_ages, mut peer_marks) = (Ages::default(), Marks::default());
+        peer_ages.saw(v, 0);
         read(&file, &received, &mut peer_ages, &mut peer_marks, 0);
         read(&file, &BTreeMap::new(), &mut peer_ages, &mut peer_marks, 1);
         assert!(peer_marks.marked_by(&v, &file.device));
@@ -368,6 +389,9 @@ mod tests {
         incoming.get_mut("marks").unwrap()[0] = Value::Null;
         let (file, received) = opened(incoming);
         let (mut peer_ages, mut peer_marks) = (Ages::default(), Marks::default());
+        for v in &versions {
+            peer_ages.saw(*v, 100);
+        }
         read(&file, &received, &mut peer_ages, &mut peer_marks, 100);
         for (i, v) in versions.iter().enumerate() {
             assert_eq!(
@@ -378,6 +402,38 @@ mod tests {
                 peer_marks.marked_by(v, &file.device),
                 i > 0 && i < MAX_MARKS
             );
+        }
+    }
+
+    #[test]
+    fn a_peers_reports_of_versions_this_device_doesnt_know_arent_kept() {
+        // #122: a peer sending file after file of made-up version IDs can't grow
+        // what this device holds; only versions it knows itself are kept.
+        let known = version(1);
+        let (mut ages, mut marks) = (Ages::default(), Marks::default());
+        ages.saw(known, 0);
+        for round in 0..3u64 {
+            let made_up: Vec<Entry> = (0..50).map(|i| version(1_000 + round * 50 + i)).collect();
+            let (file, received) = opened(BTreeMap::from([
+                (
+                    "ages".into(),
+                    made_up
+                        .iter()
+                        .chain([&known])
+                        .map(|v| json!({"v": entry(v), "ms": 5}))
+                        .collect(),
+                ),
+                (
+                    "marks".into(),
+                    made_up.iter().chain([&known]).map(entry).collect(),
+                ),
+            ]));
+            read(&file, &received, &mut ages, &mut marks, 10);
+            assert_eq!(ages.reported_age(&known, file.device, 10), Some(5));
+            assert!(made_up
+                .iter()
+                .all(|v| ages.reported_age(v, file.device, 10).is_none()));
+            assert_eq!(marks.reported.len(), 1);
         }
     }
 
@@ -416,6 +472,9 @@ mod tests {
             ("marks".into(), bad_ids),
         ]));
         let (mut ages, mut marks) = (Ages::default(), Marks::default());
+        for seq in [0, 1, 2, 3] {
+            ages.saw(version(seq), 50);
+        }
         read(&file, &received, &mut ages, &mut marks, 50);
         assert_eq!(ages.reported_age(&good, file.device, 50), Some(0));
         assert!(marks.marked_by(&good, &file.device));
