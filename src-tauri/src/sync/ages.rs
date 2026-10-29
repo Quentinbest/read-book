@@ -77,9 +77,6 @@ pub fn lists(
     clock: &Vouched,
 ) -> BTreeMap<String, Vec<Value>> {
     let mut out = BTreeMap::from([("ages".into(), Vec::new()), ("marks".into(), Vec::new())]);
-    if !clock.publishes_ages() {
-        return out;
-    }
     let now = clock.now();
     let mut versions: Vec<_> = retiring
         .iter()
@@ -87,11 +84,18 @@ pub fn lists(
         .collect();
     versions.sort_unstable_by_key(|(v, seen)| (*seen, v.device, v.seq, v.hash));
     versions.dedup_by_key(|(v, _)| *v);
-    // SP35: record every earned mark before capping either output list.
+    // SP35: record every earned mark before capping either output list, and
+    // whether or not the clock lets them be published: vouched-for time keeps
+    // counting by the monotonic clock, so an own age stays valid, and a mark
+    // earned meanwhile waits in memory even if the content goes before the clock
+    // is clear.
     for (v, seen) in &versions {
         if now - seen >= WEEK_MS && !marks.in_view.contains(v) {
             marks.own.entry(*v).or_insert(*seen);
         }
+    }
+    if !clock.publishes_ages() {
+        return out;
     }
     out.insert(
         "ages".into(),
@@ -333,6 +337,25 @@ mod tests {
             );
             assert_eq!(received["marks"], vec![entry(&v)]);
         }
+    }
+
+    #[test]
+    fn a_mark_earned_while_the_clock_is_untrusted_survives_the_content_going() {
+        // SP35: the week passes while the clock is marked ahead; the mark is earned
+        // and waits, and is published once the clock is clear, though the retired
+        // content went in between.
+        let v = version(1);
+        let (mut ages, mut marks) = (Ages::default(), Marks::default());
+        ages.saw(v, 0);
+        let mut time = clock(WEEK_MS);
+        time.untrusted_wall = true;
+        let hidden = lists(&ages, &mut marks, &[v], &time);
+        assert!(hidden["marks"].is_empty());
+        assert_eq!(marks.pending().collect::<Vec<_>>(), vec![&v]);
+        time.clear();
+        let after = lists(&ages, &mut marks, &[], &time);
+        assert!(after["ages"].is_empty());
+        assert_eq!(after["marks"], vec![entry(&v)]);
     }
 
     #[test]
