@@ -321,6 +321,16 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device, cutoff) -- repeat calls remain no-ops after recovery
     );
     "#,
+    // 12: SP15, SP33, SP34: own change lists fixed atomically with numbering.
+    r#"
+    CREATE TABLE sync_change_lists (
+        library TEXT NOT NULL,              -- SP1: library ID; this device's own chain
+        seq INTEGER NOT NULL,               -- SP15: includes changes with no versions
+        reserve TEXT NOT NULL,              -- SP33: canonical JSON array
+        hold TEXT NOT NULL,                 -- SP34: canonical JSON array
+        PRIMARY KEY (library, seq)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

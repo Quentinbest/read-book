@@ -11,17 +11,21 @@
 //! the shown text doesn't silently discard the other one (SY13).
 
 use super::clock::{Clock, Hlc};
+use super::hold::{self, Hold, Ledger, Reserve};
 use super::ids::{identity_hash, DeviceId, Hash32, Id16};
+use super::json::{self, Numbers};
 use super::merge::{Outcome, Placed, Record};
 use super::record::{
     check_version, Checked, Content, Entry, Key, Kind, RecordError, Version, FORMAT,
 };
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::{json, Value};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 #[derive(Debug, thiserror::Error)]
 pub enum JournalError {
+    #[error(transparent)]
+    Lists(#[from] hold::HoldError),
     #[error(transparent)]
     Sqlite(#[from] rusqlite::Error),
     #[error("a stored version no longer checks: {0}")]
@@ -120,6 +124,12 @@ pub fn set_device(
     if stored == lib.device.to_string() {
         return Ok(());
     }
+    // SP27: numbering restarts for the new identity. These are only the old
+    // identity's local publication inputs; its signed files stay in the store.
+    tx.execute(
+        "DELETE FROM sync_change_lists WHERE library = ?1",
+        [lib.id.to_string()],
+    )?;
     tx.execute(
         "UPDATE sync_libraries SET device = ?2 WHERE library = ?1",
         params![lib.id.to_string(), lib.device.to_string()],
@@ -696,10 +706,51 @@ pub fn take_unsent_within(
     max_bytes: usize,
     max_values: u64,
 ) -> Result<Option<(u64, Vec<Version>)>> {
+    Ok(take_unsent_within_with(
+        conn,
+        lib,
+        last_seq,
+        max_bytes,
+        max_values,
+        &[],
+        &[],
+        &BTreeSet::new(),
+        &Ledger::default(),
+    )?
+    .map(|n| (n.seq, n.versions)))
+}
+
+/// SP15: all inputs fixed by numbering, including a lists-only change.
+pub struct Numbered {
+    pub seq: u64,
+    pub versions: Vec<Version>,
+    pub reserve: Vec<Reserve>,
+    pub hold: Vec<Hold>,
+}
+
+/// SP15, SP33, SP34: number versions and their canonical lists in one transaction.
+/// A retry ignores new lists, budgets and withheld keys: the numbered payload
+/// is already fixed. Old numbered changes without a lists row have empty lists.
+/// SP13: withholding either member of a deletion pair withholds the whole pair.
+#[allow(clippy::too_many_arguments)]
+pub fn take_unsent_within_with(
+    conn: &Connection,
+    lib: &Library,
+    last_seq: u64,
+    max_bytes: usize,
+    max_values: u64,
+    reserve: &[Reserve],
+    hold: &[Hold],
+    withheld: &BTreeSet<Key>,
+    ledger: &Ledger,
+) -> Result<Option<Numbered>> {
     let tx = conn.unchecked_transaction()?;
     let journalled = tx
         .query_row(
-            "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL",
+            "SELECT MAX(seq) FROM (
+                SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL
+                UNION ALL SELECT seq FROM sync_change_lists WHERE library = ?1
+             )",
             params![lib.id.to_string(), lib.device.to_string()],
             |r| r.get::<_, Option<i64>>(0),
         )?
@@ -721,13 +772,43 @@ pub fn take_unsent_within(
             )?
             .map(|raw| check(&raw?, lib.device))
             .collect::<Result<Vec<_>>>()?;
-        return Ok(Some((journalled, again)));
+        let lists: Option<(String, String)> = tx
+            .query_row(
+                "SELECT reserve, hold FROM sync_change_lists WHERE library = ?1 AND seq = ?2",
+                params![lib.id.to_string(), journalled as i64],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let (reserve, hold) = if let Some((reserve, hold)) = lists {
+            let read = |s: &str| -> Result<Vec<Value>> {
+                json::parse(s.as_bytes(), Numbers::Integers)
+                    .ok()
+                    .and_then(|v| v.as_array().cloned())
+                    .ok_or_else(|| hold::HoldError::Shape.into())
+            };
+            hold::read_lists(&read(&reserve)?, &read(&hold)?)?
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        return Ok(Some(Numbered {
+            seq: journalled,
+            versions: again,
+            reserve,
+            hold,
+        }));
     }
     if journalled > last_seq {
         // The library holds a later signed change of ours than the device store: a
         // store rolled back. SY7's start check rotates before anything is published.
         return Err(JournalError::StoreBehind(last_seq));
     }
+    // SP33, SP34: preflight only a new payload, never the caller's discarded
+    // retry inputs. Refusal leaves both versions and lists untouched.
+    ledger.check_additions(lib.device, reserve, hold)?;
+    let reserve_json = json!(reserve.iter().map(Reserve::write).collect::<Vec<_>>());
+    let hold_json = json!(hold.iter().map(Hold::write).collect::<Vec<_>>());
+    let max_values = max_values
+        .saturating_sub(json::count_values(&reserve_json) + json::count_values(&hold_json));
     // The rows `unsent` chooses: never an edit held for the reader (#109).
     let rows: Vec<(i64, String)> = tx
         .prepare(
@@ -736,9 +817,6 @@ pub fn take_unsent_within(
         )?
         .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<std::result::Result<_, _>>()?;
-    if rows.is_empty() {
-        return Ok(None);
-    }
     let versions: Vec<(i64, Version)> = rows
         .into_iter()
         .map(|(rowid, raw)| Ok((rowid, check(&raw, lib.device)?)))
@@ -753,10 +831,35 @@ pub fn take_unsent_within(
             _ => k.to_owned(),
         }
     };
+    let blocked: HashSet<String> = versions
+        .iter()
+        .filter(|(_, v)| {
+            withheld.contains(&v.key)
+                || match (v.kind, &v.content) {
+                    (Kind::Annotation | Kind::Note, Content::Deleted { .. }) => {
+                        let other = if v.kind == Kind::Annotation {
+                            "note"
+                        } else {
+                            "annotation"
+                        };
+                        Key::parse(&format!(
+                            "{other}:{}",
+                            v.key.as_str().split(':').nth(1).unwrap_or_default()
+                        ))
+                        .is_some_and(|(k, _)| withheld.contains(&k))
+                    }
+                    _ => false,
+                }
+        })
+        .map(|(_, v)| group(v))
+        .collect();
     let mut order: Vec<String> = Vec::new();
     let mut sizes: std::collections::HashMap<String, (usize, u64)> = Default::default();
     for (_, v) in &versions {
         let g = group(v);
+        if blocked.contains(&g) {
+            continue;
+        }
         if !sizes.contains_key(&g) {
             order.push(g.clone());
         }
@@ -788,8 +891,27 @@ pub fn take_unsent_within(
             out.push(v);
         }
     }
+    if out.is_empty() && reserve.is_empty() && hold.is_empty() {
+        return Ok(None);
+    }
+    // SP15: also records the sequence of a lists-only change, so it is found
+    // after a crash even though sync_versions has no row at that sequence.
+    tx.execute(
+        "INSERT INTO sync_change_lists (library, seq, reserve, hold) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            lib.id.to_string(),
+            seq as i64,
+            String::from_utf8(json::canonical(&reserve_json)).expect("JSON is UTF-8"),
+            String::from_utf8(json::canonical(&hold_json)).expect("JSON is UTF-8")
+        ],
+    )?;
     tx.commit()?;
-    Ok(Some((seq, out)))
+    Ok(Some(Numbered {
+        seq,
+        versions: out,
+        reserve: reserve.to_vec(),
+        hold: hold.to_vec(),
+    }))
 }
 
 /// Keeps a checked remote version; a repeat delivery changes nothing. Returns whether
@@ -814,6 +936,88 @@ pub fn store_remote(conn: &Connection, lib: &Library, p: &Placed) -> Result<bool
 mod tests {
     use super::*;
     use crate::store::Store;
+
+    #[test]
+    fn migration_twelve_preserves_numbered_lists_and_matches_its_fixture() {
+        let fixture = Connection::open_in_memory().unwrap();
+        fixture
+            .execute_batch(include_str!("../../tests/fixtures/schema-v12.sql"))
+            .unwrap();
+        let current = Store::open_in_memory().unwrap();
+        let schema = |c: &Connection| -> String {
+            c.query_row(
+                "SELECT sql FROM sqlite_master WHERE name = 'sync_change_lists'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(schema(&fixture), schema(current.conn()));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v12.db");
+        Connection::open(&path)
+            .unwrap()
+            .execute_batch(include_str!("../../tests/fixtures/schema-v12.sql"))
+            .unwrap();
+        let reopened = Store::open(&path).unwrap();
+        let row = |c: &Connection| -> (String, i64, String, String) {
+            c.query_row(
+                "SELECT library, seq, reserve, hold FROM sync_change_lists",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(row(&fixture), row(reopened.conn()));
+        assert_eq!(
+            reopened.schema_version().unwrap(),
+            crate::store::MIGRATIONS.len() as i64
+        );
+    }
+
+    #[test]
+    fn rotation_starts_a_new_numbered_lists_chain() {
+        let (store, lib) = setup();
+        let reserve = Reserve {
+            kind: hold::Kind::Book,
+            name: Hash32([3; 32]),
+            size: 1,
+        };
+        let first = take_unsent_within_with(
+            store.conn(),
+            &lib,
+            0,
+            usize::MAX,
+            u64::MAX,
+            std::slice::from_ref(&reserve),
+            &[],
+            &BTreeSet::new(),
+            &Ledger::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(first.seq, 1);
+        let rotated = Library {
+            device: Id16([2; 16]),
+            ..lib
+        };
+        set_device(store.conn(), &rotated, false, Some(0), 0).unwrap();
+        assert!(take_unsent(store.conn(), &rotated, 0).unwrap().is_none());
+        let second = take_unsent_within_with(
+            store.conn(),
+            &rotated,
+            0,
+            usize::MAX,
+            u64::MAX,
+            &[reserve],
+            &[],
+            &BTreeSet::new(),
+            &Ledger::default(),
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(second.seq, 1);
+    }
 
     const PLACE: &str = "place:7c1e1d2a-3b4c-4d5e-8f60-718293a4b5c6";
 
