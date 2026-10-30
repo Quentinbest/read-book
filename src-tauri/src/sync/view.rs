@@ -29,6 +29,10 @@ pub const MAX_VALUES: u64 = 1_000_000;
 /// SP17, SP27, SY28: PROVISIONAL retained succession references. Rotations are
 /// rare; 64 bounds the otherwise unbounded list independently of its byte size.
 pub const MAX_ROTATIONS: usize = 64;
+/// SP15 (prov.): at most 256 MB for a peer's view, its parts together. JSON
+/// values don't bound bytes (a few huge strings fit any value budget), so the
+/// parts' declared sizes are added up before any part is fetched.
+pub const MAX_VIEW_BYTES: u64 = 256 << 20;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PartRef {
@@ -584,6 +588,18 @@ fn read_parts(
     mut left: u64,
 ) -> Result<View> {
     let dir = directory(device, &index_hash);
+    // SP15: the whole view's declared bytes, before anything is fetched.
+    let declared = index
+        .shards
+        .iter()
+        .map(|s| s.size)
+        .chain(index.spine.iter().map(|s| s.size))
+        .chain([index.open.size])
+        .try_fold(0u64, |total, size| total.checked_add(size))
+        .ok_or(ViewError::TooLarge)?;
+    if declared > MAX_VIEW_BYTES {
+        return Err(ViewError::TooLarge);
+    }
     let mut part = |hash: Hash32, size: u64| -> Result<Value> {
         // SP8, SP17: reject an oversized declaration before requesting bytes.
         if size > MAX_PART as u64 {
@@ -634,6 +650,15 @@ fn read_parts(
             let (e, versions) = read_spine(raw, library, device, key)?;
             let previous = spine.last().map(|e| e.h);
             if e.s != s.from + i as u64 || e.p != previous {
+                return Err(ViewError::Spine);
+            }
+            // SP13: a change names a key at most once, as `open_change` checks for
+            // change files; a spine entry for that change can't either.
+            let mut in_change = HashSet::new();
+            if !versions
+                .iter()
+                .all(|v| in_change.insert(<[u8; 16]>::try_from(&v[..16]).unwrap()))
+            {
                 return Err(ViewError::Spine);
             }
             // SP17: entries are in sequence order, then v-list order; replacing
@@ -1396,6 +1421,60 @@ mod tests {
             ),
             Err(ViewError::TooLarge)
         ));
+    }
+
+    #[test]
+    fn a_view_past_its_total_byte_budget_is_refused_before_fetching() {
+        // SP15: each part fits 8 MB and the values fit their budget, but forty
+        // 8 MB shards declare 320 MB, past the 256 MB a peer's view may take.
+        let f = Fixture::new(4);
+        let mut w = f.write(MAX_PART);
+        f.edit_index(&mut w, |p| {
+            let n = 40u64;
+            let step = 65_536 / n;
+            p["shards"] = Value::Array(
+                (0..n)
+                    .map(|i| {
+                        json!({
+                            "lo": i * step,
+                            "hi": if i == n - 1 { 65_535 } else { (i + 1) * step - 1 },
+                            "hash": Hash32([i as u8; 32]).to_string(),
+                            "size": MAX_PART,
+                        })
+                    })
+                    .collect(),
+            );
+        });
+        assert!(matches!(
+            open(
+                &w.index_bytes,
+                &f.library,
+                &f.key.device(),
+                &f.key.public(),
+                &|_| panic!("a view past its byte budget must not fetch")
+            ),
+            Err(ViewError::TooLarge)
+        ));
+    }
+
+    #[test]
+    fn a_spine_entry_naming_a_key_twice_is_refused() {
+        // SP13: a change names a key once; its spine entry can't name it twice,
+        // even when the second occurrence is the version the shard holds.
+        let f = Fixture::new(4);
+        let mut w = f.write(MAX_PART);
+        f.edit_part(&mut w, "spine", Some(0), |v| {
+            let entries = v.as_array_mut().unwrap();
+            let last = entries.len() - 1;
+            let list = b64url_decode(entries[last]["v"].as_str().unwrap()).unwrap();
+            assert!(list.len() >= 48);
+            let mut doubled = list[..16].to_vec();
+            doubled.extend_from_slice(&[7; 32]);
+            doubled.extend_from_slice(&list);
+            entries[last]["v"] = json!(b64url_encode(&doubled));
+            f.resign_spine(&mut entries[last]);
+        });
+        assert!(matches!(f.read(&w), Err(ViewError::Spine)));
     }
 
     #[test]
