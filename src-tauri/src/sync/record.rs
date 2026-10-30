@@ -59,6 +59,13 @@ pub struct Key(String);
 impl Key {
     /// SY9, SP1, SP12: a key in one of the forms the plan lists. Book and
     /// annotation IDs are version-4 UUIDs written lowercase with hyphens.
+    /// SY9: the key of a version in a newer major format, kept as it came, within
+    /// the same size limit: this release doesn't interpret it, and such a version
+    /// is never applied or rewritten. Only `as_str` and `spine_hash` are meaningful.
+    pub(crate) fn opaque(s: &str) -> Option<Key> {
+        (!s.is_empty() && s.len() <= MAX_KEY_BYTES).then(|| Key(s.to_owned()))
+    }
+
     pub fn parse(s: &str) -> Option<(Key, Kind)> {
         if s.len() > MAX_KEY_BYTES {
             return None;

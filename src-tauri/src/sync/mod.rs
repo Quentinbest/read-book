@@ -36,3 +36,4 @@ pub mod relay;
 pub mod restore;
 pub mod retention;
 pub mod trust;
+pub mod view;
