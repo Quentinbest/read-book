@@ -190,9 +190,15 @@ fn retirement_finished(retiring: &Entry, facts: &Facts<'_>) -> Result<(), Line3>
 /// authorizes nothing beyond this snapshot; the caller performs no deletion here.
 pub fn may_remove(object: &Object, facts: &Facts<'_>) -> Result<(), Blocked> {
     // SP36 line 1, SP18: read own and every listed tail, including removed peers.
-    for device in &counted(facts) {
+    // Every enrolled identity's listed change files are read, even one with no
+    // device file yet (SP25 exempts it from the lines that need one, its `own`
+    // among them): a key that published a change, a hold say, and stopped before
+    // its first device file can still name content. A vanished applicant has none
+    // listed, so it holds nothing back.
+    let counting = counted(facts);
+    for device in facts.enrolled {
         let reading = facts.reading.get(device);
-        if !reading.is_some_and(|r| r.through_newest_own) {
+        if counting.contains(device) && !reading.is_some_and(|r| r.through_newest_own) {
             return Err(Blocked::Line1(Line1::UnreadOwn(*device)));
         }
         if !reading.is_some_and(|r| r.all_listed_after_own) {
@@ -498,6 +504,14 @@ mod tests {
         let mut w = World::ready();
         w.enrolled.push(D);
         w.holding_back.push(D);
+        // A vanished applicant has no change files listed: all of them are read.
+        w.reading.insert(
+            D,
+            Reading {
+                through_newest_own: false,
+                all_listed_after_own: true,
+            },
+        );
         assert!(
             w.check(&RETIRED).is_err(),
             "counted until it's known to have no file"
@@ -507,6 +521,32 @@ mod tests {
         assert_eq!(w.check(&UNNAMED), Ok(()));
         w.without_device_file.clear();
         assert_eq!(w.check(&RETIRED), Err(Blocked::Line1(Line1::UnreadOwn(D))));
+    }
+
+    #[test]
+    fn a_key_without_a_device_file_still_has_its_listed_changes_read() {
+        // SP36 line 1: D published a change (a hold, say) and stopped before its
+        // first device file. SP25 exempts D from the lines that need a device
+        // file, not from reading what it listed: until that is read, nothing goes.
+        const D: DeviceId = Id16([4; 16]);
+        let mut w = World::ready();
+        w.enrolled.push(D);
+        w.without_device_file.push(D);
+        w.reading.insert(
+            D,
+            Reading {
+                through_newest_own: false,
+                all_listed_after_own: false,
+            },
+        );
+        for object in [&RETIRED, &UNNAMED] {
+            assert_eq!(
+                w.check(object),
+                Err(Blocked::Line1(Line1::UnreadListedChanges(D)))
+            );
+        }
+        w.reading.get_mut(&D).unwrap().all_listed_after_own = true;
+        assert_eq!(w.check(&RETIRED), Ok(()));
     }
 
     #[test]
