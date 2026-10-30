@@ -548,6 +548,17 @@ pub fn open(
     key: &[u8; 32],
     fetch: &dyn Fn(&str) -> Option<Vec<u8>>,
 ) -> Result<View> {
+    let (index, hash, left) = open_index(index_bytes, library, device, key)?;
+    read_parts(index, hash, library, device, key, fetch, left)
+}
+
+/// SP15: check a queued index even after some of its parts were uploaded.
+pub(crate) fn open_index(
+    index_bytes: &[u8],
+    library: &Id16,
+    device: &DeviceId,
+    key: &[u8; 32],
+) -> Result<(Index, Hash32, u64)> {
     if index_bytes.len() > MAX_INDEX {
         return Err(ViewError::TooLarge);
     }
@@ -578,7 +589,7 @@ pub fn open(
     let left = MAX_VALUES
         .checked_sub(json::count_values(&raw))
         .ok_or(json::JsonError::TooManyValues)?;
-    read_parts(index, e.hash, library, device, key, fetch, left)
+    Ok((index, e.hash, left))
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -756,7 +767,7 @@ pub fn write(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn write_within(
+pub(crate) fn write_within(
     key: &Keypair,
     library: &Id16,
     writer: &Id16,

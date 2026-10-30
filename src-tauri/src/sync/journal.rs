@@ -277,6 +277,30 @@ pub fn body(conn: &Connection, hash: &Hash32) -> Result<Option<Vec<u8>>> {
         .optional()?)
 }
 
+/// SP11, SP17: an exact ancestor, including superseded versions omitted by
+/// `record_of`. Its key and full ID must agree; unnumbered edits never match.
+pub(crate) fn version_raw(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    id: Entry,
+) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT raw FROM sync_versions
+             WHERE library = ?1 AND key = ?2 AND device = ?3 AND seq = ?4 AND hash = ?5",
+            params![
+                lib.id.to_string(),
+                key.as_str(),
+                id.device.to_string(),
+                id.seq as i64,
+                id.hash.to_string()
+            ],
+            |r| r.get(0),
+        )
+        .optional()?)
+}
+
 fn check(raw: &str, device: DeviceId) -> Result<Version> {
     let v: Value = serde_json::from_str(raw).map_err(|_| RecordError::NotAnObject)?;
     match check_version(v, device)? {

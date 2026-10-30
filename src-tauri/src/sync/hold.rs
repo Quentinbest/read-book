@@ -250,6 +250,25 @@ pub struct Ledger {
 }
 
 impl Ledger {
+    /// SP17, SP33: this writer's reservations that have not ended or lapsed.
+    pub(crate) fn open_reservations(
+        &self,
+        device: DeviceId,
+    ) -> impl Iterator<Item = (ItemId, Reserve)> + '_ {
+        self.reservations
+            .iter()
+            .filter(move |(id, _)| id.device == device)
+            .map(|(id, r)| (*id, r.item.clone()))
+    }
+
+    /// SP17, SP34: this writer's holds, retaining their choice identities.
+    pub(crate) fn open_holds(&self, device: DeviceId) -> impl Iterator<Item = (ItemId, Hold)> + '_ {
+        self.holds
+            .iter()
+            .filter(move |(id, _)| id.device == device)
+            .map(|(id, h)| (*id, h.item.clone()))
+    }
+
     /// SP33, SP34: preflight this device's new lists before writing them. Peer
     /// reception uses the same limits. Refusal changes no state.
     pub fn check_additions(

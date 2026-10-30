@@ -246,20 +246,7 @@ fn displaced(conn: &Connection, lib: &Library, tomb: &Placed) -> Result<Option<V
         }
     }
     for e in &tomb.version.history {
-        let raw: Option<String> = conn
-            .query_row(
-                "SELECT raw FROM sync_versions
-                 WHERE library = ?1 AND key = ?2 AND device = ?3 AND seq = ?4 AND hash = ?5",
-                params![
-                    lib.id.to_string(),
-                    tomb.version.key.as_str(),
-                    e.device.to_string(),
-                    e.seq as i64,
-                    e.hash.to_string()
-                ],
-                |r| r.get(0),
-            )
-            .optional()?;
+        let raw = journal::version_raw(conn, lib, &tomb.version.key, *e)?;
         let Some(Ok(super::record::Checked::Version(v))) = raw
             .as_deref()
             .and_then(|r| serde_json::from_str::<serde_json::Value>(r).ok())
