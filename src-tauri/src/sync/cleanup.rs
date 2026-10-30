@@ -45,7 +45,8 @@ pub struct Retirement {
     /// SP14: the change's hash, distinct from the retiring version's hash.
     pub change: ChangeId,
     /// SP29: checked with `hold::included_by_all` or `frontier::accepted_by_all`,
-    /// including own/inherited entries and any SP27 succession.
+    /// including own/inherited entries and any SP27 succession, over the devices
+    /// SP36 counts (SP25: not keys without a first device file).
     pub included_by_all: bool,
     /// True when there was no hold, or the last hold has ended under SP34.
     pub last_hold_ended: bool,
@@ -81,6 +82,10 @@ pub struct Facts<'a> {
     pub this: DeviceId,
     /// The complete current membership, including `this`.
     pub enrolled: &'a [DeviceId],
+    /// SP25: enrolled keys that haven't published their first device file (an
+    /// applicant that cancelled or vanished). Until it does, such a key counts in
+    /// none of SP36's lines.
+    pub without_device_file: &'a [DeviceId],
     pub reading: &'a BTreeMap<DeviceId, Reading>,
     pub all_fetchable_late_read: bool,
     /// SP26/SP12: true until the unfetched over-cap tail has a final discard-all
@@ -151,10 +156,20 @@ pub enum Line5 {
     FileNotReadWithoutName(DeviceId),
 }
 
+/// SP25, SP36: the enrolled devices SP36's lines count.
+fn counted(facts: &Facts<'_>) -> Vec<DeviceId> {
+    facts
+        .enrolled
+        .iter()
+        .filter(|d| **d == facts.this || !facts.without_device_file.contains(d))
+        .copied()
+        .collect()
+}
+
 fn week_passed(retiring: &Entry, facts: &Facts<'_>) -> bool {
     facts
         .ages
-        .week_passed_everywhere(retiring, facts.this, facts.enrolled, facts.clock.now())
+        .week_passed_everywhere(retiring, facts.this, &counted(facts), facts.clock.now())
 }
 
 fn retirement_finished(retiring: &Entry, facts: &Facts<'_>) -> Result<(), Line3> {
@@ -175,7 +190,7 @@ fn retirement_finished(retiring: &Entry, facts: &Facts<'_>) -> Result<(), Line3>
 /// authorizes nothing beyond this snapshot; the caller performs no deletion here.
 pub fn may_remove(object: &Object, facts: &Facts<'_>) -> Result<(), Blocked> {
     // SP36 line 1, SP18: read own and every listed tail, including removed peers.
-    for device in facts.enrolled {
+    for device in &counted(facts) {
         let reading = facts.reading.get(device);
         if !reading.is_some_and(|r| r.through_newest_own) {
             return Err(Blocked::Line1(Line1::UnreadOwn(*device)));
@@ -237,12 +252,11 @@ pub fn may_remove(object: &Object, facts: &Facts<'_>) -> Result<(), Blocked> {
         }
     }
     // SP36 line 4, SY11: removed devices no longer have a say here.
-    if let Some(device) = facts
-        .enrolled
-        .iter()
+    if let Some(device) = counted(facts)
+        .into_iter()
         .find(|d| facts.holding_back.contains(d))
     {
-        return Err(Blocked::Line4(*device));
+        return Err(Blocked::Line4(device));
     }
     // SP36 line 5: receipt time alone cannot prove a file was published later.
     if object.content == Content::Unnamed {
@@ -254,7 +268,7 @@ pub fn may_remove(object: &Object, facts: &Facts<'_>) -> Result<(), Blocked> {
         if now.saturating_sub(sighting.first_seen) < WEEK_MS {
             return Err(Blocked::Line5(Line5::WeekNotPassed));
         }
-        for device in facts.enrolled {
+        for device in &counted(facts) {
             let file = sighting
                 .later_files
                 .get(device)
@@ -318,6 +332,7 @@ mod tests {
 
     struct World {
         enrolled: Vec<DeviceId>,
+        without_device_file: Vec<DeviceId>,
         reading: BTreeMap<DeviceId, Reading>,
         late_read: bool,
         over_cap: bool,
@@ -342,6 +357,7 @@ mod tests {
             }
             Self {
                 enrolled: vec![A, B, C],
+                without_device_file: vec![],
                 reading: [A, B, C]
                     .map(|d| {
                         (
@@ -402,6 +418,7 @@ mod tests {
                 &Facts {
                     this: A,
                     enrolled: &self.enrolled,
+                    without_device_file: &self.without_device_file,
                     reading: &self.reading,
                     all_fetchable_late_read: self.late_read,
                     undiscarded_unfetched_late_over_cap: self.over_cap,
@@ -470,6 +487,26 @@ mod tests {
         ));
         w.retirements.get_mut(&other).unwrap().included_by_all = true;
         assert_eq!(w.check(&RETIRED), Ok(()));
+    }
+
+    #[test]
+    fn an_enrolled_key_without_a_device_file_counts_in_no_line() {
+        // SP25: D enrolled, but its applicant vanished before its first device
+        // file. D has no reading, age, frontier or later file to give, and no line
+        // waits for it. Once it publishes one, it counts like any other.
+        const D: DeviceId = Id16([4; 16]);
+        let mut w = World::ready();
+        w.enrolled.push(D);
+        w.holding_back.push(D);
+        assert!(
+            w.check(&RETIRED).is_err(),
+            "counted until it's known to have no file"
+        );
+        w.without_device_file.push(D);
+        assert_eq!(w.check(&RETIRED), Ok(()));
+        assert_eq!(w.check(&UNNAMED), Ok(()));
+        w.without_device_file.clear();
+        assert_eq!(w.check(&RETIRED), Err(Blocked::Line1(Line1::UnreadOwn(D))));
     }
 
     #[test]
