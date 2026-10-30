@@ -331,13 +331,9 @@ fn record_value(r: &Record) -> Value {
 }
 
 fn read_record(v: &Value, device: &DeviceId) -> Result<Record> {
-    let key = field(v, "key")?
-        .as_str()
-        .and_then(Key::parse)
-        .map(|(k, _)| k)
-        .ok_or(ViewError::Shape)?;
+    let text = field(v, "key")?.as_str().ok_or(ViewError::Shape)?;
     let version = field(v, "version")?.clone();
-    if version.get("key").and_then(Value::as_str) != Some(key.as_str()) {
+    if version.get("key").and_then(Value::as_str) != Some(text) {
         return Err(ViewError::Shape);
     }
     if version
@@ -348,8 +344,16 @@ fn read_record(v: &Value, device: &DeviceId) -> Result<Record> {
     {
         return Err(ViewError::Device);
     }
-    // SP11, SY9: validate known versions; keep newer major formats whole.
-    record::check_version(version.clone(), *device)?;
+    // SP11, SY9: validate known versions; keep newer major formats whole. A newer
+    // format's key may be one this release doesn't know: it is kept opaque, for
+    // the shard and spine checks only, as change files keep such a version aside.
+    let key = match record::check_version(version.clone(), *device)? {
+        record::Checked::Version(_) => Key::parse(text).map(|(k, _)| k),
+        record::Checked::NewerFormat(_) => Key::parse(text)
+            .map(|(k, _)| k)
+            .or_else(|| Key::opaque(text)),
+    }
+    .ok_or(ViewError::Shape)?;
     let mut week = Vec::new();
     if v.get("week").is_some() {
         for w in list(v, "week")? {
@@ -1475,6 +1479,43 @@ mod tests {
             f.resign_spine(&mut entries[last]);
         });
         assert!(matches!(f.read(&w), Err(ViewError::Spine)));
+    }
+
+    #[test]
+    fn a_newer_format_record_with_an_unknown_key_is_kept() {
+        // SY9: a version in a newer major format, under a key this release doesn't
+        // know, is kept aside in change files; its writer's view stays readable.
+        let mut f = Fixture::new(1);
+        let k = "futureKind:something-this-release-doesnt-know";
+        let version = json!({"format": 2, "key": k, "device": f.key.device().to_string(),
+            "anything": "goes"});
+        let c = sign_change(
+            &f.key,
+            &f.library,
+            &f.writer,
+            2,
+            Some(f.spine[0].h),
+            std::slice::from_ref(&version),
+        );
+        let c = open_change(&c.bytes, &f.library, &f.key.device(), &f.key.public()).unwrap();
+        f.spine.push(SpineEntry::from_change(&c));
+        f.records.push(Record {
+            key: Key::opaque(k).unwrap(),
+            version: version.clone(),
+            week: Vec::new(),
+        });
+        let view = f.read(&f.write(MAX_PART)).unwrap();
+        let kept = view
+            .shards
+            .iter()
+            .flat_map(|s| &s.records)
+            .find(|r| r.key.as_str() == k)
+            .unwrap();
+        assert_eq!(kept.version, version);
+        // A current-format version under an unknown key is still refused.
+        let mut current = f.records[0].version.clone();
+        current["key"] = json!(k);
+        assert!(read_record(&json!({"key": k, "version": current}), &f.key.device()).is_err());
     }
 
     #[test]
