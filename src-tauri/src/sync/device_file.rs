@@ -729,6 +729,25 @@ pub fn floor_of(
     })
 }
 
+/// SP18: raise the floor after accepting a view, saving before changing memory.
+pub fn raise_view_generation(
+    ks: &dyn Keystore,
+    store: &mut DeviceStore,
+    library: &Id16,
+    device: &DeviceId,
+    gen: u64,
+) -> Result<()> {
+    let mut next = store.clone();
+    let state = next.library_mut(library).ok_or(StoreError::Unreadable)?;
+    let floor = state.floors.entry(device.to_string()).or_default();
+    if gen > floor.gen {
+        floor.gen = gen;
+        next.save(ks)?;
+        *store = next;
+    }
+    Ok(())
+}
+
 /// SP18: once the chain applied here reaches `applied` (checked against the
 /// checkpoints by `chain::receive_run`), the earlier checkpoints at or below it
 /// are passed and leave the floor. The store changes only once the save succeeds.

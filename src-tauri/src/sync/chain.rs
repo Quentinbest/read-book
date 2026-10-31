@@ -66,6 +66,10 @@ pub enum ChainError {
     Signature,
     #[error("doesn't follow the chain this device holds")]
     Link,
+    #[error("a removed device's view cannot be received")]
+    Removed,
+    #[error("the view generation is older than the floor")]
+    StaleView,
     #[error("the device store has no identity for this library and device")]
     NoIdentity,
     #[error(transparent)]
@@ -617,7 +621,7 @@ pub fn receive_run(
 }
 
 /// The payload hash this device holds for `device`'s change `seq` (none for 0).
-fn held_hash(
+pub(crate) fn held_hash(
     conn: &Connection,
     lib: &Library,
     device: &DeviceId,
