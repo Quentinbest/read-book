@@ -268,15 +268,19 @@ pub fn build(
             };
             // SP17, #111: an own superseded payload may already be pruned;
             // the checked change supplied to this build still holds its bytes.
-            let value = if journal::version_raw(conn, lib, &key, id)?.is_none()
-                && journal::spine_contains(conn, lib, &key, id)?
-            {
+            let pruned = journal::version_raw(conn, lib, &key, id)?.is_none()
+                && journal::spine_contains(conn, lib, &key, id)?;
+            let value = if pruned {
                 value.clone()
             } else {
                 raw(conn, lib, &key, id)?
             };
             if let Some(v) = checked(value.clone(), lib.device)? {
-                if !released(&id) {
+                // SP17, SP36, #111: a pruned version's descendant is accepted by
+                // all and past its week, and came after it, so this version's own
+                // retirements are past theirs too; its body (a book file's
+                // metadata, say) may already be gone, so none is computed.
+                if !pruned && !released(&id) {
                     let mut objects = retired(conn, lib, naming, &v)?;
                     if v.kind == record::Kind::Book {
                         objects.extend(book_contents(conn, lib, naming, &v, change.seq)?);
@@ -672,7 +676,7 @@ pub(crate) mod tests {
             self.store.library(&self.lib.id).unwrap().key().unwrap()
         }
 
-        fn local(&self, text: &str, content: LocalContent) -> Version {
+        pub(crate) fn local(&self, text: &str, content: LocalContent) -> Version {
             journal::record_local(
                 self.db.conn(),
                 &self.lib,

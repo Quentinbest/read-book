@@ -510,4 +510,50 @@ mod tests {
         ));
         assert_eq!(waiting(&a, &d), 0, "it doesn't wait for A's own chain");
     }
+
+    #[test]
+    fn compaction_after_pruning_an_own_book_file_version_still_builds() {
+        // #111: a book file's names come from its body; once a superseded own
+        // version and its unique body are pruned, compaction must not need them.
+        let mut d = Device::new();
+        let key = Key::parse("bookFile:00000000-0000-4000-8000-000000000001")
+            .unwrap()
+            .0;
+        let file = |n| {
+            crate::sync::journal::LocalContent::Body(
+                json!({"hash": Hash32([n; 32]).to_string(), "size": 10,
+                "title": "Book", "authors": [], "language": null, "identifier": null,
+                "layout": "reflowable"})
+                .to_string()
+                .into_bytes(),
+            )
+        };
+        let old = d.local(key.as_str(), file(1));
+        let one = d.change();
+        d.local(key.as_str(), file(2));
+        let two = d.change();
+        let id = Entry {
+            device: d.lib.device,
+            seq: one.seq,
+            hash: old.hash,
+        };
+        d.db.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = 2 WHERE library = ?1 AND seq = ?2",
+                params![d.lib.id.to_string(), one.seq as i64],
+            )
+            .unwrap();
+        assert_eq!(
+            prune(d.db.conn(), &d.lib, &|_, _, _| true)
+                .unwrap()
+                .versions,
+            1
+        );
+        let Content::Body { hash, .. } = old.content else {
+            panic!("a book file version has a body")
+        };
+        assert!(journal::body(d.db.conn(), &hash).unwrap().is_none());
+        assert!(journal::spine_contains(d.db.conn(), &d.lib, &key, id).unwrap());
+        d.build(None, &[one, two], &|_| false);
+    }
 }
