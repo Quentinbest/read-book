@@ -67,7 +67,7 @@ fn raw(conn: &Connection, lib: &Library, key: &Key, id: Entry) -> Result<Value> 
 }
 
 /// SP9, SP12: a version names its body blob, plus a bookFile body's EPUB.
-fn names(conn: &Connection, naming: &[u8; 32], v: &Version) -> Result<BTreeSet<Name>> {
+pub(crate) fn names(conn: &Connection, naming: &[u8; 32], v: &Version) -> Result<BTreeSet<Name>> {
     let mut out = BTreeSet::new();
     if let Content::Body { hash, .. } = v.content {
         out.insert(Name {

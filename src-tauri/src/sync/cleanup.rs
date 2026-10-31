@@ -22,7 +22,9 @@ pub struct Name {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Content {
-    /// SP17: the version that stopped naming this content.
+    /// SP17: the version that stopped naming this content. For a view's claim,
+    /// construct this candidate only when `KnownWeeks::may_release` proves the
+    /// object for that retirement (#176); a claim alone only keeps content.
     Retired(Entry),
     /// SP36 line 5, including expired, never-named reservations (SY11).
     Unnamed,
