@@ -3,8 +3,8 @@
   "files": [
     {
       "name": "standardebooks-moby-dick.epub",
-      "url": "https://standardebooks.org/ebooks/herman-melville/moby-dick/downloads/herman-melville_moby-dick.epub?source=download",
-      "source": "Standard Ebooks (public domain)",
+      "url": "https://github.com/Quentinbest/read-book/releases/download/corpus-2026-08/standardebooks-moby-dick.epub",
+      "source": "Standard Ebooks (public domain), 2026-08-04 edition, kept on this repository's corpus-2026-08 release (#180)",
       "tags": [
         "epub3",
         "reference",
