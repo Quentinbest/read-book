@@ -621,6 +621,26 @@ fn stop_owners_past_budget(
     Ok(())
 }
 
+fn forget_spine(
+    conn: &Connection,
+    lib: &Library,
+    device: DeviceId,
+    seq: u64,
+    key: &str,
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_spine_versions
+         WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key_hash = ?4",
+        params![
+            lib.id.to_string(),
+            device.to_string(),
+            seq as i64,
+            &super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16]
+        ],
+    )?;
+    Ok(())
+}
+
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
     receive_unit(conn, lib, batch, now_ms, None)
@@ -832,6 +852,29 @@ fn receive_unit(
             }
         }
     }
+    if view.is_some() {
+        for raw in &batch.versions {
+            let key = raw["key"].as_str().unwrap_or("");
+            let prefix = super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16].to_vec();
+            if let Some(&seq) = sequences.get(&prefix) {
+                let kept: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync_versions
+                     WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4)",
+                    params![
+                        lib.id.to_string(),
+                        batch.device.to_string(),
+                        seq as i64,
+                        key
+                    ],
+                    |r| r.get(0),
+                )?;
+                if !kept {
+                    // SP18, SY9: a record set aside vouches for nothing, as in a change file.
+                    forget_spine(&tx, lib, batch.device, seq, key)?;
+                }
+            }
+        }
+    }
     // Only bodies a version in the change names are kept; their type is checked
     // when they are applied.
     let mut stored = Vec::new();
@@ -989,6 +1032,7 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
             HistoryCheck::False => {
                 set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
                 conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
+                forget_spine(conn, lib, device, placed.seq, placed.version.key.as_str())?;
                 // Its body goes too, unless another version still names it.
                 if let Content::Body { hash, .. } = &placed.version.content {
                     journal::drop_body_if_unnamed(conn, hash)?;

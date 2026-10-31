@@ -333,6 +333,137 @@ mod tests {
         .unwrap()
     }
 
+    // SP11: sign a view whose note claims ancestry in another key. Its
+    // signatures and spine are valid; receiving must check the history itself.
+    fn view_claiming_other_key(a: &mut Device, b: &Device, hash: Hash32) -> (View, Value) {
+        a.db.save_annotation(&highlight("book", Some("refused note"), 1_760_000_001_000))
+            .unwrap();
+        let mut versions: Vec<_> = journal::unsent(a.db.conn(), &a.lib)
+            .unwrap()
+            .into_iter()
+            .map(|v| v.raw)
+            .collect();
+        let note = versions
+            .iter_mut()
+            .find(|v| v["key"] == key("note").as_str())
+            .unwrap();
+        note["history"] = json!([{"d": b.lib.device.to_string(), "s": 1, "h": hash.to_string()}]);
+        let note = note.clone();
+        let writer = a.store.library(&a.lib.id).unwrap().writer_id().unwrap();
+        let signed = chain::sign_change(&a.key(), &a.lib.id, &writer, 1, None, &versions);
+        let change =
+            chain::open_change(&signed.bytes, &a.lib.id, &a.lib.device, &a.key().public()).unwrap();
+        let records: Vec<_> = versions
+            .into_iter()
+            .map(|version| crate::sync::view::Record {
+                key: Key::parse(version["key"].as_str().unwrap()).unwrap().0,
+                version,
+                week: vec![],
+            })
+            .collect();
+        let written = crate::sync::view::write(
+            &a.key(),
+            &a.lib.id,
+            &writer,
+            1,
+            None,
+            crate::sync::trust::Mark {
+                s: 1,
+                h: change.hash,
+            },
+            &records,
+            &[],
+            &[crate::sync::view::SpineEntry::from_change(&change)],
+            &crate::sync::view::Open::default(),
+        )
+        .unwrap();
+        (a.open(&written), note)
+    }
+
+    fn assert_descendant_refused(c: &Device, refused: &Value) {
+        let descendant = Device::new();
+        assert!(matches!(
+            branch(c, &descendant, refused, 1, record::version_hash(refused)),
+            Received::Applied {
+                applied: 0,
+                set_aside: 1
+            }
+        ));
+        let reason: String =
+            c.db.conn()
+                .query_row(
+                    "SELECT reason FROM sync_aside WHERE library = ?1 AND device = ?2",
+                    params![c.lib.id.to_string(), descendant.lib.device.to_string()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+        assert_eq!(reason, "false ancestry");
+        assert_eq!(note_of(&c.db, "book"), Some(None));
+    }
+
+    #[test]
+    fn a_refused_view_record_vouches_for_nothing() {
+        let mut b = Device::new();
+        let other = b.note("note:00000000-0000-4000-8000-000000000099", "other key");
+        let change = b.change();
+        let mut a = Device::new();
+        let (view, refused) = view_claiming_other_key(&mut a, &b, other.hash);
+        let c = Device::new();
+        send(&c, &b, &change);
+        assert!(matches!(
+            take(&c, &a, &view, &Floor::default(), &[])
+                .unwrap()
+                .received[0],
+            Received::Applied {
+                applied: 1,
+                set_aside: 1
+            }
+        ));
+        assert_descendant_refused(&c, &refused);
+    }
+
+    #[test]
+    fn a_waiting_view_record_later_refused_vouches_for_nothing() {
+        let mut b = Device::new();
+        let other = b.note("note:00000000-0000-4000-8000-000000000099", "other key");
+        let change = b.change();
+        let mut a = Device::new();
+        let (view, refused) = view_claiming_other_key(&mut a, &b, other.hash);
+        let c = Device::new();
+        take(&c, &a, &view, &Floor::default(), &[]).unwrap();
+        let state: i64 = c
+            .db
+            .conn()
+            .query_row(
+                "SELECT applied FROM sync_versions WHERE library = ?1 AND device = ?2 AND key = ?3",
+                params![
+                    c.lib.id.to_string(),
+                    a.lib.device.to_string(),
+                    key("note").as_str()
+                ],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(state, -1);
+        send(&c, &b, &change);
+        let reason: String =
+            c.db.conn()
+                .query_row(
+                    "SELECT reason FROM sync_aside WHERE library = ?1 AND device = ?2",
+                    params![c.lib.id.to_string(), a.lib.device.to_string()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+        assert_eq!(reason, "false ancestry");
+        let remaining: i64 = c.db.conn().query_row(
+            "SELECT COUNT(*) FROM sync_versions WHERE library = ?1 AND device = ?2 AND key = ?3",
+            params![c.lib.id.to_string(), a.lib.device.to_string(), key("note").as_str()],
+            |r| r.get(0),
+        ).unwrap();
+        assert_eq!(remaining, 0);
+        assert_descendant_refused(&c, &refused);
+    }
+
     fn is_conflict(c: &Device) -> bool {
         let r = journal::record_of(c.db.conn(), &c.lib, &key("note"), Which::All).unwrap();
         matches!(r.outcome(&HashSet::new()), Some(Outcome::Conflict { .. }))
