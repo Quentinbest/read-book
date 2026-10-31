@@ -13,6 +13,7 @@ pub mod backup;
 pub mod chain;
 pub mod cleanup;
 pub mod clock;
+pub mod compact;
 pub mod crypto;
 pub mod device_file;
 pub mod device_store;
