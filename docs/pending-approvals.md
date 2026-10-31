@@ -409,3 +409,4 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(a)** No cap. Pruning bounds the steady state, and a device holding back is already named in Settings › Sync with Remove.
     - **(b)** A provisional cap per writer, for example 64 MB of superseded `raw` and bodies. Past it, nothing more is received from that device and it is named in Settings › Sync, as with SY28's set-aside budget.
     *Recommendation:* (a) for now. Revisit with (b) once Stage 2 measures real journals. Until this is answered, no cap is built.
+    **Approved 2026-10-31: (a).**
