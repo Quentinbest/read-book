@@ -332,9 +332,9 @@ pub(crate) fn publish(conn: &Connection, lib: &Library, last_seq: u64) -> Result
 }
 
 /// SP11, SP13: the device chains as this journal holds them.
-struct JournalChains<'a> {
-    conn: &'a Connection,
-    lib: &'a Library,
+pub(crate) struct JournalChains<'a> {
+    pub(crate) conn: &'a Connection,
+    pub(crate) lib: &'a Library,
 }
 
 impl JournalChains<'_> {

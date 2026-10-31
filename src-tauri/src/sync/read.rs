@@ -22,7 +22,8 @@ pub struct ViewReceived {
 /// SP18: receive a view opened with view::open for this library/device/key.
 /// The caller supplies whether the peer is removed; a removed device's view is
 /// refused, since SP18 reads only its change files after the cutoff.
-/// The view's open and week claims are not consumed here (#176).
+/// SP17, #176: after the view lands, the caller takes its protection claims with
+/// `KnownWeeks::receive_view` and `Ledger::receive_view`.
 /// After acceptance, persist its generation with device_file::raise_view_generation.
 /// This function neither fetches files nor deletes anything from storage.
 #[allow(clippy::too_many_arguments)]

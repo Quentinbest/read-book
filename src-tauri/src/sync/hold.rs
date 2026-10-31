@@ -221,11 +221,14 @@ pub fn needs_hold(named_by_live_version: bool) -> bool {
 struct Reservation {
     item: Reserve,
     first_seen: u64,
+    // #176: provenance only; claims use the same SP33 ending rules.
+    _claimed: bool,
 }
 
 #[derive(Clone, Debug)]
 struct Holding {
     item: Hold,
+    claimed: bool,
     change: ChangeId,
     accepted_at: Option<u64>,
     naming: Option<(ChangeId, Entry)>,
@@ -250,6 +253,111 @@ pub struct Ledger {
 }
 
 impl Ledger {
+    /// SP17, SP33, SP34, #176: a view adds protection and never removes a
+    /// known item by omission, including a removed writer's item. `open` comes
+    /// from an authenticated view; the caller resolves change hashes from its
+    /// checked chain or spine. `named` are the view's records' verified object
+    /// references, built as for `receive`. Refusal leaves the ledger unchanged.
+    #[allow(clippy::too_many_arguments)]
+    pub fn receive_view(
+        &mut self,
+        device: DeviceId,
+        open: &super::view::Open,
+        through: Mark,
+        named: &[Named],
+        change_hash: &dyn Fn(u64) -> Option<Hash32>,
+        clock: &Vouched,
+    ) -> Result<(), HoldError> {
+        if self
+            .last
+            .get(&device)
+            .is_some_and(|last| last.s >= through.s)
+        {
+            return Ok(());
+        }
+        read_lists(
+            &open
+                .reserve
+                .iter()
+                .map(|(_, r)| r.write())
+                .collect::<Vec<_>>(),
+            &open.hold.iter().map(|(_, h)| h.write()).collect::<Vec<_>>(),
+        )?;
+        // SP27: rotations belong to a later stage, not this ledger.
+        let mut next = self.clone();
+        for (id, item) in &open.reserve {
+            if id.device != device || id.seq == 0 || id.seq > through.s {
+                return Err(HoldError::Chain);
+            }
+            if !next.reservations.contains_key(id) {
+                next.check_additions(device, std::slice::from_ref(item), &[])?;
+                next.reservations.insert(
+                    *id,
+                    Reservation {
+                        item: item.clone(),
+                        first_seen: clock.now(),
+                        _claimed: true,
+                    },
+                );
+            }
+        }
+        for (id, item) in &open.hold {
+            if id.device != device || id.seq == 0 || id.seq > through.s {
+                return Err(HoldError::Chain);
+            }
+            if !next.holds.contains_key(id) {
+                let hash = change_hash(id.seq).ok_or(HoldError::Chain)?;
+                next.check_additions(device, &[], std::slice::from_ref(item))?;
+                next.holds.insert(
+                    *id,
+                    Holding {
+                        item: item.clone(),
+                        claimed: true,
+                        change: ChangeId {
+                            device,
+                            seq: id.seq,
+                            hash,
+                        },
+                        accepted_at: None,
+                        naming: None,
+                    },
+                );
+            }
+        }
+        // SP34: a view replaces the change that named a held object; its record
+        // still shows the naming, so the hold waits for that change's
+        // acknowledgement instead of timing out as dangling. A naming version
+        // replaced within the view retired the object, and its week keeps it.
+        if named
+            .iter()
+            .any(|n| n.version.device != device || n.version.seq > through.s)
+        {
+            return Err(HoldError::Shape);
+        }
+        for (id, h) in &mut next.holds {
+            if id.device != device || h.naming.is_some() {
+                continue;
+            }
+            if let Some(n) = named
+                .iter()
+                .filter(|n| {
+                    n.version.seq > id.seq
+                        && n.kind == h.item.kind
+                        && n.name == h.item.name
+                        && n.key == h.item.for_key
+                })
+                .min_by_key(|n| n.version.seq)
+            {
+                let seq = n.version.seq;
+                let hash = change_hash(seq).ok_or(HoldError::Chain)?;
+                h.naming = Some((ChangeId { device, seq, hash }, n.version));
+            }
+        }
+        next.last.insert(device, through);
+        *self = next;
+        Ok(())
+    }
+
     /// SP17, SP33: this writer's reservations that have not ended or lapsed.
     pub(crate) fn open_reservations(
         &self,
@@ -365,6 +473,7 @@ impl Ledger {
                 Reservation {
                     item,
                     first_seen: clock.now(),
+                    _claimed: false,
                 },
             );
         }
@@ -377,6 +486,7 @@ impl Ledger {
                 },
                 Holding {
                     item,
+                    claimed: false,
                     change: change.into(),
                     accepted_at: None,
                     naming: None,
@@ -403,10 +513,9 @@ impl Ledger {
     ) -> bool {
         !progress.removed.contains(&id.device)
             && present_in_storage
-            && self
-                .holds
-                .get(&id)
-                .is_some_and(|h| included_by_all(h.change, progress.accepted, progress.held))
+            && self.holds.get(&id).is_some_and(|h| {
+                !h.claimed && included_by_all(h.change, progress.accepted, progress.held)
+            })
     }
 
     /// SP34: own open holds whose target keys still wait for acknowledgements.
@@ -425,6 +534,8 @@ impl Ledger {
     /// A dangling week starts when this device observes all acknowledgements,
     /// not on receipt of the hold. Seeing its naming change stops that timer.
     pub fn advance(&mut self, clock: &Vouched, p: &Progress<'_>) {
+        // #176: claimed items end by the same SP33/SP34 rules. Ending a made-up
+        // item only loses protection it never deserved; it releases no real item.
         let chose = |key: &str, action: &str| {
             p.choices.iter().any(|v| {
                 v.key.as_str() == key
@@ -979,5 +1090,233 @@ mod tests {
             assert!(!ledger.protects(kind, r.name));
             assert_eq!(named(&next_a, &item).name, named(&next_b, &item).name);
         }
+    }
+
+    fn view_open(c: &Change) -> super::super::view::Open {
+        super::super::view::Open {
+            reserve: c
+                .reserve
+                .iter()
+                .enumerate()
+                .map(|(index, r)| (ItemId { index, ..id(c) }, Reserve::read(r).unwrap()))
+                .collect(),
+            hold: c
+                .hold
+                .iter()
+                .enumerate()
+                .map(|(index, h)| (ItemId { index, ..id(c) }, Hold::read(h).unwrap()))
+                .collect(),
+            rotations: vec![],
+        }
+    }
+
+    fn through(c: &Change) -> Mark {
+        Mark {
+            s: c.seq,
+            h: c.hash,
+        }
+    }
+
+    #[test]
+    fn an_open_item_a_view_leaves_out_still_protects() {
+        for removed in [false, true] {
+            let key = Keypair::from_seed(&[1; 32]);
+            let c = change(&key, None, &[reserve(1)], &[hold(1)]);
+            let next = change(&key, Some(&c), &[], &[]);
+            let mut ledger = Ledger::default();
+            ledger.receive(&c, &[], removed, &clock(0)).unwrap();
+            ledger
+                .receive_view(
+                    c.device,
+                    &Default::default(),
+                    through(&next),
+                    &[],
+                    &|_| None,
+                    &clock(1),
+                )
+                .unwrap();
+            assert!(ledger.protects(Kind::Book, reserve(1).name));
+            assert_eq!(ledger.reservation_count(c.device), 1);
+            assert_eq!(ledger.hold_count(c.device), 1);
+            let mut world = World::default();
+            if removed {
+                world.removed.insert(c.device);
+                world.read.insert(c.device);
+                world.acknowledge(&c, &[]);
+                world.advance(&mut ledger, 100 * WEEK_MS);
+                assert_eq!(ledger.reservation_count(c.device), 1);
+                assert_eq!(ledger.hold_count(c.device), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn an_open_item_only_a_view_claims_protects_and_ends_as_usual() {
+        let key = Keypair::from_seed(&[1; 32]);
+        let c = change(&key, None, &[reserve(1)], &[hold(1)]);
+        let mut ledger = Ledger::default();
+        // Missing hold hashes refuse the whole call, even after reservations.
+        assert_eq!(
+            ledger.receive_view(
+                c.device,
+                &view_open(&c),
+                through(&c),
+                &[],
+                &|_| None,
+                &clock(0)
+            ),
+            Err(HoldError::Chain)
+        );
+        assert!(ledger.reservations.is_empty());
+        assert!(ledger.last.is_empty());
+        ledger
+            .receive_view(
+                c.device,
+                &view_open(&c),
+                through(&c),
+                &[],
+                &|_| Some(c.hash),
+                &clock(0),
+            )
+            .unwrap();
+        assert!(ledger.reservations[&id(&c)]._claimed);
+        assert!(ledger.holds[&id(&c)].claimed);
+        assert!(ledger.protects(Kind::Book, hold(1).name));
+        let mut world = World::default();
+        world.read.insert(c.device);
+        world.acknowledge(&c, &[]);
+        assert!(
+            !world.using(|p| ledger.may_publish_naming(id(&c), true, p)),
+            "a claim only keeps"
+        );
+        world.advance(&mut ledger, 0);
+        world.advance(&mut ledger, WEEK_MS - 1);
+        assert!(ledger.protects(Kind::Book, hold(1).name));
+        world.advance(&mut ledger, WEEK_MS);
+        assert!(!ledger.protects(Kind::Book, hold(1).name));
+        // Already past through: a replay cannot reopen ended claims.
+        ledger
+            .receive_view(
+                c.device,
+                &view_open(&c),
+                through(&c),
+                &[],
+                &|_| panic!(),
+                &clock(WEEK_MS),
+            )
+            .unwrap();
+        assert!(!ledger.protects(Kind::Book, hold(1).name));
+    }
+
+    #[test]
+    fn the_ledger_continues_from_the_views_through() {
+        let key = Keypair::from_seed(&[1; 32]);
+        let c = change(&key, None, &[reserve(1)], &[hold(1)]);
+        let next = change(&key, Some(&c), &[], &[]);
+        let mut ledger = Ledger::default();
+        ledger
+            .receive_view(
+                c.device,
+                &view_open(&c),
+                through(&c),
+                &[],
+                &|_| Some(c.hash),
+                &clock(0),
+            )
+            .unwrap();
+        ledger
+            .receive(&next, &[named(&next, &hold(1))], false, &clock(1))
+            .unwrap();
+        assert_eq!(ledger.last[&c.device], through(&next));
+        assert_eq!(ledger.reservation_count(c.device), 0);
+        let mut world = World::default();
+        world.acknowledge(&next, &[]);
+        world.advance(&mut ledger, 1);
+        assert_eq!(ledger.hold_count(c.device), 0);
+    }
+
+    #[test]
+    fn a_view_over_the_open_limits_changes_nothing() {
+        let key = Keypair::from_seed(&[1; 32]);
+        let c = change(&key, None, &[reserve(1)], &[hold(1)]);
+        let next = change(&key, Some(&c), &[], &[]);
+        for (reserve_count, reserve_size, hold_count, hold_size, error) in [
+            (MAX_RESERVATIONS, 1, 0, 1, HoldError::Reservations),
+            (1, MAX_RESERVED_BYTES, 0, 1, HoldError::Reservations),
+            (1, 1, MAX_HOLDS, 1, HoldError::Holds),
+            (1, 1, 1, MAX_HELD_BYTES, HoldError::Holds),
+        ] {
+            let mut ledger = Ledger::default();
+            ledger.receive(&c, &[], false, &clock(0)).unwrap();
+            let open = super::super::view::Open {
+                reserve: (0..reserve_count)
+                    .map(|index| {
+                        (
+                            ItemId {
+                                seq: next.seq,
+                                index,
+                                ..id(&c)
+                            },
+                            reserve(reserve_size),
+                        )
+                    })
+                    .collect(),
+                hold: (0..hold_count)
+                    .map(|index| {
+                        (
+                            ItemId {
+                                seq: next.seq,
+                                index,
+                                ..id(&c)
+                            },
+                            hold(hold_size),
+                        )
+                    })
+                    .collect(),
+                rotations: vec![],
+            };
+            assert_eq!(
+                ledger.receive_view(
+                    c.device,
+                    &open,
+                    through(&next),
+                    &[],
+                    &|_| Some(next.hash),
+                    &clock(1)
+                ),
+                Err(error)
+            );
+            assert_eq!(ledger.reservation_count(c.device), 1);
+            assert_eq!(ledger.hold_count(c.device), 1);
+            assert_eq!(ledger.last[&c.device], through(&c));
+        }
+    }
+
+    #[test]
+    fn a_view_skipping_the_naming_change_keeps_the_hold_until_it_is_acknowledged() {
+        // SP34: the view replaces change 2, which named the held object.
+        let key = Keypair::from_seed(&[1; 32]);
+        let c = change(&key, None, &[], &[hold(1)]);
+        let next = change(&key, Some(&c), &[], &[]);
+        let mut ledger = Ledger::default();
+        ledger.receive(&c, &[], false, &clock(0)).unwrap();
+        ledger
+            .receive_view(
+                c.device,
+                &view_open(&c),
+                through(&next),
+                &[named(&next, &hold(1))],
+                &|s| (s == next.seq).then_some(next.hash),
+                &clock(1),
+            )
+            .unwrap();
+        let mut world = World::default();
+        world.acknowledge(&c, &[]);
+        world.saw(&next);
+        world.advance(&mut ledger, 10 * WEEK_MS);
+        assert_eq!(ledger.hold_count(c.device), 1, "named, so not dangling");
+        world.acknowledge(&next, &[(Id16([7; 16]), 2)]);
+        world.advance(&mut ledger, 10 * WEEK_MS);
+        assert_eq!(ledger.hold_count(c.device), 0);
     }
 }
