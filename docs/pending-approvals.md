@@ -402,3 +402,11 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(c)** Drop the offline run for now. G2 stays unmeasured and Explain stays private and unoffered.
     *Recommendation:* (a). It keeps G2 as planned and costs nothing while Explain is private; (b) is a quicker route but the items would be the reviewers' guesses at what is hard, not readers' stuck points.
     **Approved 2026-10-26: (a).**
+
+## Sync Stage 1c, pruning (2026-10-31, #111)
+
+118. **A cap on one device's superseded versions before pruning (SY28, SY11; #111).** Pruning drops a superseded version's text and unnamed body once a newer version is accepted by every enrolled device and its week has passed. Until then, a device that sends many valid edits, each with large unknown fields (kept per SY9), can still grow the journal for about a week, or longer while a device holds back acknowledgement (SY11: 30 days silent, or 7 days writing without taking in others' changes).
+    - **(a)** No cap. Pruning bounds the steady state, and a device holding back is already named in Settings › Sync with Remove.
+    - **(b)** A provisional cap per writer, for example 64 MB of superseded `raw` and bodies. Past it, nothing more is received from that device and it is named in Settings › Sync, as with SY28's set-aside budget.
+    *Recommendation:* (a) for now. Revisit with (b) once Stage 2 measures real journals. Until this is answered, no cap is built.
+    **Approved 2026-10-31: (a).**

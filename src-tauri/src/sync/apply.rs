@@ -287,8 +287,12 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
 
 fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
     let s: Option<i64> = conn.query_row(
-        // `seq IS NOT NULL` lets the partial index `sync_versions_published` answer.
-        "SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL",
+        // SP17, #111: pruning can remove every own payload while a peer's
+        // descendant stands. Its spine still proves how far own ancestry is held.
+        "SELECT MAX(seq) FROM (
+            SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL
+            UNION ALL SELECT seq FROM sync_spine_versions WHERE library = ?1 AND device = ?2
+         )",
         params![lib.id.to_string(), lib.device.to_string()],
         |r| r.get(0),
     )?;
