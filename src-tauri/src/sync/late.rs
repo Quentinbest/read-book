@@ -145,6 +145,11 @@ fn check_ancestors(
                 |r| r.get(0),
             )
             .optional()?;
+        // SP17, SP26, SP30, #111: a pruned, checked ancestor is permanent
+        // ancestry. It cannot be revived by reverting this later descendant.
+        if raw.is_none() && journal::spine_contains(conn, lib, &p.version.key, id)? {
+            continue;
+        }
         let raw = raw.ok_or_else(|| LateError::MissingVersion(id, p.version.key.clone()))?;
         let ancestor = Placed {
             version: checked(&raw, id.device)?,
@@ -655,8 +660,17 @@ pub fn finish_keeps(conn: &Connection, lib: &Library) -> Result<usize> {
         let replacement: Option<(String, i64, String)> = tx
             .query_row(
                 "SELECT device, seq, hash FROM sync_versions WHERE library = ?1 AND key = ?2
-             AND hash = ?3 AND seq IS NOT NULL AND applied IN (1, 2)",
-                params![lib.id.to_string(), row.key.as_str(), row.kept],
+             AND hash = ?3 AND seq IS NOT NULL AND applied IN (1, 2)
+             UNION ALL SELECT device, seq, hash FROM sync_spine_versions
+             WHERE library = ?1 AND key_hash = ?4 AND hash = ?3",
+                // SP17, #111: a numbered Keep replacement may be pruned before
+                // its choice is published; its exact ID still finishes the Keep.
+                params![
+                    lib.id.to_string(),
+                    row.key.as_str(),
+                    row.kept,
+                    &super::envelope::vlist_entry(row.key.as_str(), &Hash32([0; 32]))[..16]
+                ],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
             )
             .optional()?;

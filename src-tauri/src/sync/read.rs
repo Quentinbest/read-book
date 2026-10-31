@@ -152,7 +152,7 @@ pub fn receive_view(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::sync::apply::tests::{highlight, note_of, ANNO};
     use crate::sync::compact::tests::Device;
@@ -170,11 +170,11 @@ mod tests {
         crate::store::now_ms()
     }
 
-    fn key(kind: &str) -> Key {
+    pub(crate) fn key(kind: &str) -> Key {
         Key::parse(&format!("{kind}:{ANNO}")).unwrap().0
     }
 
-    fn edit(a: &mut Device, text: &str, n: i64) -> chain::Change {
+    pub(crate) fn edit(a: &mut Device, text: &str, n: i64) -> chain::Change {
         a.db.save_annotation(&highlight("book", Some(text), 1_760_000_001_000 + n))
             .unwrap();
         a.change()
@@ -196,7 +196,7 @@ mod tests {
         (signed.bytes, bodies)
     }
 
-    fn send(c: &Device, a: &Device, change: &chain::Change) -> Received {
+    pub(crate) fn send(c: &Device, a: &Device, change: &chain::Change) -> Received {
         let (bytes, bodies) = file(a, change);
         chain::receive_change(
             c.db.conn(),
@@ -305,7 +305,13 @@ mod tests {
         }
     }
 
-    fn branch(c: &Device, b: &Device, ancestor: &Value, seq: u64, hash: Hash32) -> Received {
+    pub(crate) fn branch(
+        c: &Device,
+        b: &Device,
+        ancestor: &Value,
+        seq: u64,
+        hash: Hash32,
+    ) -> Received {
         let body = br#"{"text":"branch"}"#.to_vec();
         let raw = json!({
             "format": 1, "key": ancestor["key"], "device": b.lib.device.to_string(),
@@ -465,7 +471,7 @@ mod tests {
         assert_descendant_refused(&c, &refused);
     }
 
-    fn is_conflict(c: &Device) -> bool {
+    pub(crate) fn is_conflict(c: &Device) -> bool {
         let r = journal::record_of(c.db.conn(), &c.lib, &key("note"), Which::All).unwrap();
         matches!(r.outcome(&HashSet::new()), Some(Outcome::Conflict { .. }))
     }

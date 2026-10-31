@@ -301,12 +301,33 @@ pub(crate) fn version_raw(
         .optional()?)
 }
 
-fn check(raw: &str, device: DeviceId) -> Result<Version> {
+pub(crate) fn check(raw: &str, device: DeviceId) -> Result<Version> {
     let v: Value = serde_json::from_str(raw).map_err(|_| RecordError::NotAnObject)?;
     match check_version(v, device)? {
         Checked::Version(v) => Ok(v),
         Checked::NewerFormat(_) => Err(RecordError::Field("format").into()),
     }
+}
+
+/// SP17, #111: exact ancestry retained without a version payload.
+pub(crate) fn spine_contains(
+    conn: &Connection,
+    lib: &Library,
+    key: &Key,
+    id: Entry,
+) -> Result<bool> {
+    Ok(conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_spine_versions
+         WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key_hash = ?4 AND hash = ?5)",
+        params![
+            lib.id.to_string(),
+            id.device.to_string(),
+            id.seq as i64,
+            &super::envelope::vlist_entry(key.as_str(), &id.hash)[..16],
+            id.hash.to_string()
+        ],
+        |r| r.get(0),
+    )?)
 }
 
 /// Which of a record's versions to load.

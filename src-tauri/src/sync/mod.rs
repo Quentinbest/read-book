@@ -31,6 +31,7 @@ pub mod local;
 pub mod membership;
 pub mod merge;
 pub mod proof;
+pub mod prune;
 pub mod read;
 pub mod record;
 pub mod recovery;

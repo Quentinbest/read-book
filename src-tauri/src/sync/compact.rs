@@ -115,6 +115,16 @@ fn retired(
     // later edit. Preserve the own predecessor and other causal heads only.
     let mut parents = Vec::new();
     for id in &v.history {
+        if journal::version_raw(conn, lib, &v.key, *id)?.is_none()
+            && journal::spine_contains(conn, lib, &v.key, *id)?
+        {
+            // SP17, SP36, #111: pruning follows an acknowledged, aged newer
+            // descendant: objects it stopped naming are already retired safely;
+            // objects it still names are live. No retirement needs protecting
+            // again. Peer-view spine-only versions (#179) also contribute nothing:
+            // this device cannot have edited content it never held.
+            continue;
+        }
         if let Some(parent) = checked(raw(conn, lib, &v.key, *id)?, id.device)? {
             parents.push(Placed {
                 version: parent,
@@ -256,7 +266,15 @@ pub fn build(
                 seq: change.seq,
                 hash: record::version_hash(value),
             };
-            let value = raw(conn, lib, &key, id)?;
+            // SP17, #111: an own superseded payload may already be pruned;
+            // the checked change supplied to this build still holds its bytes.
+            let value = if journal::version_raw(conn, lib, &key, id)?.is_none()
+                && journal::spine_contains(conn, lib, &key, id)?
+            {
+                value.clone()
+            } else {
+                raw(conn, lib, &key, id)?
+            };
             if let Some(v) = checked(value.clone(), lib.device)? {
                 if !released(&id) {
                     let mut objects = retired(conn, lib, naming, &v)?;
@@ -341,6 +359,7 @@ pub fn build(
         HashSet::new()
     };
     ids.extend(&carried);
+    let mut known_keys = None;
     for id in ids {
         let text: Option<String> = conn
             .query_row(
@@ -350,13 +369,43 @@ pub fn build(
             )
             .optional()
             .map_err(JournalError::from)?;
-        let key = text.as_deref().and_then(Key::opaque).or_else(|| {
+        let mut key = text.as_deref().and_then(Key::opaque).or_else(|| {
             // An unchanged own record can survive even without its journal row.
             records
                 .values()
                 .find(|r| record::version_hash(&r.version) == id.hash)
                 .map(|r| r.key.clone())
         });
+        if key.is_none() {
+            // SP17, SP35, #111: the pruned version's prefix still routes its
+            // permanent mark. A retained descendant supplies the key text.
+            if known_keys.is_none() {
+                let texts: Vec<String> = conn
+                    .prepare("SELECT DISTINCT key FROM sync_versions WHERE library = ?1")
+                    .map_err(JournalError::from)?
+                    .query_map([lib.id.to_string()], |r| r.get(0))
+                    .map_err(JournalError::from)?
+                    .collect::<std::result::Result<_, _>>()
+                    .map_err(JournalError::from)?;
+                let keys: BTreeMap<Vec<u8>, Key> = texts
+                    .iter()
+                    .filter_map(|s| Key::opaque(s))
+                    .chain(records.keys().cloned())
+                    .map(|k| {
+                        (
+                            super::envelope::vlist_entry(k.as_str(), &id.hash)[..16].to_vec(),
+                            k,
+                        )
+                    })
+                    .collect();
+                known_keys = Some(keys);
+            }
+            let prefix: Option<Vec<u8>> = conn.query_row(
+                "SELECT key_hash FROM sync_spine_versions WHERE library = ?1 AND device = ?2 AND seq = ?3 AND hash = ?4",
+                params![lib.id.to_string(), id.device.to_string(), id.seq as i64, id.hash.to_string()], |r| r.get(0),
+            ).optional().map_err(JournalError::from)?;
+            key = prefix.and_then(|p| known_keys.as_ref().and_then(|keys| keys.get(&p)).cloned());
+        }
         // SP17, SP35: a mark goes in the shard its key falls in, whoever wrote the
         // key; a key only another device wrote has no record here but its mark
         // still moves into the view, or it would stay pending for good.
