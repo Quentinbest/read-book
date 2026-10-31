@@ -331,6 +331,17 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, seq)
     );
     "#,
+    // 13: SP17, SP18: authenticated versions retained by a peer's spine.
+    r#"
+    CREATE TABLE sync_spine_versions (
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        key_hash BLOB NOT NULL CHECK(length(key_hash) = 16),
+        hash TEXT NOT NULL,
+        PRIMARY KEY (library, device, key_hash, seq)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

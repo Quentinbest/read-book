@@ -579,7 +579,7 @@ fn publish_within(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::store::Store;
     use crate::sync::apply::tests::{device_with, highlight, LIB};
@@ -595,16 +595,16 @@ mod tests {
     const NAMING: [u8; 32] = [42; 32];
     const NOTE: &str = "note:00000000-0000-4000-8000-000000000001";
 
-    struct Device {
-        db: Store,
-        lib: Library,
-        ks: Memory,
-        store: DeviceStore,
+    pub(crate) struct Device {
+        pub(crate) db: Store,
+        pub(crate) lib: Library,
+        pub(crate) ks: Memory,
+        pub(crate) store: DeviceStore,
         marks: Marks,
     }
 
     impl Device {
-        fn new() -> Self {
+        pub(crate) fn new() -> Self {
             let ks = Memory::default();
             let mut store = DeviceStore::default();
             let device = store.identity(&LIB).unwrap().device_id().unwrap();
@@ -619,7 +619,7 @@ mod tests {
             }
         }
 
-        fn key(&self) -> Keypair {
+        pub(crate) fn key(&self) -> Keypair {
             self.store.library(&self.lib.id).unwrap().key().unwrap()
         }
 
@@ -634,7 +634,7 @@ mod tests {
             .unwrap()
         }
 
-        fn note(&self, text: &str, body: &str) -> Version {
+        pub(crate) fn note(&self, text: &str, body: &str) -> Version {
             self.local(
                 text,
                 LocalContent::Body(json!({"text": body}).to_string().into_bytes()),
@@ -651,7 +651,7 @@ mod tests {
             )
         }
 
-        fn change(&mut self) -> Change {
+        pub(crate) fn change(&mut self) -> Change {
             let signed = chain::publish(self.db.conn(), &self.lib, &self.ks, &mut self.store)
                 .unwrap()
                 .unwrap();
@@ -668,7 +668,7 @@ mod tests {
             c
         }
 
-        fn build(
+        pub(crate) fn build(
             &self,
             previous: Option<&View>,
             changes: &[Change],
@@ -690,7 +690,7 @@ mod tests {
             .unwrap()
         }
 
-        fn save(&mut self, built: &Built) -> Written {
+        pub(crate) fn save(&mut self, built: &Built) -> Written {
             publish(
                 self.db.conn(),
                 &self.lib,
@@ -703,7 +703,7 @@ mod tests {
             .unwrap()
         }
 
-        fn open(&self, w: &Written) -> View {
+        pub(crate) fn open(&self, w: &Written) -> View {
             view::open(
                 &w.index_bytes,
                 &self.lib.id,
@@ -714,13 +714,13 @@ mod tests {
             .unwrap()
         }
 
-        fn acknowledge(&mut self, w: &Written) {
+        pub(crate) fn acknowledge(&mut self, w: &Written) {
             for path in w.parts.iter().map(|(p, _)| p).chain([&w.index_path]) {
                 chain::uploaded(&self.ks, &mut self.store, &self.lib.id, path).unwrap();
             }
         }
 
-        fn mark(&mut self, id: Entry) {
+        pub(crate) fn mark(&mut self, id: Entry) {
             let mut ages = Ages::default();
             ages.saw(id, 0);
             let mut clock = Vouched::new(0);

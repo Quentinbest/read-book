@@ -380,7 +380,28 @@ impl Chains for JournalChains<'_> {
             // still checked ancestry; a late hold (-5) is as it was when held.
             Some((_, applied)) if applied < 0 && !matches!(applied, -4 | -6) => Lookup::Unknown,
             Some((h, _)) => Hash32::parse(&h).map_or(Lookup::Absent, Lookup::Present),
-            None => Lookup::Absent,
+            None => {
+                // SP18: a verified spine is checked ancestry even without a payload.
+                let hash: Option<String> = self
+                    .conn
+                    .query_row(
+                        "SELECT hash FROM sync_spine_versions
+                     WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key_hash = ?4",
+                        params![
+                            self.lib.id.to_string(),
+                            device.to_string(),
+                            seq as i64,
+                            &super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16]
+                        ],
+                        |r| r.get(0),
+                    )
+                    .optional()
+                    .ok()
+                    .flatten();
+                hash.as_deref()
+                    .and_then(Hash32::parse)
+                    .map_or(Lookup::Absent, Lookup::Present)
+            }
         }
     }
 
@@ -425,6 +446,30 @@ impl Chains for JournalChains<'_> {
             .optional()
             .ok()
             .flatten();
+        // SP18: find the newest prior occurrence across payloads and the spine.
+        // At equal sequences the payload's checked/waiting state still wins.
+        let spine: Option<(i64, String)> = self
+            .conn
+            .query_row(
+                "SELECT seq, hash FROM sync_spine_versions
+             WHERE library = ?1 AND device = ?2 AND key_hash = ?3 AND seq < ?4
+             ORDER BY seq DESC LIMIT 1",
+                params![
+                    self.lib.id.to_string(),
+                    device.to_string(),
+                    &super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16],
+                    before as i64
+                ],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()
+            .ok()
+            .flatten();
+        if let Some((s, h)) = spine {
+            if row.as_ref().map_or(true, |r| s > r.0) {
+                return Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h));
+            }
+        }
         match row {
             Some((_, _, applied)) if applied < 0 && !matches!(applied, -4 | -6) => Prior::Unknown,
             Some((s, h, _)) => Hash32::parse(&h).map_or(Prior::Unknown, |h| Prior::At(s as u64, h)),
@@ -576,8 +621,50 @@ fn stop_owners_past_budget(
     Ok(())
 }
 
+fn forget_spine(
+    conn: &Connection,
+    lib: &Library,
+    device: DeviceId,
+    seq: u64,
+    key: &str,
+) -> Result<()> {
+    conn.execute(
+        "DELETE FROM sync_spine_versions
+         WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key_hash = ?4",
+        params![
+            lib.id.to_string(),
+            device.to_string(),
+            seq as i64,
+            &super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16]
+        ],
+    )?;
+    Ok(())
+}
+
 /// SY28, SP14: receive one device's change, in order, and apply what it changed.
 pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> Result<Received> {
+    receive_unit(conn, lib, batch, now_ms, None)
+}
+
+/// SP18: the view's through identifies one atomic guard/undo unit, while every
+/// record is checked and merged at the sequence its verified spine names.
+pub(crate) fn receive_view(
+    conn: &Connection,
+    lib: &Library,
+    batch: &Batch,
+    now_ms: i64,
+    view: &super::view::View,
+) -> Result<Received> {
+    receive_unit(conn, lib, batch, now_ms, Some(view))
+}
+
+fn receive_unit(
+    conn: &Connection,
+    lib: &Library,
+    batch: &Batch,
+    now_ms: i64,
+    view: Option<&super::view::View>,
+) -> Result<Received> {
     if guard::paused(conn, lib)? {
         return Ok(Received::Paused);
     }
@@ -588,7 +675,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     if batch.seq <= have {
         return Ok(Received::Repeat);
     }
-    if batch.seq != have + 1 {
+    if view.is_none() && batch.seq != have + 1 {
         return Ok(Received::Waits);
     }
     // SY28: nothing more is received from a device whose budget is spent.
@@ -604,6 +691,49 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
     }
     guard::prune(conn, lib, now_ms)?;
     let tx = conn.unchecked_transaction()?;
+    let mut sequences = std::collections::HashMap::new();
+    if let Some(view) = view {
+        // SP18, SP15: expose the spine to ancestry checks within the transaction;
+        // rollback restores both this knowledge and seen, together with the data.
+        // read.rs already refused a spine that disagrees with a held change.
+        for entry in view.spine.iter().filter(|e| e.s > have) {
+            tx.execute(
+                "INSERT OR REPLACE INTO sync_changes (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    lib.id.to_string(),
+                    batch.device.to_string(),
+                    entry.s as i64,
+                    entry.h.to_string()
+                ],
+            )?;
+            let bytes = super::ids::b64url_decode(&entry.v).expect("opened SP17 spine");
+            for v in bytes.chunks_exact(48) {
+                let hash = Hash32(v[16..].try_into().expect("SP17 hash"));
+                tx.execute(
+                    "INSERT INTO sync_spine_versions (library, device, seq, key_hash, hash)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![
+                        lib.id.to_string(),
+                        batch.device.to_string(),
+                        entry.s as i64,
+                        &v[..16],
+                        hash.to_string()
+                    ],
+                )?;
+                sequences.insert(v[..16].to_vec(), entry.s);
+            }
+        }
+        tx.execute(
+            "INSERT INTO sync_seen (library, device, seq, hash) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(library, device) DO UPDATE SET seq = excluded.seq, hash = excluded.hash",
+            params![
+                lib.id.to_string(),
+                batch.device.to_string(),
+                batch.seq as i64,
+                batch.hash.to_string()
+            ],
+        )?;
+    }
     let mut keys = Vec::new();
     let mut aside = 0;
     let mut named = HashSet::new();
@@ -621,6 +751,16 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
         }
     }
     for raw in &batch.versions {
+        let seq = if view.is_some() {
+            let key = raw["key"].as_str().unwrap_or("");
+            let prefix = super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16].to_vec();
+            let Some(&seq) = sequences.get(&prefix) else {
+                continue; // SP18: this record's version is already held.
+            };
+            seq
+        } else {
+            batch.seq
+        };
         // SY28: a body must be the size its version declares.
         let checked = check_version(raw.clone(), batch.device).and_then(|c| match c {
             Checked::Version(v) if times.get(v.key.as_str()).is_some_and(|&n| n > 1) => {
@@ -641,10 +781,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
             // chain (`applied = -2`) but never merged, applied or observed until the
             // clock catches up; then it is checked like any other.
             Ok(Checked::Version(v)) if too_far_ahead(&v, now_ms) => {
-                let placed = Placed {
-                    version: v,
-                    seq: batch.seq,
-                };
+                let placed = Placed { version: v, seq };
                 journal::store_remote(&tx, lib, &placed)?;
                 set_waiting(&tx, lib, &placed, -2)?;
                 if let Content::Body { hash, .. } = &placed.version.content {
@@ -653,10 +790,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                 aside += 1;
             }
             Ok(Checked::Version(v)) => {
-                let placed = Placed {
-                    version: v,
-                    seq: batch.seq,
-                };
+                let placed = Placed { version: v, seq };
                 match ancestry(&tx, lib, &placed) {
                     // SY9: a forged or future ancestor is refused.
                     HistoryCheck::False => {
@@ -679,7 +813,7 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                             params![
                                 lib.id.to_string(),
                                 batch.device.to_string(),
-                                batch.seq as i64,
+                                seq as i64,
                                 placed.version.key.as_str()
                             ],
                         )?;
@@ -715,6 +849,29 @@ pub fn receive(conn: &Connection, lib: &Library, batch: &Batch, now_ms: i64) -> 
                     now_ms,
                 )?;
                 aside += 1;
+            }
+        }
+    }
+    if view.is_some() {
+        for raw in &batch.versions {
+            let key = raw["key"].as_str().unwrap_or("");
+            let prefix = super::envelope::vlist_entry(key, &Hash32([0; 32]))[..16].to_vec();
+            if let Some(&seq) = sequences.get(&prefix) {
+                let kept: bool = tx.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM sync_versions
+                     WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4)",
+                    params![
+                        lib.id.to_string(),
+                        batch.device.to_string(),
+                        seq as i64,
+                        key
+                    ],
+                    |r| r.get(0),
+                )?;
+                if !kept {
+                    // SP18, SY9: a record set aside vouches for nothing, as in a change file.
+                    forget_spine(&tx, lib, batch.device, seq, key)?;
+                }
             }
         }
     }
@@ -875,6 +1032,7 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
             HistoryCheck::False => {
                 set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
                 conn.execute("DELETE FROM sync_versions WHERE rowid = ?1", [rowid])?;
+                forget_spine(conn, lib, device, placed.seq, placed.version.key.as_str())?;
                 // Its body goes too, unless another version still names it.
                 if let Content::Body { hash, .. } = &placed.version.content {
                     journal::drop_body_if_unnamed(conn, hash)?;
