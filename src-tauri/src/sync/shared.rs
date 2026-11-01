@@ -38,15 +38,23 @@ pub trait SharedFolder {
     /// The real folder streams book files; this rule never needs their bytes.
     fn hash(&self, token: &Self::Token) -> Option<Hash32>;
     /// SY2: read the token's bytes, write a temporary name, then rename to `name`.
-    /// An error means the object may not hold those bytes, so nothing is removed.
-    fn replace(&mut self, name: &str, from: &Self::Token) -> std::io::Result<()>;
+    /// SP9, SY23: the staged bytes must hash to `expected`, the hash `resolve`
+    /// checked, or the rename is refused; storage can change a copy between the
+    /// two reads. An error means the object may not hold those bytes, so nothing
+    /// is removed.
+    fn replace(&mut self, name: &str, from: &Self::Token, expected: &Hash32)
+        -> std::io::Result<()>;
     fn remove(&mut self, token: &Self::Token);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Step<T> {
     RemoveCopy(T),
-    Replace { with: T },
+    /// `hash` is the copy's checked plain hash, which `replace` must see again.
+    Replace {
+        with: T,
+        hash: Hash32,
+    },
     RemoveObject(T),
     Repair,
 }
@@ -73,10 +81,11 @@ pub fn resolve<T: Clone>(
         .find(|(_, hash)| hash.as_ref().is_some_and(matches));
     let mut steps = Vec::new();
     if !object_matches {
-        if let Some((token, _)) = good_copy {
+        if let Some((token, Some(hash))) = good_copy {
             // SY11: preserve the good bytes before removing any copies.
             steps.push(Step::Replace {
                 with: token.clone(),
+                hash: *hash,
             });
         } else {
             if object.is_none() && copies.iter().all(|(_, hash)| hash.is_none()) {
@@ -151,10 +160,10 @@ pub fn tidy<F: SharedFolder>(
             let mut taken = Vec::new();
             for step in resolve(area, naming, &name, object, &copies) {
                 match &step {
-                    Step::Replace { with } => {
+                    Step::Replace { with, hash } => {
                         // SY11: the good copy's bytes must be in place before
                         // any copy goes; try again on a later pass.
-                        if folder.replace(&name, with).is_err() {
+                        if folder.replace(&name, with, hash).is_err() {
                             break;
                         }
                     }
@@ -186,6 +195,7 @@ mod tests {
         files: BTreeMap<Token, Option<Vec<u8>>>,
         hashed: RefCell<Vec<Token>>,
         failing: bool,
+        changes_before_replace: Option<Vec<u8>>,
     }
 
     impl Folder {
@@ -221,11 +231,19 @@ mod tests {
             self.files.get(token)?.as_deref().map(identity_hash)
         }
 
-        fn replace(&mut self, name: &str, from: &Token) -> std::io::Result<()> {
+        fn replace(&mut self, name: &str, from: &Token, expected: &Hash32) -> std::io::Result<()> {
             if self.failing {
                 return Err(std::io::Error::other("disk full"));
             }
+            if let Some(changed) = self.changes_before_replace.take() {
+                self.files.insert(from.clone(), Some(changed));
+            }
             let bytes = self.files[from].clone().expect("readable copy");
+            if identity_hash(&bytes) != *expected {
+                return Err(std::io::Error::other(
+                    "the copy changed since it was checked",
+                ));
+            }
             // SY2: model a temporary write followed by an atomic rename.
             let temporary = self.put(from.0, ".linen-tmp-test", Some(&bytes));
             let bytes = self.files.remove(&temporary).unwrap();
@@ -277,7 +295,10 @@ mod tests {
                     vec![(
                         name.clone(),
                         vec![
-                            Step::Replace { with: good.clone() },
+                            Step::Replace {
+                                with: good.clone(),
+                                hash: identity_hash(GOOD),
+                            },
                             Step::RemoveCopy(bad),
                             Step::RemoveCopy(good),
                             Step::RemoveCopy(second),
@@ -432,7 +453,28 @@ mod tests {
         assert_eq!(taken, vec![(name.clone(), vec![])]);
         folder.failing = false;
         let taken = tidy(&mut folder, Area::Blobs, &NAMING);
-        assert_eq!(taken[0].1[0], Step::Replace { with: copy });
+        assert_eq!(
+            taken[0].1[0],
+            Step::Replace {
+                with: copy,
+                hash: identity_hash(GOOD),
+            }
+        );
         assert_eq!(folder.files.len(), 1);
+    }
+
+    #[test]
+    fn a_copy_that_changes_before_replacing_installs_nothing() {
+        let mut folder = Folder {
+            changes_before_replace: Some(BAD.to_vec()),
+            ..Folder::default()
+        };
+        let name = name(Area::Books);
+        let object = folder.put(Area::Books, &name, Some(b"wrong bytes"));
+        folder.put(Area::Books, &format!("{name} 2"), Some(GOOD));
+        let taken = tidy(&mut folder, Area::Books, &NAMING);
+        assert_eq!(taken, vec![(name.clone(), vec![])]);
+        assert_eq!(folder.files[&object].as_deref(), Some(&b"wrong bytes"[..]));
+        assert_eq!(folder.files.len(), 2, "nothing is removed");
     }
 }
