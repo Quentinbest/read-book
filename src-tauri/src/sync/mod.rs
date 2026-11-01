@@ -38,6 +38,7 @@ pub mod recovery;
 pub mod relay;
 pub mod restore;
 pub mod retention;
+pub mod shared;
 pub mod trust;
 pub mod view;
 pub mod weeks;
