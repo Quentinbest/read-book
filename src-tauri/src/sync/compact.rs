@@ -151,6 +151,18 @@ const ANNOTATION_HEADS: &str = "SELECT key, MAX(seq) FROM sync_versions
        AND seq <= ?3 AND applied IN (1, 2)
      GROUP BY key";
 
+/// SP17, #178: one key's latest version by one writer within its frontier, and
+/// that key's earlier versions, newest first. `INDEXED BY` keeps each lookup to
+/// the key's own versions: for `ORDER BY seq` SQLite otherwise picks
+/// (library, device, seq, key) and scans every other key's rows, making a book
+/// with many notes quadratic.
+const NOTE_HEAD: &str = "SELECT seq, raw FROM sync_versions INDEXED BY sync_versions_key
+     WHERE library = ?1 AND key = ?2 AND device = ?3
+       AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC LIMIT 1";
+const KEY_HISTORY: &str = "SELECT raw FROM sync_versions INDEXED BY sync_versions_key
+     WHERE library = ?1 AND key = ?2 AND device = ?3
+       AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC";
+
 /// SP13, SP17, #178: book children and historical highlight/note membership.
 /// Include this writer through the deleting change, so child tombstones written
 /// together contribute their predecessor objects too. Other writers are bounded
@@ -268,9 +280,7 @@ fn book_contents(
         for (&device, &at) in &through {
             let row = conn
                 .query_row(
-                    "SELECT seq, raw FROM sync_versions
-                 WHERE library = ?1 AND key = ?2 AND device = ?3
-                   AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC LIMIT 1",
+                    NOTE_HEAD,
                     params![
                         lib.id.to_string(),
                         key.as_str(),
@@ -336,14 +346,7 @@ impl BookFrontier<'_> {
                 continue;
             }
             .min(frontier);
-            let mut stmt = self
-                .conn
-                .prepare(
-                    "SELECT raw FROM sync_versions
-                 WHERE library = ?1 AND key = ?2 AND device = ?3
-                   AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC",
-                )
-                .map_err(JournalError::from)?;
+            let mut stmt = self.conn.prepare(KEY_HISTORY).map_err(JournalError::from)?;
             let rows = stmt
                 .query_map(
                     params![
@@ -2012,10 +2015,12 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn the_highlight_heads_query_grows_linearly() {
+    fn the_book_content_queries_grow_linearly() {
         // #178: SQLite's own work, counted in VM steps (deterministic, unlike
-        // time), must roughly double when a writer's highlights double; a
-        // correlated MAX per row grew quadratically.
+        // time), must roughly double when a writer's highlights and notes
+        // double. Each query runs as book_contents runs it: the heads once, and
+        // the note and history lookups once per key. Both lookups were quadratic
+        // before (a correlated MAX, and an index that scanned other keys).
         let steps = |n: usize| {
             let d = Device::new();
             let device = Id16([5; 16]);
@@ -2033,8 +2038,9 @@ pub(crate) mod tests {
                     )
                     .unwrap();
             }
-            let mut stmt = d.db.conn().prepare(ANNOTATION_HEADS).unwrap();
-            let rows = stmt
+            let conn = d.db.conn();
+            let mut heads = conn.prepare(ANNOTATION_HEADS).unwrap();
+            let rows = heads
                 .query_map(
                     params![d.lib.id.to_string(), device.to_string(), n as i64],
                     |r| r.get::<_, i64>(1),
@@ -2042,12 +2048,28 @@ pub(crate) mod tests {
                 .unwrap()
                 .count();
             assert_eq!(rows, n);
-            stmt.get_status(rusqlite::StatementStatus::VmStep)
+            let mut total = heads.get_status(rusqlite::StatementStatus::VmStep);
+            for query in [NOTE_HEAD, KEY_HISTORY] {
+                let mut stmt = conn.prepare(query).unwrap();
+                for i in 0..n {
+                    let key = format!("annotation:00000000-0000-4000-8000-{i:012}");
+                    let found = stmt
+                        .query_map(
+                            params![d.lib.id.to_string(), key, device.to_string(), n as i64],
+                            |_| Ok(()),
+                        )
+                        .unwrap()
+                        .count();
+                    assert_eq!(found, 1);
+                }
+                total += stmt.get_status(rusqlite::StatementStatus::VmStep);
+            }
+            total
         };
         let (small, large) = (steps(1_000), steps(2_000));
         assert!(
             large < 3 * small,
-            "{small} VM steps for 1,000 highlights, {large} for 2,000"
+            "{small} VM steps for 1,000 highlights and notes, {large} for 2,000"
         );
     }
 }
