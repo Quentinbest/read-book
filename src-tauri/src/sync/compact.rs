@@ -163,14 +163,12 @@ fn book_contents(
     let mut through: BTreeMap<_, _> = covers.iter().map(|e| (e.device, e.seq)).collect();
     through.insert(lib.device, seq);
     let mut out = BTreeSet::new();
-    let mut versions = BTreeMap::<Key, Vec<Placed>>::new();
-    for (device, through) in through {
+    for (&device, &through) in &through {
         let mut stmt = conn
             .prepare(
                 "SELECT key, seq, raw FROM sync_versions WHERE library = ?1 AND device = ?2
              AND seq <= ?3 AND applied IN (1, 2)
-             AND (key = ?4 OR key = ?5 OR key LIKE ?6
-                  OR key LIKE 'annotation:%' OR key LIKE 'note:%') ORDER BY seq DESC",
+             AND (key = ?4 OR key = ?5 OR key LIKE ?6) ORDER BY seq DESC",
             )
             .map_err(JournalError::from)?;
         let rows = stmt
@@ -195,18 +193,11 @@ fn book_contents(
         let mut seen = HashSet::new();
         for row in rows {
             let (key, at, value) = row.map_err(JournalError::from)?;
-            if !key.starts_with("annotation:") && !key.starts_with("note:") && !seen.insert(key) {
+            if !seen.insert(key) {
                 continue;
             }
             let value = serde_json::from_str(&value).map_err(|_| CompactError::Missing)?;
             if let Some(child) = checked(value, device)? {
-                if child.kind == record::Kind::Annotation || child.kind == record::Kind::Note {
-                    versions.entry(child.key.clone()).or_default().push(Placed {
-                        version: child,
-                        seq: at as u64,
-                    });
-                    continue;
-                }
                 out.extend(names(conn, naming, &child)?);
                 if device == lib.device
                     && at == seq as i64
@@ -217,84 +208,171 @@ fn book_contents(
             }
         }
     }
+    let frontier = BookFrontier {
+        conn,
+        lib,
+        naming,
+        through: &through,
+        book,
+    };
     let mut notes = BTreeSet::new();
-    for (key, candidates) in &versions {
-        if key.kind() != record::Kind::Annotation {
-            continue;
-        }
-        for body in frontier_bodies(candidates, Some(book), conn)? {
-            out.extend(names(conn, naming, body)?);
-            // SP13: annotation:<id> and note:<id> are paired across writers.
-            notes.insert(
-                Key::parse(&key.as_str().replacen("annotation:", "note:", 1))
-                    .expect("note key")
-                    .0,
-            );
+    // SP13, SP17, #178: stream heads to bound memory against peer-supplied history.
+    for (&device, &at) in &through {
+        let mut stmt = conn
+            .prepare(
+                "SELECT seq, raw FROM sync_versions AS v
+             WHERE library = ?1 AND device = ?2 AND key LIKE 'annotation:%'
+               AND seq <= ?3 AND applied IN (1, 2)
+               AND seq = (SELECT MAX(seq) FROM sync_versions
+                          WHERE library = v.library AND device = v.device AND key = v.key
+                            AND seq <= ?3 AND applied IN (1, 2))",
+            )
+            .map_err(JournalError::from)?;
+        let rows = stmt
+            .query_map(
+                params![lib.id.to_string(), device.to_string(), at as i64],
+                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+            )
+            .map_err(JournalError::from)?;
+        for row in rows {
+            let (seq, raw) = row.map_err(JournalError::from)?;
+            let Some(head) = streamed_version(&raw, device)? else {
+                continue;
+            };
+            if frontier.keep_head(&head, seq as u64, &mut out)? {
+                // SP13: annotation:<id> and note:<id> are paired across writers.
+                notes.insert(
+                    Key::parse(&head.key.as_str().replacen("annotation:", "note:", 1))
+                        .expect("note key")
+                        .0,
+                );
+            }
         }
     }
+    // SP17, #178: no note history is read until its highlight matches this book.
     for key in notes {
-        if let Some(candidates) = versions.get(&key) {
-            for body in frontier_bodies(candidates, None, conn)? {
-                out.extend(names(conn, naming, body)?);
+        for (&device, &at) in &through {
+            let row = conn
+                .query_row(
+                    "SELECT seq, raw FROM sync_versions
+                 WHERE library = ?1 AND key = ?2 AND device = ?3
+                   AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC LIMIT 1",
+                    params![
+                        lib.id.to_string(),
+                        key.as_str(),
+                        device.to_string(),
+                        at as i64
+                    ],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+                )
+                .optional()
+                .map_err(JournalError::from)?;
+            if let Some((seq, raw)) = row {
+                if let Some(head) = streamed_version(&raw, device)? {
+                    frontier.keep_head(&head, seq as u64, &mut out)?;
+                }
             }
         }
     }
     Ok(out)
 }
 
-/// SP13, SP17, #178: each writer's latest frontier version, or the newest
-/// available body on each line its tombstone descends from. All candidates were
-/// bounded before bodies are read, including predecessors from other writers.
-fn frontier_bodies<'a>(
-    candidates: &'a [Placed],
-    book: Option<&str>,
-    conn: &Connection,
-) -> Result<Vec<&'a Version>> {
-    let mut latest = BTreeMap::new();
-    for candidate in candidates {
-        let entry = latest.entry(candidate.version.device).or_insert(candidate);
-        if candidate.seq > entry.seq {
-            *entry = candidate;
+#[cfg(test)]
+thread_local! {
+    static STREAMED_VERSION_ROWS: std::cell::RefCell<Option<BTreeMap<String, usize>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+fn streamed_version(raw: &str, device: super::ids::DeviceId) -> Result<Option<Version>> {
+    let value: Value = serde_json::from_str(raw).map_err(|_| CompactError::Missing)?;
+    #[cfg(test)]
+    STREAMED_VERSION_ROWS.with_borrow_mut(|counts| {
+        if let Some(counts) = counts {
+            *counts
+                .entry(value["key"].as_str().expect("version key").to_owned())
+                .or_default() += 1;
         }
-    }
-    let mut out = Vec::new();
-    for head in latest.values() {
-        let mut bodies = BTreeMap::new();
-        for candidate in candidates {
-            if candidate.id() != head.id()
-                && !(matches!(head.version.content, Content::Deleted { .. })
-                    && ((candidate.version.device == head.version.device
-                        && candidate.seq < head.seq)
-                        || head.version.history.iter().any(|e| {
-                            e.device == candidate.version.device && candidate.seq <= e.seq
-                        })))
-            {
+    });
+    checked(value, device)
+}
+
+struct BookFrontier<'a> {
+    conn: &'a Connection,
+    lib: &'a Library,
+    naming: &'a [u8; 32],
+    through: &'a BTreeMap<super::ids::DeviceId, u64>,
+    book: &'a str,
+}
+
+impl BookFrontier<'_> {
+    /// SP13, SP17, #178: only deleted heads need historical rows. On each
+    /// predecessor writer's line, stop at the newest available matching body.
+    fn keep_head(&self, head: &Version, seq: u64, out: &mut BTreeSet<Name>) -> Result<bool> {
+        if !matches!(head.content, Content::Deleted { .. }) {
+            return self.keep_body(head, out);
+        }
+        let mut found = false;
+        for (&device, &frontier) in self.through {
+            let at = if device == head.device {
+                seq - 1
+            } else if let Some(entry) = head.history.iter().find(|e| e.device == device) {
+                entry.seq
+            } else {
                 continue;
             }
-            let Content::Body { hash, .. } = candidate.version.content else {
-                continue;
-            };
-            // SP17, #111, #178: a pruned or never-received body cannot establish
-            // membership. Skip it; only its own retirement protects it, with a
-            // pruned version's newer descendant already accepted and aged.
-            let Some(bytes) = journal::body(conn, &hash)? else {
-                continue;
-            };
-            if let Some(book) = book {
-                let body: Value =
-                    serde_json::from_slice(&bytes).map_err(|_| CompactError::Missing)?;
-                if super::a9::book_of(&body) != Some(book) {
-                    continue;
+            .min(frontier);
+            let mut stmt = self
+                .conn
+                .prepare(
+                    "SELECT raw FROM sync_versions
+                 WHERE library = ?1 AND key = ?2 AND device = ?3
+                   AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC",
+                )
+                .map_err(JournalError::from)?;
+            let rows = stmt
+                .query_map(
+                    params![
+                        self.lib.id.to_string(),
+                        head.key.as_str(),
+                        device.to_string(),
+                        at as i64
+                    ],
+                    |r| r.get::<_, String>(0),
+                )
+                .map_err(JournalError::from)?;
+            for row in rows {
+                let raw = row.map_err(JournalError::from)?;
+                if let Some(candidate) = streamed_version(&raw, device)? {
+                    if self.keep_body(&candidate, out)? {
+                        found = true;
+                        break;
+                    }
                 }
             }
-            let entry = bodies.entry(candidate.version.device).or_insert(candidate);
-            if candidate.seq > entry.seq {
-                *entry = candidate;
+        }
+        Ok(found)
+    }
+
+    fn keep_body(&self, version: &Version, out: &mut BTreeSet<Name>) -> Result<bool> {
+        let Content::Body { hash, .. } = version.content else {
+            return Ok(false);
+        };
+        // SP17, #111, #178: a pruned or never-received body cannot establish
+        // membership. Skip it; only its own retirement protects it, with a
+        // pruned version's newer descendant already accepted and aged.
+        let Some(bytes) = journal::body(self.conn, &hash)? else {
+            return Ok(false);
+        };
+        if version.kind == record::Kind::Annotation {
+            let body: Value = serde_json::from_slice(&bytes).map_err(|_| CompactError::Missing)?;
+            if super::a9::book_of(&body) != Some(self.book) {
+                return Ok(false);
             }
         }
-        out.extend(bodies.values().map(|p| &p.version));
+        out.extend(names(self.conn, self.naming, version)?);
+        Ok(true)
     }
-    Ok(out)
 }
 
 /// SP17, SY11: assemble the next view from checked own files in sequence.
@@ -1800,6 +1878,76 @@ pub(crate) mod tests {
         for v in excluded {
             assert!(week.is_disjoint(&names(d.db.conn(), &NAMING, &v).unwrap()));
         }
+    }
+
+    #[test]
+    fn a_book_deletion_does_not_load_other_books_history() {
+        // SP17, #178, #111: an offline peer can leave unbounded superseded
+        // history. Only one head per unrelated highlight should reach Rust.
+        let mut d = Device::new();
+        let book = "00000000-0000-4000-8000-000000000001";
+        let own_id = "00000000-0000-4000-8000-000000000002";
+        let other_book = "00000000-0000-4000-8000-000000000099";
+        let other_ids = [
+            "00000000-0000-4000-8000-000000000010",
+            "00000000-0000-4000-8000-000000000011",
+        ];
+        let own = d.local(
+            &format!("annotation:{own_id}"),
+            annotation_body(own_id, book),
+        );
+        let one = d.change();
+        let mut cutoff = None;
+        for seq in 1..=200 {
+            let children: Vec<_> = other_ids
+                .iter()
+                .flat_map(|id| {
+                    let mut row = highlight("book", None, 1_760_000_001_000);
+                    row.id = (*id).into();
+                    row.quote_exact = format!("edit {seq}");
+                    [
+                        (
+                            format!("annotation:{id}"),
+                            LocalContent::Body(
+                                super::super::a9::body_of(&row, other_book)
+                                    .to_string()
+                                    .into_bytes(),
+                            ),
+                        ),
+                        (
+                            format!("note:{id}"),
+                            LocalContent::Body(
+                                json!({"text": format!("other note {seq}")})
+                                    .to_string()
+                                    .into_bytes(),
+                            ),
+                        ),
+                    ]
+                })
+                .collect();
+            let children: Vec<_> = children
+                .iter()
+                .map(|(key, body)| (key.as_str(), body.clone()))
+                .collect();
+            cutoff = Some(peer_children(&d, seq, &children).0);
+        }
+        d.db.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = 2 WHERE device = ?1 AND seq < 200",
+                [cutoff.unwrap().device.to_string()],
+            )
+            .unwrap();
+        delete_book(&d, book, vec![cutoff.unwrap()]);
+        let two = d.change();
+        STREAMED_VERSION_ROWS.with_borrow_mut(|counts| *counts = Some(BTreeMap::new()));
+        let week = book_week(&mut d, book, &[one, two]);
+        let counts = STREAMED_VERSION_ROWS.with_borrow_mut(|counts| counts.take().unwrap());
+        for id in other_ids {
+            assert_eq!(counts.get(&format!("annotation:{id}")), Some(&1));
+            assert!(!counts.contains_key(&format!("note:{id}")));
+        }
+        assert_eq!(counts.get(&format!("annotation:{own_id}")), Some(&1));
+        assert_eq!(week, names(d.db.conn(), &NAMING, &own).unwrap());
     }
 
     #[test]
