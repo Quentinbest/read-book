@@ -83,11 +83,21 @@ describe('E6 library order', () => {
         i % 5 ? null : 10_000 + ((i * 13) % 500),
       ),
     )
-    const t0 = performance.now()
-    const byTitle = sortBooks(books, 'title')
-    const byAuthor = sortBooks(books, 'author')
-    const recent = sortBooks(books, 'recent')
-    expect(performance.now() - t0).toBeLessThan(100)
+    // E6, plan §6.4 (cold start to the library < 1 s with this 500-book fixture):
+    // the three sorts take about 9 ms warm. One wall-clock run fails whenever the
+    // machine is busy (#110), so warm up once and take the fastest of 10 runs,
+    // which stays at 8–12 ms under load; 20 ms still fails a 3× slowdown (~24 ms).
+    const sortAll = () =>
+      [sortBooks(books, 'title'), sortBooks(books, 'author'), sortBooks(books, 'recent')] as const
+    sortAll()
+    let fastest = Infinity
+    for (let run = 0; run < 10; run++) {
+      const t0 = performance.now()
+      sortAll()
+      fastest = Math.min(fastest, performance.now() - t0)
+    }
+    expect(fastest).toBeLessThan(20)
+    const [byTitle, byAuthor, recent] = sortAll()
     for (const list of [byTitle, byAuthor, recent])
       expect(new Set(list.map((b) => b.id)).size).toBe(500)
     const numbers = byTitle.map((b) => Number(b.title.replace(/\D/g, '')))
