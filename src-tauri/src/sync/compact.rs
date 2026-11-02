@@ -144,6 +144,13 @@ fn retired(
     Ok(before.difference(&current).copied().collect())
 }
 
+/// SP17, #178: each highlight's latest sequence for one writer within its
+/// frontier: keys and numbers only, in one grouped pass.
+const ANNOTATION_HEADS: &str = "SELECT key, MAX(seq) FROM sync_versions
+     WHERE library = ?1 AND device = ?2 AND key LIKE 'annotation:%'
+       AND seq <= ?3 AND applied IN (1, 2)
+     GROUP BY key";
+
 /// SP13, SP17, #178: book children and historical highlight/note membership.
 /// Include this writer through the deleting change, so child tombstones written
 /// together contribute their predecessor objects too. Other writers are bounded
@@ -218,24 +225,31 @@ fn book_contents(
     let mut notes = BTreeSet::new();
     // SP13, SP17, #178: stream heads to bound memory against peer-supplied history.
     for (&device, &at) in &through {
-        let mut stmt = conn
-            .prepare(
-                "SELECT seq, raw FROM sync_versions AS v
-             WHERE library = ?1 AND device = ?2 AND key LIKE 'annotation:%'
-               AND seq <= ?3 AND applied IN (1, 2)
-               AND seq = (SELECT MAX(seq) FROM sync_versions
-                          WHERE library = v.library AND device = v.device AND key = v.key
-                            AND seq <= ?3 AND applied IN (1, 2))",
-            )
-            .map_err(JournalError::from)?;
-        let rows = stmt
+        // One grouped pass finds each highlight's latest sequence (key and number
+        // only, no payloads); each head's payload is then one lookup on the
+        // unique index (library, device, seq, key). A correlated MAX per row was
+        // quadratic in a writer's highlights.
+        let mut heads = conn.prepare(ANNOTATION_HEADS).map_err(JournalError::from)?;
+        let rows = heads
             .query_map(
                 params![lib.id.to_string(), device.to_string(), at as i64],
-                |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .map_err(JournalError::from)?;
+        let mut payload = conn
+            .prepare(
+                "SELECT raw FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
             )
             .map_err(JournalError::from)?;
         for row in rows {
-            let (seq, raw) = row.map_err(JournalError::from)?;
+            let (key, seq) = row.map_err(JournalError::from)?;
+            let raw: String = payload
+                .query_row(
+                    params![lib.id.to_string(), device.to_string(), seq, key],
+                    |r| r.get(0),
+                )
+                .map_err(JournalError::from)?;
             let Some(head) = streamed_version(&raw, device)? else {
                 continue;
             };
@@ -1995,5 +2009,45 @@ pub(crate) mod tests {
         };
         assert!(rs[NOTE].week[0].objects.contains(&old));
         assert!(!rs[NOTE].week[1].objects.contains(&old));
+    }
+
+    #[test]
+    fn the_highlight_heads_query_grows_linearly() {
+        // #178: SQLite's own work, counted in VM steps (deterministic, unlike
+        // time), must roughly double when a writer's highlights double; a
+        // correlated MAX per row grew quadratically.
+        let steps = |n: usize| {
+            let d = Device::new();
+            let device = Id16([5; 16]);
+            for i in 0..n {
+                d.db.conn()
+                    .execute(
+                        "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                     VALUES (?1, ?2, ?3, ?4, 'h', '{}', 1)",
+                        params![
+                            d.lib.id.to_string(),
+                            format!("annotation:00000000-0000-4000-8000-{i:012}"),
+                            device.to_string(),
+                            (i + 1) as i64
+                        ],
+                    )
+                    .unwrap();
+            }
+            let mut stmt = d.db.conn().prepare(ANNOTATION_HEADS).unwrap();
+            let rows = stmt
+                .query_map(
+                    params![d.lib.id.to_string(), device.to_string(), n as i64],
+                    |r| r.get::<_, i64>(1),
+                )
+                .unwrap()
+                .count();
+            assert_eq!(rows, n);
+            stmt.get_status(rusqlite::StatementStatus::VmStep)
+        };
+        let (small, large) = (steps(1_000), steps(2_000));
+        assert!(
+            large < 3 * small,
+            "{small} VM steps for 1,000 highlights, {large} for 2,000"
+        );
     }
 }
