@@ -14,8 +14,8 @@
     },
     {
       "name": "gutenberg-2701-moby-dick-epub2.epub",
-      "url": "https://www.gutenberg.org/ebooks/2701.epub.noimages",
-      "source": "Project Gutenberg (public domain)",
+      "url": "https://github.com/Quentinbest/read-book/releases/download/corpus-2026-08/gutenberg-2701-moby-dick-epub2.epub",
+      "source": "Project Gutenberg (public domain), the file first pinned, kept on this repository's corpus-2026-08 release (#112)",
       "tags": [
         "epub2",
         "ncx"
