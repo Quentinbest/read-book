@@ -248,7 +248,7 @@ impl Membership {
 /// What a record follows in the graph: its predecessors and, for a `confirm`, the
 /// removal or enrollments it names, which count from then on as if made on its
 /// `prev` (SP20 (4a)).
-fn links(r: &Record) -> Vec<Hash32> {
+pub(crate) fn links(r: &Record) -> Vec<Hash32> {
     let mut l = r.prevs();
     match &r.body {
         Body::Confirm {
