@@ -29,7 +29,7 @@ Issue #151 is the last part of Stage 1 (#92). Every Stage 1c module is pure libr
 | PS2 | **The in-memory folder.** `sync::folder::Memory` implements PS1 for tests, with switches for what real storage does:<br>• half-synced files (wrong bytes for a while);<br>• conflict copies (`‹name› 2`);<br>• delayed, repeated and reordered visibility per reader;<br>• files that vanish;<br>• a rename that fails.<br>Several devices share one `Memory` through per-device views. It is test-only code. |
 | PS3 | **SP7 in one place.** Reading and writing files (temporary names, a half-synced file skipped and read again on a later pass, a storage-made name read only as a candidate for the file it copies) live in one module that every step uses, not in each step. |
 | PS4 | **One pass is one function.** `sync::pass::run(device, folder, clock, budgets) -> Report` runs SP37's steps (1)–(11) in order, calling the existing modules. It holds the store's lock only in steps (6) and (8), as SP37 says. It returns what it did and what it left: what waits for a budget, a body, the reader or a later pass. It never decides a rule itself; each decision stays in the module that has it. |
-| PS5 | **What a pass keeps between runs.** The caller-owned state (`Ledger`, `KnownWeeks`, `Heard`, `Marks`) is saved in the library's database at the end of each step that changes it, in the same transaction as that step's other writes, and loaded at the start of a pass. A crash between steps leaves the state of the last completed step (pending item 119). |
+| PS5 | **What a pass keeps between runs.** The caller-owned state (`Ledger`, `KnownWeeks`, `Heard`, `Marks`) is saved in the library's database at the end of each step that changes it, in the same transaction as that step's other writes, and loaded at the start of a pass. A crash between steps leaves the state of the last completed step (item 119, approved (a)). |
 | PS6 | **Budgets.** SY2's per-pass budgets (100,000 names listed, 32 devices, 256 MB read apart from books, 60 s) and #122's pass-level read budget are counted in `pass`, and a budget that runs out stops the pass where it is. Membership crowding (#122's priority) is read first and bounded first. Provisional values stay as `docs/decisions.md` records them. |
 | PS7 | **Time and randomness are injected.** The pass takes the vouched clock and, in tests, a seeded random source, so the soak test (C29) is repeatable from its seed. Nothing in `pass` reads the wall clock or the OS random source directly. |
 | PS8 | **Nothing new is wired into the app.** `pass::run` has no caller outside tests until Stage 2 provides the brokered folder and Stage 3 the setup. |
@@ -79,7 +79,7 @@ Each stage is one PR (two where noted), and ends with `scripts/ci-local.sh` gree
   - seeded random operations, offline spells, skewed clocks;
   - late, repeated and reordered delivery, restarts, compaction, and a device away for 8 days.
 
-  It runs in CI with a fixed seed within a time budget (pending item 120), and logs its seed for any other run.
+  It runs in CI with a fixed seed in at most 60 s (item 120, approved (a)), and an ignored long run takes a random seed it prints.
 - The remaining Partly and Not yet checks that Stage 1 can reach (section 4), each as a test of whole passes.
 - `docs/sync-status.md` updated to the result.
 - **Done when:** every check section 4 assigns to Stage 1 is Covered, and the last PR closes #151 and #92.
@@ -108,4 +108,4 @@ Each check is either closed in this plan's stages, or left to a later stage beca
 - **Pending item 119, where the pass keeps its state between runs (PS5).** My recommendation is the library's database, saved with each step's writes. The device store (the keychain item) is the alternative, but it's meant for small identity and marks.
 - **Pending item 120, the soak test's budget in CI (C29).** My recommendation is at most 60 s with a fixed seed in `ci-local.sh` and CI, plus an ignored long run (`--ignored`, a random seed, 10 minutes) for occasional use.
 
-Nothing that depends on an open question is built until the owner answers it. P1 depends on neither.
+Both were answered by the owner on 2026-11-03, as recommended: (a) for each.

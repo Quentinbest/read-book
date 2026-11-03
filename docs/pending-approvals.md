@@ -417,7 +417,9 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
     - **(a)** In the library's database (one migration), saved in the same transaction as each step's other writes, so a crash leaves the state of the last completed step.
     - **(b)** In the device store (the login-keychain item, SP28), beside the marks.
     *Recommendation:* (a). The state is per library and can grow with the library (holds, claims), while the keychain item is meant for small identity and marks. Saving it with each step's writes keeps it consistent with what the step changed.
+    **Approved 2026-11-03: (a).**
 120. **The soak test's budget (C29).** Three devices with seeded random operations, outages, skew, restarts and compaction can run as long as it's given.
     - **(a)** At most 60 s with a fixed seed, in `scripts/ci-local.sh` and CI, plus an ignored long run (`cargo test -- --ignored`, a random seed it prints, about 10 minutes) for occasional use.
     - **(b)** Only the long run, outside CI.
     *Recommendation:* (a). A fixed seed keeps CI repeatable, and a failing seed from a long run becomes a fixed-seed test.
+    **Approved 2026-11-03: (a).**
