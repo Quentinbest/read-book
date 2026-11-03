@@ -144,10 +144,30 @@ fn retired(
     Ok(before.difference(&current).copied().collect())
 }
 
-/// SP13, SP17: directly addressed book children at the deletion's frontier.
+/// SP17, #178: each highlight's latest sequence for one writer within its
+/// frontier: keys and numbers only, in one grouped pass.
+const ANNOTATION_HEADS: &str = "SELECT key, MAX(seq) FROM sync_versions
+     WHERE library = ?1 AND device = ?2 AND key LIKE 'annotation:%'
+       AND seq <= ?3 AND applied IN (1, 2)
+     GROUP BY key";
+
+/// SP17, #178: one key's latest version by one writer within its frontier, and
+/// that key's earlier versions, newest first. `INDEXED BY` keeps each lookup to
+/// the key's own versions: for `ORDER BY seq` SQLite otherwise picks
+/// (library, device, seq, key) and scans every other key's rows, making a book
+/// with many notes quadratic.
+const NOTE_HEAD: &str = "SELECT seq, raw FROM sync_versions INDEXED BY sync_versions_key
+     WHERE library = ?1 AND key = ?2 AND device = ?3
+       AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC LIMIT 1";
+const KEY_HISTORY: &str = "SELECT raw FROM sync_versions INDEXED BY sync_versions_key
+     WHERE library = ?1 AND key = ?2 AND device = ?3
+       AND seq <= ?4 AND applied IN (1, 2) ORDER BY seq DESC";
+
+/// SP13, SP17, #178: book children and historical highlight/note membership.
 /// Include this writer through the deleting change, so child tombstones written
 /// together contribute their predecessor objects too. Other writers are bounded
-/// by covers; later edits outside it belong to SY18's conflict, not this deletion.
+/// by covers; highlight and note bodies after it are never read: those later
+/// edits belong to SY18's conflict, not this deletion.
 fn book_contents(
     conn: &Connection,
     lib: &Library,
@@ -162,7 +182,7 @@ fn book_contents(
     let mut through: BTreeMap<_, _> = covers.iter().map(|e| (e.device, e.seq)).collect();
     through.insert(lib.device, seq);
     let mut out = BTreeSet::new();
-    for (device, through) in through {
+    for (&device, &through) in &through {
         let mut stmt = conn
             .prepare(
                 "SELECT key, seq, raw FROM sync_versions WHERE library = ?1 AND device = ?2
@@ -207,7 +227,169 @@ fn book_contents(
             }
         }
     }
+    let frontier = BookFrontier {
+        conn,
+        lib,
+        naming,
+        through: &through,
+        book,
+    };
+    let mut notes = BTreeSet::new();
+    // SP13, SP17, #178: stream heads to bound memory against peer-supplied history.
+    for (&device, &at) in &through {
+        // One grouped pass finds each highlight's latest sequence (key and number
+        // only, no payloads); each head's payload is then one lookup on the
+        // unique index (library, device, seq, key). A correlated MAX per row was
+        // quadratic in a writer's highlights.
+        let mut heads = conn.prepare(ANNOTATION_HEADS).map_err(JournalError::from)?;
+        let rows = heads
+            .query_map(
+                params![lib.id.to_string(), device.to_string(), at as i64],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+            )
+            .map_err(JournalError::from)?;
+        let mut payload = conn
+            .prepare(
+                "SELECT raw FROM sync_versions
+             WHERE library = ?1 AND device = ?2 AND seq = ?3 AND key = ?4",
+            )
+            .map_err(JournalError::from)?;
+        for row in rows {
+            let (key, seq) = row.map_err(JournalError::from)?;
+            let raw: String = payload
+                .query_row(
+                    params![lib.id.to_string(), device.to_string(), seq, key],
+                    |r| r.get(0),
+                )
+                .map_err(JournalError::from)?;
+            let Some(head) = streamed_version(&raw, device)? else {
+                continue;
+            };
+            if frontier.keep_head(&head, seq as u64, &mut out)? {
+                // SP13: annotation:<id> and note:<id> are paired across writers.
+                notes.insert(
+                    Key::parse(&head.key.as_str().replacen("annotation:", "note:", 1))
+                        .expect("note key")
+                        .0,
+                );
+            }
+        }
+    }
+    // SP17, #178: no note history is read until its highlight matches this book.
+    for key in notes {
+        for (&device, &at) in &through {
+            let row = conn
+                .query_row(
+                    NOTE_HEAD,
+                    params![
+                        lib.id.to_string(),
+                        key.as_str(),
+                        device.to_string(),
+                        at as i64
+                    ],
+                    |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)),
+                )
+                .optional()
+                .map_err(JournalError::from)?;
+            if let Some((seq, raw)) = row {
+                if let Some(head) = streamed_version(&raw, device)? {
+                    frontier.keep_head(&head, seq as u64, &mut out)?;
+                }
+            }
+        }
+    }
     Ok(out)
+}
+
+#[cfg(test)]
+thread_local! {
+    static STREAMED_VERSION_ROWS: std::cell::RefCell<Option<BTreeMap<String, usize>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+fn streamed_version(raw: &str, device: super::ids::DeviceId) -> Result<Option<Version>> {
+    let value: Value = serde_json::from_str(raw).map_err(|_| CompactError::Missing)?;
+    #[cfg(test)]
+    STREAMED_VERSION_ROWS.with_borrow_mut(|counts| {
+        if let Some(counts) = counts {
+            *counts
+                .entry(value["key"].as_str().expect("version key").to_owned())
+                .or_default() += 1;
+        }
+    });
+    checked(value, device)
+}
+
+struct BookFrontier<'a> {
+    conn: &'a Connection,
+    lib: &'a Library,
+    naming: &'a [u8; 32],
+    through: &'a BTreeMap<super::ids::DeviceId, u64>,
+    book: &'a str,
+}
+
+impl BookFrontier<'_> {
+    /// SP13, SP17, #178: only deleted heads need historical rows. On each
+    /// predecessor writer's line, stop at the newest available matching body.
+    fn keep_head(&self, head: &Version, seq: u64, out: &mut BTreeSet<Name>) -> Result<bool> {
+        if !matches!(head.content, Content::Deleted { .. }) {
+            return self.keep_body(head, out);
+        }
+        let mut found = false;
+        for (&device, &frontier) in self.through {
+            let at = if device == head.device {
+                seq - 1
+            } else if let Some(entry) = head.history.iter().find(|e| e.device == device) {
+                entry.seq
+            } else {
+                continue;
+            }
+            .min(frontier);
+            let mut stmt = self.conn.prepare(KEY_HISTORY).map_err(JournalError::from)?;
+            let rows = stmt
+                .query_map(
+                    params![
+                        self.lib.id.to_string(),
+                        head.key.as_str(),
+                        device.to_string(),
+                        at as i64
+                    ],
+                    |r| r.get::<_, String>(0),
+                )
+                .map_err(JournalError::from)?;
+            for row in rows {
+                let raw = row.map_err(JournalError::from)?;
+                if let Some(candidate) = streamed_version(&raw, device)? {
+                    if self.keep_body(&candidate, out)? {
+                        found = true;
+                        break;
+                    }
+                }
+            }
+        }
+        Ok(found)
+    }
+
+    fn keep_body(&self, version: &Version, out: &mut BTreeSet<Name>) -> Result<bool> {
+        let Content::Body { hash, .. } = version.content else {
+            return Ok(false);
+        };
+        // SP17, #111, #178: a pruned or never-received body cannot establish
+        // membership. Skip it; only its own retirement protects it, with a
+        // pruned version's newer descendant already accepted and aged.
+        let Some(bytes) = journal::body(self.conn, &hash)? else {
+            return Ok(false);
+        };
+        if version.kind == record::Kind::Annotation {
+            let body: Value = serde_json::from_slice(&bytes).map_err(|_| CompactError::Missing)?;
+            if super::a9::book_of(&body) != Some(self.book) {
+                return Ok(false);
+            }
+        }
+        out.extend(names(self.conn, self.naming, version)?);
+        Ok(true)
+    }
 }
 
 /// SP17, SY11: assemble the next view from checked own files in sequence.
@@ -215,11 +397,10 @@ fn book_contents(
 /// The naming key converts plain hashes to SP9 storage names. `released` must
 /// attest SP36 lines 2 and 3, including acknowledgement and the last hold ending.
 ///
-/// SP17/SY18 limitation: a book deletion also retains directly addressed files,
-/// place and per-book settings from the journal at its causal frontier. Complete
-/// aggregation of its highlights and notes needs historical book membership,
-/// which the journal does not directly provide; Stage 4 must supply that. Their
-/// individual retirements and SP13's paired highlight/note remain covered here.
+/// SP17, SY18, #178: a book deletion retains files, place, per-book settings,
+/// highlights and paired notes from the journal at its causal frontier. Missing
+/// historical bodies cannot establish membership; their own retirements remain
+/// responsible for them (#111). Book-level restore checks remain for Stage 4.
 #[allow(clippy::too_many_arguments)]
 pub fn build(
     conn: &Connection,
@@ -1500,6 +1681,292 @@ pub(crate) mod tests {
         assert!(expected.is_disjoint(&names(d.db.conn(), &NAMING, &remote[1]).unwrap()));
     }
 
+    fn annotation_body(id: &str, book: &str) -> LocalContent {
+        let mut row = highlight("book", None, 1_760_000_001_000);
+        row.id = id.into();
+        LocalContent::Body(
+            super::super::a9::body_of(&row, book)
+                .to_string()
+                .into_bytes(),
+        )
+    }
+
+    fn peer_children(
+        d: &Device,
+        seq: u64,
+        children: &[(&str, LocalContent)],
+    ) -> (Entry, Vec<Version>) {
+        let peer = Keypair::from_seed(&[8; 32]);
+        let mut versions = Vec::new();
+        for (key, content) in children {
+            let LocalContent::Body(body) = content else {
+                panic!("body fixture")
+            };
+            let hash = journal::put_body(d.db.conn(), body).unwrap();
+            let value = json!({"format": 1, "key": key, "device": peer.device().to_string(),
+                "clock": [seq, 0], "history": [], "body": {"hash": hash.to_string(), "size": body.len()}});
+            let version = checked(value.clone(), peer.device()).unwrap().unwrap();
+            d.db.conn()
+                .execute(
+                    "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, 1)",
+                    params![
+                        d.lib.id.to_string(),
+                        key,
+                        peer.device().to_string(),
+                        seq as i64,
+                        version.hash.to_string(),
+                        value.to_string()
+                    ],
+                )
+                .unwrap();
+            versions.push(version);
+        }
+        let signed = chain::sign_change(
+            &peer,
+            &d.lib.id,
+            &Id16([9; 16]),
+            seq,
+            None,
+            &versions.iter().map(|v| v.raw.clone()).collect::<Vec<_>>(),
+        );
+        (
+            Entry {
+                device: peer.device(),
+                seq,
+                hash: signed.hash,
+            },
+            versions,
+        )
+    }
+
+    fn delete_book(d: &Device, book: &str, covers: Vec<Entry>) {
+        d.local(
+            &format!("book:{book}"),
+            LocalContent::Deleted {
+                covers,
+                identity: Some(json!({"hashes": [Hash32([7; 32]).to_string()], "idTitle": null})),
+            },
+        );
+    }
+
+    fn book_week(d: &mut Device, book: &str, changes: &[Change]) -> BTreeSet<Name> {
+        let built = d.build(None, changes, &|_| false);
+        let written = d.save(&built);
+        records(&d.open(&written))[&format!("book:{book}")]
+            .week
+            .last()
+            .unwrap()
+            .objects
+            .iter()
+            .copied()
+            .collect()
+    }
+
+    #[test]
+    fn a_book_deletion_keeps_its_highlights_and_notes() {
+        // SP17, #178: this book's children from both writers, excluding another book.
+        let mut d = Device::new();
+        let book = "00000000-0000-4000-8000-000000000001";
+        let mut expected = BTreeSet::new();
+        for n in 1..=2 {
+            let id = format!("00000000-0000-4000-8000-{n:012}");
+            let annotation = d.local(&format!("annotation:{id}"), annotation_body(&id, book));
+            let note = d.note(&format!("note:{id}"), &format!("note {n}"));
+            expected.extend(names(d.db.conn(), &NAMING, &annotation).unwrap());
+            expected.extend(names(d.db.conn(), &NAMING, &note).unwrap());
+        }
+        let other = "00000000-0000-4000-8000-000000000004";
+        let other_annotation = d.local(
+            &format!("annotation:{other}"),
+            annotation_body(other, other),
+        );
+        let other_note = d.note(&format!("note:{other}"), "another book");
+        let one = d.change();
+        let id = "00000000-0000-4000-8000-000000000003";
+        let (covers, remote) = peer_children(
+            &d,
+            1,
+            &[
+                (&format!("annotation:{id}"), annotation_body(id, book)),
+                (
+                    &format!("note:{id}"),
+                    LocalContent::Body(br#"{"text":"peer note"}"#.to_vec()),
+                ),
+            ],
+        );
+        for v in &remote {
+            expected.extend(names(d.db.conn(), &NAMING, v).unwrap());
+        }
+        delete_book(&d, book, vec![covers]);
+        let two = d.change();
+        let week = book_week(&mut d, book, &[one, two]);
+        assert_eq!(week, expected);
+        assert_eq!(week.len(), 6);
+        for v in [other_annotation, other_note] {
+            assert!(week.is_disjoint(&names(d.db.conn(), &NAMING, &v).unwrap()));
+        }
+    }
+
+    #[test]
+    fn a_highlight_deleted_before_the_book_is_still_kept_through_the_book() {
+        // SP13, SP17, #178: the earlier child tombstone must not hide its body.
+        let mut d = Device::new();
+        let book = "00000000-0000-4000-8000-000000000001";
+        let id = "00000000-0000-4000-8000-000000000002";
+        let annotation = d.local(&format!("annotation:{id}"), annotation_body(id, book));
+        let note = d.note(&format!("note:{id}"), "deleted note");
+        let one = d.change();
+        // SP11, #178: also follow a tombstone's history to another writer.
+        let peer_id = "00000000-0000-4000-8000-000000000003";
+        let (covers, remote) = peer_children(
+            &d,
+            1,
+            &[
+                (
+                    &format!("annotation:{peer_id}"),
+                    annotation_body(peer_id, book),
+                ),
+                (
+                    &format!("note:{peer_id}"),
+                    LocalContent::Body(br#"{"text":"peer predecessor"}"#.to_vec()),
+                ),
+            ],
+        );
+        d.delete(&format!("annotation:{peer_id}"));
+        d.delete(&format!("note:{peer_id}"));
+        d.delete(&format!("annotation:{id}"));
+        d.delete(&format!("note:{id}"));
+        let two = d.change();
+        delete_book(&d, book, vec![covers]);
+        let three = d.change();
+        let expected = [&annotation, &note]
+            .into_iter()
+            .chain(remote.iter())
+            .flat_map(|v| names(d.db.conn(), &NAMING, v).unwrap())
+            .collect();
+        assert_eq!(book_week(&mut d, book, &[one, two, three]), expected);
+    }
+
+    #[test]
+    fn a_highlight_written_after_the_frontier_is_not_read() {
+        // SP13, SY18, #178: include the covered child, exclude later bodies.
+        let mut d = Device::new();
+        let book = "00000000-0000-4000-8000-000000000001";
+        let before = "00000000-0000-4000-8000-000000000002";
+        let after = "00000000-0000-4000-8000-000000000003";
+        let (covers, included) = peer_children(
+            &d,
+            1,
+            &[
+                (
+                    &format!("annotation:{before}"),
+                    annotation_body(before, book),
+                ),
+                (
+                    &format!("note:{before}"),
+                    LocalContent::Body(br#"{"text":"before"}"#.to_vec()),
+                ),
+            ],
+        );
+        let (_, excluded) = peer_children(
+            &d,
+            2,
+            &[
+                (&format!("annotation:{after}"), annotation_body(after, book)),
+                (
+                    &format!("note:{after}"),
+                    LocalContent::Body(br#"{"text":"after"}"#.to_vec()),
+                ),
+                (
+                    &format!("note:{before}"),
+                    LocalContent::Body(br#"{"text":"later edit"}"#.to_vec()),
+                ),
+            ],
+        );
+        delete_book(&d, book, vec![covers]);
+        let one = d.change();
+        let week = book_week(&mut d, book, &[one]);
+        let expected = included
+            .iter()
+            .flat_map(|v| names(d.db.conn(), &NAMING, v).unwrap())
+            .collect();
+        assert_eq!(week, expected);
+        for v in excluded {
+            assert!(week.is_disjoint(&names(d.db.conn(), &NAMING, &v).unwrap()));
+        }
+    }
+
+    #[test]
+    fn a_book_deletion_does_not_load_other_books_history() {
+        // SP17, #178, #111: an offline peer can leave unbounded superseded
+        // history. Only one head per unrelated highlight should reach Rust.
+        let mut d = Device::new();
+        let book = "00000000-0000-4000-8000-000000000001";
+        let own_id = "00000000-0000-4000-8000-000000000002";
+        let other_book = "00000000-0000-4000-8000-000000000099";
+        let other_ids = [
+            "00000000-0000-4000-8000-000000000010",
+            "00000000-0000-4000-8000-000000000011",
+        ];
+        let own = d.local(
+            &format!("annotation:{own_id}"),
+            annotation_body(own_id, book),
+        );
+        let one = d.change();
+        let mut cutoff = None;
+        for seq in 1..=200 {
+            let children: Vec<_> = other_ids
+                .iter()
+                .flat_map(|id| {
+                    let mut row = highlight("book", None, 1_760_000_001_000);
+                    row.id = (*id).into();
+                    row.quote_exact = format!("edit {seq}");
+                    [
+                        (
+                            format!("annotation:{id}"),
+                            LocalContent::Body(
+                                super::super::a9::body_of(&row, other_book)
+                                    .to_string()
+                                    .into_bytes(),
+                            ),
+                        ),
+                        (
+                            format!("note:{id}"),
+                            LocalContent::Body(
+                                json!({"text": format!("other note {seq}")})
+                                    .to_string()
+                                    .into_bytes(),
+                            ),
+                        ),
+                    ]
+                })
+                .collect();
+            let children: Vec<_> = children
+                .iter()
+                .map(|(key, body)| (key.as_str(), body.clone()))
+                .collect();
+            cutoff = Some(peer_children(&d, seq, &children).0);
+        }
+        d.db.conn()
+            .execute(
+                "UPDATE sync_versions SET applied = 2 WHERE device = ?1 AND seq < 200",
+                [cutoff.unwrap().device.to_string()],
+            )
+            .unwrap();
+        delete_book(&d, book, vec![cutoff.unwrap()]);
+        let two = d.change();
+        STREAMED_VERSION_ROWS.with_borrow_mut(|counts| *counts = Some(BTreeMap::new()));
+        let week = book_week(&mut d, book, &[one, two]);
+        let counts = STREAMED_VERSION_ROWS.with_borrow_mut(|counts| counts.take().unwrap());
+        for id in other_ids {
+            assert_eq!(counts.get(&format!("annotation:{id}")), Some(&1));
+            assert!(!counts.contains_key(&format!("note:{id}")));
+        }
+        assert_eq!(counts.get(&format!("annotation:{own_id}")), Some(&1));
+        assert_eq!(week, names(d.db.conn(), &NAMING, &own).unwrap());
+    }
+
     #[test]
     fn an_inherited_remote_ancestor_does_not_retire_again_on_later_edits() {
         let mut d = Device::new();
@@ -1545,5 +2012,64 @@ pub(crate) mod tests {
         };
         assert!(rs[NOTE].week[0].objects.contains(&old));
         assert!(!rs[NOTE].week[1].objects.contains(&old));
+    }
+
+    #[test]
+    fn the_book_content_queries_grow_linearly() {
+        // #178: SQLite's own work, counted in VM steps (deterministic, unlike
+        // time), must roughly double when a writer's highlights and notes
+        // double. Each query runs as book_contents runs it: the heads once, and
+        // the note and history lookups once per key. Both lookups were quadratic
+        // before (a correlated MAX, and an index that scanned other keys).
+        let steps = |n: usize| {
+            let d = Device::new();
+            let device = Id16([5; 16]);
+            for i in 0..n {
+                d.db.conn()
+                    .execute(
+                        "INSERT INTO sync_versions (library, key, device, seq, hash, raw, applied)
+                     VALUES (?1, ?2, ?3, ?4, 'h', '{}', 1)",
+                        params![
+                            d.lib.id.to_string(),
+                            format!("annotation:00000000-0000-4000-8000-{i:012}"),
+                            device.to_string(),
+                            (i + 1) as i64
+                        ],
+                    )
+                    .unwrap();
+            }
+            let conn = d.db.conn();
+            let mut heads = conn.prepare(ANNOTATION_HEADS).unwrap();
+            let rows = heads
+                .query_map(
+                    params![d.lib.id.to_string(), device.to_string(), n as i64],
+                    |r| r.get::<_, i64>(1),
+                )
+                .unwrap()
+                .count();
+            assert_eq!(rows, n);
+            let mut total = heads.get_status(rusqlite::StatementStatus::VmStep);
+            for query in [NOTE_HEAD, KEY_HISTORY] {
+                let mut stmt = conn.prepare(query).unwrap();
+                for i in 0..n {
+                    let key = format!("annotation:00000000-0000-4000-8000-{i:012}");
+                    let found = stmt
+                        .query_map(
+                            params![d.lib.id.to_string(), key, device.to_string(), n as i64],
+                            |_| Ok(()),
+                        )
+                        .unwrap()
+                        .count();
+                    assert_eq!(found, 1);
+                }
+                total += stmt.get_status(rusqlite::StatementStatus::VmStep);
+            }
+            total
+        };
+        let (small, large) = (steps(1_000), steps(2_000));
+        assert!(
+            large < 3 * small,
+            "{small} VM steps for 1,000 highlights and notes, {large} for 2,000"
+        );
     }
 }
