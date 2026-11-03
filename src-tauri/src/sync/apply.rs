@@ -290,7 +290,7 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     Ok(room)
 }
 
-fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
+pub(crate) fn own_seq(conn: &Connection, lib: &Library) -> Result<u64> {
     let s: Option<i64> = conn.query_row(
         // SP17, #111: pruning can remove every own payload while a peer's
         // descendant stands. Its spine still proves how far own ancestry is held.
@@ -1759,6 +1759,7 @@ pub(crate) fn apply_key(
     now_ms: i64,
     aside: &mut Tally,
 ) -> Result<bool> {
+    freshness::recheck_key(conn, lib, key, now_ms)?;
     // SY28: a version whose body fails is excluded before anything is merged or its
     // clock observed, so it is never a head, shown or hidden.
     let unapplied: HashSet<(String, i64)> = conn

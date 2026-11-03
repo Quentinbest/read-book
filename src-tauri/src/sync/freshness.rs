@@ -9,7 +9,7 @@ use super::merge::Placed;
 use super::record::{Content, Kind, Version};
 use super::retention::{Vouched, WEEK_MS};
 use super::trust::Record;
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use std::collections::{BTreeMap, BTreeSet};
 
 type Result<T> = std::result::Result<T, JournalError>;
@@ -139,37 +139,38 @@ pub fn out_of_touch(
 
 /// SP32: deletions of every kind wait; only these existing bodies' edits wait.
 pub fn waits_when_out_of_touch(version: &Version, replaces_existing: bool) -> bool {
-    if matches!(version.content, Content::Deleted { .. }) {
-        return true;
-    }
-    match version.kind {
-        // SP32: book-file replacements and edits of highlights and notes.
-        Kind::BookFile | Kind::Annotation | Kind::Note => replaces_existing,
-        // SP12: a choice that lets something go counts as a deletion of it, so
-        // it waits too; a stolen key could otherwise end a hold or discard a
-        // version with no word from the reader. `keep` proceeds.
-        Kind::Choice => matches!(
-            &version.content,
-            Content::Inline(body) if matches!(
+    retires_content(version, replaces_existing)
+        || (matches!(version.kind, Kind::Annotation | Kind::Note) && replaces_existing)
+}
+
+/// SP32, #148: deletions, SP12 letting-go choices and book-file replacements.
+/// SY17's `Backups/deleted/` isn't built yet; this protects only undo data.
+pub(crate) fn retires_content(version: &Version, replaces_existing: bool) -> bool {
+    matches!(version.content, Content::Deleted { .. })
+        || (version.kind == Kind::BookFile && replaces_existing)
+        || (version.kind == Kind::Choice
+            && matches!(&version.content, Content::Inline(body) if matches!(
                 body.get("choice").and_then(serde_json::Value::as_str),
                 Some("discard" | "discard-all" | "wrong-clock" | "stop-waiting")
-            )
-        ),
-        // SP32: places, settings, per-book settings and reading states proceed.
-        // Book metadata isn't one of the held body edits either.
-        Kind::Place
-        | Kind::Setting
-        | Kind::BookSetting
-        | Kind::BookOpened
-        | Kind::BookFinished
-        | Kind::Book => false,
-    }
+            )))
 }
+
+/// SP32, #148: PROVISIONAL no-witness undo retention and per-writer caps.
+pub(crate) const NO_WITNESS_KEEP_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+#[cfg(not(test))]
+const NO_WITNESS_ROWS: usize = 500;
+#[cfg(test)]
+const NO_WITNESS_ROWS: usize = 3;
+#[cfg(not(test))]
+const NO_WITNESS_BYTES: usize = 1024 * 1024 * 1024;
+#[cfg(test)]
+const NO_WITNESS_BYTES: usize = 4096;
 
 /// SP32: store the caller's current decision. Leaving "out", whether back in
 /// touch or to no witness at all, releases the writer's holds atomically: a
 /// writer with no witness applies under SP32's 30-day undo keep instead (#148,
-/// PR 2b), and holds left behind would never be asked about again.
+/// PR 2b). Returning to `in` also releases no-witness cap holds (#148), since
+/// the new touch state no longer holds them and won't return their question.
 pub fn record_touch(
     conn: &Connection,
     lib: &Library,
@@ -195,18 +196,18 @@ pub fn record_touch(
             // SP32: released holds wait for their ancestry to be checked again
             // (-1), so a release never applies past a still-held ancestor.
             "UPDATE sync_versions SET applied = -1 WHERE library = ?1 AND device = ?2
-             AND applied = -7 AND EXISTS (SELECT 1 FROM sync_touch
-                WHERE library = ?1 AND device = ?2 AND state = 'out')",
-            params![lib.id.to_string(), writer.to_string()],
+             AND applied = -7 AND (?3 = 'in' OR EXISTS (SELECT 1 FROM sync_touch
+                WHERE library = ?1 AND device = ?2 AND state = 'out'))",
+            params![lib.id.to_string(), writer.to_string(), state],
         )?;
     }
     tx.execute(
         "INSERT INTO sync_touch (library, device, state, witness, since_ms)
          VALUES (?1, ?2, ?3, ?4, ?5)
          ON CONFLICT(library, device) DO UPDATE SET
-            asked_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
+            asked_at = CASE WHEN sync_touch.state != excluded.state AND excluded.state IN ('out', 'none')
                 THEN NULL ELSE sync_touch.asked_at END,
-            answered_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
+            answered_at = CASE WHEN sync_touch.state != excluded.state AND excluded.state IN ('out', 'none')
                 THEN NULL ELSE sync_touch.answered_at END,
             state = excluded.state, witness = excluded.witness, since_ms = excluded.since_ms",
         params![
@@ -299,13 +300,17 @@ fn wait_for_held_ancestors(conn: &Connection, lib: &Library) -> Result<()> {
 /// SP32: called after clock/ancestry checks, inside the receiving transaction.
 /// A newly held version after Not now makes the question eligible once again.
 pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) -> Result<bool> {
-    let out: bool = conn.query_row(
-        "SELECT EXISTS(SELECT 1 FROM sync_touch
-         WHERE library = ?1 AND device = ?2 AND state = 'out')",
-        params![lib.id.to_string(), p.version.device.to_string()],
-        |r| r.get(0),
-    )?;
-    if !out {
+    let touch: Option<(String, Option<i64>)> = conn
+        .query_row(
+            "SELECT state, released_through FROM sync_touch WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), p.version.device.to_string()],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((state, released)) = touch else {
+        return Ok(false);
+    };
+    if state == "in" || (state == "none" && released.is_some_and(|s| p.seq <= s as u64)) {
         return Ok(false);
     }
     let existing: bool = conn.query_row(
@@ -314,8 +319,24 @@ pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) ->
         params![lib.id.to_string(), p.version.key.as_str()],
         |r| r.get(0),
     )?;
-    if !waits_when_out_of_touch(&p.version, existing) {
-        return Ok(false);
+    if state == "out" {
+        if !waits_when_out_of_touch(&p.version, existing) {
+            return Ok(false);
+        }
+    } else {
+        if !retires_content(&p.version, existing) {
+            return Ok(false);
+        }
+        if !super::guard::past_no_witness_cap(
+            conn,
+            lib,
+            p,
+            now_ms,
+            NO_WITNESS_ROWS,
+            NO_WITNESS_BYTES,
+        )? {
+            return Ok(false);
+        }
     }
     conn.execute(
         "UPDATE sync_versions SET applied = -7
@@ -331,7 +352,6 @@ pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) ->
     // timestamps together, so more holds before its answer don't ask again. This
     // hold follows the answer by transaction order, so any answer re-arms it; a
     // timestamp comparison would fail when the clock stalls or steps back.
-    let _ = now_ms;
     conn.execute(
         "UPDATE sync_touch SET asked_at = NULL, answered_at = NULL
          WHERE library = ?1 AND device = ?2 AND answered_at IS NOT NULL",
@@ -340,11 +360,43 @@ pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) ->
     Ok(true)
 }
 
+/// SP32, #148: recheck at application too: earlier keys in this batch may have
+/// filled the undo cap, or this version may have been waiting for its body.
+pub(crate) fn recheck_key(
+    conn: &Connection,
+    lib: &Library,
+    key: &super::record::Key,
+    now_ms: i64,
+) -> Result<()> {
+    let pending = super::journal::record_of(conn, lib, key, super::journal::Which::All)?;
+    let mut held = false;
+    for p in pending.heads(&std::collections::HashSet::new()) {
+        let unapplied: bool = conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sync_versions WHERE library = ?1 AND device = ?2
+             AND seq = ?3 AND key = ?4 AND applied = 0)",
+            params![
+                lib.id.to_string(),
+                p.version.device.to_string(),
+                p.seq as i64,
+                key.as_str()
+            ],
+            |r| r.get(0),
+        )?;
+        if unapplied {
+            held |= hold(conn, lib, p, now_ms)?;
+        }
+    }
+    if held {
+        wait_for_held_ancestors(conn, lib)?;
+    }
+    Ok(())
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Question {
     pub writer: DeviceId,
-    pub witness: DeviceId,
-    pub since_ms: u64,
+    pub witness: Option<DeviceId>,
+    pub since_ms: Option<u64>,
     pub removed: usize,
     pub changed: usize,
 }
@@ -353,11 +405,11 @@ pub struct Question {
 /// Counts are versions, including SP12's letting-go choices as removals.
 pub fn questions(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Question>> {
     let tx = conn.unchecked_transaction()?;
-    let rows: Vec<(String, String, i64, String)> = tx
+    let rows: Vec<(String, Option<String>, Option<i64>, String)> = tx
         .prepare(
             "SELECT t.device, t.witness, t.since_ms, v.raw FROM sync_touch t
          JOIN sync_versions v ON v.library = t.library AND v.device = t.device
-         WHERE t.library = ?1 AND t.state = 'out' AND t.asked_at IS NULL
+         WHERE t.library = ?1 AND t.state IN ('out', 'none') AND t.asked_at IS NULL
             AND v.applied = -7 ORDER BY t.device, v.seq, v.key",
         )?
         .query_map([lib.id.to_string()], |r| {
@@ -367,8 +419,9 @@ pub fn questions(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Qu
     let mut questions: Vec<Question> = Vec::new();
     for (writer, witness, since_ms, raw) in rows {
         let writer = DeviceId::parse(&writer).ok_or(super::record::RecordError::Field("device"))?;
-        let witness =
-            DeviceId::parse(&witness).ok_or(super::record::RecordError::Field("witness"))?;
+        let witness = witness
+            .map(|w| DeviceId::parse(&w).ok_or(super::record::RecordError::Field("witness")))
+            .transpose()?;
         let super::record::Checked::Version(v) = super::record::check_version(
             serde_json::from_str(&raw).map_err(|_| super::record::RecordError::Field("raw"))?,
             writer,
@@ -380,7 +433,7 @@ pub fn questions(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Qu
             questions.push(Question {
                 writer,
                 witness,
-                since_ms: since_ms as u64,
+                since_ms: since_ms.map(|s| s as u64),
                 removed: 0,
                 changed: 0,
             });
@@ -422,7 +475,11 @@ pub fn answer(
     let tx = conn.unchecked_transaction()?;
     tx.execute(
         "UPDATE sync_touch SET answered_at = ?3, asked_at = COALESCE(asked_at, ?3),
-            state = CASE WHEN ?4 THEN 'in' ELSE state END
+            released_through = CASE WHEN ?4 AND state = 'none' THEN MAX(
+                COALESCE(released_through, 0), COALESCE((SELECT MAX(seq) FROM sync_versions
+                    WHERE library = ?1 AND device = ?2 AND applied = -7), 0))
+                ELSE released_through END,
+            state = CASE WHEN ?4 AND state = 'out' THEN 'in' ELSE state END
          WHERE library = ?1 AND device = ?2",
         params![
             lib.id.to_string(),
@@ -540,6 +597,240 @@ mod tests {
         ).unwrap()
     }
 
+    fn no_witness_held() -> Held {
+        let (mut writer, wl) = device(2, "writer");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        for i in 1..=4 {
+            let mut h = highlight("writer", None, now);
+            h.id = format!("00000000-0000-4000-8000-{i:012}");
+            writer.save_annotation(&h).unwrap();
+        }
+        let initial = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &initial, now).unwrap();
+        reader.conn().execute(
+            "INSERT INTO sync_question (library, asking, approved, answered_at) VALUES (?1, 0, 0, ?2)
+             ON CONFLICT(library) DO UPDATE SET answered_at = ?2",
+            params![rl.id.to_string(), now],
+        ).unwrap();
+        record_touch(reader.conn(), &rl, wl.device, Touch::NoWitness, now).unwrap();
+        for i in 1..=4 {
+            writer
+                .delete_annotation(&format!("00000000-0000-4000-8000-{i:012}"))
+                .unwrap();
+        }
+        let mut addition = highlight("writer", None, now + 1);
+        addition.id = "00000000-0000-4000-8000-000000000099".into();
+        writer.save_annotation(&addition).unwrap();
+        let batch = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &batch, now + 10).unwrap();
+        Held {
+            writer,
+            wl,
+            reader,
+            rl,
+            batch,
+            now,
+        }
+    }
+
+    #[test]
+    fn a_no_witness_deletion_waits_when_its_before_bytes_alone_exceed_the_cap() {
+        let (mut writer, wl) = device(2, "writer");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        let text = "x".repeat(NO_WITNESS_BYTES + 1);
+        writer
+            .save_annotation(&highlight("writer", Some(&text), now))
+            .unwrap();
+        let initial = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &initial, now).unwrap();
+        reader.conn().execute(
+            "INSERT INTO sync_question (library, asking, approved, answered_at) VALUES (?1, 0, 0, ?2)
+             ON CONFLICT(library) DO UPDATE SET answered_at = ?2",
+            params![rl.id.to_string(), now],
+        ).unwrap();
+        record_touch(reader.conn(), &rl, wl.device, Touch::NoWitness, now).unwrap();
+        writer.delete_annotation(ANNO).unwrap();
+        let batch = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &batch, now + 10).unwrap();
+        let h = Held {
+            writer,
+            wl,
+            reader,
+            rl,
+            batch,
+            now,
+        };
+        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), -7);
+        assert_eq!(
+            crate::store::annotation_row(h.reader.conn(), ANNO)
+                .unwrap()
+                .unwrap()
+                .0
+                .note
+                .as_deref(),
+            Some(text.as_str())
+        );
+    }
+
+    #[test]
+    fn past_the_cap_a_no_witness_writers_deletions_wait() {
+        let h = no_witness_held();
+        for i in 1..=3 {
+            assert_eq!(
+                state(
+                    &h,
+                    &format!("annotation:00000000-0000-4000-8000-{i:012}"),
+                    h.batch.seq
+                ),
+                1
+            );
+        }
+        assert_eq!(
+            state(
+                &h,
+                "annotation:00000000-0000-4000-8000-000000000004",
+                h.batch.seq
+            ),
+            -7
+        );
+        assert_eq!(
+            state(
+                &h,
+                "annotation:00000000-0000-4000-8000-000000000099",
+                h.batch.seq
+            ),
+            1
+        );
+        assert_eq!(h.reader.annotations("reader").unwrap().len(), 2);
+    }
+
+    #[test]
+    fn apply_lets_a_no_witness_writers_held_deletions_through() {
+        let mut h = no_witness_held();
+        let key = "annotation:00000000-0000-4000-8000-000000000004";
+        assert_eq!(state(&h, key, h.batch.seq), -7);
+        assert_eq!(
+            answer(
+                h.reader.conn(),
+                &h.rl,
+                h.wl.device,
+                Answer::Apply,
+                &mut Heard::default(),
+                &at(WEEK_MS),
+                h.now + 20
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(state(&h, key, h.batch.seq), -1);
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 20).unwrap();
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 21).unwrap();
+        assert_eq!(state(&h, key, h.batch.seq), 1);
+        assert_eq!(h.reader.annotations("reader").unwrap().len(), 1);
+        record_touch(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Touch::NoWitness,
+            h.now + 22,
+        )
+        .unwrap();
+        h.writer
+            .delete_annotation("00000000-0000-4000-8000-000000000099")
+            .unwrap();
+        let newer = publish_next(h.writer.conn(), &h.wl).unwrap().unwrap();
+        apply::receive(h.reader.conn(), &h.rl, &newer, h.now + 30).unwrap();
+        assert_eq!(
+            state(
+                &h,
+                "annotation:00000000-0000-4000-8000-000000000099",
+                newer.seq
+            ),
+            -7
+        );
+    }
+
+    #[test]
+    fn a_no_witness_writers_cap_holds_are_released_when_it_becomes_in_touch() {
+        let h = no_witness_held();
+        let key = "annotation:00000000-0000-4000-8000-000000000004";
+        assert_eq!(state(&h, key, h.batch.seq), -7);
+        record_touch(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Touch::InTouch,
+            h.now + 20,
+        )
+        .unwrap();
+        assert_eq!(state(&h, key, h.batch.seq), -1);
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 21).unwrap();
+        assert_eq!(state(&h, key, h.batch.seq), 1);
+        assert_eq!(h.reader.annotations("reader").unwrap().len(), 1);
+    }
+
+    #[test]
+    fn the_question_names_no_witness() {
+        let h = no_witness_held();
+        assert_eq!(
+            questions(h.reader.conn(), &h.rl, h.now + 11).unwrap(),
+            vec![Question {
+                writer: h.wl.device,
+                witness: None,
+                since_ms: None,
+                removed: 1,
+                changed: 0,
+            }]
+        );
+        assert!(questions(h.reader.conn(), &h.rl, h.now + 12)
+            .unwrap()
+            .is_empty());
+        answer(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Answer::NotNow,
+            &mut Heard::default(),
+            &at(WEEK_MS),
+            h.now + 20,
+        )
+        .unwrap();
+        assert!(questions(h.reader.conn(), &h.rl, h.now + 21)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn losing_a_witness_asks_about_holds_that_now_exceed_the_cap() {
+        let h = no_witness_held();
+        out(h.reader.conn(), &h.rl, h.wl.device, h.now + 20);
+        assert_eq!(
+            questions(h.reader.conn(), &h.rl, h.now + 21).unwrap().len(),
+            1
+        );
+        record_touch(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Touch::NoWitness,
+            h.now + 30,
+        )
+        .unwrap();
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 31).unwrap();
+        // SP32, #148: the old out-of-touch question must not suppress this new
+        // no-witness question when the released version meets the undo cap.
+        let qs = questions(h.reader.conn(), &h.rl, h.now + 32).unwrap();
+        assert_eq!(qs.len(), 1);
+        assert_eq!(qs[0].witness, None);
+        assert_eq!(qs[0].since_ms, None);
+        assert_eq!(qs[0].removed, 1);
+        assert!(questions(h.reader.conn(), &h.rl, h.now + 33)
+            .unwrap()
+            .is_empty());
+    }
+
     #[test]
     fn an_out_of_touch_writers_deletion_waits_and_an_addition_applies() {
         let h = held();
@@ -649,8 +940,8 @@ mod tests {
             questions(h.reader.conn(), &h.rl, h.now).unwrap(),
             vec![Question {
                 writer: h.wl.device,
-                witness: d(4),
-                since_ms: WEEK_MS,
+                witness: Some(d(4)),
+                since_ms: Some(WEEK_MS),
                 removed: 2,
                 changed: 1,
             }]
@@ -820,7 +1111,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("touch.db");
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(include_str!("../../tests/fixtures/schema-v14.sql"))
+        let fixtures = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+        let newest = std::fs::read_dir(fixtures)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .filter_map(|path| {
+                let name = path.file_name()?.to_str()?;
+                let version = name
+                    .strip_prefix("schema-v")?
+                    .strip_suffix(".sql")?
+                    .parse::<u64>()
+                    .ok()?;
+                Some((version, path))
+            })
+            .max_by_key(|(version, _)| *version)
+            .expect("a shipped schema fixture")
+            .1;
+        conn.execute_batch(&std::fs::read_to_string(newest).unwrap())
             .unwrap();
         let columns = |conn: &Connection| -> Vec<(String, String, bool)> {
             conn.prepare("PRAGMA table_info(sync_touch)")
