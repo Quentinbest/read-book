@@ -263,8 +263,11 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     // device's chain is received.
     for device in &full_ones {
         conn.execute(
+            // SP32: a held version (-7) counts against the budget but is never
+            // dropped here: the writer is stopped, and its holds stay for the
+            // reader's question or a later removal.
             "DELETE FROM sync_versions INDEXED BY sync_versions_body
-             WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2, -7)
+             WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?3",
             params![lib.id.to_string(), device.to_string(), hash.to_string()],
         )?;
@@ -617,8 +620,9 @@ fn stop_owners_past_budget(
         };
         if aside_full(conn, &there, device, 0, 0)? || pending_full(conn, &there, device)? {
             conn.execute(
+                // SP32: held versions (-7) are counted but kept, as above.
                 "DELETE FROM sync_versions INDEXED BY sync_versions_body
-                 WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4, -7)
+                 WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4)
                    AND json_extract(raw, '$.body.hash') = ?3",
                 params![library, device.to_string(), hash.to_string()],
             )?;

@@ -175,7 +175,7 @@ pub fn record_touch(
     lib: &Library,
     writer: DeviceId,
     touch: Touch,
-    _now_ms: i64,
+    now_ms: i64,
 ) -> Result<()> {
     let (state, witness, since_ms) = match touch {
         Touch::InTouch => ("in", None, None),
@@ -197,6 +197,47 @@ pub fn record_touch(
                 WHERE library = ?1 AND device = ?2 AND state = 'out')",
             params![lib.id.to_string(), writer.to_string()],
         )?;
+    }
+    if state == "out" {
+        // SP32: a version already pending when the writer goes out of touch (an
+        // edit still waiting for its body, say) is held too, or it would apply
+        // later without the reader's Apply.
+        let pending: Vec<(i64, String)> = tx
+            .prepare(
+                "SELECT seq, raw FROM sync_versions
+                 WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied = 0",
+            )?
+            .query_map(params![lib.id.to_string(), writer.to_string()], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })?
+            .collect::<std::result::Result<_, _>>()?;
+        tx.execute(
+            "INSERT INTO sync_touch (library, device, state) VALUES (?1, ?2, 'out')
+             ON CONFLICT(library, device) DO NOTHING",
+            params![lib.id.to_string(), writer.to_string()],
+        )?;
+        tx.execute(
+            "UPDATE sync_touch SET state = 'out' WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), writer.to_string()],
+        )?;
+        for (seq, raw) in pending {
+            let Ok(value) = serde_json::from_str(&raw) else {
+                continue;
+            };
+            if let Ok(super::record::Checked::Version(version)) =
+                super::record::check_version(value, writer)
+            {
+                hold(
+                    &tx,
+                    lib,
+                    &Placed {
+                        version,
+                        seq: seq as u64,
+                    },
+                    now_ms,
+                )?;
+            }
+        }
     }
     tx.execute(
         "INSERT INTO sync_touch (library, device, state, witness, since_ms)
@@ -251,11 +292,14 @@ pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) ->
         ],
     )?;
     // SP32: the new question has no answer yet; retire the previous question's
-    // timestamps together, so more holds before its answer don't ask again.
+    // timestamps together, so more holds before its answer don't ask again. This
+    // hold follows the answer by transaction order, so any answer re-arms it; a
+    // timestamp comparison would fail when the clock stalls or steps back.
+    let _ = now_ms;
     conn.execute(
         "UPDATE sync_touch SET asked_at = NULL, answered_at = NULL
-         WHERE library = ?1 AND device = ?2 AND answered_at < ?3",
-        params![lib.id.to_string(), p.version.device.to_string(), now_ms],
+         WHERE library = ?1 AND device = ?2 AND answered_at IS NOT NULL",
+        params![lib.id.to_string(), p.version.device.to_string()],
     )?;
     Ok(true)
 }
@@ -1100,5 +1144,118 @@ mod tests {
         )
         .unwrap();
         assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+    }
+
+    #[test]
+    fn a_pending_edit_is_held_when_its_writer_goes_out_of_touch() {
+        // SP32: an edit received in touch but still waiting for its body must not
+        // apply after the writer goes out of touch without the reader's Apply.
+        let (mut writer, wl) = device(2, "writer");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        writer
+            .save_annotation(&highlight("writer", Some("original note"), now))
+            .unwrap();
+        send(&writer, &wl, &reader, &rl).unwrap();
+        writer
+            .save_annotation(&highlight("writer", Some("edited note"), now + 1))
+            .unwrap();
+        let mut batch = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        let bodies = std::mem::take(&mut batch.bodies);
+        apply::receive(reader.conn(), &rl, &batch, now + 10).unwrap();
+        let note_state =
+            |r: &Store| -> i64 {
+                r.conn()
+                .query_row(
+                    "SELECT applied FROM sync_versions WHERE device = ?1 AND seq = ?2 AND key = ?3",
+                    params![wl.device.to_string(), batch.seq as i64, format!("note:{ANNO}")],
+                    |r| r.get(0),
+                )
+                .unwrap()
+            };
+        assert_eq!(note_state(&reader), 0, "the edit waits for its body");
+        out(reader.conn(), &rl, wl.device, now + 20);
+        assert_eq!(note_state(&reader), -7, "going out of touch holds it");
+        for body in bodies {
+            apply::receive_body(reader.conn(), &rl, &body).unwrap();
+        }
+        apply::apply_pending(reader.conn(), &rl, now + 30).unwrap();
+        assert_eq!(
+            note_of(&reader, "reader"),
+            Some(Some("original note".into()))
+        );
+    }
+
+    #[test]
+    fn a_late_body_over_the_budget_stops_the_writer_but_keeps_its_holds() {
+        // SY28, SP32: a held version counts against the budget, but an
+        // overflowing body never drops it; it stays for the question or a removal.
+        let (mut writer, wl) = device(2, "writer");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        writer
+            .save_annotation(&highlight("writer", Some("original note"), now))
+            .unwrap();
+        send(&writer, &wl, &reader, &rl).unwrap();
+        out(reader.conn(), &rl, wl.device, now + 5);
+        let big = "x".repeat(1_500_000);
+        writer
+            .save_annotation(&highlight("writer", Some(&big), now + 1))
+            .unwrap();
+        let mut batch = publish_next(writer.conn(), &wl).unwrap().unwrap();
+        let bodies = std::mem::take(&mut batch.bodies);
+        apply::receive(reader.conn(), &rl, &batch, now + 10).unwrap();
+        let held = |r: &Store| -> i64 {
+            r.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_versions WHERE device = ?1 AND applied = -7",
+                    [wl.device.to_string()],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        let before = held(&reader);
+        assert!(before > 0);
+        for body in bodies {
+            apply::receive_body(reader.conn(), &rl, &body).unwrap();
+        }
+        assert!(apply::stopped(reader.conn(), &rl, wl.device).unwrap());
+        assert_eq!(held(&reader), before, "the holds are kept");
+    }
+
+    #[test]
+    fn a_hold_after_not_now_re_arms_the_question_whatever_the_clock() {
+        // SP32: a new hold after Not now re-arms the question even when the clock
+        // shows the same moment as the answer, or an earlier one.
+        let h = held();
+        assert_eq!(questions(h.reader.conn(), &h.rl, h.now).unwrap().len(), 1);
+        let mut heard = Heard::default();
+        let clock = Vouched::new(0);
+        answer(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Answer::NotNow,
+            &mut heard,
+            &clock,
+            h.now + 100,
+        )
+        .unwrap();
+        assert!(questions(h.reader.conn(), &h.rl, h.now + 100)
+            .unwrap()
+            .is_empty());
+        // A new hold: an edit of the highlight the fixture added (and applied).
+        let mut writer = h.writer;
+        let mut edit = highlight("writer", None, h.now + 2);
+        edit.id = "00000000-0000-4000-8000-000000000099".into();
+        edit.color = "green".into();
+        writer.save_annotation(&edit).unwrap();
+        let batch = publish_next(writer.conn(), &h.wl).unwrap().unwrap();
+        // Received at an earlier clock than the answer.
+        apply::receive(h.reader.conn(), &h.rl, &batch, h.now + 50).unwrap();
+        assert_eq!(
+            questions(h.reader.conn(), &h.rl, h.now + 60).unwrap().len(),
+            1
+        );
     }
 }
