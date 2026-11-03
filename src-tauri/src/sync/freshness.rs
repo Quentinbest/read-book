@@ -209,6 +209,8 @@ pub fn record_touch(
                 THEN NULL ELSE sync_touch.asked_at END,
             answered_at = CASE WHEN sync_touch.state != excluded.state AND excluded.state IN ('out', 'none')
                 THEN NULL ELSE sync_touch.answered_at END,
+            asked_through = CASE WHEN sync_touch.state != excluded.state AND excluded.state IN ('out', 'none')
+                THEN NULL ELSE sync_touch.asked_through END,
             state = excluded.state, witness = excluded.witness, since_ms = excluded.since_ms",
         params![
             lib.id.to_string(),
@@ -353,7 +355,7 @@ pub(crate) fn hold(conn: &Connection, lib: &Library, p: &Placed, now_ms: i64) ->
     // hold follows the answer by transaction order, so any answer re-arms it; a
     // timestamp comparison would fail when the clock stalls or steps back.
     conn.execute(
-        "UPDATE sync_touch SET asked_at = NULL, answered_at = NULL
+        "UPDATE sync_touch SET asked_at = NULL, answered_at = NULL, asked_through = NULL
          WHERE library = ?1 AND device = ?2 AND answered_at IS NOT NULL",
         params![lib.id.to_string(), p.version.device.to_string()],
     )?;
@@ -403,13 +405,15 @@ pub struct Question {
 
 /// SP32: return each question once; a fresh hold after Not now re-arms it.
 /// Counts are versions, including SP12's letting-go choices as removals.
+/// Holds beyond an Apply's snapshot are asked about even if Apply marked the
+/// writer in touch: those versions still need an answer (SP32, #148).
 pub fn questions(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Question>> {
     let tx = conn.unchecked_transaction()?;
     let rows: Vec<(String, Option<String>, Option<i64>, String)> = tx
         .prepare(
             "SELECT t.device, t.witness, t.since_ms, v.raw FROM sync_touch t
          JOIN sync_versions v ON v.library = t.library AND v.device = t.device
-         WHERE t.library = ?1 AND t.state IN ('out', 'none') AND t.asked_at IS NULL
+         WHERE t.library = ?1 AND t.asked_at IS NULL
             AND v.applied = -7 ORDER BY t.device, v.seq, v.key",
         )?
         .query_map([lib.id.to_string()], |r| {
@@ -447,7 +451,10 @@ pub fn questions(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Qu
     }
     for q in &questions {
         tx.execute(
-            "UPDATE sync_touch SET asked_at = ?3 WHERE library = ?1 AND device = ?2",
+            // SP32, #148: snapshot the versions shown, atomically with the question.
+            "UPDATE sync_touch SET asked_at = ?3, asked_through = (
+                SELECT MAX(seq) FROM sync_versions WHERE library = ?1 AND device = ?2 AND applied = -7)
+             WHERE library = ?1 AND device = ?2",
             params![lib.id.to_string(), q.writer.to_string(), now_ms],
         )?;
     }
@@ -461,8 +468,9 @@ pub enum Answer {
     NotNow,
 }
 
-/// SP32: Apply releases holds, but never exempts them from SY26. Hearing is
-/// updated only after the database transaction commits successfully.
+/// SP32, #148: Apply releases only holds covered by the shown question, never
+/// exempting them from SY26. Without a recorded `asked_through`, Apply releases
+/// nothing: the reader was shown nothing. Hearing updates only after commit.
 pub fn answer(
     conn: &Connection,
     lib: &Library,
@@ -473,11 +481,20 @@ pub fn answer(
     now_ms: i64,
 ) -> Result<usize> {
     let tx = conn.unchecked_transaction()?;
+    let asked_through: Option<i64> = tx
+        .query_row(
+            "SELECT asked_through FROM sync_touch WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), writer.to_string()],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if answer == Answer::Apply && asked_through.is_none() {
+        return Ok(0);
+    }
     tx.execute(
         "UPDATE sync_touch SET answered_at = ?3, asked_at = COALESCE(asked_at, ?3),
-            released_through = CASE WHEN ?4 AND state = 'none' THEN MAX(
-                COALESCE(released_through, 0), COALESCE((SELECT MAX(seq) FROM sync_versions
-                    WHERE library = ?1 AND device = ?2 AND applied = -7), 0))
+            released_through = CASE WHEN ?4 AND state = 'none' THEN asked_through
                 ELSE released_through END,
             state = CASE WHEN ?4 AND state = 'out' THEN 'in' ELSE state END
          WHERE library = ?1 AND device = ?2",
@@ -491,12 +508,25 @@ pub fn answer(
     let released = if answer == Answer::Apply {
         tx.execute(
             // SP32: as on leaving `out`, released versions are rechecked first.
-            "UPDATE sync_versions SET applied = -1 WHERE library = ?1 AND device = ?2 AND applied = -7",
-            params![lib.id.to_string(), writer.to_string()],
+            "UPDATE sync_versions SET applied = -1 WHERE library = ?1 AND device = ?2
+             AND applied = -7 AND seq <= ?3",
+            params![lib.id.to_string(), writer.to_string(), asked_through],
         )?
     } else {
         0
     };
+    if answer == Answer::Apply {
+        // SP32, #148: anything held after the snapshot still needs its own answer.
+        tx.execute(
+            "UPDATE sync_touch SET asked_through = NULL,
+                asked_at = CASE WHEN EXISTS(SELECT 1 FROM sync_versions
+                    WHERE library = ?1 AND device = ?2 AND applied = -7) THEN NULL ELSE asked_at END,
+                answered_at = CASE WHEN EXISTS(SELECT 1 FROM sync_versions
+                    WHERE library = ?1 AND device = ?2 AND applied = -7) THEN NULL ELSE answered_at END
+             WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), writer.to_string()],
+        )?;
+    }
     tx.commit()?;
     if answer == Answer::Apply {
         heard.applied(writer, clock);
@@ -711,6 +741,7 @@ mod tests {
         let mut h = no_witness_held();
         let key = "annotation:00000000-0000-4000-8000-000000000004";
         assert_eq!(state(&h, key, h.batch.seq), -7);
+        questions(h.reader.conn(), &h.rl, h.now + 19).unwrap();
         assert_eq!(
             answer(
                 h.reader.conn(),
@@ -857,8 +888,113 @@ mod tests {
     }
 
     #[test]
+    fn apply_without_a_shown_question_releases_nothing() {
+        let h = held();
+        assert_eq!(
+            answer(
+                h.reader.conn(),
+                &h.rl,
+                h.wl.device,
+                Answer::Apply,
+                &mut Heard::default(),
+                &at(WEEK_MS),
+                h.now + 20
+            )
+            .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn apply_leaves_holds_that_arrived_after_the_shown_question() {
+        for no_witness in [false, true] {
+            let h = if no_witness {
+                no_witness_held()
+            } else {
+                held()
+            };
+            assert_eq!(
+                questions(h.reader.conn(), &h.rl, h.now + 11).unwrap().len(),
+                1
+            );
+            let key = Key::parse(&format!("choice:hold.{}.1.55", h.wl.device))
+                .unwrap()
+                .0;
+            journal::record_local(
+                h.writer.conn(),
+                &h.wl,
+                &key,
+                LocalContent::Inline(json!({"choice": "stop-waiting"})),
+                h.now as u64,
+            )
+            .unwrap();
+            let newer = publish_next(h.writer.conn(), &h.wl).unwrap().unwrap();
+            apply::receive(h.reader.conn(), &h.rl, &newer, h.now + 12).unwrap();
+            assert_eq!(state(&h, key.as_str(), newer.seq), -7);
+            assert!(questions(h.reader.conn(), &h.rl, h.now + 13)
+                .unwrap()
+                .is_empty());
+            assert_eq!(
+                answer(
+                    h.reader.conn(),
+                    &h.rl,
+                    h.wl.device,
+                    Answer::Apply,
+                    &mut Heard::default(),
+                    &at(WEEK_MS),
+                    h.now + 20
+                )
+                .unwrap(),
+                if no_witness { 1 } else { 3 }
+            );
+            apply::apply_pending(h.reader.conn(), &h.rl, h.now + 21).unwrap();
+            assert_eq!(
+                state(&h, key.as_str(), newer.seq),
+                -7,
+                "unseen holds are not approved"
+            );
+            if no_witness {
+                let through: i64 = h
+                    .reader
+                    .conn()
+                    .query_row(
+                        "SELECT released_through FROM sync_touch WHERE device = ?1",
+                        [h.wl.device.to_string()],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(through, h.batch.seq as i64);
+            }
+            let next = questions(h.reader.conn(), &h.rl, h.now + 22).unwrap();
+            assert_eq!(next.len(), 1);
+            assert_eq!(next[0].removed, 1);
+            assert_eq!(next[0].changed, 0);
+            assert_eq!(next[0].witness, if no_witness { None } else { Some(d(4)) });
+            assert!(questions(h.reader.conn(), &h.rl, h.now + 23)
+                .unwrap()
+                .is_empty());
+            // The second shown question can release its own holds too.
+            assert_eq!(
+                answer(
+                    h.reader.conn(),
+                    &h.rl,
+                    h.wl.device,
+                    Answer::Apply,
+                    &mut Heard::default(),
+                    &at(WEEK_MS),
+                    h.now + 24
+                )
+                .unwrap(),
+                1
+            );
+            assert_eq!(state(&h, key.as_str(), newer.seq), -1);
+        }
+    }
+
+    #[test]
     fn apply_releases_held_versions_and_they_apply() {
         let h = held();
+        questions(h.reader.conn(), &h.rl, h.now + 19).unwrap();
         let mut heard = Heard::default();
         let clock = at(WEEK_MS);
         assert_eq!(
@@ -1751,6 +1887,7 @@ mod tests {
         };
         assert_eq!(state(vl.device, vb.seq), -7);
         assert_eq!(state(wl.device, wb.seq), -7);
+        questions(reader.conn(), &rl, now + 29).unwrap();
         let mut heard = Heard::default();
         answer(
             reader.conn(),

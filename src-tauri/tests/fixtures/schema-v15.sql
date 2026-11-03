@@ -148,6 +148,7 @@ INSERT INTO sync_spine_versions VALUES ('00112233445566778899aabbccddeeff', 'a3f
         asked_at INTEGER,
         answered_at INTEGER,
         released_through INTEGER,
+        asked_through INTEGER,
         PRIMARY KEY (library, device)
     );
-INSERT INTO sync_touch VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'out', '00112233445566778899aabbccddeeff', 604800000, 100, NULL, 12);
+INSERT INTO sync_touch VALUES ('00112233445566778899aabbccddeeff', 'a3f0a3f0a3f0a3f0a3f0a3f0a3f0a3f0', 'out', '00112233445566778899aabbccddeeff', 604800000, 100, NULL, 12, 15);

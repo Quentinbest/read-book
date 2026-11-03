@@ -1516,6 +1516,18 @@ pub(crate) fn write(
     v: &Version,
     aside: &mut Tally,
 ) -> Result<bool> {
+    write_at(conn, lib, v, aside, crate::store::now_ms())
+}
+
+/// SP32, #148: receiving and rechecking carry their application time through to
+/// hidden-note undo, independently of SY26's accounting time.
+fn write_at(
+    conn: &Connection,
+    lib: &Library,
+    v: &Version,
+    aside: &mut Tally,
+    now_ms: i64,
+) -> Result<bool> {
     let ms = v.clock.ms() as i64;
     let body = match &v.content {
         Content::Body { .. } => match checked_body(conn, lib, v, aside)? {
@@ -1641,7 +1653,7 @@ pub(crate) fn write(
                             .note
                             .filter(|n| !n.trim().is_empty() && Some(n) != shown.as_ref())
                         {
-                            guard::keep_hidden_note(conn, lib, &a.id, &kept)?;
+                            guard::keep_hidden_note(conn, lib, &a.id, &kept, now_ms)?;
                         }
                     }
                 }
@@ -1842,7 +1854,7 @@ pub(crate) fn apply_key(
     }
     let changed = if winner.version.device == lib.device {
         false // the library already holds this device's own state
-    } else if write(conn, lib, &winner.version, aside)? {
+    } else if write_at(conn, lib, &winner.version, aside, now_ms)? {
         // SY17: another device's deletion, first seen here now.
         super::restore::seen(conn, lib, &winner.version, Some(winner.seq), None, now_ms)?;
         if let Some(before) = before {
@@ -1990,7 +2002,7 @@ pub(crate) fn recompute(
                 "device": lib.device.to_string(), "clock": [now_ms.max(0), 0],
                 "history": [], "deleted": { "covers": [] } });
             if let Checked::Version(v) = check_version(raw, lib.device)? {
-                write(conn, lib, &v, tally)?;
+                write_at(conn, lib, &v, tally, now_ms)?;
             }
             return Ok(before != library_content(conn, lib, key)?);
         }
@@ -2018,7 +2030,7 @@ pub(crate) fn recompute(
             return Err(super::record::RecordError::Body.into());
         }
     }
-    if !write(conn, lib, &winner.version, tally)? {
+    if !write_at(conn, lib, &winner.version, tally, now_ms)? {
         return Ok(false);
     }
     // SP11: same 1/2 bookkeeping as apply_key, including its unsent exception.
