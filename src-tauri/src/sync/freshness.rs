@@ -192,7 +192,9 @@ pub fn record_touch(
     let tx = conn.unchecked_transaction()?;
     if state != "out" {
         tx.execute(
-            "UPDATE sync_versions SET applied = 0 WHERE library = ?1 AND device = ?2
+            // SP32: released holds wait for their ancestry to be checked again
+            // (-1), so a release never applies past a still-held ancestor.
+            "UPDATE sync_versions SET applied = -1 WHERE library = ?1 AND device = ?2
              AND applied = -7 AND EXISTS (SELECT 1 FROM sync_touch
                 WHERE library = ?1 AND device = ?2 AND state = 'out')",
             params![lib.id.to_string(), writer.to_string()],
@@ -431,7 +433,8 @@ pub fn answer(
     )?;
     let released = if answer == Answer::Apply {
         tx.execute(
-            "UPDATE sync_versions SET applied = 0 WHERE library = ?1 AND device = ?2 AND applied = -7",
+            // SP32: as on leaving `out`, released versions are rechecked first.
+            "UPDATE sync_versions SET applied = -1 WHERE library = ?1 AND device = ?2 AND applied = -7",
             params![lib.id.to_string(), writer.to_string()],
         )?
     } else {
@@ -580,7 +583,7 @@ mod tests {
             .unwrap(),
             3
         );
-        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), -1);
         assert!(apply::apply_pending(h.reader.conn(), &h.rl, h.now + 20).unwrap() >= 2);
         let row = h
             .reader
@@ -625,7 +628,7 @@ mod tests {
             h.now + 30,
         )
         .unwrap();
-        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), -1);
         assert!(apply::apply_pending(h.reader.conn(), &h.rl, h.now + 30).unwrap() >= 2);
         assert_eq!(
             h.reader
@@ -784,6 +787,18 @@ mod tests {
         assert_eq!(result.listed, 1);
         assert_eq!(state(&h, key.as_str(), tail.seq), -5);
         assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+        // SP32: the removal takes over; the writer is no longer out of touch, so
+        // nothing of its accepted prefix is held again.
+        let touch: i64 = h
+            .reader
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_touch WHERE device = ?1",
+                [h.wl.device.to_string()],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(touch, 0);
         let was: i64 = h
             .reader
             .conn()
@@ -1177,7 +1192,7 @@ mod tests {
             h.now + 20,
         )
         .unwrap();
-        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), -1);
     }
 
     #[test]
@@ -1378,6 +1393,69 @@ mod tests {
             apply::receive_body(reader.conn(), &rl, b).unwrap();
         }
         apply::apply_pending(reader.conn(), &rl, now + 30).unwrap();
+        assert_eq!(
+            note_of(&reader, "reader"),
+            Some(Some("original note".into()))
+        );
+    }
+
+    #[test]
+    fn releasing_a_held_descendant_still_waits_for_its_held_ancestor() {
+        // SP32: V's edit made from W's is held first (V out of touch), then W's
+        // (W out of touch). Apply for V must not apply it past W's hold.
+        let (mut w, wl) = device(2, "writer");
+        let (mut v, vl) = device(3, "other");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        w.save_annotation(&highlight("writer", Some("original note"), now))
+            .unwrap();
+        let first = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &first, now).unwrap();
+        apply::receive(v.conn(), &vl, &first, now).unwrap();
+        w.save_annotation(&highlight("writer", Some("w edit"), now + 1))
+            .unwrap();
+        let mut wb = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(v.conn(), &vl, &wb, now + 2).unwrap();
+        apply::apply_pending(v.conn(), &vl, now + 2).unwrap();
+        v.save_annotation(&highlight("other", Some("v edit"), now + 3))
+            .unwrap();
+        let mut vb = publish_next(v.conn(), &vl).unwrap().unwrap();
+        let bodies: Vec<_> = std::mem::take(&mut wb.bodies)
+            .into_iter()
+            .chain(std::mem::take(&mut vb.bodies))
+            .collect();
+        apply::receive(reader.conn(), &rl, &wb, now + 10).unwrap();
+        apply::receive(reader.conn(), &rl, &vb, now + 11).unwrap();
+        out(reader.conn(), &rl, vl.device, now + 20);
+        out(reader.conn(), &rl, wl.device, now + 21);
+        let state = |dev: DeviceId, seq: u64| -> i64 {
+            reader
+                .conn()
+                .query_row(
+                    "SELECT applied FROM sync_versions WHERE device = ?1 AND seq = ?2 AND key = ?3",
+                    params![dev.to_string(), seq as i64, format!("note:{ANNO}")],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(state(vl.device, vb.seq), -7);
+        assert_eq!(state(wl.device, wb.seq), -7);
+        let mut heard = Heard::default();
+        answer(
+            reader.conn(),
+            &rl,
+            vl.device,
+            Answer::Apply,
+            &mut heard,
+            &Vouched::new(0),
+            now + 30,
+        )
+        .unwrap();
+        for b in &bodies {
+            apply::receive_body(reader.conn(), &rl, b).unwrap();
+        }
+        apply::apply_pending(reader.conn(), &rl, now + 40).unwrap();
+        assert_eq!(state(vl.device, vb.seq), -1, "V's edit waits for W's hold");
         assert_eq!(
             note_of(&reader, "reader"),
             Some(Some("original note".into()))
