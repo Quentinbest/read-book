@@ -198,10 +198,28 @@ pub fn record_touch(
             params![lib.id.to_string(), writer.to_string()],
         )?;
     }
+    tx.execute(
+        "INSERT INTO sync_touch (library, device, state, witness, since_ms)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(library, device) DO UPDATE SET
+            asked_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
+                THEN NULL ELSE sync_touch.asked_at END,
+            answered_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
+                THEN NULL ELSE sync_touch.answered_at END,
+            state = excluded.state, witness = excluded.witness, since_ms = excluded.since_ms",
+        params![
+            lib.id.to_string(),
+            writer.to_string(),
+            state,
+            witness,
+            since_ms
+        ],
+    )?;
     if state == "out" {
         // SP32: a version already pending when the writer goes out of touch (an
         // edit still waiting for its body, say) is held too, or it would apply
-        // later without the reader's Apply.
+        // later without the reader's Apply. This runs after the upsert, which
+        // sees the move into `out` and clears an earlier episode's question.
         let pending: Vec<(i64, String)> = tx
             .prepare(
                 "SELECT seq, raw FROM sync_versions
@@ -211,15 +229,6 @@ pub fn record_touch(
                 Ok((r.get(0)?, r.get(1)?))
             })?
             .collect::<std::result::Result<_, _>>()?;
-        tx.execute(
-            "INSERT INTO sync_touch (library, device, state) VALUES (?1, ?2, 'out')
-             ON CONFLICT(library, device) DO NOTHING",
-            params![lib.id.to_string(), writer.to_string()],
-        )?;
-        tx.execute(
-            "UPDATE sync_touch SET state = 'out' WHERE library = ?1 AND device = ?2",
-            params![lib.id.to_string(), writer.to_string()],
-        )?;
         for (seq, raw) in pending {
             let Ok(value) = serde_json::from_str(&raw) else {
                 continue;
@@ -239,23 +248,6 @@ pub fn record_touch(
             }
         }
     }
-    tx.execute(
-        "INSERT INTO sync_touch (library, device, state, witness, since_ms)
-         VALUES (?1, ?2, ?3, ?4, ?5)
-         ON CONFLICT(library, device) DO UPDATE SET
-            asked_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
-                THEN NULL ELSE sync_touch.asked_at END,
-            answered_at = CASE WHEN sync_touch.state != 'out' AND excluded.state = 'out'
-                THEN NULL ELSE sync_touch.answered_at END,
-            state = excluded.state, witness = excluded.witness, since_ms = excluded.since_ms",
-        params![
-            lib.id.to_string(),
-            writer.to_string(),
-            state,
-            witness,
-            since_ms
-        ],
-    )?;
     tx.commit()?;
     Ok(())
 }
@@ -1255,6 +1247,48 @@ mod tests {
         apply::receive(h.reader.conn(), &h.rl, &batch, h.now + 50).unwrap();
         assert_eq!(
             questions(h.reader.conn(), &h.rl, h.now + 60).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn a_local_deletion_does_not_claim_to_have_seen_a_held_edit() {
+        // SP13, SP32: a held change wasn't seen by the reader, so a deletion made
+        // here stops its frontier before it, and stays in conflict with it.
+        let h = held();
+        let covers = crate::sync::local::covers(h.reader.conn(), &h.rl).unwrap();
+        let writer = covers.iter().find(|e| e.device == h.wl.device);
+        assert!(
+            writer.map_or(true, |e| e.seq < h.batch.seq),
+            "the frontier stops before the held change: {writer:?}"
+        );
+    }
+
+    #[test]
+    fn a_new_out_of_touch_episode_asks_again() {
+        // SP32: asked but never answered, back in touch, then out of touch again
+        // with a new hold: the new episode asks again.
+        let h = held();
+        assert_eq!(questions(h.reader.conn(), &h.rl, h.now).unwrap().len(), 1);
+        record_touch(
+            h.reader.conn(),
+            &h.rl,
+            h.wl.device,
+            Touch::InTouch,
+            h.now + 10,
+        )
+        .unwrap();
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 10).unwrap();
+        out(h.reader.conn(), &h.rl, h.wl.device, h.now + 20);
+        let mut writer = h.writer;
+        let mut edit = highlight("writer", None, h.now + 2);
+        edit.id = "00000000-0000-4000-8000-000000000099".into();
+        edit.color = "green".into();
+        writer.save_annotation(&edit).unwrap();
+        let batch = publish_next(writer.conn(), &h.wl).unwrap().unwrap();
+        apply::receive(h.reader.conn(), &h.rl, &batch, h.now + 30).unwrap();
+        assert_eq!(
+            questions(h.reader.conn(), &h.rl, h.now + 40).unwrap().len(),
             1
         );
     }
