@@ -355,6 +355,12 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device)
     );
     "#,
+    // 15: SP32, #148: the reader lets a no-witness writer through this sequence.
+    r#"
+    ALTER TABLE sync_touch ADD COLUMN released_through INTEGER;
+    ALTER TABLE sync_touch ADD COLUMN asked_through INTEGER;
+    ALTER TABLE sync_undo ADD COLUMN keep_until INTEGER;
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

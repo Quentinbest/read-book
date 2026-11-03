@@ -454,6 +454,27 @@ pub(crate) fn row(conn: &Connection, key: &Key) -> Result<Option<Row>> {
         .optional()?)
 }
 
+/// SP32, #148: decide protection while the retiring version is in hand. It
+/// survives witness enrollment and #111's payload pruning. `Backups/deleted/`
+/// isn't built yet, so this deadline protects only the undo journal. Count from
+/// actual application, not SY26's possibly earlier approval/accounting time.
+fn keep_until(
+    conn: &Connection,
+    lib: &Library,
+    p: &Placed,
+    existing: bool,
+    now_ms: i64,
+) -> Result<Option<i64>> {
+    if !super::freshness::retires_content(&p.version, existing) {
+        return Ok(None);
+    }
+    let no_witness: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sync_touch WHERE library = ?1 AND device = ?2 AND state = 'none')",
+        params![lib.id.to_string(), p.version.device.to_string()], |r| r.get(0),
+    )?;
+    Ok(no_witness.then(|| now_ms.saturating_add(super::freshness::NO_WITNESS_KEEP_MS)))
+}
+
 /// A remote version has just been applied over `before`: the undo journal keeps
 /// what it replaced, and the change is counted (unless the reader let it through).
 #[allow(clippy::too_many_arguments)]
@@ -480,6 +501,12 @@ pub(crate) fn applied(
     let since = question(conn, lib)?
         .and_then(|q| q.answered_at)
         .unwrap_or(0);
+    let at = if approved {
+        since
+    } else {
+        now_ms.max(since + 1)
+    };
+    let keep_until = keep_until(conn, lib, p, before.is_some(), now_ms)?;
     let what = match (&before, &after) {
         (None, Some(_)) => "added",
         (Some(_), None) => "deleted",
@@ -489,7 +516,9 @@ pub(crate) fn applied(
             // record's entry moves on to it, so Stop syncing still knows it.
             if !approved {
                 conn.execute(
-                    "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5
+                    "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5,
+                        keep_until = CASE WHEN keep_until IS NULL OR keep_until < ?7
+                            THEN ?7 ELSE keep_until END
                      WHERE library = ?1 AND key = ?2 AND at > ?6",
                     params![
                         lib.id.to_string(),
@@ -497,7 +526,8 @@ pub(crate) fn applied(
                         p.version.device.to_string(),
                         p.seq as i64,
                         p.version.hash.to_string(),
-                        since
+                        since,
+                        keep_until
                     ],
                 )?;
             }
@@ -541,11 +571,6 @@ pub(crate) fn applied(
     // What the reader let through is kept as of the answer, outside the window Stop
     // syncing puts back; anything else strictly after it, even in the same
     // millisecond.
-    let at = if approved {
-        since
-    } else {
-        now_ms.max(since + 1)
-    };
     // Each insert or move also takes the next turn, so two changes in one
     // millisecond still tell which came first.
     let turn: i64 = conn.query_row(
@@ -557,7 +582,9 @@ pub(crate) fn applied(
         0
     } else {
         conn.execute(
-            "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6, turn = ?8
+            "UPDATE sync_undo SET device = ?3, seq = ?4, hash = ?5, at = ?6, turn = ?8,
+            keep_until = CASE WHEN keep_until IS NULL OR keep_until < ?9
+                THEN ?9 ELSE keep_until END
          WHERE library = ?1 AND key = ?2 AND at > ?7",
             params![
                 lib.id.to_string(),
@@ -567,14 +594,15 @@ pub(crate) fn applied(
                 p.version.hash.to_string(),
                 at,
                 since,
-                turn
+                turn,
+                keep_until
             ],
         )?
     };
     if moved == 0 {
         conn.execute(
-            "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn, keep_until)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
             params![
                 lib.id.to_string(),
                 p.version.key.as_str(),
@@ -583,7 +611,8 @@ pub(crate) fn applied(
                 p.version.hash.to_string(),
                 before,
                 at,
-                turn
+                turn,
+                keep_until
             ],
         )?;
     }
@@ -668,6 +697,7 @@ pub(crate) fn keep_hidden_note(
     lib: &Library,
     id: &str,
     text: &str,
+    now_ms: i64,
 ) -> Result<()> {
     let Some((key, _)) = Key::parse(&format!("note:{id}")) else {
         return Ok(());
@@ -699,9 +729,11 @@ pub(crate) fn keep_hidden_note(
         [lib.id.to_string()],
         |r| r.get(0),
     )?;
+    let at = now_ms.max(since + 1);
+    let keep_until = keep_until(conn, lib, shown, true, now_ms)?;
     conn.execute(
-        "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO sync_undo (library, key, device, seq, hash, before, at, turn, keep_until)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         params![
             lib.id.to_string(),
             key.as_str(),
@@ -709,8 +741,9 @@ pub(crate) fn keep_hidden_note(
             shown.seq as i64,
             shown.version.hash.to_string(),
             serde_json::json!({ "text": text }).to_string().into_bytes(),
-            crate::store::now_ms().max(since + 1),
-            turn
+            at,
+            turn,
+            keep_until
         ],
     )?;
     Ok(())
@@ -727,6 +760,48 @@ pub(crate) fn changed_here(conn: &Connection, lib: &Library, key: &Key) -> Resul
     Ok(())
 }
 
+/// SP32, #148: project the journal's existing coalescing rule, including the
+/// preserved before-image when another change moves the same row on.
+pub(crate) fn past_no_witness_cap(
+    conn: &Connection,
+    lib: &Library,
+    p: &Placed,
+    now_ms: i64,
+    row_cap: usize,
+    byte_cap: usize,
+) -> Result<bool> {
+    let since = question(conn, lib)?
+        .and_then(|q| q.answered_at)
+        .unwrap_or(0);
+    let (count, bytes): (i64, i64) = conn.query_row(
+        "SELECT COUNT(*), COALESCE(SUM(length(before)), 0) FROM sync_undo
+         WHERE library = ?1 AND device = ?2 AND keep_until > ?3
+         AND NOT (key = ?4 AND at > ?5)",
+        params![
+            lib.id.to_string(),
+            p.version.device.to_string(),
+            now_ms,
+            p.version.key.as_str(),
+            since
+        ],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let kept: Option<Option<i64>> = conn
+        .query_row(
+            "SELECT length(before) FROM sync_undo WHERE library = ?1 AND key = ?2 AND at > ?3",
+            params![lib.id.to_string(), p.version.key.as_str(), since],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let before = match kept {
+        Some(before) => before,
+        None => before(conn, lib, &p.version.key, apply::own_seq(conn, lib)? + 1)?
+            .1
+            .map(|b| b.len() as i64),
+    };
+    Ok(count + 1 > row_cap as i64 || bytes + before.unwrap_or(0) > byte_cap as i64)
+}
+
 /// SY26: the undo journal keeps a week, and everything since the last answer (the
 /// counting that hasn't been answered yet); what was counted is needed only since
 /// the last answer.
@@ -734,9 +809,17 @@ pub(crate) fn prune(conn: &Connection, lib: &Library, now_ms: i64) -> Result<()>
     let since = question(conn, lib)?
         .and_then(|q| q.answered_at)
         .unwrap_or(0);
+    // SP32, #148: persist the 30-day promise, independently of today's touch
+    // state or payload availability, and still keep everything since SY26's answer.
     conn.execute(
-        "DELETE FROM sync_undo WHERE library = ?1 AND at < ?2 AND at <= ?3",
-        params![lib.id.to_string(), now_ms - WEEK_MS, since],
+        "DELETE FROM sync_undo WHERE library = ?1 AND at < ?2 AND at <= ?3
+         AND (keep_until IS NULL OR keep_until <= ?4)",
+        params![
+            lib.id.to_string(),
+            now_ms.saturating_sub(WEEK_MS),
+            since,
+            now_ms
+        ],
     )?;
     conn.execute(
         "DELETE FROM sync_counted WHERE library = ?1 AND at <= ?2",
@@ -1023,6 +1106,340 @@ mod tests {
             .find(|r| r.id == ids[0])
             .unwrap();
         assert_eq!(row.note.as_deref(), Some("the reader's own"));
+    }
+
+    #[test]
+    fn the_no_witness_cap_projects_coalesced_rows_and_before_bytes() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        super::super::freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            super::super::freshness::Touch::NoWitness,
+            now,
+        )
+        .unwrap();
+        let batch = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        let super::super::record::Checked::Version(version) =
+            super::super::record::check_version(batch.versions[0].clone(), la.device).unwrap()
+        else {
+            panic!("a deletion")
+        };
+        let p = Placed {
+            version,
+            seq: batch.seq,
+        };
+        let bytes: i64 = b
+            .conn()
+            .query_row(
+                "SELECT SUM(length(before)) FROM sync_undo WHERE at > ?1",
+                [now],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let bytes = bytes as usize;
+        assert!(bytes > 0);
+        // The same record moves its existing row on: no additional row or bytes.
+        assert!(!past_no_witness_cap(b.conn(), &lb, &p, now + 2 * HOUR, 2, bytes).unwrap());
+        assert!(past_no_witness_cap(b.conn(), &lb, &p, now + 2 * HOUR, 1, bytes).unwrap());
+        assert!(past_no_witness_cap(b.conn(), &lb, &p, now + 2 * HOUR, 2, bytes - 1).unwrap());
+        // Old rows don't spend the 30-day budget; the newly moved row still does.
+        assert!(!past_no_witness_cap(b.conn(), &lb, &p, now + 31 * DAY_MS, 1, bytes).unwrap());
+    }
+
+    fn no_witness_deletion() -> (Store, Library, Library, Batch, i64) {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        super::super::freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            super::super::freshness::Touch::NoWitness,
+            now,
+        )
+        .unwrap();
+        let batch = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        b.conn()
+            .execute(
+                "UPDATE sync_question SET answered_at = ?1",
+                [now + 2 * HOUR],
+            )
+            .unwrap();
+        (b, lb, la, batch, now)
+    }
+
+    #[test]
+    fn coalescing_preserves_and_extends_no_witness_protection() {
+        use super::super::freshness::{record_touch, Touch, NO_WITNESS_KEEP_MS};
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        record_touch(b.conn(), &lb, la.device, Touch::NoWitness, now).unwrap();
+        let batch = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+        let key = format!("annotation:{}", ids[0]);
+        let deadline = || {
+            b.conn()
+                .query_row(
+                    "SELECT keep_until FROM sync_undo WHERE key = ?1 AND at > ?2",
+                    params![key, now],
+                    |r| r.get::<_, i64>(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(deadline(), now + HOUR + NO_WITNESS_KEEP_MS);
+        record_touch(b.conn(), &lb, la.device, Touch::InTouch, now + 2 * HOUR).unwrap();
+        a.restore_annotation(&ids[0]).unwrap();
+        let back = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &back, now + 2 * HOUR).unwrap();
+        assert_eq!(
+            deadline(),
+            now + HOUR + NO_WITNESS_KEEP_MS,
+            "an unprotected edit cannot shorten the promise"
+        );
+        record_touch(b.conn(), &lb, la.device, Touch::NoWitness, now + 3 * HOUR).unwrap();
+        let again = delete(&mut a, &la, &ids);
+        receive(b.conn(), &lb, &again, now + 3 * HOUR).unwrap();
+        assert_eq!(deadline(), now + 3 * HOUR + NO_WITNESS_KEEP_MS);
+        // A later tombstone has the same content but still moves the undo row on.
+        journal::record_local(
+            a.conn(),
+            &la,
+            &Key::parse(&key).unwrap().0,
+            LocalContent::Deleted {
+                covers: vec![],
+                identity: None,
+            },
+            (now + 4 * HOUR) as u64,
+        )
+        .unwrap();
+        let same = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &same, now + 4 * HOUR).unwrap();
+        assert_eq!(deadline(), now + 4 * HOUR + NO_WITNESS_KEEP_MS);
+    }
+
+    #[test]
+    fn a_hidden_note_insert_keeps_its_no_witness_protection() {
+        let (b, lb, la, batch, now) = no_witness_deletion();
+        let key = batch
+            .versions
+            .iter()
+            .find_map(|v| v["key"].as_str().filter(|k| k.starts_with("note:")))
+            .unwrap();
+        let id = key.strip_prefix("note:").unwrap();
+        keep_hidden_note(b.conn(), &lb, id, "retained text", now + 2 * HOUR + 1).unwrap();
+        let (at, until): (i64, i64) = b
+            .conn()
+            .query_row(
+                "SELECT at, keep_until FROM sync_undo WHERE key = ?1 ORDER BY turn DESC LIMIT 1",
+                [key],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(until, at + super::super::freshness::NO_WITNESS_KEEP_MS);
+        super::super::freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            super::super::freshness::Touch::InTouch,
+            now + 3 * HOUR,
+        )
+        .unwrap();
+        b.conn()
+            .execute(
+                "DELETE FROM sync_versions WHERE device = ?1 AND seq = ?2",
+                params![la.device.to_string(), batch.seq as i64],
+            )
+            .unwrap();
+        b.conn()
+            .execute("UPDATE sync_question SET answered_at = ?1", [at])
+            .unwrap();
+        prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
+        let text: Vec<u8> = b
+            .conn()
+            .query_row(
+                "SELECT before FROM sync_undo WHERE key = ?1 ORDER BY turn DESC LIMIT 1",
+                [key],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<serde_json::Value>(&text).unwrap()["text"],
+            "retained text"
+        );
+    }
+
+    #[test]
+    fn a_no_witness_deletions_protection_survives_enrolling_a_witness() {
+        let (b, lb, la, _, now) = no_witness_deletion();
+        super::super::freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            super::super::freshness::Touch::InTouch,
+            now + 3 * HOUR,
+        )
+        .unwrap();
+        prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
+        let rows = || {
+            b.conn()
+                .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        assert_eq!(rows(), 2, "the promise outlives the no-witness state");
+        prune(b.conn(), &lb, now + 30 * DAY_MS).unwrap();
+        assert_eq!(rows(), 2);
+        prune(b.conn(), &lb, now + 31 * DAY_MS).unwrap();
+        assert_eq!(rows(), 0);
+    }
+
+    #[test]
+    fn a_no_witness_deletions_protection_and_cap_survive_payload_pruning() {
+        let (b, lb, la, batch, now) = no_witness_deletion();
+        b.conn()
+            .execute(
+                "DELETE FROM sync_versions WHERE device = ?1 AND seq = ?2",
+                params![la.device.to_string(), batch.seq as i64],
+            )
+            .unwrap();
+        prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
+        let rows: i64 = b
+            .conn()
+            .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 2, "#111's payload pruning cannot end the promise");
+        let super::super::record::Checked::Version(version) =
+            super::super::record::check_version(batch.versions[0].clone(), la.device).unwrap()
+        else {
+            panic!("a deletion")
+        };
+        let p = Placed {
+            version,
+            seq: batch.seq + 1,
+        };
+        assert!(past_no_witness_cap(b.conn(), &lb, &p, now + 8 * DAY_MS, 2, 1_000_000).unwrap());
+        assert!(!past_no_witness_cap(b.conn(), &lb, &p, now + 8 * DAY_MS, 3, 1_000_000).unwrap());
+        let bytes: i64 = b
+            .conn()
+            .query_row("SELECT SUM(length(before)) FROM sync_undo", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert!(
+            past_no_witness_cap(b.conn(), &lb, &p, now + 8 * DAY_MS, 3, bytes as usize - 1)
+                .unwrap()
+        );
+        prune(b.conn(), &lb, now + 31 * DAY_MS).unwrap();
+        assert!(!past_no_witness_cap(b.conn(), &lb, &p, now + 31 * DAY_MS, 1, 1_000_000).unwrap());
+    }
+
+    #[test]
+    fn a_delayed_approved_deletion_keeps_thirty_days_from_application() {
+        let now = crate::store::now_ms();
+        let (mut a, la, b, lb, ids) = shared(1, now);
+        super::super::freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            super::super::freshness::Touch::NoWitness,
+            now,
+        )
+        .unwrap();
+        let batch = delete(&mut a, &la, &ids);
+        let versions: Vec<_> = batch
+            .versions
+            .iter()
+            .map(|v| {
+                (
+                    la.device.to_string(),
+                    batch.seq,
+                    v["key"].as_str().unwrap().to_owned(),
+                )
+            })
+            .collect();
+        ask(
+            b.conn(),
+            &lb,
+            Some((batch.device, batch.seq, batch.hash)),
+            &versions,
+            &Counts::default(),
+            false,
+            now,
+        )
+        .unwrap();
+        answer(b.conn(), &lb, Answer::Apply, now).unwrap();
+        receive(b.conn(), &lb, &batch, now + 10 * DAY_MS).unwrap();
+        assert!(
+            b.annotations("book-b").unwrap().is_empty(),
+            "the deletion applied"
+        );
+        let (at, until): (i64, i64) = b
+            .conn()
+            .query_row(
+                "SELECT at, keep_until FROM sync_undo WHERE key = ?1",
+                [format!("annotation:{}", ids[0])],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(at, now, "SY26 keeps the approval's accounting time");
+        assert_eq!(until, now + 40 * DAY_MS);
+        prune(b.conn(), &lb, now + 35 * DAY_MS).unwrap();
+        let rows = || {
+            b.conn()
+                .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get::<_, i64>(0))
+                .unwrap()
+        };
+        assert_eq!(rows(), 2, "thirty days of undo from application");
+        prune(b.conn(), &lb, now + 40 * DAY_MS + 1).unwrap();
+        assert_eq!(rows(), 0);
+    }
+
+    #[test]
+    fn a_no_witness_writers_deletion_keeps_its_undo_for_thirty_days() {
+        for none in [true, false] {
+            let now = crate::store::now_ms();
+            let (mut a, la, b, lb, ids) = shared(2, now);
+            super::super::freshness::record_touch(
+                b.conn(),
+                &lb,
+                la.device,
+                if none {
+                    super::super::freshness::Touch::NoWitness
+                } else {
+                    super::super::freshness::Touch::InTouch
+                },
+                now,
+            )
+            .unwrap();
+            let batch = delete(&mut a, &la, &ids[..1]);
+            receive(b.conn(), &lb, &batch, now + HOUR).unwrap();
+            let mut edit = highlight("book-a", Some("ordinary edit"), now + 2 * HOUR);
+            edit.id = ids[1].clone();
+            a.save_annotation(&edit).unwrap();
+            let edit = publish_next(a.conn(), &la).unwrap().unwrap();
+            receive(b.conn(), &lb, &edit, now + 2 * HOUR).unwrap();
+            b.conn()
+                .execute(
+                    "UPDATE sync_question SET answered_at = ?1",
+                    [now + 3 * HOUR],
+                )
+                .unwrap();
+            let rows = || -> i64 {
+                b.conn()
+                    .query_row("SELECT COUNT(*) FROM sync_undo", [], |r| r.get(0))
+                    .unwrap()
+            };
+            prune(b.conn(), &lb, now + 8 * DAY_MS).unwrap();
+            assert_eq!(
+                rows(),
+                if none { 2 } else { 0 },
+                "ordinary edits keep only seven days"
+            );
+            prune(b.conn(), &lb, now + 31 * DAY_MS).unwrap();
+            assert_eq!(rows(), 0);
+        }
     }
 
     #[test]
