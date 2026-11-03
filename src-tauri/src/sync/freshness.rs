@@ -141,15 +141,24 @@ pub fn waits_when_out_of_touch(version: &Version, replaces_existing: bool) -> bo
     match version.kind {
         // SP32: book-file replacements and edits of highlights and notes.
         Kind::BookFile | Kind::Annotation | Kind::Note => replaces_existing,
+        // SP12: a choice that lets something go counts as a deletion of it, so
+        // it waits too; a stolen key could otherwise end a hold or discard a
+        // version with no word from the reader. `keep` proceeds.
+        Kind::Choice => matches!(
+            &version.content,
+            Content::Inline(body) if matches!(
+                body.get("choice").and_then(serde_json::Value::as_str),
+                Some("discard" | "discard-all" | "wrong-clock" | "stop-waiting")
+            )
+        ),
         // SP32: places, settings, per-book settings and reading states proceed.
-        // Book metadata and protocol choices aren't the held body edits either.
+        // Book metadata isn't one of the held body edits either.
         Kind::Place
         | Kind::Setting
         | Kind::BookSetting
         | Kind::BookOpened
         | Kind::BookFinished
-        | Kind::Book
-        | Kind::Choice => false,
+        | Kind::Book => false,
     }
 }
 
@@ -462,6 +471,39 @@ mod tests {
                 assert!(
                     waits_when_out_of_touch(&version, replaces_existing),
                     "{kind:?} deletion"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_choice_that_lets_something_go_waits() {
+        // SP12: discard, discard-all, wrong-clock and stop-waiting count as
+        // deletions of what they let go; keep and try-again proceed.
+        for (choice, waits) in [
+            ("discard", true),
+            ("discard-all", true),
+            ("wrong-clock", true),
+            ("stop-waiting", true),
+            ("keep", false),
+            ("try-again", false),
+        ] {
+            let (key, kind) = Key::parse(&format!("choice:obj.{}", h(1))).unwrap();
+            let version = Version {
+                key,
+                kind,
+                device: d(1),
+                clock: Hlc(0, 0),
+                history: Vec::new(),
+                content: Content::Inline(json!({ "choice": choice })),
+                hash: h(2),
+                raw: Value::Null,
+            };
+            for replaces_existing in [false, true] {
+                assert_eq!(
+                    waits_when_out_of_touch(&version, replaces_existing),
+                    waits,
+                    "{choice}"
                 );
             }
         }
