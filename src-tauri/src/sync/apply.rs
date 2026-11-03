@@ -510,7 +510,7 @@ fn set_waiting(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Resu
 }
 
 /// SY9, SP11, SP13: a version's history and frontier against the chains held.
-fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
+pub(crate) fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
     let chains = JournalChains { conn, lib };
     match (check_history(p, &chains), check_frontier(p, &chains)) {
         (HistoryCheck::False, _) | (_, HistoryCheck::False) => HistoryCheck::False,

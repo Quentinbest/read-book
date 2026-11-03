@@ -229,6 +229,7 @@ pub fn record_touch(
                 Ok((r.get(0)?, r.get(1)?))
             })?
             .collect::<std::result::Result<_, _>>()?;
+        let mut held_any = false;
         for (seq, raw) in pending {
             let Ok(value) = serde_json::from_str(&raw) else {
                 continue;
@@ -236,7 +237,7 @@ pub fn record_touch(
             if let Ok(super::record::Checked::Version(version)) =
                 super::record::check_version(value, writer)
             {
-                hold(
+                held_any |= hold(
                     &tx,
                     lib,
                     &Placed {
@@ -247,8 +248,49 @@ pub fn record_touch(
                 )?;
             }
         }
+        if held_any {
+            wait_for_held_ancestors(&tx, lib)?;
+        }
     }
     tx.commit()?;
+    Ok(())
+}
+
+/// SP32: a pending version of any writer whose ancestry now names a held one
+/// goes back to waiting for its ancestry (-1), where the recheck sees the hold
+/// as unresolved; a pending version is applied without its ancestry being
+/// checked again, so it would otherwise apply past the hold.
+fn wait_for_held_ancestors(conn: &Connection, lib: &Library) -> Result<()> {
+    let pending: Vec<(i64, String, i64, String)> = conn
+        .prepare(
+            "SELECT rowid, device, seq, raw FROM sync_versions
+             WHERE library = ?1 AND seq IS NOT NULL AND applied = 0",
+        )?
+        .query_map([lib.id.to_string()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+        })?
+        .collect::<std::result::Result<_, _>>()?;
+    for (rowid, device, seq, raw) in pending {
+        let (Some(device), Ok(value)) = (DeviceId::parse(&device), serde_json::from_str(&raw))
+        else {
+            continue;
+        };
+        let Ok(super::record::Checked::Version(version)) =
+            super::record::check_version(value, device)
+        else {
+            continue;
+        };
+        let placed = Placed {
+            version,
+            seq: seq as u64,
+        };
+        if super::apply::ancestry(conn, lib, &placed) == super::merge::HistoryCheck::Wait {
+            conn.execute(
+                "UPDATE sync_versions SET applied = -1 WHERE rowid = ?1",
+                [rowid],
+            )?;
+        }
+    }
     Ok(())
 }
 
@@ -1290,6 +1332,55 @@ mod tests {
         assert_eq!(
             questions(h.reader.conn(), &h.rl, h.now + 40).unwrap().len(),
             1
+        );
+    }
+
+    #[test]
+    fn a_pending_descendant_of_a_newly_held_version_waits() {
+        // SP32: W's edit and V's edit made from it both wait for their bodies.
+        // When W goes out of touch, W's is held, and V's must wait for it.
+        let (mut w, wl) = device(2, "writer");
+        let (mut v, vl) = device(3, "other");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        w.save_annotation(&highlight("writer", Some("original note"), now))
+            .unwrap();
+        let first = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &first, now).unwrap();
+        apply::receive(v.conn(), &vl, &first, now).unwrap();
+        w.save_annotation(&highlight("writer", Some("w edit"), now + 1))
+            .unwrap();
+        let mut wb = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(v.conn(), &vl, &wb, now + 2).unwrap();
+        apply::apply_pending(v.conn(), &vl, now + 2).unwrap();
+        v.save_annotation(&highlight("other", Some("v edit"), now + 3))
+            .unwrap();
+        let mut vb = publish_next(v.conn(), &vl).unwrap().unwrap();
+        let w_bodies = std::mem::take(&mut wb.bodies);
+        let v_bodies = std::mem::take(&mut vb.bodies);
+        apply::receive(reader.conn(), &rl, &wb, now + 10).unwrap();
+        apply::receive(reader.conn(), &rl, &vb, now + 11).unwrap();
+        let state = |dev: DeviceId, seq: u64| -> i64 {
+            reader
+                .conn()
+                .query_row(
+                    "SELECT applied FROM sync_versions WHERE device = ?1 AND seq = ?2 AND key = ?3",
+                    params![dev.to_string(), seq as i64, format!("note:{ANNO}")],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(state(vl.device, vb.seq), 0, "V's edit waits for its body");
+        out(reader.conn(), &rl, wl.device, now + 20);
+        assert_eq!(state(wl.device, wb.seq), -7);
+        assert_eq!(state(vl.device, vb.seq), -1, "V's edit waits for W's");
+        for b in w_bodies.iter().chain(&v_bodies) {
+            apply::receive_body(reader.conn(), &rl, b).unwrap();
+        }
+        apply::apply_pending(reader.conn(), &rl, now + 30).unwrap();
+        assert_eq!(
+            note_of(&reader, "reader"),
+            Some(Some("original note".into()))
         );
     }
 }
