@@ -786,7 +786,8 @@ mod tests {
         .unwrap();
         assert_eq!(result.listed, 1);
         assert_eq!(state(&h, key.as_str(), tail.seq), -5);
-        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), 0);
+        // SP32: released for an ancestry recheck, as every release is.
+        assert_eq!(state(&h, &format!("note:{ANNO}"), h.batch.seq), -1);
         // SP32: the removal takes over; the writer is no longer out of touch, so
         // nothing of its accepted prefix is held again.
         let touch: i64 = h
@@ -805,10 +806,13 @@ mod tests {
             .query_row("SELECT was FROM sync_late_seen", [], |r| r.get(0))
             .unwrap();
         assert_eq!(
-            was, 0,
-            "late recovery restores pending, never a freshness hold"
+            was, -1,
+            "late recovery restores an ancestry wait, never a freshness hold"
         );
         assert!(questions(h.reader.conn(), &h.rl, h.now).unwrap().is_empty());
+        // The accepted prefix applies once rechecked: nothing holds it any more.
+        apply::apply_pending(h.reader.conn(), &h.rl, h.now + 40).unwrap();
+        assert!(state(&h, &format!("note:{ANNO}"), h.batch.seq) > 0);
     }
 
     #[test]
@@ -1456,6 +1460,60 @@ mod tests {
         }
         apply::apply_pending(reader.conn(), &rl, now + 40).unwrap();
         assert_eq!(state(vl.device, vb.seq), -1, "V's edit waits for W's hold");
+        assert_eq!(
+            note_of(&reader, "reader"),
+            Some(Some("original note".into()))
+        );
+    }
+
+    #[test]
+    fn a_removal_releasing_a_held_descendant_still_waits_for_its_held_ancestor() {
+        // SP32: V's edit made from W's is held, then W's. Removing V with its
+        // edit inside the cutoff must not apply it past W's hold.
+        let (mut w, wl) = device(2, "writer");
+        let (mut v, vl) = device(3, "other");
+        let (reader, rl) = device(1, "reader");
+        let now = crate::store::now_ms();
+        w.save_annotation(&highlight("writer", Some("original note"), now))
+            .unwrap();
+        let first = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(reader.conn(), &rl, &first, now).unwrap();
+        apply::receive(v.conn(), &vl, &first, now).unwrap();
+        w.save_annotation(&highlight("writer", Some("w edit"), now + 1))
+            .unwrap();
+        let mut wb = publish_next(w.conn(), &wl).unwrap().unwrap();
+        apply::receive(v.conn(), &vl, &wb, now + 2).unwrap();
+        apply::apply_pending(v.conn(), &vl, now + 2).unwrap();
+        v.save_annotation(&highlight("other", Some("v edit"), now + 3))
+            .unwrap();
+        let mut vb = publish_next(v.conn(), &vl).unwrap().unwrap();
+        let bodies: Vec<_> = std::mem::take(&mut wb.bodies)
+            .into_iter()
+            .chain(std::mem::take(&mut vb.bodies))
+            .collect();
+        apply::receive(reader.conn(), &rl, &wb, now + 10).unwrap();
+        apply::receive(reader.conn(), &rl, &vb, now + 11).unwrap();
+        out(reader.conn(), &rl, vl.device, now + 20);
+        out(reader.conn(), &rl, wl.device, now + 21);
+        late::revert_past(
+            reader.conn(),
+            &rl,
+            &BTreeMap::from([(
+                vl.device,
+                Some(Mark {
+                    s: vb.seq,
+                    h: vb.hash,
+                }),
+            )]),
+            &BTreeMap::new(),
+            "removed",
+            now + 30,
+        )
+        .unwrap();
+        for b in &bodies {
+            apply::receive_body(reader.conn(), &rl, b).unwrap();
+        }
+        apply::apply_pending(reader.conn(), &rl, now + 40).unwrap();
         assert_eq!(
             note_of(&reader, "reader"),
             Some(Some("original note".into()))
