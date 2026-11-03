@@ -11,7 +11,6 @@
 //! form (SP14) and Stage 2 their storage.
 
 use super::a9;
-use super::guard;
 use super::ids::{identity_hash, DeviceId, Hash32};
 use super::journal::{self, JournalError, Library, Which};
 use super::merge::{
@@ -19,6 +18,7 @@ use super::merge::{
     Prior,
 };
 use super::record::{check_body, check_version, Checked, Content, Key, Kind, Version};
+use super::{freshness, guard};
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 use std::collections::HashSet;
@@ -154,12 +154,14 @@ fn pending_full(conn: &Connection, lib: &Library, device: DeviceId) -> Result<bo
     Ok(pending_used(conn, lib, device)? > PENDING_BYTES)
 }
 
+/// SY28: what a device has waiting to apply, its SP32 freshness holds (-7)
+/// included, so an out-of-touch writer can't pile them up without limit.
 fn pending_used(conn: &Connection, lib: &Library, device: DeviceId) -> Result<i64> {
     let held: Option<i64> = conn.query_row(
         "SELECT SUM(length(CAST(v.raw AS BLOB)) + COALESCE(length(b.body), 0))
          FROM sync_versions v
          LEFT JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
-         WHERE v.library = ?1 AND v.device = ?2 AND v.applied = 0",
+         WHERE v.library = ?1 AND v.device = ?2 AND v.applied IN (0, -7)",
         params![lib.id.to_string(), device.to_string()],
         |r| r.get(0),
     )?;
@@ -187,7 +189,7 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     let other_size: Vec<(String, String)> = conn
         .prepare(
             "SELECT device, raw FROM sync_versions INDEXED BY sync_versions_body
-             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2, -7)
                AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') != ?3",
         )?
         .query_map(params![lib.id.to_string(), hash.to_string(), len], |r| {
@@ -217,9 +219,9 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     // count it once stored: per device, its pending ones and its set-aside ones.
     let waiting: Vec<(String, i64, i64)> = conn
         .prepare(
-            "SELECT device, SUM(applied = 0), SUM(applied < 0)
+            "SELECT device, SUM(applied IN (0, -7)), SUM(applied IN (-1, -2))
              FROM sync_versions INDEXED BY sync_versions_body
-             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2)
+             WHERE library = ?1 AND seq IS NOT NULL AND applied IN (0, -1, -2, -7)
                AND json_extract(raw, '$.body.hash') = ?2 AND json_extract(raw, '$.body.size') = ?3
              GROUP BY device",
         )?
@@ -261,6 +263,9 @@ pub fn receive_body(conn: &Connection, lib: &Library, bytes: &[u8]) -> Result<bo
     // device's chain is received.
     for device in &full_ones {
         conn.execute(
+            // SP32: a held version (-7) counts against the budget but is never
+            // dropped here: the writer is stopped, and its holds stay for the
+            // reader's question or a later removal.
             "DELETE FROM sync_versions INDEXED BY sync_versions_body
              WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2)
                AND json_extract(raw, '$.body.hash') = ?3",
@@ -355,7 +360,8 @@ impl JournalChains<'_> {
 /// A version's state for ancestry: a late hold (-5, SP26, SP30) counts as the state
 /// it was held from (`sync_late_seen.was`), so one whose ancestry was checked (a
 /// pending version) is still checked ancestry, and a Keep naming it can apply.
-/// A hold with no record of its state stays unresolved.
+/// A hold with no record of its state stays unresolved. SP32 freshness holds
+/// (-7) always stay unresolved until released, even when a spine names them.
 const CHECKED: &str = "CASE WHEN v.applied = -5 THEN COALESCE((SELECT s.was FROM sync_late_seen s
     WHERE s.library = v.library AND s.device = v.device AND s.seq = v.seq AND s.key = v.key), -5)
     ELSE v.applied END";
@@ -504,7 +510,7 @@ fn set_waiting(conn: &Connection, lib: &Library, p: &Placed, state: i64) -> Resu
 }
 
 /// SY9, SP11, SP13: a version's history and frontier against the chains held.
-fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
+pub(crate) fn ancestry(conn: &Connection, lib: &Library, p: &Placed) -> HistoryCheck {
     let chains = JournalChains { conn, lib };
     match (check_history(p, &chains), check_frontier(p, &chains)) {
         (HistoryCheck::False, _) | (_, HistoryCheck::False) => HistoryCheck::False,
@@ -592,7 +598,7 @@ fn stop_owners_past_budget(
     let owners: Vec<(String, String)> = conn
         .prepare(
             "SELECT DISTINCT library, device FROM sync_versions INDEXED BY sync_versions_body
-             WHERE seq IS NOT NULL AND applied IN (0, -1, -2, -4)
+             WHERE seq IS NOT NULL AND applied IN (0, -1, -2, -4, -7)
                AND json_extract(raw, '$.body.hash') = ?1",
         )?
         .query_map([hash.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -614,6 +620,7 @@ fn stop_owners_past_budget(
         };
         if aside_full(conn, &there, device, 0, 0)? || pending_full(conn, &there, device)? {
             conn.execute(
+                // SP32: held versions (-7) are counted but kept, as above.
                 "DELETE FROM sync_versions INDEXED BY sync_versions_body
                  WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL AND applied IN (0, -1, -2, -4)
                    AND json_extract(raw, '$.body.hash') = ?3",
@@ -823,8 +830,10 @@ fn receive_unit(
                         )?;
                     }
                     HistoryCheck::Ok => {
-                        keys.push(placed.version.key.clone());
                         journal::store_remote(&tx, lib, &placed)?;
+                        if !freshness::hold(&tx, lib, &placed, now_ms)? {
+                            keys.push(placed.version.key.clone());
+                        }
                     }
                 }
                 if let Content::Body { hash, .. } = &placed.version.content {
@@ -1031,7 +1040,9 @@ fn recheck_pass(conn: &Connection, lib: &Library, now_ms: i64) -> Result<Vec<Key
                     "UPDATE sync_versions SET applied = 0 WHERE rowid = ?1",
                     [rowid],
                 )?;
-                joined.push(placed.version.key);
+                if !freshness::hold(conn, lib, &placed, now_ms)? {
+                    joined.push(placed.version.key);
+                }
             }
             HistoryCheck::False => {
                 set_aside(conn, lib, device, raw.as_bytes(), "false ancestry", now_ms)?;
@@ -4074,6 +4085,71 @@ pub(crate) mod tests {
                 break;
             }
         }
+        assert!(stopped);
+    }
+
+    #[test]
+    fn versions_held_out_of_touch_count_against_the_budget() {
+        // SY28, SP32: a writer this device is out of touch with can't pile up
+        // held edits (-7) past the pending budget; it is stopped like any other.
+        let (mut a, la) = device(1, "book-a");
+        let (b, lb) = device(2, "book-b");
+        let mut rows = Vec::new();
+        for i in 0..20 {
+            let mut h = highlight("book-a", Some("n"), 1_760_000_001_000);
+            h.id = uuid::Uuid::new_v4().to_string();
+            h.quote_exact = format!("q{i}");
+            a.save_annotation(&h).unwrap();
+            rows.push(h);
+        }
+        let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+        receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap();
+        guard::answer(b.conn(), &lb, guard::Answer::Apply, crate::store::now_ms()).ok();
+        apply_pending(b.conn(), &lb, crate::store::now_ms()).unwrap();
+        let applied: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE applied IN (1, 2) AND key LIKE 'note:%'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(applied, 20, "the notes exist on B first");
+        freshness::record_touch(
+            b.conn(),
+            &lb,
+            la.device,
+            freshness::Touch::OutOfTouch {
+                witness: Id16([5; 16]),
+                since_ms: 8 * 24 * 60 * 60 * 1000,
+            },
+            crate::store::now_ms(),
+        )
+        .unwrap();
+        // Then A edits each note with a large text, one change each: all held,
+        // until what B holds passes the budget and A is stopped.
+        let big = "x".repeat(200 * 1024);
+        let mut stopped = false;
+        for (i, h) in rows.iter_mut().enumerate() {
+            h.note = Some(format!("{big}{i}"));
+            h.updated_at += 1;
+            a.save_annotation(h).unwrap();
+            let batch = publish_next(a.conn(), &la).unwrap().unwrap();
+            if receive(b.conn(), &lb, &batch, crate::store::now_ms()).unwrap() == Received::Stopped
+            {
+                stopped = true;
+                break;
+            }
+        }
+        let held: i64 = b
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_versions WHERE applied = -7",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(held > 0, "the edits were held, not applied");
         assert!(stopped);
     }
 

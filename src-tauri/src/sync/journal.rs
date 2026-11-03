@@ -348,7 +348,9 @@ pub enum Which {
 /// ahead; −3 a local edit held for the reader (#109); −4 excluded for its body;
 /// −5 held as a late change, never applied; −6 a reverted late change, previously
 /// applied (SP26, SP30). Both stay outside merging and waiting rechecks; −6
-/// remains checked ancestry. Recomputing after a revert can revive state 2.
+/// remains checked ancestry. −7 held while out of touch with its writer (SP32),
+/// outside merging and waiting rechecks, and unresolved ancestry.
+/// Recomputing after a revert can revive state 2.
 pub fn record_of(conn: &Connection, lib: &Library, key: &Key, which: Which) -> Result<Record> {
     let mut stmt = conn.prepare(
         "SELECT device, seq, raw FROM sync_versions

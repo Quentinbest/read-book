@@ -290,6 +290,20 @@ pub fn revert_past(
     let mut affected = BTreeMap::<Key, Vec<Placed>>::new();
     let mut visited = HashSet::new();
     for (&device, &cutoff) in &cutoffs {
+        // SP32, SP26, SP30: a removal takes over freshness holds. They wait for
+        // their ancestry (-1), as every release does, so the prefix never applies
+        // past an ancestor still held; the tail follows the ordinary late path.
+        tx.execute(
+            "UPDATE sync_versions SET applied = -1
+             WHERE library = ?1 AND device = ?2 AND applied = -7",
+            params![lib.id.to_string(), device.to_string()],
+        )?;
+        // SP32: the removal takes over; the writer is no longer out of touch, or
+        // its accepted versions would be held again and asked about.
+        tx.execute(
+            "DELETE FROM sync_touch WHERE library = ?1 AND device = ?2",
+            params![lib.id.to_string(), device.to_string()],
+        )?;
         let dropped_before = result.dropped;
         apply::stop(&tx, lib, device, reason, now_ms)?;
         // SP26, SP30: resolved recovery rows are removed. Remember this cutoff's

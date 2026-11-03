@@ -342,6 +342,19 @@ pub const MIGRATIONS: &[&str] = &[
         PRIMARY KEY (library, device, key_hash, seq)
     );
     "#,
+    // 14: SP32, item 113 (a), #148: per-writer touch and the reader's question.
+    r#"
+    CREATE TABLE sync_touch (
+        library TEXT NOT NULL,
+        device TEXT NOT NULL,
+        state TEXT NOT NULL CHECK(state IN ('in', 'out', 'none')),
+        witness TEXT,
+        since_ms INTEGER,
+        asked_at INTEGER,
+        answered_at INTEGER,
+        PRIMARY KEY (library, device)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

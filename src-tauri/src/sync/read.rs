@@ -260,6 +260,41 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn a_view_from_an_out_of_touch_writer_holds_its_deletions() {
+        use crate::sync::freshness::{self, Touch};
+        let mut a = Device::new();
+        let c = Device::new();
+        let first = edit(&mut a, "original note", 1);
+        send(&c, &a, &first);
+        freshness::record_touch(
+            c.db.conn(),
+            &c.lib,
+            a.lib.device,
+            Touch::OutOfTouch {
+                witness: c.lib.device,
+                since_ms: 604_800_000,
+            },
+            now(),
+        )
+        .unwrap();
+        a.db.delete_annotation(ANNO).unwrap();
+        let deletion = a.change();
+        let v = view(&mut a, &[first, deletion]);
+        take(&c, &a, &v, &Floor::default(), &[]).unwrap();
+        assert_eq!(note_of(&c.db, "book"), Some(Some("original note".into())));
+        let held: i64 =
+            c.db.conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_versions WHERE device = ?1 AND applied = -7",
+                    [a.lib.device.to_string()],
+                    |r| r.get(0),
+                )
+                .unwrap();
+        assert_eq!(held, 2);
+        assert_eq!(apply::apply_pending(c.db.conn(), &c.lib, now()).unwrap(), 0);
+    }
+
+    #[test]
     fn a_device_behind_resumes_from_the_view_and_later_changes() {
         let mut a = Device::new();
         let mut changes = Vec::new();

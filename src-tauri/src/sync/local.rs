@@ -88,7 +88,7 @@ pub fn sync_id(conn: &Connection, lib: &Library, book_id: &str) -> Result<String
 /// whose every version this device has applied (or settled past). A change received
 /// but still waiting (for its body, book, ancestry or clock) wasn't seen by the
 /// reader, so the frontier stops before it and a deletion stays in conflict with it
-/// (SY13).
+/// (SY13). So does one held while out of touch with its writer (-7, SP32).
 pub fn covers(conn: &Connection, lib: &Library) -> Result<Vec<Entry>> {
     let rows: Vec<(String, i64)> = conn
         .prepare("SELECT device, seq FROM sync_seen WHERE library = ?1")?
@@ -98,7 +98,7 @@ pub fn covers(conn: &Connection, lib: &Library) -> Result<Vec<Entry>> {
     for (d, seen) in rows {
         let pending: Option<i64> = conn.query_row(
             "SELECT MIN(seq) FROM sync_versions
-             WHERE library = ?1 AND device = ?2 AND applied IN (0, -1, -2)",
+             WHERE library = ?1 AND device = ?2 AND applied IN (0, -1, -2, -7)",
             params![lib.id.to_string(), d],
             |r| r.get(0),
         )?;
