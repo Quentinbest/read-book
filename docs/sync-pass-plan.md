@@ -12,7 +12,7 @@ Issue #151 is the last part of Stage 1 (#92). Every Stage 1c module is pure libr
   - protection (`hold`, `ages`, `weeks`, `cleanup`, `shared`, `freshness`).
 
   Each takes its inputs from the caller and returns a decision or bytes. None reads or writes storage.
-- **Caller-owned state:** `hold::Ledger`, `weeks::KnownWeeks`, `freshness::Heard` and `ages::Marks` live in memory. Nothing persists them between passes or restarts.
+- **Caller-owned state:** `hold::Ledger`, `weeks::KnownWeeks`, `freshness::Heard`, `ages::Marks`, `retention::Ages` and the vouched clock (`retention::Vouched`, which starts at zero) live in memory. Nothing persists them between passes or restarts.
 - **No storage interface exists**, apart from `shared::SharedFolder` (#184), which covers books and blobs only. SY2's brokered folder (`list` with a cursor and opaque tokens for names the storage made, `read`, `write` through a temporary name and a rename, `remove`, `stat`) is Stage 2 (#93).
 - **Checks:** `docs/sync-status.md` (2026-10-27) lists Stage 1's 31 checks: 3 covered, 19 partly, 9 not yet. Since then:
   - #179 covered C3 and C27;
@@ -29,7 +29,7 @@ Issue #151 is the last part of Stage 1 (#92). Every Stage 1c module is pure libr
 | PS2 | **The in-memory folder.** `sync::folder::Memory` implements PS1 for tests, with switches for what real storage does:<br>• half-synced files (wrong bytes for a while);<br>• conflict copies (`‹name› 2`);<br>• delayed, repeated and reordered visibility per reader;<br>• files that vanish;<br>• a rename that fails.<br>Several devices share one `Memory` through per-device views. It is test-only code. |
 | PS3 | **SP7 in one place.** Reading and writing files (temporary names, a half-synced file skipped and read again on a later pass, a storage-made name read only as a candidate for the file it copies) live in one module that every step uses, not in each step. |
 | PS4 | **One pass is one function.** `sync::pass::run(device, folder, clock, budgets) -> Report` runs SP37's steps (1)–(11) in order, calling the existing modules. It holds the store's lock only in steps (6) and (8), as SP37 says. It returns what it did and what it left: what waits for a budget, a body, the reader or a later pass. It never decides a rule itself; each decision stays in the module that has it. |
-| PS5 | **What a pass keeps between runs.** The caller-owned state (`Ledger`, `KnownWeeks`, `Heard`, `Marks`) is saved in the library's database at the end of each step that changes it, in the same transaction as that step's other writes, and loaded at the start of a pass. A crash between steps leaves the state of the last completed step (item 119, approved (a)). |
+| PS5 | **What a pass keeps between runs.** The caller-owned state (`Ledger`, `KnownWeeks`, `Heard`, `Marks`, `retention::Ages`, and the vouched clock `retention::Vouched` that `Ages` and `Heard` measure from) is saved in the library's database at the end of each step that changes it, in the same transaction as that step's other writes, and loaded at the start of a pass. A crash between steps leaves the state of the last completed step (item 119, approved (a)). The vouched clock continues across a restart only as SY17 allows (the wall clock bridges the gap when it isn't marked ahead and hasn't jumped by more than 5 minutes); otherwise it resumes from the saved elapsed time, so a restart never resets a deletion's age or a witness timeout to zero. |
 | PS6 | **Budgets.** SY2's per-pass budgets (100,000 names listed, 32 devices, 256 MB read apart from books, 60 s) and #122's pass-level read budget are counted in `pass`, and a budget that runs out stops the pass where it is. Membership crowding (#122's priority) is read first and bounded first. Provisional values stay as `docs/decisions.md` records them. |
 | PS7 | **Time and randomness are injected.** The pass takes the vouched clock and, in tests, a seeded random source, so the soak test (C29) is repeatable from its seed. Nothing in `pass` reads the wall clock or the OS random source directly. |
 | PS8 | **Nothing new is wired into the app.** `pass::run` has no caller outside tests until Stage 2 provides the brokered folder and Stage 3 the setup. |
@@ -56,11 +56,12 @@ Each stage is one PR (two where noted), and ends with `scripts/ci-local.sh` gree
   - (4) peers' views and changes;
   - (5) blobs and repair.
 - Steps (9)–(10): publishing (reservations and holds, uploads, the naming change) and the device file.
-- Persisted state (PS5, one migration).
+- Persisted state (PS5, one migration), including `Ages` and the vouched clock.
 - **Done when:**
   - two devices on one `Memory` exchange a note and a deletion through `pass::run`;
   - a device behind resumes from a view (C27 again, end to end);
-  - each budget stops the pass with a test.
+  - each budget stops the pass with a test;
+  - a restart keeps a deletion's age (SY17, SP35) and a witness timeout (SP32) where they were, with a test for each.
 
 ### P3 — The pass, steps (6)–(8) and (11): applying, books, compaction and cleanup
 

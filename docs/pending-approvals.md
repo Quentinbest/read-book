@@ -413,7 +413,7 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
 
 ## Sync, one pass (2026-11-03, #151, `docs/sync-pass-plan.md`)
 
-119. **Where the pass keeps its state between runs (PS5).** The hold ledger, the known `week` claims, what this device has heard from each peer, and its pending marks live in memory today. A pass must keep them across restarts.
+119. **Where the pass keeps its state between runs (PS5).** The hold ledger, the known `week` claims, what this device has heard from each peer, its pending marks, the deletion ages and the vouched clock they're measured by live in memory today. A pass must keep them across restarts.
     - **(a)** In the library's database (one migration), saved in the same transaction as each step's other writes, so a crash leaves the state of the last completed step.
     - **(b)** In the device store (the login-keychain item, SP28), beside the marks.
     *Recommendation:* (a). The state is per library and can grow with the library (holds, claims), while the keychain item is meant for small identity and marks. Saving it with each step's writes keeps it consistent with what the step changed.
