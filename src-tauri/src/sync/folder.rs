@@ -19,6 +19,14 @@ pub struct Page<T> {
     pub next: Option<String>,
 }
 
+/// SP7, SY28: a bounded read never returns a truncated file as complete bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Read {
+    Bytes(Vec<u8>),
+    TooLarge,
+    Gone,
+}
+
 /// SY2, PS1: all paths are relative to the selected `Linen/` folder, at most
 /// four segments deep, without `..`; no implementation may follow symlinks.
 pub trait Folder {
@@ -34,10 +42,14 @@ pub trait Folder {
     /// it is gone. The size is not a guarantee against a subsequent change.
     fn stat(&self, token: &Self::Token) -> io::Result<Option<u64>>;
 
-    /// SY2: read an issued token, including a storage-made name. `None` means
-    /// gone; unavailable storage reports an error. Bytes may be half-synced and
-    /// must pass the caller's hash/signature check (SP7), even after `stat`.
-    fn read(&self, token: &Self::Token) -> io::Result<Option<Vec<u8>>>;
+    /// SY2, SP7, SY28: read an issued token, including a storage-made name.
+    /// A real folder must use a bounded read: stop at `limit` and report
+    /// `TooLarge` if more data exists, without buffering the whole file first.
+    /// Enforce the bound even if the file grows after `stat`; `None` leaves the
+    /// read uncapped (books use the importer's limits). Missing files return
+    /// `Gone`; unavailable storage reports an error. Bytes may be half-synced
+    /// and must still pass the caller's hash/signature check (SP7).
+    fn read(&self, token: &Self::Token, limit: Option<u64>) -> io::Result<Read>;
 
     /// SY2, SP7: accept a relative path, never an opaque token. Each segment
     /// uses `[A-Za-z0-9._-]`, with no hidden names. Stage bytes beside the target
@@ -109,6 +121,7 @@ mod memory {
         hidden: HashMap<(String, String), Hidden>,
         ordering: HashMap<String, (bool, bool)>,
         reads: HashMap<(String, String), usize>,
+        copied_bytes: HashMap<(String, String), u64>,
         conflicts: bool,
         writers: HashMap<String, String>,
         failed: HashSet<String>,
@@ -197,10 +210,21 @@ mod memory {
             self.store.borrow_mut().failed.insert(path.to_owned());
         }
 
+        /// PS2: calls to read, including files that are gone or too large.
         pub(crate) fn read_count(&self, reader: &str, path: &str) -> usize {
             self.store
                 .borrow()
                 .reads
+                .get(&(reader.to_owned(), path.to_owned()))
+                .copied()
+                .unwrap_or(0)
+        }
+
+        /// SY28, PS2: bytes copied by read, excluding fixture setup and writes.
+        pub(crate) fn bytes_read(&self, reader: &str, path: &str) -> u64 {
+            self.store
+                .borrow()
+                .copied_bytes
                 .get(&(reader.to_owned(), path.to_owned()))
                 .copied()
                 .unwrap_or(0)
@@ -318,21 +342,35 @@ mod memory {
                 .map(|b| b.len() as u64))
         }
 
-        fn read(&self, token: &Token) -> io::Result<Option<Vec<u8>>> {
+        fn read(&self, token: &Token, limit: Option<u64>) -> io::Result<Read> {
             self.check(token)?;
             let mut store = self.memory.store.borrow_mut();
             let key = (self.reader.clone(), token.path.clone());
             *store.reads.entry(key.clone()).or_default() += 1;
-            let Some(bytes) = self.visible(&store, &token.path).cloned() else {
-                return Ok(None);
-            };
-            if let Some((remaining, wrong)) = store.half.get_mut(&key) {
+            if self.visible(&store, &token.path).is_none() {
+                return Ok(Read::Gone);
+            }
+            let half_synced = store.half.get_mut(&key).is_some_and(|(remaining, _)| {
                 if *remaining > 0 {
                     *remaining -= 1;
-                    return Ok(Some(wrong.clone()));
+                    true
+                } else {
+                    false
                 }
+            });
+            let bytes = if half_synced {
+                &store.half[&key].1
+            } else {
+                self.visible(&store, &token.path).unwrap()
+            };
+            // SY28: check the bytes that will actually be read, including a
+            // half-synced replacement, before copying any of them.
+            if limit.is_some_and(|limit| bytes.len() as u64 > limit) {
+                return Ok(Read::TooLarge);
             }
-            Ok(Some(bytes))
+            let bytes = bytes.clone();
+            *store.copied_bytes.entry(key).or_default() += bytes.len() as u64;
+            Ok(Read::Bytes(bytes))
         }
 
         fn write(&mut self, path: &str, bytes: &[u8]) -> io::Result<()> {
@@ -415,6 +453,41 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
+    fn memory_read_bounds_growth_after_stat_before_copying() {
+        let memory = Memory::default();
+        let mut writer = memory.view("writer");
+        let reader = memory.view("reader");
+        let path = "books/object";
+        writer.write(path, b"old").unwrap();
+        let token = reader.list("books", None).unwrap().entries.remove(0).token;
+        let limit = reader.stat(&token).unwrap();
+        assert_eq!(limit, Some(3));
+
+        // SY28: an actual stored file grows after the reader checks its size.
+        writer.write(path, b"grown").unwrap();
+        assert_eq!(reader.read(&token, limit).unwrap(), Read::TooLarge);
+        assert_eq!(memory.read_count("reader", path), 1);
+        assert_eq!(memory.bytes_read("reader", path), 0);
+        assert_eq!(
+            reader.read(&token, Some(5)).unwrap(),
+            Read::Bytes(b"grown".to_vec())
+        );
+        assert_eq!(memory.bytes_read("reader", path), 5);
+        assert_eq!(
+            reader.read(&token, None).unwrap(),
+            Read::Bytes(b"grown".to_vec())
+        );
+        assert_eq!(memory.bytes_read("reader", path), 10);
+        assert_eq!(reader.read(&token, Some(0)).unwrap(), Read::TooLarge);
+        assert_eq!(memory.bytes_read("reader", path), 10);
+        writer.write(path, b"").unwrap();
+        assert_eq!(reader.read(&token, Some(0)).unwrap(), Read::Bytes(vec![]));
+        memory.vanish(path);
+        assert_eq!(reader.read(&token, Some(0)).unwrap(), Read::Gone);
+        assert_eq!(memory.bytes_read("reader", path), 10);
+    }
+
+    #[test]
     fn memory_pages_cover_every_entry_once() {
         let memory = Memory::default();
         let mut view = memory.view("a");
@@ -448,10 +521,10 @@ mod tests {
         a.write("books/object", b"good").unwrap();
         let token = a.list("books", None).unwrap().entries.remove(0).token;
         memory.half_synced("a", "books/object", b"bad", 2);
-        assert_eq!(a.read(&token).unwrap(), Some(b"bad".to_vec()));
-        assert_eq!(b.read(&token).unwrap(), Some(b"good".to_vec()));
-        assert_eq!(a.read(&token).unwrap(), Some(b"bad".to_vec()));
-        assert_eq!(a.read(&token).unwrap(), Some(b"good".to_vec()));
+        assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"bad".to_vec()));
+        assert_eq!(b.read(&token, None).unwrap(), Read::Bytes(b"good".to_vec()));
+        assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"bad".to_vec()));
+        assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"good".to_vec()));
         assert_eq!(memory.read_count("a", "books/object"), 3);
     }
 
@@ -476,15 +549,21 @@ mod tests {
             assert!(original.ours);
             assert!(!conflict.ours);
             assert_eq!(
-                a.read(&original.token).unwrap(),
-                Some(b"same writer".to_vec())
+                a.read(&original.token, None).unwrap(),
+                Read::Bytes(b"same writer".to_vec())
             );
-            assert_eq!(b.read(&conflict.token).unwrap(), Some(b"second".to_vec()));
+            assert_eq!(
+                b.read(&conflict.token, None).unwrap(),
+                Read::Bytes(b"second".to_vec())
+            );
             assert!(b.write(copy, b"not writable").is_err());
             memory.advance_instant();
             a.write(path, b"later").unwrap();
             assert_eq!(a.list(dir, None).unwrap().entries.len(), 2);
-            assert_eq!(b.read(&original.token).unwrap(), Some(b"later".to_vec()));
+            assert_eq!(
+                b.read(&original.token, None).unwrap(),
+                Read::Bytes(b"later".to_vec())
+            );
             b.remove(&conflict.token).unwrap();
             assert_eq!(a.list(dir, None).unwrap().entries.len(), 1);
         }
@@ -503,14 +582,21 @@ mod tests {
             a.write("books/object", b"new").unwrap();
             let token = a.list("books", None).unwrap().entries.remove(0).token;
             for _ in 0..2 {
-                assert_eq!(a.read(&token).unwrap(), Some(b"new".to_vec()));
+                assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"new".to_vec()));
                 let page = b.list("books", None).unwrap();
                 assert_eq!(page.entries.len(), usize::from(existing));
-                assert_eq!(b.read(&token).unwrap(), existing.then(|| b"old".to_vec()));
+                assert_eq!(
+                    b.read(&token, None).unwrap(),
+                    if existing {
+                        Read::Bytes(b"old".to_vec())
+                    } else {
+                        Read::Gone
+                    }
+                );
                 assert_eq!(b.stat(&token).unwrap(), existing.then_some(3));
             }
             assert_eq!(b.list("books", None).unwrap().entries.len(), 1);
-            assert_eq!(b.read(&token).unwrap(), Some(b"new".to_vec()));
+            assert_eq!(b.read(&token, None).unwrap(), Read::Bytes(b"new".to_vec()));
         }
     }
 
@@ -548,7 +634,7 @@ mod tests {
         let token = b.list("books", None).unwrap().entries.remove(0).token;
         memory.vanish("books/object");
         assert_eq!(a.stat(&token).unwrap(), None);
-        assert_eq!(b.read(&token).unwrap(), None);
+        assert_eq!(b.read(&token, None).unwrap(), Read::Gone);
         assert!(a.list("books", None).unwrap().entries.is_empty());
         a.remove(&token).unwrap();
     }
@@ -572,7 +658,7 @@ mod tests {
         view.write("books/object", b"x").unwrap();
         let token = view.list("books", None).unwrap().entries.remove(0).token;
         let mut other = Memory::default().view("a");
-        assert!(other.read(&token).is_err());
+        assert!(other.read(&token, None).is_err());
         assert!(other.stat(&token).is_err());
         assert!(other.remove(&token).is_err());
     }

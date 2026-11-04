@@ -1,6 +1,6 @@
 //! SP7–SP8, PS3: one boundary for layout, size checks and retrying cloud files.
 
-use super::folder::{ours, Folder, Listed};
+use super::folder::{ours, Folder, Listed, Read as FolderRead};
 use super::ids::{identity_hash, Hash32, Id16};
 use super::shared::{self, Area, SharedFolder};
 use std::{collections::BTreeSet, io};
@@ -39,7 +39,16 @@ pub fn layout(path: &str) -> Option<Slot> {
         ["libraries", name] if json_id(name) => (Kind::Claim, Some(4 << 10)),
         // SP8: PROVISIONAL trust-record limit, as in the protocol table.
         ["trust", name] if json_hash(name) => (Kind::Trust, Some(64 << 10)),
-        ["enroll", name] if enrollment(name) => (Kind::Enrollment, Some(16 << 10)),
+        ["enroll", name] if enrollment(name) => {
+            // SP24: the enrollment decision's PROVISIONAL limits distinguish
+            // the checkpoint-bearing enroll-ok from requests/answers/reveals.
+            let limit = if name.ends_with(".ok.json") {
+                super::enrollment::MAX_OK_FILE
+            } else {
+                super::enrollment::MAX_FILE
+            };
+            (Kind::Enrollment, Some(limit as u64))
+        }
         ["devices", name] if json_id(name) => (
             Kind::Device,
             Some(super::device_file::MAX_DEVICE_FILE as u64),
@@ -135,22 +144,17 @@ pub fn candidate_of(path: &str) -> Option<String> {
 /// SP7: classify a listed name before any read. A candidate is metadata only;
 /// `read_candidate` is a separate, explicit decision by its caller.
 pub fn read_file<F: Folder>(folder: &F, listed: &Listed<F::Token>) -> io::Result<Read> {
-    if !listed.ours {
-        return Ok(candidate_of(&listed.name).map_or(Read::Outside, |of| Read::Candidate { of }));
-    }
     match layout(&listed.name) {
         Some(slot) => read_slot(folder, &listed.token, slot),
-        None => Ok(Read::Outside),
+        // SP2's alphabet also permits storage-made suffixes such as -conflict.
+        None => Ok(candidate_of(&listed.name).map_or(Read::Outside, |of| Read::Candidate { of })),
     }
 }
 
 /// SP7: read only a recognised copy, with the copied file's size limit. The
 /// caller must check these bytes as that file's, never as a new independent file.
 pub fn read_candidate<F: Folder>(folder: &F, listed: &Listed<F::Token>) -> io::Result<Read> {
-    let slot = (!listed.ours)
-        .then(|| candidate_of(&listed.name))
-        .flatten()
-        .and_then(|path| layout(&path));
+    let slot = candidate_of(&listed.name).and_then(|path| layout(&path));
     match slot {
         Some(slot) => read_slot(folder, &listed.token, slot),
         None => Ok(Read::Outside),
@@ -164,14 +168,12 @@ fn read_slot<F: Folder>(folder: &F, token: &F::Token, slot: Slot) -> io::Result<
     if slot.limit.is_some_and(|limit| size > limit) {
         return Ok(Read::TooLarge);
     }
-    let Some(bytes) = folder.read(token)? else {
-        return Ok(Read::Gone);
-    };
-    // SP3, SY28: storage may change after stat; recheck before returning bytes.
-    if slot.limit.is_some_and(|limit| bytes.len() as u64 > limit) {
-        return Ok(Read::TooLarge);
-    }
-    Ok(Read::Bytes(bytes))
+    // SP3, SY28: enforce the limit during the read as well as before it.
+    Ok(match folder.read(token, slot.limit)? {
+        FolderRead::Bytes(bytes) => Read::Bytes(bytes),
+        FolderRead::TooLarge => Read::TooLarge,
+        FolderRead::Gone => Read::Gone,
+    })
 }
 
 /// SP7, PS3: a failed hash/signature is not permanent rejection. The caller
@@ -221,8 +223,7 @@ impl<F: Folder> SharedFolder for Shared<'_, F> {
                     continue;
                 };
                 if parent == dir
-                    && (layout(&entry.name).is_some()
-                        || (!entry.ours && candidate_of(&entry.name).is_some()))
+                    && (layout(&entry.name).is_some() || candidate_of(&entry.name).is_some())
                 {
                     result.push((name.to_owned(), entry));
                 }
@@ -238,12 +239,11 @@ impl<F: Folder> SharedFolder for Shared<'_, F> {
     }
 
     fn hash(&self, token: &Self::Token) -> Option<Hash32> {
-        let read = if token.ours {
-            read_file(self.folder, token)
-        } else {
-            read_candidate(self.folder, token)
+        let read = match read_file(self.folder, token).ok()? {
+            Read::Candidate { .. } => read_candidate(self.folder, token).ok()?,
+            read => read,
         };
-        match read.ok()? {
+        match read {
             Read::Bytes(bytes) => Some(identity_hash(&bytes)),
             _ => None,
         }
@@ -260,10 +260,9 @@ impl<F: Folder> SharedFolder for Shared<'_, F> {
                 "not a shared object",
             ));
         }
-        let read = if from.ours {
-            read_file(self.folder, from)?
-        } else {
-            read_candidate(self.folder, from)?
+        let read = match read_file(self.folder, from)? {
+            Read::Candidate { .. } => read_candidate(self.folder, from)?,
+            read => read,
         };
         let Read::Bytes(bytes) = read else {
             return Err(io::Error::other("copy unavailable"));
@@ -297,6 +296,82 @@ mod tests {
     }
 
     #[test]
+    fn enroll_ok_over_16_kb_is_written_and_read() {
+        use crate::sync::{crypto::Keypair, enrollment};
+
+        let library = Id16([1; 16]);
+        let writer = Id16([2; 16]);
+        let device = Keypair::from_seed(&[3; 32]);
+        let (applicant, _) = enrollment::request(&library, &writer, "New Mac").unwrap();
+        let (answering, _) =
+            enrollment::answer(&library, &applicant.request, &device, &writer).unwrap();
+        let checkpoint = enrollment::Checkpoint {
+            head: identity_hash(b"head"),
+            removals: (0..200).map(|n| Hash32([n; 32])).collect(),
+            own: None,
+            view: None,
+            counter: 1,
+            floors: vec![],
+            frontier: vec![],
+            marks: vec![],
+        };
+        let bytes = enrollment::enroll_ok(
+            &library,
+            &answering,
+            &identity_hash(b"transcript"),
+            &identity_hash(b"enrollment"),
+            &checkpoint,
+            &[4; 32],
+            &device,
+            &writer,
+        )
+        .unwrap();
+        assert!(bytes.len() > enrollment::MAX_FILE);
+        assert!(bytes.len() <= enrollment::MAX_OK_FILE);
+        let path = enrollment::ok_path(&applicant.request.applicant, &device.device());
+        let memory = Memory::default();
+        let mut view = memory.view("a");
+        write_file(&mut view, &path, &bytes).unwrap();
+        assert_eq!(
+            read_file(&view, &entry(&view, &path)).unwrap(),
+            Read::Bytes(bytes)
+        );
+    }
+
+    #[test]
+    fn shared_tidy_restores_from_an_sp2_conflict_name() {
+        let memory = Memory::default();
+        let mut view = memory.view("a");
+        let naming = [17; 32];
+        let name = blob_name(&naming, &identity_hash(b"good"));
+        let path = format!("blobs/{name}");
+        let copy_path = format!("{path}-conflict");
+        write_file(&mut view, &path, b"damaged").unwrap();
+        // SP2, SP7: storage can make a copy using only permitted characters.
+        view.write(&copy_path, b"good").unwrap();
+        let copy = entry(&view, &copy_path);
+        assert!(copy.ours);
+        assert_eq!(layout(&copy_path), None);
+        assert_eq!(
+            read_file(&view, &copy).unwrap(),
+            Read::Candidate { of: path.clone() }
+        );
+        assert_eq!(memory.read_count("a", &copy_path), 0);
+        assert_eq!(
+            read_candidate(&view, &copy).unwrap(),
+            Read::Bytes(b"good".to_vec())
+        );
+        shared::tidy(&mut Shared { folder: &mut view }, Area::Blobs, &naming);
+        let remaining = view.list("blobs", None).unwrap().entries;
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].name, path);
+        assert_eq!(
+            read_file(&view, &remaining[0]).unwrap(),
+            Read::Bytes(b"good".to_vec())
+        );
+    }
+
+    #[test]
     fn layout_matches_every_sp8_row_and_limit() {
         let d = "ab".repeat(16);
         let h = "cd".repeat(32);
@@ -317,7 +392,7 @@ mod tests {
             (
                 format!("enroll/{d}.{d}.ok.json"),
                 Kind::Enrollment,
-                Some(16 << 10),
+                Some(64 << 10),
             ),
             (format!("devices/{d}.json"), Kind::Device, Some(256 << 10)),
             (
@@ -506,6 +581,12 @@ mod tests {
             read_file(&view, &entry(&view, &path)).unwrap(),
             Read::TooLarge
         );
+        assert_eq!(memory.read_count("a", &path), 1);
+        assert_eq!(
+            memory.bytes_read("a", &path),
+            0,
+            "oversize bytes must not be copied"
+        );
     }
 
     #[test]
@@ -526,7 +607,10 @@ mod tests {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)));
         assert_eq!(read_file(&view, temp).unwrap(), Read::Outside);
         assert_eq!(memory.read_count("a", &temp.name), 0);
-        assert_eq!(view.read(&temp.token).unwrap(), Some(b"new".to_vec()));
+        assert_eq!(
+            view.read(&temp.token, None).unwrap(),
+            FolderRead::Bytes(b"new".to_vec())
+        );
         assert_eq!(
             read_file(&view, &entry(&view, &path)).unwrap(),
             Read::Bytes(b"old".to_vec())
@@ -613,7 +697,7 @@ mod tests {
                 read_file(&a, &entry(&a, &path)).unwrap(),
                 Read::Bytes(b"good".to_vec())
             );
-            assert_eq!(a.read(&copy.token).unwrap(), None);
+            assert_eq!(a.read(&copy.token, None).unwrap(), FolderRead::Gone);
         }
     }
 }
