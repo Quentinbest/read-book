@@ -128,15 +128,18 @@ pub enum Read {
 /// the eventual signature/hash check, not this guess, establishes identity.
 pub fn candidate_of(path: &str) -> Option<String> {
     let (dir, name) = path.rsplit_once('/')?;
-    let base = if let Some(stem) = name.strip_suffix(".json") {
-        let end = stem.find(|c: char| {
-            !c.is_ascii_lowercase() && !c.is_ascii_digit() && c != '.' && c != '-'
-        })?;
-        format!("{}.json", &stem[..end])
-    } else {
-        shared::copy_of(name)?.to_owned()
-    };
-    let base = format!("{dir}/{base}");
+    if let Some(stem) = name.strip_suffix(".json") {
+        // The longest proper prefix of the stem that is a file in the layout,
+        // whatever characters the storage's suffix uses (" 2", "-conflict").
+        return stem
+            .char_indices()
+            .map(|(i, _)| i)
+            .filter(|&i| i > 0)
+            .rev()
+            .map(|i| format!("{dir}/{}.json", &stem[..i]))
+            .find(|base| layout(base).is_some());
+    }
+    let base = format!("{dir}/{}", shared::copy_of(name)?);
     layout(&base)?;
     Some(base)
 }
@@ -699,5 +702,34 @@ mod tests {
             );
             assert_eq!(a.read(&copy.token, None).unwrap(), FolderRead::Gone);
         }
+    }
+
+    #[test]
+    fn a_json_copy_with_an_sp2_suffix_is_a_candidate() {
+        // SP7: "-conflict" uses only SP2's characters, but the name still maps
+        // back to the device file, a change file or an enrollment file.
+        let d = "0123456789abcdef0123456789abcdef";
+        for (copy, base) in [
+            (
+                format!("devices/{d}-conflict.json"),
+                format!("devices/{d}.json"),
+            ),
+            (
+                format!("changes/{d}/000000000001-conflict.json"),
+                format!("changes/{d}/000000000001.json"),
+            ),
+            (
+                format!("changes/{d}/000000000001 2.json"),
+                format!("changes/{d}/000000000001.json"),
+            ),
+            (
+                format!("enroll/{d}.reveal-conflict.json"),
+                format!("enroll/{d}.reveal.json"),
+            ),
+        ] {
+            assert_eq!(candidate_of(&copy), Some(base), "{copy}");
+        }
+        assert_eq!(candidate_of(&format!("devices/{d}.json")), None);
+        assert_eq!(candidate_of("devices/notes-conflict.json"), None);
     }
 }

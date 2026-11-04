@@ -434,8 +434,10 @@ mod memory {
                 }
             }
             let staged = store.files.remove(&temp).unwrap();
+            // PS2: the writer is recorded against the path actually written: a
+            // conflict copy's writer doesn't become the original's owner.
+            store.writers.insert(target.clone(), self.reader.clone());
             store.files.insert(target, staged);
-            store.writers.insert(path.to_owned(), self.reader.clone());
             Ok(())
         }
 
@@ -526,6 +528,28 @@ mod tests {
         assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"bad".to_vec()));
         assert_eq!(a.read(&token, None).unwrap(), Read::Bytes(b"good".to_vec()));
         assert_eq!(memory.read_count("a", "books/object"), 3);
+    }
+
+    #[test]
+    fn a_second_conflicting_write_never_overwrites_the_original() {
+        // PS2: B's first write over A's file becomes a copy; B doesn't become
+        // the original's owner, so B's second write is a copy too.
+        let memory = Memory::default();
+        let mut a = memory.view("a");
+        let mut b = memory.view("b");
+        memory.conflict_copies(true);
+        a.write("books/object", b"from a").unwrap();
+        b.write("books/object", b"from b, first").unwrap();
+        b.write("books/object", b"from b, second").unwrap();
+        let entries = a.list("books", None).unwrap().entries;
+        let original = entries
+            .iter()
+            .find(|entry| entry.name == "books/object")
+            .unwrap();
+        assert_eq!(
+            a.read(&original.token, None).unwrap(),
+            Read::Bytes(b"from a".to_vec())
+        );
     }
 
     #[test]
