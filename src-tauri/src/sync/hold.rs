@@ -28,7 +28,9 @@ pub const MAX_HOLDS: usize = 200;
 /// SP34: PROVISIONAL held bytes per device (2 GB).
 pub const MAX_HELD_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum Kind {
     Blob,
     Book,
@@ -51,7 +53,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Reserve {
     pub kind: Kind,
     pub name: Hash32,
@@ -73,7 +75,7 @@ impl Reserve {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Hold {
     pub kind: Kind,
     pub name: Hash32,
@@ -160,7 +162,9 @@ fn limits(sizes: impl Iterator<Item = u64>, count: usize, bytes: u64) -> Result<
 }
 
 /// SP12: the zero-based entry in its writer's change, for a Stop waiting key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct ItemId {
     pub device: DeviceId,
     pub seq: u64,
@@ -175,7 +179,7 @@ impl ItemId {
 }
 
 /// A change's payload hash, distinct from a version hash (SP14).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ChangeId {
     pub device: DeviceId,
     pub seq: u64,
@@ -217,7 +221,7 @@ pub fn needs_hold(named_by_live_version: bool) -> bool {
     !may_rely_on_stored_object(named_by_live_version)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Reservation {
     item: Reserve,
     first_seen: u64,
@@ -225,7 +229,7 @@ struct Reservation {
     _claimed: bool,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 struct Holding {
     item: Hold,
     claimed: bool,
@@ -245,10 +249,13 @@ pub struct Named {
 }
 
 /// SP33, SP34: open entries are counted separately even when names coincide.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Ledger {
+    #[serde(with = "super::pass::map")]
     reservations: BTreeMap<ItemId, Reservation>,
+    #[serde(with = "super::pass::map")]
     holds: BTreeMap<ItemId, Holding>,
+    #[serde(with = "super::pass::map")]
     last: BTreeMap<DeviceId, Mark>,
 }
 

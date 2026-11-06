@@ -17,8 +17,9 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// SP17: retain the union of claims, including omissions in later generations.
 /// One instance belongs to one library and its naming key.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct KnownWeeks {
+    #[serde(with = "weeks_entries")]
     entries: HashMap<Entry, BTreeMap<Key, BTreeMap<Name, bool>>>,
 }
 
@@ -485,5 +486,40 @@ mod tests {
             ),
             Err(cleanup::Blocked::Line1(cleanup::Line1::NamedByWeek(id)))
         );
+    }
+}
+
+// PS5: structured map keys are stored as JSON arrays of entries.
+mod weeks_entries {
+    use super::*;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    type Entries = HashMap<Entry, BTreeMap<Key, BTreeMap<Name, bool>>>;
+    pub fn serialize<S: Serializer>(entries: &Entries, s: S) -> Result<S::Ok, S::Error> {
+        let nested: Vec<_> = entries
+            .iter()
+            .map(|(entry, keys)| {
+                let keys: Vec<_> = keys
+                    .iter()
+                    .map(|(key, names)| (key, names.iter().collect::<Vec<_>>()))
+                    .collect();
+                (entry, keys)
+            })
+            .collect();
+        nested.serialize(s)
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<Entries, D::Error> {
+        type Stored = Vec<(Entry, Vec<(Key, Vec<(Name, bool)>)>)>;
+        let nested = Stored::deserialize(d)?;
+        Ok(nested
+            .into_iter()
+            .map(|(entry, keys)| {
+                (
+                    entry,
+                    keys.into_iter()
+                        .map(|(key, names)| (key, names.into_iter().collect()))
+                        .collect(),
+                )
+            })
+            .collect())
     }
 }

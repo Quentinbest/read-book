@@ -19,12 +19,14 @@ pub const MAX_AGES: usize = 10_000;
 pub const MAX_MARKS: usize = 10_000;
 
 /// SP35: own marks awaiting a view, and the devices that have reported marks.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Marks {
     /// First-seen vouched time, retained even after the content is removed.
+    #[serde(with = "super::pass::hash_map")]
     own: HashMap<Entry, u64>,
     /// SP17: prevents a retirement still in `ages` from republishing its mark.
     in_view: HashSet<Entry>,
+    #[serde(with = "super::pass::hash_map")]
     reported: HashMap<Entry, HashSet<DeviceId>>,
 }
 

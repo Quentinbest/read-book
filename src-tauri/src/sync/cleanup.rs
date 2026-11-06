@@ -14,7 +14,9 @@ use super::retention::{Ages, Vouched, WEEK_MS};
 use std::collections::{BTreeMap, HashMap};
 
 /// SP9: the kind is part of an object's identity.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Name {
     pub kind: Kind,
     pub name: Hash32,

@@ -79,13 +79,22 @@ pub fn witnesses(state: &State, this: DeviceId, writer: DeviceId) -> BTreeSet<De
 }
 
 /// SP32: caller-owned history of accepted rising counters and the reader's Apply.
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Heard {
+    #[serde(with = "super::pass::map")]
     counters: BTreeMap<DeviceId, (u64, u64)>,
+    #[serde(with = "super::pass::map")]
     applied: BTreeMap<DeviceId, u64>,
 }
 
 impl Heard {
+    /// SP32, PS5: a floor may have survived a crash without its hearing time.
+    /// Catch up the counter without making an old hearing appear recent.
+    pub fn catch_up_counter(&mut self, device: DeviceId, counter: u64) {
+        let entry = self.counters.entry(device).or_insert((0, 0));
+        entry.0 = entry.0.max(counter);
+    }
+
     /// SP16, SP32: a repeated or lower counter isn't hearing from a device.
     pub fn saw_counter(&mut self, device: DeviceId, counter: u64, clock: &Vouched) {
         let previous = self.counters.get(&device).map_or(0, |(n, _)| *n);
@@ -1532,6 +1541,32 @@ mod tests {
             touch(&state, &heard, 3 * WEEK_MS + 200),
             Touch::OutOfTouch {
                 witness: d(5),
+                since_ms: WEEK_MS
+            }
+        );
+    }
+
+    #[test]
+    fn catching_up_a_counter_preserves_the_hearing_until_a_real_rise() {
+        let mut heard = Heard::default();
+        heard.saw_counter(d(4), 1, &at(100));
+        heard.catch_up_counter(d(4), 2);
+        assert_eq!(heard.counters[&d(4)], (2, 100));
+        heard.saw_counter(d(4), 2, &at(300));
+        assert_eq!(heard.counters[&d(4)], (2, 100));
+        heard.saw_counter(d(4), 3, &at(400));
+        assert_eq!(heard.counters[&d(4)], (3, 400));
+    }
+
+    #[test]
+    fn caught_up_silent_witness_still_times_out_from_the_last_hearing() {
+        let mut heard = Heard::default();
+        heard.saw_counter(d(4), 1, &at(100));
+        heard.catch_up_counter(d(4), 2);
+        assert_eq!(
+            out_of_touch(&family(), d(1), d(2), &heard, &at(WEEK_MS + 100)),
+            Touch::OutOfTouch {
+                witness: d(4),
                 since_ms: WEEK_MS
             }
         );

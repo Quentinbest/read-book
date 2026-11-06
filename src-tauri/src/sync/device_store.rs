@@ -200,6 +200,57 @@ impl LibraryState {
         })
     }
 
+    /// SP21, SP28: keep the accepted sealed head, removals and rotations in the keystore.
+    pub fn save_accepted(
+        &mut self,
+        membership: &super::membership::Membership,
+        records: &BTreeMap<Hash32, super::trust::Record>,
+    ) {
+        let accepted = membership.accepted(records);
+        let head = membership.newest_sealed.filter(|h| accepted.contains(h));
+        let mut removals = Vec::new();
+        let mut rotations = Vec::new();
+        for hash in &accepted {
+            match records.get(hash).map(|r| &r.body) {
+                Some(super::trust::Body::Remove { .. }) => removals.push(hash.to_string()),
+                Some(super::trust::Body::Rotate { .. }) => rotations.push(hash.to_string()),
+                _ => {}
+            }
+        }
+        self.rest.insert(
+            "head".into(),
+            serde_json::json!(head.map(|h| h.to_string())),
+        );
+        self.rest
+            .insert("removals".into(), serde_json::json!(removals));
+        self.rest
+            .insert("rotations".into(), serde_json::json!(rotations));
+    }
+
+    /// SP21: missing fields are empty; unreadable accepted marks must not be forgotten.
+    pub fn load_accepted(&self) -> Result<std::collections::BTreeSet<Hash32>, StoreError> {
+        let mut accepted = std::collections::BTreeSet::new();
+        if let Some(head) = self.rest.get("head").filter(|v| !v.is_null()) {
+            accepted.insert(
+                head.as_str()
+                    .and_then(Hash32::parse)
+                    .ok_or(StoreError::Unreadable)?,
+            );
+        }
+        for name in ["removals", "rotations"] {
+            if let Some(value) = self.rest.get(name) {
+                for hash in value.as_array().ok_or(StoreError::Unreadable)? {
+                    accepted.insert(
+                        hash.as_str()
+                            .and_then(Hash32::parse)
+                            .ok_or(StoreError::Unreadable)?,
+                    );
+                }
+            }
+        }
+        Ok(accepted)
+    }
+
     /// The key, checked against the ID it must name (SP1).
     pub fn key(&self) -> Result<Keypair, StoreError> {
         let seed: [u8; 32] = b64url_decode(&self.seed)
