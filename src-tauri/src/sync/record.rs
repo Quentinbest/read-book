@@ -53,7 +53,9 @@ impl Kind {
 }
 
 /// A record key (SY9), kept as the exact string it was written as.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(
+    Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub struct Key(String);
 
 impl Key {
@@ -329,7 +331,7 @@ fn is_choice_body(key: &str, v: &Value) -> bool {
 
 /// A `{ "d", "s", "h" }` entry: a version ID in `history` (SP11), or a change
 /// frontier in a tombstone's `covers` (SP13).
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct Entry {
     pub device: DeviceId,
     pub seq: u64,

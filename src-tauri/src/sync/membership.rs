@@ -2029,6 +2029,37 @@ mod tests {
     }
 
     #[test]
+    fn the_accepted_set_round_trips_through_the_device_store() {
+        use super::super::device_store::{DeviceStore, Memory};
+        let mut l = Lib::default();
+        let (a, b, b2, c, c0, c1) = (k(1), k(2), k(22), k(3), k(100), k(101));
+        let g = l.genesis(&a, &c0);
+        let e1 = l.enroll(g, &a, &b, 1, OLD);
+        let e2 = l.enroll(e1, &a, &c, 2, OLD + 1);
+        let rotation = l.rotate(e2, &b, &b2, None, OLD + 2);
+        let removal = l.remove(rotation, &a, &c0, &c1, &[&c], OLD + 3);
+        let membership = l.compute(g);
+        let accepted = membership.accepted(&l.records);
+        assert!(accepted.contains(&rotation));
+        assert!(accepted.contains(&removal));
+        let ks = Memory::default();
+        let mut store = DeviceStore::default();
+        store
+            .identity(&LIB)
+            .unwrap()
+            .save_accepted(&membership, &l.records);
+        store.save(&ks).unwrap();
+        let loaded = DeviceStore::load(&ks).unwrap();
+        assert_eq!(
+            loaded.library(&LIB).unwrap().load_accepted().unwrap(),
+            accepted
+        );
+        assert!(loaded.library(&LIB).unwrap().rest.contains_key("head"));
+        assert!(loaded.library(&LIB).unwrap().rest.contains_key("removals"));
+        assert!(loaded.library(&LIB).unwrap().rest.contains_key("rotations"));
+    }
+
+    #[test]
     fn the_genesis_this_device_joined_counts_and_another_doesnt() {
         let mut l = Lib::default();
         let g = l.genesis(&k(1), &k(100));

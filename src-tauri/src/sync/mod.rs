@@ -33,6 +33,7 @@ pub mod late;
 pub mod local;
 pub mod membership;
 pub mod merge;
+pub mod pass;
 pub mod proof;
 pub mod prune;
 pub mod read;
