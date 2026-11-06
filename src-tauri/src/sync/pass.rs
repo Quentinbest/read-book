@@ -73,6 +73,10 @@ pub struct State {
     pub ages: retention::Ages,
     pub vouched: retention::Vouched,
     pub membership: MembershipState,
+    /// PS5, SY17: whether `vouched` was loaded from a saved row. A clock that
+    /// was never saved starts at the current readings in `resume`, rather than
+    /// counting everything since the Unix epoch as elapsed.
+    started: bool,
 }
 impl Default for State {
     fn default() -> Self {
@@ -84,6 +88,7 @@ impl Default for State {
             ages: Default::default(),
             vouched: retention::Vouched::new(0),
             membership: Default::default(),
+            started: false,
         }
     }
 }
@@ -133,6 +138,7 @@ impl State {
             heard: read(conn, lib, "heard")?,
             marks: read(conn, lib, "marks")?,
             ages: read(conn, lib, "ages")?,
+            started: json.is_some(),
             vouched: json
                 .map(|s| serde_json::from_str(&s))
                 .transpose()?
@@ -151,6 +157,12 @@ impl State {
     }
     /// SY17: resume the same vouched clock used by ages and hearing history.
     pub fn resume(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool, same_boot: bool) {
+        if !self.started {
+            // PS5, SY17: a library's first pass starts the clock now; a restart
+            // from the default would add the time since the Unix epoch.
+            self.vouched = retention::Vouched::new(wall_ms);
+            self.started = true;
+        }
         self.vouched
             .restart(mono_ms, wall_ms, clock_ahead, same_boot);
     }
@@ -205,6 +217,7 @@ mod tests {
             ages: serde_json::from_value(ages.clone()).unwrap(),
             vouched: serde_json::from_value(vouched.clone()).unwrap(),
             membership: serde_json::from_value(membership.clone()).unwrap(),
+            started: true,
         };
         save(&mut store, &lib, &state);
         let loaded = State::load(store.conn(), &lib).unwrap();
@@ -263,5 +276,19 @@ mod tests {
                 .get(&h),
             Some(&123)
         );
+    }
+
+    #[test]
+    fn a_first_pass_starts_the_clock_now() {
+        // PS5, SY17: no saved clock yet; resuming must not count the time since
+        // the Unix epoch as elapsed, or every unheard witness looks silent for
+        // decades and SP32 holds changes at once.
+        let (store, lib) = setup();
+        let mut state = State::load(store.conn(), &lib).unwrap();
+        let wall = 1_790_000_000_000;
+        state.resume(5_000, wall, false, false);
+        assert_eq!(state.vouched.now(), 0);
+        state.resume(5_000 + 60_000, wall + 60_000, false, true);
+        assert_eq!(state.vouched.now(), 60_000);
     }
 }
