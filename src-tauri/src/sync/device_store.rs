@@ -217,14 +217,39 @@ impl LibraryState {
                 _ => {}
             }
         }
-        self.rest.insert(
-            "head".into(),
-            serde_json::json!(head.map(|h| h.to_string())),
-        );
-        self.rest
-            .insert("removals".into(), serde_json::json!(removals));
-        self.rest
-            .insert("rotations".into(), serde_json::json!(rotations));
+        self.store_accepted(head, removals, rotations);
+    }
+
+    /// SP21: accepted removals and rotations only ever grow. One a quarantine
+    /// stops from counting now stays, because it is the evidence that a later
+    /// graph lacking it is stale. The sealed head is replaced only by a newer one
+    /// this computation accepted.
+    fn store_accepted(
+        &mut self,
+        head: Option<Hash32>,
+        removals: Vec<String>,
+        rotations: Vec<String>,
+    ) {
+        if let Some(head) = head {
+            self.rest
+                .insert("head".into(), serde_json::json!(head.to_string()));
+        } else {
+            self.rest.entry("head").or_insert(serde_json::Value::Null);
+        }
+        for (name, new) in [("removals", removals), ("rotations", rotations)] {
+            let mut all: std::collections::BTreeSet<String> = self
+                .rest
+                .get(name)
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|h| h.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            all.extend(new);
+            self.rest.insert(name.into(), serde_json::json!(all));
+        }
     }
 
     /// SP21: missing fields are empty; unreadable accepted marks must not be forgotten.
@@ -388,5 +413,35 @@ mod tests {
         assert_eq!(DeviceStore::load(&TEST_ITEM).unwrap(), store);
         security_framework::passwords::delete_generic_password("app.linen.reader.test", ACCOUNT)
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod accepted_tests {
+    use super::*;
+
+    #[test]
+    fn an_accepted_rotation_a_quarantine_stops_counting_stays_stored() {
+        // SP21: saving a later membership that no longer counts a rotation (a
+        // quarantine undid it) must keep it, or the rollback evidence is lost.
+        let mut state = LibraryState::new().unwrap();
+        let rotation = Hash32([3; 32]);
+        let removal = Hash32([4; 32]);
+        let head = Hash32([5; 32]);
+        state.store_accepted(
+            Some(head),
+            vec![removal.to_string()],
+            vec![rotation.to_string()],
+        );
+        state.store_accepted(None, vec![], vec![]);
+        let accepted = state.load_accepted().unwrap();
+        assert!(accepted.contains(&rotation));
+        assert!(accepted.contains(&removal));
+        assert!(accepted.contains(&head), "no newer head: the old one stays");
+        let newer = Hash32([6; 32]);
+        state.store_accepted(Some(newer), vec![], vec![]);
+        let accepted = state.load_accepted().unwrap();
+        assert!(accepted.contains(&newer) && !accepted.contains(&head));
+        assert!(accepted.contains(&rotation));
     }
 }
