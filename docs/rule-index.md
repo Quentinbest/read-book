@@ -6,7 +6,7 @@ Every rule ID in the plan, with the owner decisions that change it. **When a rul
 It is found by matching text, so it can miss a decision or list one twice: it helps you find things, and `docs/decisions.md` is the record. Known gaps: issue #60.
 Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9`.
 
-187 rules; 47 changed or settled by a decision.
+187 rules; 48 changed or settled by a decision.
 
 | Rule | Plan | Rule text (abridged) | Decisions (docs/decisions.md) |
 |---|---|---|---|
@@ -142,7 +142,7 @@ Look up one rule with its code and e2e checks: `python3 scripts/rule-index.py S9
 | N9 | L139 | Footnote peek: opens below the marker (above it near the page foot) and never covers the marker’s line; scrol… |  |
 | N10 | L140 | Internal links jump, push history and show the Back chip. External links open in the system browser, with the… |  |
 | N11 | L141 | Images open a zoomable image view on click or double-tap |  |
-| P1 | L255 | Manifest: id, version, engines.linen (semver range), activation events, contributes (commands, selectionActio… |  |
+| P1 | L255 | Manifest: id, version, engines.linen (semver range), activation events, contributes (commands, selectionActio… | Decision record |
 | P2 | L256 | Host API v1 is async, uses structured messages, follows semver and is checked against the manifest on every c… |  |
 | P3 | L257 | Permissions and consent. None needed: commands, themes, UI slots and 10 MB private storage. At install: book.… |  |
 | P4 | L258 | Each extension runs in its own sandboxed Worker with no DOM, and is activated lazily and unloaded when idle.… |  |

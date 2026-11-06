@@ -19,6 +19,8 @@ pub mod device_file;
 pub mod device_store;
 pub mod enrollment;
 pub mod envelope;
+pub mod files;
+pub mod folder;
 pub mod freshness;
 pub mod frontier;
 pub mod guard;
