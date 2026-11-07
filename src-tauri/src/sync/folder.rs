@@ -83,7 +83,7 @@ fn valid_path(path: &str) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) use memory::Memory;
+pub(crate) use memory::{Memory, View};
 
 #[cfg(test)]
 mod memory {
