@@ -361,6 +361,15 @@ pub const MIGRATIONS: &[&str] = &[
     ALTER TABLE sync_touch ADD COLUMN asked_through INTEGER;
     ALTER TABLE sync_undo ADD COLUMN keep_until INTEGER;
     "#,
+    // 16: PS5: caller-owned sync pass state, per library.
+    r#"
+    CREATE TABLE sync_pass_state (
+        library TEXT NOT NULL,
+        name TEXT NOT NULL,
+        json TEXT NOT NULL,
+        PRIMARY KEY (library, name)
+    );
+    "#,
 ];
 
 #[derive(Debug, thiserror::Error)]

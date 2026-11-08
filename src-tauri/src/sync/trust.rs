@@ -77,7 +77,7 @@ pub struct Seal {
 }
 
 /// A change `{ s, h }` of one device's chain.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Mark {
     pub s: u64,
     pub h: Hash32,

@@ -9,11 +9,15 @@ use sha2::{Digest, Sha256};
 use std::fmt;
 
 /// A SHA-256 value.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Hash32(pub [u8; 32]);
 
 /// A 16-byte ID: a library, a device or a writer token (SP1).
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(
+    Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize,
+)]
 pub struct Id16(pub [u8; 16]);
 
 /// A device's ID: the first 16 bytes of `H("linen-sync/device-id/v1" ‖ key)`, so an

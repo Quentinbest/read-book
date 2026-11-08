@@ -20,7 +20,7 @@ pub const WEEK_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 pub const JUMP_MS: u64 = 5 * 60 * 1000;
 
 /// A device's vouched-for time: milliseconds it can stand behind since it started counting.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Vouched {
     total_ms: u64,
     last_mono_ms: Option<u64>,
@@ -92,11 +92,13 @@ impl Vouched {
 }
 
 /// Ages this device knows: its own, and those other devices reported (SP35).
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Ages {
     /// When this device first saw each retiring version, in vouched-for time.
+    #[serde(with = "super::pass::hash_map")]
     first_seen: HashMap<Entry, u64>,
     /// Each device's reported age, and this device's vouched time when it received it.
+    #[serde(with = "super::pass::hash_map")]
     reported: HashMap<(Entry, DeviceId), (u64, u64)>,
 }
 

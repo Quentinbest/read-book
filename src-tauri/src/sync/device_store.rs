@@ -200,6 +200,82 @@ impl LibraryState {
         })
     }
 
+    /// SP21, SP28: keep the accepted sealed head, removals and rotations in the keystore.
+    pub fn save_accepted(
+        &mut self,
+        membership: &super::membership::Membership,
+        records: &BTreeMap<Hash32, super::trust::Record>,
+    ) {
+        let accepted = membership.accepted(records);
+        let head = membership.newest_sealed.filter(|h| accepted.contains(h));
+        let mut removals = Vec::new();
+        let mut rotations = Vec::new();
+        for hash in &accepted {
+            match records.get(hash).map(|r| &r.body) {
+                Some(super::trust::Body::Remove { .. }) => removals.push(hash.to_string()),
+                Some(super::trust::Body::Rotate { .. }) => rotations.push(hash.to_string()),
+                _ => {}
+            }
+        }
+        self.store_accepted(head, removals, rotations);
+    }
+
+    /// SP21: accepted removals and rotations only ever grow. One a quarantine
+    /// stops from counting now stays, because it is the evidence that a later
+    /// graph lacking it is stale. The sealed head is replaced only by a newer one
+    /// this computation accepted.
+    fn store_accepted(
+        &mut self,
+        head: Option<Hash32>,
+        removals: Vec<String>,
+        rotations: Vec<String>,
+    ) {
+        if let Some(head) = head {
+            self.rest
+                .insert("head".into(), serde_json::json!(head.to_string()));
+        } else {
+            self.rest.entry("head").or_insert(serde_json::Value::Null);
+        }
+        for (name, new) in [("removals", removals), ("rotations", rotations)] {
+            let mut all: std::collections::BTreeSet<String> = self
+                .rest
+                .get(name)
+                .and_then(|v| v.as_array())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(|h| h.as_str().map(str::to_owned))
+                        .collect()
+                })
+                .unwrap_or_default();
+            all.extend(new);
+            self.rest.insert(name.into(), serde_json::json!(all));
+        }
+    }
+
+    /// SP21: missing fields are empty; unreadable accepted marks must not be forgotten.
+    pub fn load_accepted(&self) -> Result<std::collections::BTreeSet<Hash32>, StoreError> {
+        let mut accepted = std::collections::BTreeSet::new();
+        if let Some(head) = self.rest.get("head").filter(|v| !v.is_null()) {
+            accepted.insert(
+                head.as_str()
+                    .and_then(Hash32::parse)
+                    .ok_or(StoreError::Unreadable)?,
+            );
+        }
+        for name in ["removals", "rotations"] {
+            if let Some(value) = self.rest.get(name) {
+                for hash in value.as_array().ok_or(StoreError::Unreadable)? {
+                    accepted.insert(
+                        hash.as_str()
+                            .and_then(Hash32::parse)
+                            .ok_or(StoreError::Unreadable)?,
+                    );
+                }
+            }
+        }
+        Ok(accepted)
+    }
+
     /// The key, checked against the ID it must name (SP1).
     pub fn key(&self) -> Result<Keypair, StoreError> {
         let seed: [u8; 32] = b64url_decode(&self.seed)
@@ -337,5 +413,35 @@ mod tests {
         assert_eq!(DeviceStore::load(&TEST_ITEM).unwrap(), store);
         security_framework::passwords::delete_generic_password("app.linen.reader.test", ACCOUNT)
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod accepted_tests {
+    use super::*;
+
+    #[test]
+    fn an_accepted_rotation_a_quarantine_stops_counting_stays_stored() {
+        // SP21: saving a later membership that no longer counts a rotation (a
+        // quarantine undid it) must keep it, or the rollback evidence is lost.
+        let mut state = LibraryState::new().unwrap();
+        let rotation = Hash32([3; 32]);
+        let removal = Hash32([4; 32]);
+        let head = Hash32([5; 32]);
+        state.store_accepted(
+            Some(head),
+            vec![removal.to_string()],
+            vec![rotation.to_string()],
+        );
+        state.store_accepted(None, vec![], vec![]);
+        let accepted = state.load_accepted().unwrap();
+        assert!(accepted.contains(&rotation));
+        assert!(accepted.contains(&removal));
+        assert!(accepted.contains(&head), "no newer head: the old one stays");
+        let newer = Hash32([6; 32]);
+        state.store_accepted(Some(newer), vec![], vec![]);
+        let accepted = state.load_accepted().unwrap();
+        assert!(accepted.contains(&newer) && !accepted.contains(&head));
+        assert!(accepted.contains(&rotation));
     }
 }
