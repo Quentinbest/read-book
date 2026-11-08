@@ -46,3 +46,6 @@ pub mod shared;
 pub mod trust;
 pub mod view;
 pub mod weeks;
+
+#[cfg(test)]
+pub(crate) mod testkit;
