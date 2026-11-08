@@ -320,7 +320,8 @@ fn save_state(device: &Device<'_>) -> Result<(), Error> {
 /// SP37 (1)–(3), PS4–PS7: one pass's first steps. It reads membership before any
 /// device file (#122's crowding risk), saves `State` after each step that changed
 /// it (PS5), and stops where a budget runs out (PS6). Steps (4)–(11) aren't built
-/// yet; the report says so.
+/// yet, nor step (3)'s unknown identities and removed devices' tails; the report
+/// says so.
 pub fn run<F: super::folder::Folder>(
     device: &mut Device<'_>,
     folder: &F,
@@ -331,7 +332,8 @@ pub fn run<F: super::folder::Folder>(
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
-        not_built: "SP37 steps (4)-(11)",
+        not_built:
+            "SP37 step (3)'s unknown identities and removed devices' tails, and steps (4)-(11)",
         ..Report::default()
     };
     let mut meter = Meter {
@@ -393,11 +395,21 @@ pub fn run<F: super::folder::Folder>(
                 .push((entry.name.clone(), "not a trust record".into()));
             continue;
         };
-        let Some(bytes) = read_bytes(folder, entry, &mut report)? else {
+        // PS5: first-seen times already recorded are saved on every way out, or
+        // a later pass would time those records from later (SP20 (1)).
+        let read = read_bytes(folder, entry, &mut report);
+        let Some(bytes) = (match read {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                save_state(device)?;
+                return Err(e);
+            }
+        }) else {
             continue;
         };
         if let Some(stop) = meter.check(&report) {
             report.stopped = Some(stop);
+            save_state(device)?;
             return Ok(report);
         }
         match trust::open(&bytes, &device.lib.id, &hash) {
@@ -468,17 +480,47 @@ pub fn run<F: super::folder::Folder>(
         let Some(bytes) = read_bytes(folder, entry, &mut report)? else {
             continue;
         };
+        if let Some(stop) = meter.check(&report) {
+            report.stopped = Some(stop);
+            break;
+        }
         let Some(key) = membership.key(&peer) else {
             continue;
         };
+        let opened = match device_file::open(&bytes, &device.lib.id, &peer, &key) {
+            Ok(opened) => opened,
+            Err(e) => {
+                report.set_aside.push((path, format!("{e}")));
+                continue;
+            }
+        };
+        let floor = device
+            .store
+            .library(&device.lib.id)
+            .and_then(|l| l.floors.get(&peer.to_string()))
+            .map(|f| f.counter);
+        // SP16: overflow parts live in the peer's own directory, listed only
+        // when a file newer than the floor names some.
+        let parts = if opened.overflow.is_empty() || floor >= Some(opened.counter) {
+            Vec::new()
+        } else {
+            match list_all(folder, &format!("devices/{peer}"), &meter, &mut report)? {
+                Some(parts) => parts,
+                None => break,
+            }
+        };
+        let part_bytes = std::cell::Cell::new(0u64);
         let fetch = |part: &str| -> Option<Vec<u8>> {
-            let listed = entries.iter().find(|e| e.name == part)?;
+            let listed = parts.iter().find(|e| e.name == part)?;
             match super::files::read_file(folder, listed).ok()? {
-                super::files::Read::Bytes(b) => Some(b),
+                super::files::Read::Bytes(b) => {
+                    part_bytes.set(part_bytes.get() + b.len() as u64);
+                    Some(b)
+                }
                 _ => None,
             }
         };
-        match device_file::accept(
+        let accepted = device_file::accept(
             device.ks,
             device.store,
             &device.lib.id,
@@ -486,7 +528,9 @@ pub fn run<F: super::folder::Folder>(
             &key,
             &bytes,
             &fetch,
-        ) {
+        );
+        report.bytes_read += part_bytes.get();
+        match accepted {
             Ok(Accepted::New(file, _)) => {
                 device
                     .state
@@ -495,8 +539,23 @@ pub fn run<F: super::folder::Folder>(
                 device.state.membership.heads.insert(peer, file.fields.head);
                 report.accepted.push(peer);
             }
-            Ok(Accepted::Stale) => {}
+            // PS5: a crash after `accept` saved the floor but before the state
+            // was saved loses the head; the file at the floor's own counter is
+            // the one accepted, so its head is taken again.
+            Ok(Accepted::Stale) => {
+                if floor == Some(opened.counter) {
+                    device
+                        .state
+                        .membership
+                        .heads
+                        .insert(peer, opened.fields.head);
+                }
+            }
             Err(e) => report.set_aside.push((path, format!("{e}"))),
+        }
+        if let Some(stop) = meter.check(&report) {
+            report.stopped = Some(stop);
+            break;
         }
     }
     // PS5, SP32: catch Heard up with each peer's stored floor without
@@ -767,6 +826,112 @@ mod tests {
                 Some((counter, 0)),
                 "counter, not time"
             );
+        }
+
+        fn file_bytes(kd: &KitDevice, dir: &str) -> Vec<u64> {
+            kd.folder
+                .list(dir, None)
+                .unwrap()
+                .entries
+                .iter()
+                .map(
+                    |e| match crate::sync::files::read_file(&kd.folder, e).unwrap() {
+                        crate::sync::files::Read::Bytes(b) => b.len() as u64,
+                        _ => panic!("unreadable {}", e.name),
+                    },
+                )
+                .collect()
+        }
+
+        fn save_raw(kd: &KitDevice, state: &State) {
+            let tx = kd.db.conn().unchecked_transaction().unwrap();
+            state.save(&tx, &kd.lib.id).unwrap();
+            tx.commit().unwrap();
+        }
+
+        #[test]
+        fn a_device_file_with_overflow_parts_is_accepted() {
+            // SP16: the parts are in devices/<peer>/, not in devices/ itself.
+            let mut kit = testkit::library(2);
+            let peer = &mut kit.devices[1];
+            let lib = peer.store.library(&peer.lib.id).unwrap();
+            let writer = lib.writer_id().unwrap();
+            let head = lib
+                .rest
+                .get("head")
+                .and_then(|v| v.as_str())
+                .and_then(Hash32::parse);
+            let frontier: Vec<serde_json::Value> = (0..4000)
+                .map(|i| serde_json::json!({ "d": format!("{i:032x}"), "s": i, "h": "ab".repeat(32), "sig": "c".repeat(86) }))
+                .collect();
+            let mut fields = crate::sync::device_file::Fields {
+                head,
+                ..Default::default()
+            };
+            fields.lists.insert("frontier".into(), frontier);
+            let w = crate::sync::device_file::write(&peer.key, &peer.lib.id, &writer, 2, &fields)
+                .unwrap();
+            assert!(!w.parts.is_empty());
+            for (path, bytes) in &w.parts {
+                crate::sync::files::write_file(&mut peer.folder, path, bytes).unwrap();
+            }
+            crate::sync::files::write_file(&mut peer.folder, &w.path, &w.bytes).unwrap();
+            let id = peer.lib.device;
+            let (report, _) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert_eq!(
+                report.accepted,
+                vec![id],
+                "set aside: {:?}",
+                report.set_aside
+            );
+            let parts: u64 = w.parts.iter().map(|(_, b)| b.len() as u64).sum();
+            assert!(report.bytes_read > parts, "the parts' bytes are counted");
+        }
+
+        #[test]
+        fn a_read_past_the_byte_budget_is_not_accepted() {
+            // PS6: the budget is checked after each device file's read, not only
+            // before the next peer's.
+            let mut kit = testkit::library(3);
+            let kd = &kit.devices[0];
+            let mut budgets = Budgets::sy2();
+            budgets.bytes = file_bytes(kd, "trust").iter().sum::<u64>();
+            let (report, _) = pass(&mut kit.devices[0], &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Bytes));
+            assert!(report.accepted.is_empty());
+        }
+
+        #[test]
+        fn first_seen_times_are_saved_when_the_pass_stops_in_membership() {
+            // PS5, SP20 (1): a record opened before the budget ran out keeps the
+            // time it was first seen.
+            let mut kit = testkit::library(3);
+            let kd = &kit.devices[0];
+            let sizes = file_bytes(kd, "trust");
+            assert!(sizes.len() >= 2);
+            let mut budgets = Budgets::sy2();
+            budgets.bytes = sizes[0];
+            let (report, _) = pass(&mut kit.devices[0], &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Bytes));
+            let kd = &kit.devices[0];
+            let saved = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            assert_eq!(saved.membership.first_seen.len(), 1);
+        }
+
+        #[test]
+        fn a_crash_before_saving_a_peers_head_takes_it_again() {
+            // PS5: the floor was saved with the accepted file, the head wasn't.
+            let mut kit = testkit::library(2);
+            let peer = kit.devices[1].lib.device;
+            let (_, state) = pass(&mut kit.devices[0], &Budgets::sy2());
+            let head = state.membership.heads[&peer];
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            state.membership.heads.remove(&peer);
+            save_raw(kd, &state);
+            let (report, state) = pass(kd, &Budgets::sy2());
+            assert!(report.accepted.is_empty(), "the file is stale now");
+            assert_eq!(state.membership.heads.get(&peer), Some(&head));
         }
     }
 }
