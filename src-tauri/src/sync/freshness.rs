@@ -103,6 +103,12 @@ impl Heard {
         }
     }
 
+    /// The counter and time recorded for a device (tests read it back).
+    #[cfg(test)]
+    pub(crate) fn heard(&self, device: &DeviceId) -> Option<(u64, u64)> {
+        self.counters.get(device).copied()
+    }
+
     /// SP32: Apply is the reader's own assurance, for this writer only.
     pub fn applied(&mut self, writer: DeviceId, clock: &Vouched) {
         self.applied.insert(writer, clock.now());

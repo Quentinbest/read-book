@@ -6,6 +6,26 @@ use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// PS6: per-pass limits. The SY2 values are PROVISIONAL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Budgets {
+    pub names: u64,
+    pub devices: u64,
+    pub bytes: u64,
+    pub elapsed_ms: u64,
+}
+
+impl Budgets {
+    pub fn sy2() -> Self {
+        Self {
+            names: 100_000,
+            devices: 32,
+            bytes: 256 * 1024 * 1024,
+            elapsed_ms: 60_000,
+        }
+    }
+}
+
 // PS5: JSON object keys cannot represent structured identifiers.
 macro_rules! map_module {
     ($name:ident, $map:ident, $bound:path) => {
@@ -98,6 +118,16 @@ pub enum Error {
     Sql(#[from] rusqlite::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Folder(#[from] std::io::Error),
+    #[error(transparent)]
+    Store(#[from] super::device_store::StoreError),
+    /// SP37 (1): the device store doesn't hold a usable identity for this library.
+    #[error("the device store has no usable identity for this library")]
+    NoIdentity,
+    /// SP20, SP21: membership can't be computed from what storage holds.
+    #[error("membership can't be computed: {0:?}")]
+    Membership(super::membership::NoMembership),
 }
 fn read<T: DeserializeOwned + Default>(
     conn: &Connection,
@@ -166,6 +196,321 @@ impl State {
         self.vouched
             .restart(mono_ms, wall_ms, clock_ahead, same_boot);
     }
+}
+
+/// PS7: the clock readings a pass starts from, passed in rather than read.
+#[derive(Clone, Copy, Debug)]
+pub struct Readings {
+    pub mono_ms: u64,
+    pub wall_ms: u64,
+    pub clock_ahead: bool,
+    pub same_boot: bool,
+}
+
+/// What one device holds for a pass (PS4).
+pub struct Device<'a> {
+    pub conn: &'a Connection,
+    pub lib: super::journal::Library,
+    pub store: &'a mut super::device_store::DeviceStore,
+    pub ks: &'a dyn super::device_store::Keystore,
+    pub state: State,
+}
+
+/// PS6: which budget stopped a pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Stopped {
+    Names,
+    Devices,
+    Bytes,
+    Time,
+}
+
+/// PS4: what a pass did and what it left.
+#[derive(Debug, Default)]
+pub struct Report {
+    pub names_listed: u64,
+    pub bytes_read: u64,
+    /// Paths set aside, with why (SP7: outside the layout, too large, a copy).
+    pub set_aside: Vec<(String, String)>,
+    pub trusted: Vec<DeviceId>,
+    /// Peers whose device file was accepted with a new counter (SP16, SP18).
+    pub accepted: Vec<DeviceId>,
+    pub stopped: Option<Stopped>,
+    /// PS4: steps not built yet are named, never silently skipped.
+    pub not_built: &'static str,
+}
+
+/// PS6: counts what a pass uses and says when a budget runs out.
+struct Meter<'b> {
+    budgets: &'b Budgets,
+    now: &'b dyn Fn() -> u64,
+    start: u64,
+    devices: u64,
+}
+
+impl Meter<'_> {
+    fn check(&self, report: &Report) -> Option<Stopped> {
+        if report.names_listed > self.budgets.names {
+            Some(Stopped::Names)
+        } else if report.bytes_read > self.budgets.bytes {
+            Some(Stopped::Bytes)
+        } else if self.devices > self.budgets.devices {
+            Some(Stopped::Devices)
+        } else if (self.now)().saturating_sub(self.start) > self.budgets.elapsed_ms {
+            Some(Stopped::Time)
+        } else {
+            None
+        }
+    }
+}
+
+/// SP7, PS6: every page of one directory, each listing counted against the name
+/// budget; `None` when a budget ran out part-way.
+fn list_all<F: super::folder::Folder>(
+    folder: &F,
+    dir: &str,
+    meter: &Meter<'_>,
+    report: &mut Report,
+) -> Result<Option<Vec<super::folder::Listed<F::Token>>>, Error> {
+    let mut all = Vec::new();
+    let mut cursor: Option<String> = None;
+    loop {
+        let page = folder.list(dir, cursor.as_deref())?;
+        report.names_listed += page.entries.len() as u64;
+        all.extend(page.entries);
+        if let Some(stop) = meter.check(report) {
+            report.stopped = Some(stop);
+            return Ok(None);
+        }
+        match page.next {
+            Some(next) if cursor.as_deref() != Some(next.as_str()) => cursor = Some(next),
+            _ => return Ok(Some(all)),
+        }
+    }
+}
+
+/// SP7: a file's bytes through `files::read_file`, or why it was set aside.
+fn read_bytes<F: super::folder::Folder>(
+    folder: &F,
+    entry: &super::folder::Listed<F::Token>,
+    report: &mut Report,
+) -> Result<Option<Vec<u8>>, Error> {
+    use super::files::Read;
+    let why = match super::files::read_file(folder, entry)? {
+        Read::Bytes(bytes) => {
+            report.bytes_read += bytes.len() as u64;
+            return Ok(Some(bytes));
+        }
+        Read::Outside => "outside the layout",
+        Read::Candidate { .. } => "a candidate copy",
+        Read::TooLarge => "over its limit",
+        Read::Gone => "gone",
+    };
+    report.set_aside.push((entry.name.clone(), why.into()));
+    Ok(None)
+}
+
+fn save_state(device: &Device<'_>) -> Result<(), Error> {
+    let tx = device.conn.unchecked_transaction()?;
+    device.state.save(&tx, &device.lib.id)?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// SP37 (1)–(3), PS4–PS7: one pass's first steps. It reads membership before any
+/// device file (#122's crowding risk), saves `State` after each step that changed
+/// it (PS5), and stops where a budget runs out (PS6). Steps (4)–(11) aren't built
+/// yet; the report says so.
+pub fn run<F: super::folder::Folder>(
+    device: &mut Device<'_>,
+    folder: &F,
+    readings: Readings,
+    budgets: &Budgets,
+    now: &dyn Fn() -> u64,
+) -> Result<Report, Error> {
+    use super::device_file::{self, Accepted};
+    use super::{membership, trust};
+    let mut report = Report {
+        not_built: "SP37 steps (4)-(11)",
+        ..Report::default()
+    };
+    let mut meter = Meter {
+        budgets,
+        now,
+        start: now(),
+        devices: 0,
+    };
+    device.state.resume(
+        readings.mono_ms,
+        readings.wall_ms,
+        readings.clock_ahead,
+        readings.same_boot,
+    );
+    let vouched_now = device.state.vouched.now() as i64;
+
+    // (1) SP37, SY7, SP28: the device store holds this library's identity, the
+    // writer token and readable marks.
+    let library = device
+        .store
+        .library(&device.lib.id)
+        .ok_or(Error::NoIdentity)?;
+    if library.device_id()? != device.lib.device {
+        return Err(Error::NoIdentity);
+    }
+    library.writer_id()?;
+    super::frontier::stored_marks(library)?;
+    let genesis = library
+        .rest
+        .get("genesis")
+        .and_then(|v| v.as_str())
+        .and_then(Hash32::parse)
+        .ok_or(Error::NoIdentity)?;
+    let own_head = library
+        .rest
+        .get("head")
+        .and_then(|v| v.as_str())
+        .and_then(Hash32::parse);
+    let accepted = library.load_accepted()?;
+    save_state(device)?;
+
+    // (2) SP37, SP20, SP21: libraries/ and trust/, then membership.
+    if list_all(folder, "libraries", &meter, &mut report)?.is_none() {
+        return Ok(report);
+    }
+    let Some(entries) = list_all(folder, "trust", &meter, &mut report)? else {
+        return Ok(report);
+    };
+    let mut records = BTreeMap::new();
+    for entry in &entries {
+        let Some(hash) = entry
+            .name
+            .strip_prefix("trust/")
+            .and_then(|n| n.strip_suffix(".json"))
+            .and_then(Hash32::parse)
+        else {
+            report
+                .set_aside
+                .push((entry.name.clone(), "not a trust record".into()));
+            continue;
+        };
+        let Some(bytes) = read_bytes(folder, entry, &mut report)? else {
+            continue;
+        };
+        if let Some(stop) = meter.check(&report) {
+            report.stopped = Some(stop);
+            return Ok(report);
+        }
+        match trust::open(&bytes, &device.lib.id, &hash) {
+            Ok(record) => {
+                // SP20 (1): a record is timed from when this device first saw it.
+                device
+                    .state
+                    .membership
+                    .first_seen
+                    .entry(hash)
+                    .or_insert(vouched_now);
+                records.insert(hash, record);
+            }
+            Err(e) => report.set_aside.push((entry.name.clone(), format!("{e}"))),
+        }
+    }
+    let mut heads = device.state.membership.heads.clone();
+    heads.insert(device.lib.device, own_head);
+    let ms = &device.state.membership;
+    let membership = membership::compute(&membership::Inputs {
+        genesis,
+        records: &records,
+        first_seen: &ms.first_seen,
+        confirmed: &ms.confirmed,
+        checkpoint: &ms.checkpoint,
+        held: &|_, _| None,
+        accepted: &accepted,
+        now_ms: vouched_now,
+        me: Some(device.lib.device),
+        quarantined: &ms.quarantined,
+        heads: &heads,
+    })
+    .map_err(Error::Membership)?;
+    report.trusted = membership
+        .state
+        .members
+        .keys()
+        .filter(|d| membership.trusted(d).is_some())
+        .copied()
+        .collect();
+    {
+        let mut next = device.store.clone();
+        next.library_mut(&device.lib.id)
+            .ok_or(Error::NoIdentity)?
+            .save_accepted(&membership, &records);
+        next.save(device.ks)?;
+        *device.store = next;
+    }
+    save_state(device)?;
+
+    // (3) SP37, SP16, SP18: each trusted peer's device file, at most 32.
+    let Some(entries) = list_all(folder, "devices", &meter, &mut report)? else {
+        return Ok(report);
+    };
+    for peer in report.trusted.clone() {
+        if peer == device.lib.device {
+            continue;
+        }
+        let path = device_file::device_path(&peer);
+        let Some(entry) = entries.iter().find(|e| e.name == path) else {
+            continue;
+        };
+        meter.devices += 1;
+        if let Some(stop) = meter.check(&report) {
+            report.stopped = Some(stop);
+            break;
+        }
+        let Some(bytes) = read_bytes(folder, entry, &mut report)? else {
+            continue;
+        };
+        let Some(key) = membership.key(&peer) else {
+            continue;
+        };
+        let fetch = |part: &str| -> Option<Vec<u8>> {
+            let listed = entries.iter().find(|e| e.name == part)?;
+            match super::files::read_file(folder, listed).ok()? {
+                super::files::Read::Bytes(b) => Some(b),
+                _ => None,
+            }
+        };
+        match device_file::accept(
+            device.ks,
+            device.store,
+            &device.lib.id,
+            &peer,
+            &key,
+            &bytes,
+            &fetch,
+        ) {
+            Ok(Accepted::New(file, _)) => {
+                device
+                    .state
+                    .heard
+                    .saw_counter(peer, file.counter, &device.state.vouched);
+                device.state.membership.heads.insert(peer, file.fields.head);
+                report.accepted.push(peer);
+            }
+            Ok(Accepted::Stale) => {}
+            Err(e) => report.set_aside.push((path, format!("{e}"))),
+        }
+    }
+    // PS5, SP32: catch Heard up with each peer's stored floor without
+    // refreshing its time, so a crash after `accept` saved the floor but before
+    // `Heard` was saved can only make this device out of touch sooner.
+    if let Some(library) = device.store.library(&device.lib.id) {
+        for (peer, floor) in &library.floors {
+            if let Some(peer) = DeviceId::parse(peer) {
+                device.state.heard.catch_up_counter(peer, floor.counter);
+            }
+        }
+    }
+    save_state(device)?;
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -290,5 +635,138 @@ mod tests {
         assert_eq!(state.vouched.now(), 0);
         state.resume(5_000 + 60_000, wall + 60_000, false, true);
         assert_eq!(state.vouched.now(), 60_000);
+    }
+
+    mod run {
+        use super::super::*;
+        use crate::sync::folder::Folder;
+        use crate::sync::testkit::{self, KitDevice};
+        use std::cell::Cell;
+
+        const READ: Readings = Readings {
+            mono_ms: 1_000,
+            wall_ms: 1_790_000_000_000,
+            clock_ahead: false,
+            same_boot: false,
+        };
+
+        fn pass(kd: &mut KitDevice, budgets: &Budgets) -> (Report, State) {
+            let state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let mut device = Device {
+                conn: kd.db.conn(),
+                lib: kd.lib,
+                store: &mut kd.store,
+                ks: &kd.ks,
+                state,
+            };
+            let report = run(&mut device, &kd.folder, READ, budgets, &|| 0).unwrap();
+            (report, device.state)
+        }
+
+        #[test]
+        fn three_devices_read_each_others_device_files() {
+            let mut kit = testkit::library(3);
+            let peers: Vec<_> = kit.devices[1..].iter().map(|d| d.lib.device).collect();
+            let (report, state) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert_eq!(report.stopped, None);
+            assert_eq!(report.trusted.len(), 3);
+            let mut accepted = report.accepted.clone();
+            accepted.sort();
+            let mut expected = peers.clone();
+            expected.sort();
+            assert_eq!(accepted, expected);
+            for peer in &peers {
+                assert!(state.heard.heard(peer).is_some_and(|(n, _)| n > 0));
+            }
+            // SP20 (1): every trust record is timed from when it was first seen.
+            let trust = kit.devices[0]
+                .folder
+                .list("trust", None)
+                .unwrap()
+                .entries
+                .len();
+            assert_eq!(state.membership.first_seen.len(), trust);
+            // Saved: a second pass loads it and finds nothing new.
+            let (again, _) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(again.accepted.is_empty());
+            assert_eq!(again.trusted.len(), 3);
+        }
+
+        #[test]
+        fn each_budget_stops_the_pass() {
+            let tight = |f: fn(&mut Budgets)| {
+                let mut b = Budgets::sy2();
+                f(&mut b);
+                b
+            };
+            for (budgets, stop) in [
+                (tight(|b| b.names = 1), Stopped::Names),
+                (tight(|b| b.devices = 0), Stopped::Devices),
+                (tight(|b| b.bytes = 10), Stopped::Bytes),
+            ] {
+                let mut kit = testkit::library(3);
+                let (report, _) = pass(&mut kit.devices[0], &budgets);
+                assert_eq!(report.stopped, Some(stop));
+            }
+            // Time: the injected clock jumps past the budget after the start.
+            let mut kit = testkit::library(3);
+            let kd = &mut kit.devices[0];
+            let calls = Cell::new(0u64);
+            let clock = || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 1 {
+                    0
+                } else {
+                    120_000
+                }
+            };
+            let state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let mut device = Device {
+                conn: kd.db.conn(),
+                lib: kd.lib,
+                store: &mut kd.store,
+                ks: &kd.ks,
+                state,
+            };
+            let report = run(&mut device, &kd.folder, READ, &Budgets::sy2(), &clock).unwrap();
+            assert_eq!(report.stopped, Some(Stopped::Time));
+        }
+
+        #[test]
+        fn membership_is_read_before_device_files() {
+            let mut kit = testkit::library(3);
+            // Enough names for libraries/ and trust/, none to spare for devices/.
+            let kd = &kit.devices[0];
+            let count = |dir| kd.folder.list(dir, None).unwrap().entries.len() as u64;
+            let names = count("libraries") + count("trust");
+            let mut budgets = Budgets::sy2();
+            budgets.names = names;
+            let (report, _) = pass(&mut kit.devices[0], &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Names));
+            assert_eq!(report.trusted.len(), 3, "membership was computed");
+            assert!(report.accepted.is_empty(), "no device file was read");
+        }
+
+        #[test]
+        fn a_crash_before_saving_heard_is_caught_up_next_pass() {
+            let mut kit = testkit::library(2);
+            let peer = kit.devices[1].lib.device;
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            // The crash: the floor survives in the device store, Heard doesn't.
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let counter = state.heard.heard(&peer).unwrap().0;
+            state.heard = Default::default();
+            let tx = kd.db.conn().unchecked_transaction().unwrap();
+            state.save(&tx, &kd.lib.id).unwrap();
+            tx.commit().unwrap();
+            let (report, state) = pass(kd, &Budgets::sy2());
+            assert!(report.accepted.is_empty(), "the file is stale now");
+            assert_eq!(
+                state.heard.heard(&peer),
+                Some((counter, 0)),
+                "counter, not time"
+            );
+        }
     }
 }
