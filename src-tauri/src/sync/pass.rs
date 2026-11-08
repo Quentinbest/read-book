@@ -317,6 +317,30 @@ fn read_bytes<F: super::folder::Folder>(
     Ok(None)
 }
 
+/// SP20 (2): the code enrollments among `heads` and the records they build on.
+fn code_enrollments_below(
+    records: &BTreeMap<Hash32, super::trust::Record>,
+    heads: impl Iterator<Item = Hash32>,
+) -> BTreeSet<Hash32> {
+    use super::trust::Body;
+    let mut seen = BTreeSet::new();
+    let mut found = BTreeSet::new();
+    let mut todo: Vec<Hash32> = heads.collect();
+    while let Some(h) = todo.pop() {
+        if !seen.insert(h) {
+            continue;
+        }
+        let Some(record) = records.get(&h) else {
+            continue;
+        };
+        if matches!(record.body, Body::Enroll { by: None, .. }) {
+            found.insert(h);
+        }
+        todo.extend(record.prevs());
+    }
+    found
+}
+
 fn save_state(device: &Device<'_>) -> Result<(), Error> {
     let tx = device.conn.unchecked_transaction()?;
     device.state.save(&tx, &device.lib.id)?;
@@ -452,21 +476,39 @@ pub fn run<F: super::folder::Folder>(
         .retain(|h, _| listed.contains(h));
     let mut heads = device.state.membership.heads.clone();
     heads.insert(device.lib.device, own_head);
-    let ms = &device.state.membership;
-    let membership = membership::compute(&membership::Inputs {
-        genesis,
-        records: &records,
-        first_seen: &ms.first_seen,
-        confirmed: &ms.confirmed,
-        checkpoint: &ms.checkpoint,
-        held: &|_, _| None,
-        accepted: &accepted,
-        now_ms: vouched_now,
-        me: Some(device.lib.device),
-        quarantined: &ms.quarantined,
-        heads: &heads,
-    })
-    .map_err(Error::Membership)?;
+    // SP20 (2): a code enrollment counts once a live enrolled device's file
+    // names a head that includes it, so membership is computed again until the
+    // trusted devices' heads confirm nothing new. Each round confirms at least
+    // one more record, so it ends.
+    let membership = loop {
+        let ms = &device.state.membership;
+        let membership = membership::compute(&membership::Inputs {
+            genesis,
+            records: &records,
+            first_seen: &ms.first_seen,
+            confirmed: &ms.confirmed,
+            checkpoint: &ms.checkpoint,
+            held: &|_, _| None,
+            accepted: &accepted,
+            now_ms: vouched_now,
+            me: Some(device.lib.device),
+            quarantined: &ms.quarantined,
+            heads: &heads,
+        })
+        .map_err(Error::Membership)?;
+        let named = heads
+            .iter()
+            .filter(|(d, _)| membership.trusted(d).is_some())
+            .filter_map(|(_, h)| *h);
+        let new: Vec<Hash32> = code_enrollments_below(&records, named)
+            .into_iter()
+            .filter(|h| !device.state.membership.confirmed.contains(h))
+            .collect();
+        if new.is_empty() {
+            break membership;
+        }
+        device.state.membership.confirmed.extend(new);
+    };
     report.trusted = membership
         .state
         .members
@@ -970,6 +1012,56 @@ mod tests {
             let (report, state) = pass(&mut kit.devices[0], &Budgets::sy2());
             assert!(!report.accepted.contains(&peer), "{report:?}");
             assert!(!state.membership.heads.contains_key(&peer));
+        }
+
+        #[test]
+        fn a_code_enrollment_counts_once_a_trusted_peers_head_includes_it() {
+            // SP20 (2): device 1's file names a head with C's code enrollment.
+            use crate::sync::crypto::{CodeKeys, Keypair};
+            let mut kit = testkit::library(2);
+            let lib = kit.devices[0].lib.id;
+            let genesis = kit.devices[0]
+                .store
+                .library(&lib)
+                .unwrap()
+                .rest
+                .get("genesis")
+                .and_then(|v| v.as_str())
+                .and_then(Hash32::parse)
+                .unwrap();
+            let c = Keypair::from_seed(&[77; 32]);
+            let code = CodeKeys {
+                signing: Keypair::from_seed(&[99; 32]),
+                escrow: [0; 32],
+            };
+            let (bytes, enroll) = crate::sync::recovery::enroll_by_code(
+                &lib,
+                &genesis,
+                &code,
+                &c,
+                "C",
+                crate::sync::clock::Hlc(1_790_000_000_000, 2),
+            );
+            crate::sync::files::write_file(
+                &mut kit.devices[1].folder,
+                &crate::sync::trust::trust_path(&enroll),
+                &bytes,
+            )
+            .unwrap();
+            let (report, _) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(!report.trusted.contains(&c.device()), "waits for a confirm");
+            let peer = &mut kit.devices[1];
+            let writer = peer.store.library(&lib).unwrap().writer_id().unwrap();
+            let fields = crate::sync::device_file::Fields {
+                head: Some(enroll),
+                ..Default::default()
+            };
+            let w = crate::sync::device_file::write(&peer.key, &lib, &writer, 2, &fields).unwrap();
+            crate::sync::files::write_file(&mut peer.folder, &w.path, &w.bytes).unwrap();
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            let (report, state) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(report.trusted.contains(&c.device()), "{report:?}");
+            assert!(state.membership.confirmed.contains(&enroll));
         }
 
         #[test]
