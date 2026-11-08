@@ -494,8 +494,16 @@ pub fn run<F: super::folder::Folder>(
             me: Some(device.lib.device),
             quarantined: &ms.quarantined,
             heads: &heads,
-        })
-        .map_err(Error::Membership)?;
+        });
+        // PS5: the first-seen times read this pass are saved even when storage
+        // is stale (SP21), or a later pass would time those records from later.
+        let membership = match membership {
+            Ok(membership) => membership,
+            Err(e) => {
+                save_state(device)?;
+                return Err(Error::Membership(e));
+            }
+        };
         let named = heads
             .iter()
             .filter(|(d, _)| membership.trusted(d).is_some())
@@ -1062,6 +1070,41 @@ mod tests {
             let (report, state) = pass(&mut kit.devices[0], &Budgets::sy2());
             assert!(report.trusted.contains(&c.device()), "{report:?}");
             assert!(state.membership.confirmed.contains(&enroll));
+        }
+
+        #[test]
+        fn first_seen_times_are_saved_when_storage_is_stale() {
+            // PS5, SP21: the genesis this device accepted is missing for now.
+            let mut kit = testkit::library(3);
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let genesis = kd
+                .store
+                .library(&kd.lib.id)
+                .unwrap()
+                .rest
+                .get("genesis")
+                .and_then(|v| v.as_str())
+                .and_then(Hash32::parse)
+                .unwrap();
+            state.membership.first_seen.clear();
+            save_raw(kd, &state);
+            let path = crate::sync::trust::trust_path(&genesis);
+            let listed = kd.folder.list("trust", None).unwrap().entries;
+            let token = listed.into_iter().find(|e| e.name == path).unwrap().token;
+            kd.folder.remove(&token).unwrap();
+            let state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let mut device = Device {
+                conn: kd.db.conn(),
+                lib: kd.lib,
+                store: &mut kd.store,
+                ks: &kd.ks,
+                state,
+            };
+            assert!(run(&mut device, &kd.folder, READ, &Budgets::sy2(), &|| 0).is_err());
+            let saved = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            assert_eq!(saved.membership.first_seen.len(), 2);
         }
 
         #[test]
