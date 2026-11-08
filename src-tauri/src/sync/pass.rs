@@ -252,10 +252,17 @@ impl Meter<'_> {
     fn check(&self, report: &Report) -> Option<Stopped> {
         if report.names_listed > self.budgets.names {
             Some(Stopped::Names)
-        } else if report.bytes_read > self.budgets.bytes {
-            Some(Stopped::Bytes)
         } else if self.devices > self.budgets.devices {
             Some(Stopped::Devices)
+        } else {
+            self.reading(report.bytes_read)
+        }
+    }
+
+    /// The budgets a read can use up: bytes and time.
+    fn reading(&self, bytes_read: u64) -> Option<Stopped> {
+        if bytes_read > self.budgets.bytes {
+            Some(Stopped::Bytes)
         } else if (self.now)().saturating_sub(self.start) > self.budgets.elapsed_ms {
             Some(Stopped::Time)
         } else {
@@ -426,6 +433,23 @@ pub fn run<F: super::folder::Folder>(
             Err(e) => report.set_aside.push((entry.name.clone(), format!("{e}"))),
         }
     }
+    // PS5, SY2: first-seen times are kept only for records still in trust/, so
+    // records added and removed again can't grow the saved state without bound.
+    // A record that comes back is timed afresh, which only makes it wait longer.
+    let listed: BTreeSet<Hash32> = entries
+        .iter()
+        .filter_map(|e| {
+            e.name
+                .strip_prefix("trust/")
+                .and_then(|n| n.strip_suffix(".json"))
+                .and_then(Hash32::parse)
+        })
+        .collect();
+    device
+        .state
+        .membership
+        .first_seen
+        .retain(|h, _| listed.contains(h));
     let mut heads = device.state.membership.heads.clone();
     heads.insert(device.lib.device, own_head);
     let ms = &device.state.membership;
@@ -465,7 +489,9 @@ pub fn run<F: super::folder::Folder>(
         return Ok(report);
     };
     for peer in report.trusted.clone() {
-        if peer == device.lib.device {
+        // SP30: a quarantined device's head stays frozen, so no later file of
+        // its is accepted.
+        if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
             continue;
         }
         let path = device_file::device_path(&peer);
@@ -509,8 +535,16 @@ pub fn run<F: super::folder::Folder>(
                 None => break,
             }
         };
+        // PS6: each part's read is budgeted before it's made, so a file naming
+        // many parts stops the pass after at most one part past the budget.
         let part_bytes = std::cell::Cell::new(0u64);
+        let halted = std::cell::Cell::new(None);
+        let base = report.bytes_read;
         let fetch = |part: &str| -> Option<Vec<u8>> {
+            if let Some(stop) = meter.reading(base + part_bytes.get()) {
+                halted.set(Some(stop));
+                return None;
+            }
             let listed = parts.iter().find(|e| e.name == part)?;
             match super::files::read_file(folder, listed).ok()? {
                 super::files::Read::Bytes(b) => {
@@ -530,6 +564,10 @@ pub fn run<F: super::folder::Folder>(
             &fetch,
         );
         report.bytes_read += part_bytes.get();
+        if let Some(stop) = halted.get() {
+            report.stopped = Some(stop);
+            break;
+        }
         match accepted {
             Ok(Accepted::New(file, _)) => {
                 device
@@ -849,11 +887,12 @@ mod tests {
             tx.commit().unwrap();
         }
 
-        #[test]
-        fn a_device_file_with_overflow_parts_is_accepted() {
-            // SP16: the parts are in devices/<peer>/, not in devices/ itself.
-            let mut kit = testkit::library(2);
-            let peer = &mut kit.devices[1];
+        /// Gives `peer` a device file at counter 2 whose lists spill into
+        /// overflow parts, one per list named.
+        fn write_with_parts(
+            peer: &mut KitDevice,
+            lists: &[&str],
+        ) -> crate::sync::device_file::Written {
             let lib = peer.store.library(&peer.lib.id).unwrap();
             let writer = lib.writer_id().unwrap();
             let head = lib
@@ -868,7 +907,9 @@ mod tests {
                 head,
                 ..Default::default()
             };
-            fields.lists.insert("frontier".into(), frontier);
+            for list in lists {
+                fields.lists.insert((*list).into(), frontier.clone());
+            }
             let w = crate::sync::device_file::write(&peer.key, &peer.lib.id, &writer, 2, &fields)
                 .unwrap();
             assert!(!w.parts.is_empty());
@@ -876,6 +917,15 @@ mod tests {
                 crate::sync::files::write_file(&mut peer.folder, path, bytes).unwrap();
             }
             crate::sync::files::write_file(&mut peer.folder, &w.path, &w.bytes).unwrap();
+            w
+        }
+
+        #[test]
+        fn a_device_file_with_overflow_parts_is_accepted() {
+            // SP16: the parts are in devices/<peer>/, not in devices/ itself.
+            let mut kit = testkit::library(2);
+            let peer = &mut kit.devices[1];
+            let w = write_with_parts(peer, &["frontier"]);
             let id = peer.lib.device;
             let (report, _) = pass(&mut kit.devices[0], &Budgets::sy2());
             assert_eq!(
@@ -886,6 +936,54 @@ mod tests {
             );
             let parts: u64 = w.parts.iter().map(|(_, b)| b.len() as u64).sum();
             assert!(report.bytes_read > parts, "the parts' bytes are counted");
+        }
+
+        #[test]
+        fn overflow_parts_are_read_within_the_byte_budget() {
+            // PS6: a file naming several parts stops the pass after the first
+            // part past the budget, before the rest are read.
+            let mut kit = testkit::library(2);
+            let w = write_with_parts(&mut kit.devices[1], &["frontier", "repairs"]);
+            assert!(w.parts.len() >= 2);
+            let kd = &kit.devices[0];
+            let mut budgets = Budgets::sy2();
+            budgets.bytes = file_bytes(kd, "trust").iter().sum::<u64>() + w.bytes.len() as u64;
+            let (report, _) = pass(&mut kit.devices[0], &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Bytes));
+            assert!(report.accepted.is_empty());
+            let first = w.parts.iter().map(|(_, b)| b.len() as u64).max().unwrap();
+            assert!(
+                report.bytes_read <= budgets.bytes + first,
+                "one part at most"
+            );
+        }
+
+        #[test]
+        fn a_quarantined_peers_device_file_is_not_accepted() {
+            // SP30: its head stays where it was.
+            let mut kit = testkit::library(2);
+            let peer = kit.devices[1].lib.device;
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            state.membership.quarantined.insert(peer, None);
+            save_raw(kd, &state);
+            let (report, state) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(!report.accepted.contains(&peer), "{report:?}");
+            assert!(!state.membership.heads.contains_key(&peer));
+        }
+
+        #[test]
+        fn first_seen_times_are_kept_only_for_records_in_trust() {
+            // PS5, SY2: records added and removed again don't grow the state.
+            let mut kit = testkit::library(2);
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            let kept = state.membership.first_seen.clone();
+            state.membership.first_seen.insert(Hash32([9; 32]), 5);
+            save_raw(kd, &state);
+            let (_, state) = pass(kd, &Budgets::sy2());
+            assert_eq!(state.membership.first_seen, kept);
         }
 
         #[test]
