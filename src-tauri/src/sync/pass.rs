@@ -389,6 +389,31 @@ pub fn run<F: super::folder::Folder>(
     budgets: &Budgets,
     now: &dyn Fn() -> u64,
 ) -> Result<Report, Error> {
+    let mut report = steps(device, folder, readings, budgets, now)?;
+    // SP37 (4): the peers still ahead, whichever way the steps ended.
+    for &peer in &report.trusted {
+        if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
+            continue;
+        }
+        let target = device
+            .store
+            .library(&device.lib.id)
+            .and_then(|l| l.floors.get(&peer.to_string()))
+            .map_or(0, |f| f.s);
+        if super::apply::seen(device.conn, &device.lib, peer)? < target {
+            report.behind.push(peer);
+        }
+    }
+    Ok(report)
+}
+
+fn steps<F: super::folder::Folder>(
+    device: &mut Device<'_>,
+    folder: &F,
+    readings: Readings,
+    budgets: &Budgets,
+    now: &dyn Fn() -> u64,
+) -> Result<Report, Error> {
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
@@ -734,34 +759,6 @@ fn receive_changes<F: super::folder::Folder>(
     meter: &Meter<'_>,
     report: &mut Report,
 ) -> Result<(), Error> {
-    let done = read_peers(device, folder, membership, now_ms, meter, report);
-    // The peers still ahead, whichever way the reading ended.
-    let mut behind = Vec::new();
-    for peer in report.trusted.clone() {
-        if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
-            continue;
-        }
-        let target = device
-            .store
-            .library(&device.lib.id)
-            .and_then(|l| l.floors.get(&peer.to_string()))
-            .map_or(0, |f| f.s);
-        if super::apply::seen(device.conn, &device.lib, peer)? < target {
-            behind.push(peer);
-        }
-    }
-    report.behind = behind;
-    done
-}
-
-fn read_peers<F: super::folder::Folder>(
-    device: &mut Device<'_>,
-    folder: &F,
-    membership: &super::membership::Membership,
-    now_ms: i64,
-    meter: &Meter<'_>,
-    report: &mut Report,
-) -> Result<(), Error> {
     use super::{apply, chain, device_file};
     let mut blobs: Option<BTreeMap<String, super::folder::Listed<F::Token>>> = None;
     for peer in report.trusted.clone() {
@@ -780,6 +777,11 @@ fn read_peers<F: super::folder::Folder>(
         let Some(key) = membership.key(&peer).filter(|_| have < target) else {
             continue;
         };
+        // SY28: a peer this device has stopped receiving from costs the pass
+        // nothing; it stays in `behind`.
+        if apply::stopped(device.conn, &device.lib, peer)? {
+            continue;
+        }
         let floor = device_file::floor_of(device.store, &device.lib.id, &peer)?;
         let Some(listing) = list_all(folder, &format!("changes/{peer}"), meter, report)? else {
             return Ok(());
@@ -1470,6 +1472,47 @@ mod tests {
             let (report, _) = pass(&mut kit.devices[0], &capped);
             assert_eq!(report.received, vec![(peer, 2)], "{report:?}");
             assert_eq!(report.behind, vec![peer]);
+        }
+
+        #[test]
+        fn behind_is_reported_when_an_earlier_step_runs_out_of_budget() {
+            // The floor is ahead from an earlier pass; this one stops in step (3).
+            let mut kit = testkit::library(2);
+            peer_with_note(&mut kit);
+            let peer = kit.devices[1].lib.device;
+            let kd = &kit.devices[0];
+            let count = |dir| kd.folder.list(dir, None).unwrap().entries.len() as u64;
+            let mut first = Budgets::sy2();
+            first.names = count("libraries") + count("trust") + count("devices");
+            pass(&mut kit.devices[0], &first);
+            let mut second = Budgets::sy2();
+            second.devices = 0;
+            let (report, _) = pass(&mut kit.devices[0], &second);
+            assert_eq!(report.stopped, Some(Stopped::Devices));
+            assert_eq!(report.behind, vec![peer]);
+        }
+
+        #[test]
+        fn a_peer_this_device_stopped_receiving_from_is_not_fetched() {
+            // SY28: the pass spends nothing on it, and it stays behind.
+            let mut kit = testkit::library(2);
+            peer_with_note(&mut kit);
+            let peer = kit.devices[1].lib.device;
+            let kd = &kit.devices[0];
+            crate::sync::apply::stop(kd.db.conn(), &kd.lib, peer, "test", 1).unwrap();
+            let (report, _) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(report.received.is_empty());
+            assert_eq!(report.behind, vec![peer]);
+            let trust: u64 = file_bytes(&kit.devices[0], "trust").iter().sum();
+            let device_file = file_bytes(&kit.devices[0], "devices")
+                .iter()
+                .copied()
+                .max()
+                .unwrap();
+            assert!(
+                report.bytes_read <= trust + device_file,
+                "no change or blob was read"
+            );
         }
 
         #[test]
