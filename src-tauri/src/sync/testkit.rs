@@ -55,6 +55,20 @@ pub(crate) fn library(n: usize) -> Kit {
         };
         let db = Store::open_in_memory().unwrap();
         journal::join(db.conn(), &lib, "icloud-drive", NOW).unwrap();
+        // One book, matched to the same sync ID on every device.
+        db.conn()
+            .execute(
+                "INSERT INTO books (id, content_hash, file_path, title, title_source, added_at)
+                 VALUES ('book', ?1, 'x.epub', 'Moby-Dick', 'package', 0)",
+                [format!("{}0", super::apply::tests::HASH)],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO sync_books (library, sync_id, book_id) VALUES (?1, ?2, 'book')",
+                rusqlite::params![LIB.to_string(), super::apply::tests::SYNC_BOOK],
+            )
+            .unwrap();
         let view = folder.view(&lib.device.to_string());
         devices.push(KitDevice {
             db,
@@ -150,6 +164,50 @@ pub(crate) fn library(n: usize) -> Kit {
         folder,
         devices,
         genesis,
+    }
+}
+
+impl KitDevice {
+    /// SP15: signs what was written locally as this device's next change and
+    /// publishes it as a device would: the bodies it names in `blobs/`, the change
+    /// file, and a device file naming the change. Returns the change's sequence, or
+    /// none when nothing was waiting.
+    pub(crate) fn publish_pending(&mut self) -> Option<u64> {
+        let signed =
+            super::chain::publish(self.db.conn(), &self.lib, &self.ks, &mut self.store).unwrap()?;
+        let me = self.lib.device;
+        let change =
+            super::chain::open_change(&signed.bytes, &LIB, &me, &self.key.public()).unwrap();
+        for version in &change.versions {
+            if let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) {
+                let body = journal::body(self.db.conn(), &hash).unwrap().unwrap();
+                files::write_file(&mut self.folder, &format!("blobs/{hash}"), &body).unwrap();
+            }
+        }
+        files::write_file(&mut self.folder, &signed.path, &signed.bytes).unwrap();
+        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &signed.path).unwrap();
+        let head = self
+            .store
+            .library(&LIB)
+            .unwrap()
+            .rest
+            .get("head")
+            .and_then(|v| v.as_str())
+            .and_then(Hash32::parse);
+        let written = device_file::publish(
+            &self.ks,
+            &mut self.store,
+            &LIB,
+            &Fields {
+                head,
+                own: Some((signed.seq, signed.hash)),
+                ..Fields::default()
+            },
+        )
+        .unwrap();
+        files::write_file(&mut self.folder, &written.path, &written.bytes).unwrap();
+        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.path).unwrap();
+        Some(signed.seq)
     }
 }
 
