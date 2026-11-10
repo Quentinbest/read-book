@@ -317,8 +317,22 @@ fn read_bytes<F: super::folder::Folder>(
     entry: &super::folder::Listed<F::Token>,
     report: &mut Report,
 ) -> Result<Option<Vec<u8>>, Error> {
+    read_bytes_within(folder, entry, None, report)
+}
+
+/// `read_bytes` held to `limit` as well as the slot's, when one is given (SY28).
+fn read_bytes_within<F: super::folder::Folder>(
+    folder: &F,
+    entry: &super::folder::Listed<F::Token>,
+    limit: Option<u64>,
+    report: &mut Report,
+) -> Result<Option<Vec<u8>>, Error> {
     use super::files::Read;
-    let why = match super::files::read_file(folder, entry)? {
+    let read = match limit {
+        Some(limit) => super::files::read_file_within(folder, entry, limit)?,
+        None => super::files::read_file(folder, entry)?,
+    };
+    let why = match read {
         Read::Bytes(bytes) => {
             report.bytes_read += bytes.len() as u64;
             return Ok(Some(bytes));
@@ -691,14 +705,19 @@ pub fn run<F: super::folder::Folder>(
     Ok(report)
 }
 
-/// SY28: whether a version's declared body is past its record type's limit, so
-/// the blob is never fetched.
-fn body_over_limit(version: &serde_json::Value) -> bool {
+/// SY28: a version's record type limit on its body, when its key says which; and
+/// whether the size it declares is past it, so the blob is never fetched.
+fn body_limit(version: &serde_json::Value) -> Option<u64> {
     version["key"]
         .as_str()
         .and_then(super::record::Key::parse)
+        .map(|(key, _)| key.kind().body_limit())
+}
+
+fn body_over_limit(version: &serde_json::Value) -> bool {
+    body_limit(version)
         .zip(version["body"]["size"].as_u64())
-        .is_some_and(|((key, _), size)| size > key.kind().body_limit())
+        .is_some_and(|(limit, size)| size > limit)
 }
 
 /// SP37 (4), SP18, PS6: for each trusted peer whose accepted device file names a
@@ -819,7 +838,9 @@ fn read_peers<F: super::folder::Folder>(
                 else {
                     continue;
                 };
-                if let Some(body) = read_bytes(folder, blob, report)? {
+                // SY28: and no more than the type allows is read, whatever size
+                // the version declared.
+                if let Some(body) = read_bytes_within(folder, blob, body_limit(version), report)? {
                     bodies.push(body);
                 }
                 stop = meter.check(report);
@@ -1449,6 +1470,37 @@ mod tests {
             let (report, _) = pass(&mut kit.devices[0], &capped);
             assert_eq!(report.received, vec![(peer, 2)], "{report:?}");
             assert_eq!(report.behind, vec![peer]);
+        }
+
+        #[test]
+        fn a_blob_bigger_than_its_types_limit_is_set_aside_unread() {
+            // SY28: the version declares a small place; storage holds 9 KB (the
+            // limit is 8 KB), under the generic 4 MB blob limit.
+            let mut kit = testkit::library(2);
+            kit.devices[1]
+                .db
+                .save_position("book", "epubcfi(/6/4!/4/2/1:0)", 0.3, Some("One"))
+                .unwrap();
+            kit.devices[1].publish_pending();
+            let kd = &mut kit.devices[1];
+            let blob = kd
+                .folder
+                .list("blobs", None)
+                .unwrap()
+                .entries
+                .into_iter()
+                .next()
+                .unwrap();
+            crate::sync::files::write_file(&mut kd.folder, &blob.name, &vec![b'x'; 9 << 10])
+                .unwrap();
+            let (report, _) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(
+                report
+                    .set_aside
+                    .iter()
+                    .any(|(path, why)| *path == blob.name && why == "over its limit"),
+                "{report:?}"
+            );
         }
 
         #[test]
