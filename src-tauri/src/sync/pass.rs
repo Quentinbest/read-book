@@ -13,6 +13,10 @@ pub struct Budgets {
     pub devices: u64,
     pub bytes: u64,
     pub elapsed_ms: u64,
+    /// SP15: the most change-file bytes one peer's run holds in memory at once,
+    /// past the lowest floor checkpoint the run has to reach (the peer cache's
+    /// 32 MB per peer, PROVISIONAL).
+    pub run_bytes: u64,
 }
 
 impl Budgets {
@@ -22,6 +26,7 @@ impl Budgets {
             devices: 32,
             bytes: 256 * 1024 * 1024,
             elapsed_ms: 60_000,
+            run_bytes: 32 << 20,
         }
     }
 }
@@ -422,6 +427,23 @@ pub fn run<F: super::folder::Folder>(
     let Some(entries) = list_all(folder, "trust", &meter, &mut report)? else {
         return Ok(report);
     };
+    // PS5, SY2: first-seen times are kept only for records still in trust/, so
+    // records added and removed again can't grow the saved state without bound.
+    // A record that comes back is timed afresh, which only makes it wait longer.
+    let listed: BTreeSet<Hash32> = entries
+        .iter()
+        .filter_map(|e| {
+            e.name
+                .strip_prefix("trust/")
+                .and_then(|n| n.strip_suffix(".json"))
+                .and_then(Hash32::parse)
+        })
+        .collect();
+    device
+        .state
+        .membership
+        .first_seen
+        .retain(|h, _| listed.contains(h));
     let mut records = BTreeMap::new();
     for entry in &entries {
         let Some(hash) = entry
@@ -466,23 +488,6 @@ pub fn run<F: super::folder::Folder>(
             Err(e) => report.set_aside.push((entry.name.clone(), format!("{e}"))),
         }
     }
-    // PS5, SY2: first-seen times are kept only for records still in trust/, so
-    // records added and removed again can't grow the saved state without bound.
-    // A record that comes back is timed afresh, which only makes it wait longer.
-    let listed: BTreeSet<Hash32> = entries
-        .iter()
-        .filter_map(|e| {
-            e.name
-                .strip_prefix("trust/")
-                .and_then(|n| n.strip_suffix(".json"))
-                .and_then(Hash32::parse)
-        })
-        .collect();
-    device
-        .state
-        .membership
-        .first_seen
-        .retain(|h, _| listed.contains(h));
     let mut heads = device.state.membership.heads.clone();
     heads.insert(device.lib.device, own_head);
     // SP20 (2): a code enrollment counts once a live enrolled device's file
@@ -517,9 +522,16 @@ pub fn run<F: super::folder::Folder>(
             .iter()
             .filter(|(d, _)| membership.trusted(d).is_some())
             .filter_map(|(_, h)| *h);
+        // Only a record membership is waiting to have confirmed: a chain that
+        // does not reach the genesis, or an enrollment that is refused, is not
+        // kept (so a peer's head can't grow the saved set).
         let new: Vec<Hash32> = code_enrollments_below(&records, named)
             .into_iter()
             .filter(|h| !device.state.membership.confirmed.contains(h))
+            .filter(|h| {
+                membership.verdict(h)
+                    == Some(membership::Verdict::Waits(membership::Wait::Unconfirmed))
+            })
             .collect();
         if new.is_empty() {
             break membership;
@@ -679,9 +691,15 @@ pub fn run<F: super::folder::Folder>(
     Ok(report)
 }
 
-/// SP15: the most change-file bytes one peer's run holds in memory at once
-/// (prov., the peer cache's 32 MB per peer).
-const MAX_RUN_BYTES: u64 = 32 << 20;
+/// SY28: whether a version's declared body is past its record type's limit, so
+/// the blob is never fetched.
+fn body_over_limit(version: &serde_json::Value) -> bool {
+    version["key"]
+        .as_str()
+        .and_then(super::record::Key::parse)
+        .zip(version["body"]["size"].as_u64())
+        .is_some_and(|((key, _), size)| size > key.kind().body_limit())
+}
 
 /// SP37 (4), SP18, PS6: for each trusted peer whose accepted device file names a
 /// change this device doesn't hold, its change files in order, each with the blobs
@@ -690,6 +708,34 @@ const MAX_RUN_BYTES: u64 = 32 << 20;
 /// peer's views aren't read yet: a chain that starts before the files storage
 /// still holds waits.
 fn receive_changes<F: super::folder::Folder>(
+    device: &mut Device<'_>,
+    folder: &F,
+    membership: &super::membership::Membership,
+    now_ms: i64,
+    meter: &Meter<'_>,
+    report: &mut Report,
+) -> Result<(), Error> {
+    let done = read_peers(device, folder, membership, now_ms, meter, report);
+    // The peers still ahead, whichever way the reading ended.
+    let mut behind = Vec::new();
+    for peer in report.trusted.clone() {
+        if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
+            continue;
+        }
+        let target = device
+            .store
+            .library(&device.lib.id)
+            .and_then(|l| l.floors.get(&peer.to_string()))
+            .map_or(0, |f| f.s);
+        if super::apply::seen(device.conn, &device.lib, peer)? < target {
+            behind.push(peer);
+        }
+    }
+    report.behind = behind;
+    done
+}
+
+fn read_peers<F: super::folder::Folder>(
     device: &mut Device<'_>,
     folder: &F,
     membership: &super::membership::Membership,
@@ -720,9 +766,20 @@ fn receive_changes<F: super::folder::Folder>(
             return Ok(());
         };
         let listing: BTreeMap<_, _> = listing.into_iter().map(|e| (e.name.clone(), e)).collect();
+        // SP18: a run reaches the lowest checkpoint it has not passed, however
+        // long that takes, or `receive_run` would wait on it for ever.
+        let lowest = floor
+            .iter()
+            .map(|(s, _)| *s)
+            .filter(|s| *s > have)
+            .min()
+            .unwrap_or(0);
         let mut files = Vec::new();
         let mut run_bytes = 0u64;
-        for seq in have + 1..=target {
+        // A budget that runs out mid-run still lets what was read be received: a
+        // body not fetched waits for step 5 (SY28), so the pass moves on.
+        let mut halted = false;
+        'run: for seq in have + 1..=target {
             let path = chain::change_path(&peer, seq);
             let Some(entry) = listing.get(&path) else {
                 break;
@@ -730,10 +787,6 @@ fn receive_changes<F: super::folder::Folder>(
             let Some(bytes) = read_bytes(folder, entry, report)? else {
                 break;
             };
-            if let Some(stop) = meter.check(report) {
-                report.stopped = Some(stop);
-                return Ok(());
-            }
             run_bytes += bytes.len() as u64;
             let change = match chain::open_change(&bytes, &device.lib.id, &peer, &key) {
                 Ok(change) => change,
@@ -743,13 +796,22 @@ fn receive_changes<F: super::folder::Folder>(
                 }
             };
             let mut bodies = Vec::new();
+            let mut stop = meter.check(report);
             for version in &change.versions {
+                if stop.is_some() {
+                    break;
+                }
                 let Some(hash) = version["body"]["hash"].as_str() else {
                     continue;
                 };
+                // SY28: a body past its record type's limit is never fetched.
+                if body_over_limit(version) {
+                    continue;
+                }
                 if blobs.is_none() {
                     let Some(listed) = list_all(folder, "blobs", meter, report)? else {
-                        return Ok(());
+                        halted = true;
+                        break;
                     };
                     blobs = Some(listed.into_iter().map(|e| (e.name.clone(), e)).collect());
                 }
@@ -760,13 +822,15 @@ fn receive_changes<F: super::folder::Folder>(
                 if let Some(body) = read_bytes(folder, blob, report)? {
                     bodies.push(body);
                 }
-                if let Some(stop) = meter.check(report) {
-                    report.stopped = Some(stop);
-                    return Ok(());
-                }
+                stop = meter.check(report);
             }
             files.push((bytes, bodies));
-            if run_bytes > MAX_RUN_BYTES {
+            if halted || stop.is_some() {
+                halted = true;
+                report.stopped = report.stopped.or(stop);
+                break 'run;
+            }
+            if run_bytes > meter.budgets.run_bytes && seq >= lowest {
                 break;
             }
         }
@@ -783,8 +847,8 @@ fn receive_changes<F: super::folder::Folder>(
             report.received.push((peer, now_held));
             device_file::prune_floors(device.ks, device.store, &device.lib.id, &peer, now_held)?;
         }
-        if now_held < target {
-            report.behind.push(peer);
+        if halted {
+            return Ok(());
         }
     }
     Ok(())
@@ -1326,6 +1390,138 @@ mod tests {
             assert_eq!(report.stopped, Some(Stopped::Names));
             assert!(report.received.is_empty());
             assert_eq!(note_of(&kit.devices[0].db, "book"), None);
+            // The peer is still behind, however the pass ended.
+            assert_eq!(report.behind, vec![kit.devices[1].lib.device]);
+        }
+
+        fn peer_with_note(kit: &mut testkit::Kit) {
+            kit.devices[1]
+                .db
+                .save_annotation(&highlight("book", Some("Call me"), 1_760_000_001_000))
+                .unwrap();
+            kit.devices[1].publish_pending();
+        }
+
+        #[test]
+        fn a_budget_that_runs_out_on_a_blob_still_receives_the_change() {
+            // PS6, SY28: the change is received, and what was read with it; a
+            // body not fetched waits for step 5. The next pass has less to do.
+            let mut kit = testkit::library(2);
+            peer_with_note(&mut kit);
+            let peer = kit.devices[1].lib.device;
+            let kd = &kit.devices[0];
+            let mut budgets = Budgets::sy2();
+            budgets.bytes = file_bytes(kd, "trust").iter().sum::<u64>()
+                + file_bytes(kd, &format!("changes/{peer}"))
+                    .iter()
+                    .sum::<u64>()
+                + file_bytes(kd, "devices")[..].iter().min().copied().unwrap();
+            let (report, _) = pass(&mut kit.devices[0], &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Bytes), "{report:?}");
+            assert_eq!(report.received, vec![(peer, 1)]);
+            assert!(report.behind.is_empty());
+        }
+
+        #[test]
+        fn a_run_reaches_the_floors_checkpoint_past_the_run_cap() {
+            // SP18: with a checkpoint at 2 and the floor at 3, a run capped at one
+            // change would never reach it and would wait for ever.
+            let mut kit = testkit::library(2);
+            let peer = kit.devices[1].lib.device;
+            peer_with_note(&mut kit);
+            let id = kit.devices[1].db.annotations("book").unwrap()[0].id.clone();
+            kit.devices[1].db.delete_annotation(&id).unwrap();
+            kit.devices[1].publish_pending();
+            // The first pass accepts the device file (own = 2) but reads no change.
+            let kd = &kit.devices[0];
+            let count = |dir| kd.folder.list(dir, None).unwrap().entries.len() as u64;
+            let mut stop = Budgets::sy2();
+            stop.names = count("libraries") + count("trust") + count("devices");
+            let (report, _) = pass(&mut kit.devices[0], &stop);
+            assert_eq!(report.stopped, Some(Stopped::Names));
+            kit.devices[1]
+                .db
+                .save_annotation(&highlight("book", Some("again"), 1_760_000_009_000))
+                .unwrap();
+            assert_eq!(kit.devices[1].publish_pending(), Some(3));
+            let mut capped = Budgets::sy2();
+            capped.run_bytes = 1;
+            let (report, _) = pass(&mut kit.devices[0], &capped);
+            assert_eq!(report.received, vec![(peer, 2)], "{report:?}");
+            assert_eq!(report.behind, vec![peer]);
+        }
+
+        #[test]
+        fn a_body_past_its_types_limit_is_not_fetched() {
+            use serde_json::json;
+            let over = |key: &str, size: u64| {
+                body_over_limit(
+                    &json!({ "key": key, "body": { "hash": "ab".repeat(32), "size": size } }),
+                )
+            };
+            assert!(over("setting:fontPx", 64 * 1024 + 1));
+            assert!(!over("setting:fontPx", 64 * 1024));
+            assert!(!over("note:1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d", 4 << 20));
+            assert!(over(
+                "note:1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d",
+                (4 << 20) + 1
+            ));
+            assert!(!body_over_limit(&json!({ "key": "setting:fontPx" })));
+        }
+
+        #[test]
+        fn first_seen_times_are_pruned_even_when_a_budget_stops_the_pass() {
+            // PS5, SY2: the listing is whole before any record is read.
+            let mut kit = testkit::library(3);
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            let kd = &mut kit.devices[0];
+            let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            state.membership.first_seen.insert(Hash32([9; 32]), 5);
+            save_raw(kd, &state);
+            let mut budgets = Budgets::sy2();
+            budgets.bytes = 1;
+            let (report, state) = pass(kd, &budgets);
+            assert_eq!(report.stopped, Some(Stopped::Bytes));
+            assert!(!state.membership.first_seen.contains_key(&Hash32([9; 32])));
+            let saved = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+            assert!(!saved.membership.first_seen.contains_key(&Hash32([9; 32])));
+        }
+
+        #[test]
+        fn a_head_naming_a_disconnected_enrollment_confirms_nothing() {
+            // SP20 (2): only an enrollment membership is waiting on is confirmed.
+            use crate::sync::crypto::{CodeKeys, Keypair};
+            let mut kit = testkit::library(2);
+            let lib = kit.devices[0].lib.id;
+            let code = CodeKeys {
+                signing: Keypair::from_seed(&[99; 32]),
+                escrow: [0; 32],
+            };
+            let (bytes, bogus) = crate::sync::recovery::enroll_by_code(
+                &lib,
+                &Hash32([5; 32]),
+                &code,
+                &Keypair::from_seed(&[77; 32]),
+                "C",
+                crate::sync::clock::Hlc(1_790_000_000_000, 2),
+            );
+            crate::sync::files::write_file(
+                &mut kit.devices[1].folder,
+                &crate::sync::trust::trust_path(&bogus),
+                &bytes,
+            )
+            .unwrap();
+            let peer = &mut kit.devices[1];
+            let writer = peer.store.library(&lib).unwrap().writer_id().unwrap();
+            let fields = crate::sync::device_file::Fields {
+                head: Some(bogus),
+                ..Default::default()
+            };
+            let w = crate::sync::device_file::write(&peer.key, &lib, &writer, 2, &fields).unwrap();
+            crate::sync::files::write_file(&mut peer.folder, &w.path, &w.bytes).unwrap();
+            pass(&mut kit.devices[0], &Budgets::sy2());
+            let (_, state) = pass(&mut kit.devices[0], &Budgets::sy2());
+            assert!(state.membership.confirmed.is_empty());
         }
 
         #[test]
