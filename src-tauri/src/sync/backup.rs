@@ -96,7 +96,11 @@ pub fn take(
     std::fs::create_dir_all(&path)?;
     // The online backup API copies the database as one consistent snapshot, rows
     // still in the WAL included.
-    conn.backup(rusqlite::MAIN_DB, path.join("linen.db"), None)?;
+    conn.backup(
+        rusqlite::MAIN_DB,
+        path.join("linen.db"),
+        rusqlite::backup::NO_PROGRESS,
+    )?;
     // Marked as a backup: restored, the library starts paused and applies nothing.
     {
         let copy = Connection::open(path.join("linen.db"))?;
