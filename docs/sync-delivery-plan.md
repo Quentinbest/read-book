@@ -1,6 +1,6 @@
 # Sync, the road to a release — revised plan
 
-Status: drafted 2026-11-12 from the progress review of 2026-11-11, for the owner's approval. Nothing here is decided: its five open questions are pending items 121–125, and nothing that depends on one is built until the owner answers it.
+Status: drafted 2026-11-12 from the progress review of 2026-11-11. The owner approved items 121–125 the same day, each as recommended (`docs/decisions.md`), so SD2–SD10 stand as written. A stage is still built only when the owner labels or names it, and each run in a real storage folder still waits for the owner's agreement (SD3).
 
 This plan changes the **order** in which sync is built and the **gates** on the way. It adds no protocol rule and removes no check:
 
@@ -108,19 +108,24 @@ C24 is already Covered by unit tests (`docs/sync-status.md`); it stays in P4a be
 3. **Deferred findings pile up under SD8.** Each is an issue, and Stage 6's full review reads them all before sync has a release caller.
 4. **No second Mac.** Then B6 stops at one Mac with two libraries, and item 121 (a) cannot finish Stage 6 until one is found. The slice is still worth its cost: it runs the pass over real storage.
 
-## 6. What changes elsewhere if this is approved
+## 6. What changes elsewhere
 
-- `docs/sync-plan.md`: the status line; §6's opening sentence on order; Stage 6's first bullet, if item 121 is answered (a).
-- `docs/sync-pass-plan.md` §3 and §4: P3 as P3a and P3b, P4 as P4a and P4b, pointing here.
-- `AGENTS.md` › Done means, 3: SD8's limit, if item 124 is answered (a).
+Done with the approval (2026-11-12):
+
+- `docs/sync-plan.md`: “When it is built”, §6's opening on order, and Stage 6's first bullet.
+- `docs/sync-pass-plan.md` §3: a note that P3 and P4 are built as P3a, P3b, P4a and P4b in this plan's order.
+- `AGENTS.md` › Done means, 3: SD8's limit.
 - `docs/decisions.md`: the answers to items 121–125.
+
+After this plan merges:
+
 - Issues: #198 (P3) and #199 (P4) each split in two; new unlabelled issues for B4, B5 and B6; #197 reopened, or new issues for B1 and B2.
 
 ## 7. Open questions
 
-Pending items 121–125 in `docs/pending-approvals.md`:
+None. Items 121–125 in `docs/pending-approvals.md` were approved on 2026-11-12, each as recommended:
 
-| Item | Question | Recommendation |
+| Item | Question | Approved |
 |---|---|---|
 | 121 | Does a second Mac count as Stage 6's second device? (SD7) | Yes: two Macs |
 | 122 | A slice over a real folder before the rest of Stage 1, with `Disk` called directly in the test build? (SD2, SD4) | Yes |

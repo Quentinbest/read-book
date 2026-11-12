@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: items 121–125 (the revised sync plan, `docs/sync-delivery-plan.md`), at the end of this file. Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) and 117 (Reading Lens) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: none. Items 121–125 (the revised sync plan, `docs/sync-delivery-plan.md`) were approved on 2026-11-12, each as (a). Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) and 117 (Reading Lens) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -426,30 +426,35 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
 
 ## Sync, the road to a release (2026-11-12, `docs/sync-delivery-plan.md`)
 
-From the progress review of 2026-11-11. Nothing that depends on one of these is built until it is answered.
+From the progress review of 2026-11-11. **Approved 2026-11-12, each as (a)** (“121-125 all ok”; record in `docs/decisions.md`); kept here for their details.
 
 121. **What Stage 6's second device is (SD7).** Decision 10-14 says sync ships after "a second platform", and Stage 6 reads a week on "a Mac and the second platform". Windows, Linux and iPad (#54, #80) are deferred, so Stage 6 cannot be reached.
     - **(a)** Two Macs. Stage 6's week and its moved Stage 0 measurements run on two Macs signed in to the same iCloud and Google accounts, and sync ships for the Mac. Another platform brings its own checks with #54 or #80. Stage 6's repeats on macOS 13, 15 and 26 stay, and two Macs may not give all three.
     - **(b)** Keep the decision. Stage 1 is finished and sync is parked until a second platform is built.
     - **(c)** Keep the decision, and still build Stages 2 to 5 in the test build.
     *Recommendation:* (a). Reading on two Macs is a real use of sync, and it is the only choice under which the work so far reaches a reader. It needs a second Mac for Stage 6; none is needed before then.
+    **Approved 2026-11-12: (a).**
 
 122. **A slice over a real folder before the rest of Stage 1 (SD2–SD4).** Every sync test runs over the in-memory folder; real iCloud Drive and Google Drive are first met in Stage 2, after all of Stage 1.
     - **(a)** After P2b and step (6), build `folder::Disk` and a test-build-only slice (a place and a highlight between two test libraries, set up by test commands, `Disk` called directly by the core), run it in a `Linen-spike` folder in each storage, report, and stop for the owner's review. Compaction, books and P4 follow.
     - **(b)** Keep the order: all of P3 and P4, then Stage 2.
     *Recommendation:* (a). The direct call skips the provider Worker (SY1, SY3) in the test build only, until Stage 2 puts the Worker over the same `Disk`. The slice never touches the reader's own library or `Linen` folder (SD3), and nothing is written to either storage before you agree to the run.
+    **Approved 2026-11-12: (a).**
 
 123. **P4 in two parts (SD5).** P4 closes 23 checks in two PRs before anything else is built.
     - **(a)** P4a, after the slice: the soak test and the checks of devices that behave (C4–C8, C13, C14, C19, C20, C24, C28, C29, C31). P4b: the checks of trust under attack (C9, C12, C15–C18, C21–C23, C25), which may be built beside Stages 2 and 3. All 31 are Covered before Stage 6 and before any run on a reader's own library.
     - **(b)** As `docs/sync-pass-plan.md` has it: all of P4 before Stage 2.
     *Recommendation:* (a). No check is dropped; the ones that guard against a hostile device or storage stop holding up the first real run, which uses test libraries only.
+    **Approved 2026-11-12: (a).**
 
 124. **Review rounds for code no release build calls (SD8; amends AGENTS.md › Done means, 3).** A sync PR now goes round the automated review until it finds nothing: #205 took four review rounds in an hour and #204 two days, for code with no caller.
     - **(a)** Two automated rounds a PR. A P0 or P1 finding is always fixed; after the second round the others are answered Deferred with an issue. The limit ends with the first PR that gives sync a caller in a release build, and Stage 6 starts with one full review of `sync/` that reads the deferred issues.
     - **(b)** As today.
     *Recommendation:* (a).
+    **Approved 2026-11-12: (a).**
 
 125. **Releases while sync is built (SD10).** The last release is v0.5.1 (2026-10-13).
     - **(a)** A release at least every two weeks while `main` holds a reader-facing change or a security fix, and one small reader-facing issue labelled beside each sync stage (#87, #83 and #57 are candidates).
     - **(b)** Releases as the owner calls them, as today.
     *Recommendation:* (a).
+    **Approved 2026-11-12: (a).**

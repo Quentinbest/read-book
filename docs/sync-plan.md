@@ -4,7 +4,7 @@ Status: approved by the owner 2026-10-17 (#84; `docs/decisions.md`), drafted 202
 
 Sync lets one reader keep their place, highlights and notes, settings, library list and books the same on every device they use, through storage they already have: their iCloud Drive or Google Drive folder. It comes as provider extensions in a new sync slot of the Host API, the two providers listed as Built-in. This file is the rule register that code and tests for this work cite (`// SY14: …`). It doesn't change `docs/implementation-plan.md`, which stays read-only.
 
-**When it is built.** The owner decided on 2026-10-14 that sync waits for a second platform (#54, #80), and on 2026-10-17 that this applies to shipping it: Stage 1 is built now (#92), and sync stays out of release builds until Stage 6. After this plan merges, each stage in §6 gets its own sub-issue of #73, unlabelled; a stage is built when the owner labels it.
+**When it is built.** Since 2026-11-12 (item 121 (a), `docs/sync-delivery-plan.md`) the second device Stage 6 needs is a second Mac, and the order of the remaining stages is that plan's. Before that: the owner decided on 2026-10-14 that sync waits for a second platform (#54, #80), and on 2026-10-17 that this applies to shipping it: Stage 1 is built now (#92), and sync stays out of release builds until Stage 6. After this plan merges, each stage in §6 gets its own sub-issue of #73, unlabelled; a stage is built when the owner labels it.
 
 ## 1. Sources and scope
 
@@ -191,7 +191,7 @@ The engine holds every decision. The Worker sees names and handles only (SY3). T
 
 ## 6. Stages
 
-Each stage is one PR (two where noted, to stay under about 1,000 lines) with its own Done-when list. Sync stays out of release builds (Settings › Sync and the two built-ins appear only in the test build) until Stage 6 is done.
+Each stage is one PR (two where noted, to stay under about 1,000 lines) with its own Done-when list. The order of what remains, and a slice over a real folder before the rest of Stage 1, are in `docs/sync-delivery-plan.md` (approved 2026-11-12). Sync stays out of release builds (Settings › Sync and the two built-ins appear only in the test build) until Stage 6 is done.
 
 ### Stage 0 — The two folders on this Mac (spike, S)
 
@@ -308,7 +308,7 @@ Each stage is one PR (two where noted, to stay under about 1,000 lines) with its
 
 ### Stage 6 — Real devices and release (M)
 
-- Two real devices (a Mac and the second platform, per Decision 10-14) stay in step over a week of real reading through iCloud Drive and three days through Google Drive. The record goes in the status document; it confirms the soak test in real use and doesn't replace it.
+- Two real devices (two Macs on the same accounts: item 121 (a), 2026-11-12, replacing “a Mac and the second platform” of Decision 10-14) stay in step over a week of real reading through iCloud Drive and three days through Google Drive. The record goes in the status document; it confirms the soak test in real use and doesn't replace it.
 - `docs/release-acceptance.md` gains the sync checks; the README's Privacy section says what sync copies and where (SY33); sync appears in release builds.
 - **Moved here from Stage 0** (owner, 2026-10-17), measured on the real devices and recorded in `docs/spikes/sync-folders.md`:
   - macOS 13, 15 and 26: every measurement in `docs/spikes/sync-folders.md` repeated on each (roots and leftovers, the prompt, not-downloaded files and the download request, offline, the Drive app quit, renames and upload time, names and links, 2,000 small files, the Keychain), since File Provider behaviour changes between releases (§8, risk 2).
