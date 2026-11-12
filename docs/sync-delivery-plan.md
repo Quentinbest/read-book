@@ -5,18 +5,18 @@ Status: drafted 2026-11-12 from the progress review of 2026-11-11, for the owner
 This plan changes the **order** in which sync is built and the **gates** on the way. It adds no protocol rule and removes no check:
 
 - `docs/sync-plan.md` (SY) and `docs/sync-protocol.md` (SP) stay as they are, apart from the lines section 6 lists.
-- `docs/sync-pass-plan.md` (PS) stays, with its P3 and P4 each split in two and re-ordered (section 3).
+- `docs/sync-pass-plan.md` (PS) stays, with P3 split in two, P4's two PRs named P4a and P4b, and the order changed (section 3).
 - The IDs below (SD1…) name how the remaining work is ordered and gated. Code and tests cite them beside the others (`// SY2, SD4: …`).
 
 ## 1. What the review found (read 2026-11-11)
 
 - **Nothing has reached a reader since v0.5.1 (2026-10-13).** Four batches of security fixes are merged and unreleased (#153).
 - **Sync is in Stage 1 of 6.** `src-tauri/src/sync/` is 45,210 lines in 42 files with 637 tests; the rest of the Rust core is 12,128 lines. Nothing in the app calls it (PS8).
-- **Stage 1's checks:** 3 of 31 Covered on 2026-10-27 (`docs/sync-status.md`); #179, #184 and #188 have covered C3, C27 and most of C2 since.
+- **Stage 1's checks:** 3 of 31 Covered on 2026-10-27 (C1, C10, C24; `docs/sync-status.md`). Since then, as `docs/sync-pass-plan.md` §1 records: #179 covered C3 and C27, #179 and #188 covered C2 except its book case, and #184 covered C11's decision half.
 - **Stages keep dividing.** Stage 1 was sized as three PRs and is past 55. P2 was one PR and is six.
 - **Sync cannot ship as planned.** Stage 6 needs "a Mac and the second platform" (Decision 10-14), and both platform issues (#54, #80) are deferred.
 - **The sync code has never met a real folder.** Every test runs over `folder::Memory` (PS2). Real iCloud Drive and Google Drive behaviour is first met in Stage 2, after all of Stage 1.
-- **The owner's queue is long:** #153 (17 days), #201 (the Audit workflow, red on `main` since 2026-11-03), #154's list, #171, and the hands-on checks #50, #51, #56 and #57.
+- **The owner's queue is long:** #153 (open since 2026-10-25), the Audit workflow (red on `main` since 2026-11-03, now for two advisories: #201's and RUSTSEC-2026-0459), #154's list, #171, and the hands-on checks #50, #51, #56 and #57.
 
 ## 2. Rules
 
@@ -28,7 +28,7 @@ This plan changes the **order** in which sync is built and the **gates** on the 
 | SD4 | **The disk folder is built once.** `sync::folder::Disk` implements PS1's `Folder` over a directory with SY2's confinement, and is the bottom layer Stage 2's brokered folder uses unchanged. In the slice the core calls it directly, in the test build only; the provider Worker and Host API 1.3 (SY1, SY3) come in Stage 2. A release build has no caller (PS8 stays). |
 | SD5 | **No check is dropped; P4 is split (item 123).** P4a holds the soak test and the checks of devices that behave. P4b holds the checks of trust under attack. All 31 are Covered before Stage 6 and before any run on a reader's own library. Section 4 lists them. |
 | SD6 | **A review point after the slice.** The slice ends with a report and stops. The owner then chooses: go on as planned, change the plan from what the report found, or park sync. No later stage is labelled before that. |
-| SD7 | **What "two devices" means for the release (item 121).** As recommended: two Macs. Stage 6's week of real reading and its moved Stage 0 measurements run on two Macs signed in to the same accounts; another platform brings its own checks with #54 or #80. |
+| SD7 | **What "two devices" means for the release (item 121).** As recommended: two Macs. Stage 6's week of real reading and its moved Stage 0 measurements run on two Macs signed in to the same accounts; another platform brings its own checks with #54 or #80. Stage 6's repeats on macOS 13, 15 and 26 stay as `docs/sync-plan.md` lists them, and two Macs may not give all three. |
 | SD8 | **Review rounds for code no release build calls (item 124).** As recommended: two automated rounds a PR. A P0 or P1 finding is always fixed. After the second round, other findings are answered **Deferred** with an issue. The limit ends with the first PR that gives sync a caller in a release build, and Stage 6 starts with one full review of `sync/`. |
 | SD9 | **A stage says when it grows.** A stage that needs more PRs than its plan names gets a line in the plan saying why, in a PR of its own or the next stage PR, before the extra PR opens. |
 | SD10 | **Readers keep getting releases (item 125).** As recommended: a release at least every two weeks while `main` holds a reader-facing change or a security fix, and one small reader-facing issue labelled beside each sync stage. |
@@ -43,28 +43,30 @@ The owner's, except where it says agent.
 
 | # | What | Notes |
 |---|---|---|
-| A1 | Merge #205 (P2b-1) | CI's three jobs pass; Codex found nothing on `9a8048e`; only Audit is red (A2). |
-| A2 | Decide #201 (RUSTSEC-2026-0429, `zip` 4.6.1 through `tauri-plugin-updater`) | The issue's options stand. Agent, once chosen: check first whether a plugin release with `zip` ≥ 9 exists and whether the ZIP path is reached on macOS; the issue marks both "to confirm". |
-| A3 | #171 (rusqlite 0.41, build fails since 2026-10-28), #209 (build and audit fail), #210 (audit only) | Agent, if labelled: find each build failure; fix it or close the PR with the reason. |
+| A1 | Merge #205 (P2b-1) | CI's three jobs pass; Codex found nothing on `9a8048e`; only Audit is red (A2 and A3). |
+| A2 | Decide #201 (RUSTSEC-2026-0429, `zip` 4.6.1 through `tauri-plugin-updater`) | Checked 2026-11-12: `tauri-plugin-updater` 2.14.1 (2026-10-28) depends on `zip` ^9, and `Cargo.toml` already allows it, so option (a) is a lockfile update. In 2.13.3 the ZIP code is Windows-only (`cfg(windows)`, a Windows-only dependency), so macOS never compiles it. Recommended: (a), with the release checks, since 2.14.0 changed `Update::install`; `.cargo/audit.toml`'s three older `zip` ignores then go too. |
+| A3 | #171 (rusqlite 0.41, build fails since 2026-10-28), #209 (build and audit fail), #210 (audit only) | Read 2026-11-12, nothing built. **#171:** one compile error, `src/sync/backup.rs:99` (`backup`'s progress argument needs a type in 0.41). It is also the fix for RUSTSEC-2026-0459 (`libsqlite3-sys` 0.38.2), the second advisory that keeps Audit red; its branch is from 2026-10-28 and needs a rebase. **#209:** `zip` 9.4.2 fails `epub::tests::a_cp437_name_is_found_by_its_decoded_form`; why, and whether `DecodedNames` is still needed, is not yet looked into. **#210:** nothing of its own; it fails only on the two Rust advisories. |
 | A4 | Decide #153, and if yes cut v0.5.2 | AGENTS.md › Releases; the candidate is tried as `docs/release-acceptance.md` says. |
 | A5 | Tick off and close #154 | Most of its list is done; what isn't has its own issue. |
 | A6 | The hands-on checks #50, #51, #56, #57 | Open since 2026-10-14. Do them, or close each with the reason. |
 | A7 | Housekeeping (agent, if the owner agrees) | `docs/PROGRESS.md` and `docs/sync-status.md` brought up to date; local `main` fast-forwarded; the 31 worktrees of merged branches removed after each is checked for uncommitted work. |
 
-**Done when:** every workflow on `main` is green, v0.5.2 is published or declined, and #154 is closed.
+**Done when:** every workflow on `main` is green (Audit needs both A2 and #171), v0.5.2 is published or declined, and #154 is closed.
 
 ### Part B — To the slice (SD2–SD5)
 
 | Stage | What it builds | Done when |
 |---|---|---|
-| B1 = P2b-2 | Steps (9)–(10): publishing and the device file. | As #197 and `docs/sync-pass-plan.md` say. |
-| B2 = P2b-3 | Step (5)'s later fetches and repair, views in step (4), step (3)'s unknown identities and tails. Closes #197. | Two devices on one `Memory` exchange a note and a deletion through `pass::run`; a device behind resumes from a view; each budget stops the pass; a restart keeps a deletion's age and a witness timeout. |
+| B1 = P2b-2 | Steps (9)–(10): publishing and the device file. | As `docs/sync-pass-plan.md` P2 says. |
+| B2 = P2b-3 | Step (5)'s later fetches and repair, views in step (4), step (3)'s unknown identities and tails. | Two devices on one `Memory` exchange a note and a deletion through `pass::run`; a device behind resumes from a view; each budget stops the pass; a restart keeps a deletion's age and a witness timeout. |
 | B3 = P3a | Step (6): the small-things transaction, with SY26's guard and SY27's backups under the lock. | A pass that asks the reader stops and resumes after the answer; a backup is taken before a remote deletion applies; a kill between any two built steps loses nothing committed (C30's second half). |
 | B4 | `folder::Disk` (SD4): PS1 over a directory. Temporary name and rename; storage-made names only as tokens; SY2's confinement. | Stage 2's confinement checks that need no Worker pass over a temporary directory: `..`, absolute paths, symbolic links in and out, hidden and over-long names, objects over the limits. PS3's SP7 tests pass over `Disk` as they do over `Memory`. |
 | B5 | The slice, test build only. Test commands set up a library on a folder, enrol a second by code (no screens), and run one pass. | In-app checks `SY-place-resume` and `SY-highlight-roundtrip` (Stage 3's, by the same names) pass with two library folders on one temporary folder. With no setup, no file under either root is opened (`SY-nothing-without-setup`). |
 | B6 | The real-folder run and its report (no product code). With the owner's agreement (SD3): the two test libraries on one Mac through `Linen-spike` in iCloud Drive, then Google Drive; on two Macs if a second is at hand. | `docs/spikes/sync-slice.md` records, for each storage: whether both checks pass, how long a change takes to arrive, and everything the folder did that `Memory` has no switch for. Each such thing is a new PS2 switch with a test, or an issue. |
 
 Books (steps (7)–(8)) and compaction and cleanup (step (11)) are not in the slice: the slice syncs no book file, and it runs for days, not weeks.
+
+#197 (P2) was closed on 2026-11-08, before P2b was built; B1 and B2 need it reopened or issues of their own (section 6).
 
 **Then stop (SD6).** The summary names what the report found and recommends one of: go on, change, park.
 
@@ -88,16 +90,16 @@ The numbers are `docs/sync-status.md`'s. Each check's text stays as `docs/sync-p
 
 | Checks | Where they're closed |
 |---|---|
-| C1, C3, C10, C27 | Covered (C27 again end to end in B2) |
+| C1, C3, C10, C27 | Covered: C1 and C10 in `docs/sync-status.md`, C3 and C27 by #179 since (C27 again end to end in B2) |
 | C2 | Covered except its book case: #187, Stage 4 |
 | C11 | P1 over `Memory`; real conflict-copy names in B6 and Stage 6 (#174) |
 | C30 | B3 (a kill during a pass) and the migrations test |
 | C29 | C2 = P4a, the soak test |
 | C4, C5, C6, C7, C8, C13, C14, C19, C20, C24, C28, C31 | C2 = P4a: devices that behave (clocks, backups, compaction, blobs, restore, repair, joining) |
 | C9, C12, C15, C16, C17, C18, C21, C22, C23, C25 | C5 = P4b: trust under attack (untrusted writers, rollbacks, removals, recovery, forged sequences and ancestry, copied devices) |
-| C26 | Stage 4 (books apply only from Stage 4) |
+| C26 | Stage 4, as `docs/sync-pass-plan.md` §4 has it (books apply only from Stage 4); its in-app check is Stage 5's |
 
-Where one check has both kinds of part (C19's forged ages, C15's guards), the part goes with its kind and the check is Covered when both are.
+C24 is already Covered by unit tests (`docs/sync-status.md`); it stays in P4a because `docs/sync-pass-plan.md` §4 asks for it again as a whole-pass test. Where one check has both kinds of part (C19's forged ages, C15's guards), the part goes with its kind and the check is Covered when both are.
 
 ## 5. Risks
 
@@ -112,7 +114,7 @@ Where one check has both kinds of part (C19's forged ages, C15's guards), the pa
 - `docs/sync-pass-plan.md` §3 and §4: P3 as P3a and P3b, P4 as P4a and P4b, pointing here.
 - `AGENTS.md` › Done means, 3: SD8's limit, if item 124 is answered (a).
 - `docs/decisions.md`: the answers to items 121–125.
-- Issues: #198 (P3) and #199 (P4) each split in two; new unlabelled issues for B4, B5 and B6.
+- Issues: #198 (P3) and #199 (P4) each split in two; new unlabelled issues for B4, B5 and B6; #197 reopened, or new issues for B1 and B2.
 
 ## 7. Open questions
 

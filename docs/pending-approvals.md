@@ -429,7 +429,7 @@ The protocol is `docs/sync-protocol.md` (SP1–SP37), the first part of Stage 1,
 From the progress review of 2026-11-11. Nothing that depends on one of these is built until it is answered.
 
 121. **What Stage 6's second device is (SD7).** Decision 10-14 says sync ships after "a second platform", and Stage 6 reads a week on "a Mac and the second platform". Windows, Linux and iPad (#54, #80) are deferred, so Stage 6 cannot be reached.
-    - **(a)** Two Macs. Stage 6's week and its moved Stage 0 measurements run on two Macs signed in to the same iCloud and Google accounts, and sync ships for the Mac. Another platform brings its own checks with #54 or #80.
+    - **(a)** Two Macs. Stage 6's week and its moved Stage 0 measurements run on two Macs signed in to the same iCloud and Google accounts, and sync ships for the Mac. Another platform brings its own checks with #54 or #80. Stage 6's repeats on macOS 13, 15 and 26 stay, and two Macs may not give all three.
     - **(b)** Keep the decision. Stage 1 is finished and sync is parked until a second platform is built.
     - **(c)** Keep the decision, and still build Stages 2 to 5 in the test build.
     *Recommendation:* (a). Reading on two Macs is a real use of sync, and it is the only choice under which the work so far reaches a reader. It needs a second Mac for Stage 6; none is needed before then.
@@ -444,7 +444,7 @@ From the progress review of 2026-11-11. Nothing that depends on one of these is 
     - **(b)** As `docs/sync-pass-plan.md` has it: all of P4 before Stage 2.
     *Recommendation:* (a). No check is dropped; the ones that guard against a hostile device or storage stop holding up the first real run, which uses test libraries only.
 
-124. **Review rounds for code no release build calls (SD8; amends AGENTS.md › Done means, 3).** A sync PR now goes round the automated review until it finds nothing: #205 took three rounds in an hour and #204 two days, for code with no caller.
+124. **Review rounds for code no release build calls (SD8; amends AGENTS.md › Done means, 3).** A sync PR now goes round the automated review until it finds nothing: #205 took four review rounds in an hour and #204 two days, for code with no caller.
     - **(a)** Two automated rounds a PR. A P0 or P1 finding is always fixed; after the second round the others are answered Deferred with an issue. The limit ends with the first PR that gives sync a caller in a release build, and Stage 6 starts with one full review of `sync/` that reads the deferred issues.
     - **(b)** As today.
     *Recommendation:* (a).
