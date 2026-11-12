@@ -36,6 +36,8 @@ Issue #151 is the last part of Stage 1 (#92). Every Stage 1c module is pure libr
 
 ## 3. Stages
 
+Since 2026-11-12 (`docs/sync-delivery-plan.md`, items 122 and 123 (a)) P3 is built as P3a (step (6)) and P3b (steps (7)–(8) and (11)), and P4 as P4a (the soak test and the checks of devices that behave) and P4b (trust under attack), in that plan's order, with a slice over a real folder between P3a and P3b. The Done-when lists below stand.
+
 Each stage is one PR (two where noted), and ends with `scripts/ci-local.sh` green and its Done-when met before the next begins.
 
 ### P1 — The folder and SP7 (PS1–PS3)

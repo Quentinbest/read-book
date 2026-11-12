@@ -22,7 +22,7 @@ Rust comes from `rust-toolchain.toml`; a bump is its own PR. The in-app suite an
 
 1. **Checks:** `scripts/ci-local.sh` is green before every commit, and after a push the CI run is green (`gh run watch`). Never dismiss a warning as "pre-existing": fix it or tell the owner.
 2. **Behaviour is shown, not assumed.** A bug fix comes with a check that fails without it. Input bugs are reproduced with real input in the in-app suite (`spike_mouse`, the HID wheel), not synthetic DOM events.
-3. **Review findings are answered before a merge is asked for.** After the latest push, wait for the automated review (Codex reviews a PR when it opens; after a later push, comment `@codex review`). Answer each finding in its thread with **Fixed** (the commit), **Rejected** (one line why) or **Deferred** (an issue; a numbered pending item if it needs the owner's decision), and fill in the PR's Review findings table.
+3. **Review findings are answered before a merge is asked for.** After the latest push, wait for the automated review (Codex reviews a PR when it opens; after a later push, comment `@codex review`). Answer each finding in its thread with **Fixed** (the commit), **Rejected** (one line why) or **Deferred** (an issue; a numbered pending item if it needs the owner's decision), and fill in the PR's Review findings table. For code no release build calls (sync, until a PR gives it a release caller): two automated rounds a PR; a P0 or P1 finding is always fixed, and after the second round the others are **Deferred** with an issue (SD8, `docs/sync-delivery-plan.md`).
 4. **The PR says** what changed, what was checked and what was not, using `.github/pull_request_template.md`.
 
 ## Decisions
