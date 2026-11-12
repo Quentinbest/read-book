@@ -106,11 +106,14 @@ pub struct Package {
     pub has_toc: bool,
 }
 
-/// Entries by their names as Linen reads them. zip 9 looks names up by their raw bytes, so a
-/// name stored in CP437 (no UTF-8 flag, as old tools wrote them) is only found by its decoded
-/// form, as zip 8 found it (L17: entries are listed decoded, then read by name). This holds
-/// the decoded names the raw lookup misses, built in one pass: empty for a UTF-8 book, and
-/// built once for a whole package, so no lookup rescans the archive.
+/// Entries by their names as Linen reads them. A name stored in CP437 (no UTF-8 flag, as old
+/// tools wrote them) is listed decoded, so it must be found by its decoded form (L17: entries
+/// are listed decoded, then read by name). zip 9.0 looked names up by their raw bytes only;
+/// from 9.1 `index_for_name` falls back to a scan that decodes every name, on every miss. This
+/// does not rely on that fallback: it looks up by raw bytes (`index_for_name_raw`, so a miss
+/// is O(1), as in 9.0) and holds the decoded names the raw lookup misses, built in one pass:
+/// empty for a UTF-8 book, and built once for a whole package, so no lookup rescans the
+/// archive.
 pub struct DecodedNames(HashMap<String, usize>);
 
 impl DecodedNames {
@@ -118,7 +121,7 @@ impl DecodedNames {
         let mut missed = HashMap::new();
         for i in 0..archive.len() {
             if let Some(Ok(name)) = archive.name_for_index(i) {
-                if archive.index_for_name(&name) != Some(i) {
+                if archive.index_for_name_raw(name.as_bytes()) != Some(i) {
                     missed.entry(name.into_owned()).or_insert(i);
                 }
             }
@@ -128,7 +131,7 @@ impl DecodedNames {
 
     pub fn index<R: Read + Seek>(&self, archive: &zip::ZipArchive<R>, name: &str) -> Option<usize> {
         archive
-            .index_for_name(name)
+            .index_for_name_raw(name.as_bytes())
             .or_else(|| self.0.get(name).copied())
     }
 
@@ -151,7 +154,7 @@ pub fn by_decoded_name<'a, R: Read + Seek>(
     archive: &'a mut zip::ZipArchive<R>,
     name: &str,
 ) -> zip::result::ZipResult<zip::read::ZipFile<'a, R>> {
-    if let Some(index) = archive.index_for_name(name) {
+    if let Some(index) = archive.index_for_name_raw(name.as_bytes()) {
         return archive.by_index(index);
     }
     if name.is_ascii() {
@@ -769,8 +772,10 @@ mod tests {
             .map(|n| n.unwrap().into_owned())
             .collect();
         assert_eq!(listed, ["café.xhtml"]);
-        // zip 9 itself looks for the raw bytes, which are CP437, not UTF-8.
-        assert!(archive.by_name("café.xhtml").is_err());
+        // The raw lookup (all that zip 9.0 did; 9.1 added a decoding fallback to by_name)
+        // misses: the stored bytes are CP437, not UTF-8. Linen's lookup must not need zip's
+        // fallback, whose miss scans every name.
+        assert_eq!(archive.index_for_name_raw("café.xhtml".as_bytes()), None);
         let names = DecodedNames::new(&archive);
         assert_eq!(
             names.0.len(),
@@ -792,6 +797,76 @@ mod tests {
         utf8.write_all(b"<p/>").unwrap();
         let utf8 = zip::ZipArchive::new(utf8.finish().unwrap()).unwrap();
         assert!(DecodedNames::new(&utf8).0.is_empty());
+    }
+
+    /// L17 and zip 9.1: zip's own `index_for_name` gained a decoding fallback, so the rule that
+    /// the raw bytes win must hold in Linen's lookup too, and nothing else may resolve.
+    #[test]
+    fn decoded_name_lookup_keeps_raw_names_first_and_resolves_nothing_else() {
+        let mut w = zip::ZipWriter::new(Cursor::new(Vec::new()));
+        let opts = SimpleFileOptions::default();
+        // Entry 0 is patched below to the CP437 bytes of "café.xhtml" (0x82 is é).
+        w.start_file("cafe.xhtml", opts).unwrap();
+        w.write_all(b"cp437").unwrap();
+        // Entry 1 is the same name stored as UTF-8: the raw lookup finds it.
+        w.start_file("café.xhtml", opts).unwrap();
+        w.write_all(b"utf8").unwrap();
+        // A name valid in both encodings (ASCII) and a CP437 name no UTF-8 entry shares.
+        w.start_file("plain.xhtml", opts).unwrap();
+        w.write_all(b"plain").unwrap();
+        w.start_file("naive.xhtml", opts).unwrap();
+        w.write_all(b"cp437-only").unwrap();
+        let mut bytes = w.finish().unwrap().into_inner();
+        let patch = |bytes: &mut Vec<u8>, from: &[u8], to: &[u8]| {
+            assert_eq!(from.len(), to.len());
+            let mut n = 0;
+            for i in 0..=bytes.len() - from.len() {
+                if &bytes[i..i + from.len()] == from {
+                    bytes[i..i + from.len()].copy_from_slice(to);
+                    n += 1;
+                }
+            }
+            assert_eq!(n, 2, "a name is in the local header and the directory");
+        };
+        patch(&mut bytes, b"cafe.xhtml", b"caf\x82.xhtml");
+        patch(&mut bytes, b"naive.xhtml", b"na\x8bve.xhtml");
+        let mut archive = zip::ZipArchive::new(Cursor::new(bytes)).unwrap();
+        let listed: Vec<String> = archive
+            .file_names()
+            .map(|n| n.unwrap().into_owned())
+            .collect();
+        assert_eq!(
+            listed,
+            ["café.xhtml", "café.xhtml", "plain.xhtml", "naïve.xhtml"]
+        );
+        let read = |archive: &mut zip::ZipArchive<Cursor<Vec<u8>>>, name: &str| {
+            let mut text = String::new();
+            by_decoded_name(archive, name)
+                .ok()
+                .map(|mut f| f.read_to_string(&mut text).unwrap());
+            text
+        };
+        // The UTF-8 entry wins the shared name, as the raw lookup did in zip 9.0.
+        assert_eq!(read(&mut archive, "café.xhtml"), "utf8");
+        assert_eq!(read(&mut archive, "plain.xhtml"), "plain");
+        // The CP437-only name is found by its decoded form, through the table.
+        assert_eq!(read(&mut archive, "naïve.xhtml"), "cp437-only");
+        let names = DecodedNames::new(&archive);
+        assert_eq!(names.index(&archive, "café.xhtml"), Some(1));
+        assert_eq!(names.index(&archive, "naïve.xhtml"), Some(3));
+        // Nothing else resolves: case, a different normal form, the stored bytes read as
+        // Latin-1, a partial name.
+        for miss in [
+            "Café.xhtml",
+            "cafe\u{301}.xhtml",
+            "caf\u{82}.xhtml",
+            "cafe.xhtml",
+            "caf",
+            "Plain.xhtml",
+        ] {
+            assert!(by_decoded_name(&mut archive, miss).is_err(), "{miss:?}");
+            assert_eq!(names.index(&archive, miss), None, "{miss:?}");
+        }
     }
 
     /// L-1: every rejection code has a message in the English catalogue, with as
