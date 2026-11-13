@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const LIB: Id16 = Id16([7; 16]);
 const NOW: i64 = 1_760_000_000_000;
-const NAMING: [u8; 32] = [42; 32];
+pub(crate) const NAMING: [u8; 32] = [42; 32];
 
 // These fields are the kit's interface for later pass tests.
 #[allow(dead_code)]
@@ -168,6 +168,31 @@ pub(crate) fn library(n: usize) -> Kit {
 }
 
 impl KitDevice {
+    /// Writes a device file that names this device's newest signed change as its
+    /// latest: what a peer needs to read it (SP16), until the pass writes it.
+    pub(crate) fn announce(&mut self) {
+        let state = self.store.library(&LIB).unwrap();
+        let own = state.last_hash().unwrap().map(|h| (state.seq, h));
+        let head = state
+            .rest
+            .get("head")
+            .and_then(|v| v.as_str())
+            .and_then(Hash32::parse);
+        let written = device_file::publish(
+            &self.ks,
+            &mut self.store,
+            &LIB,
+            &Fields {
+                head,
+                own,
+                ..Fields::default()
+            },
+        )
+        .unwrap();
+        files::write_file(&mut self.folder, &written.path, &written.bytes).unwrap();
+        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.path).unwrap();
+    }
+
     /// SP15: signs what was written locally as this device's next change and
     /// publishes it as a device would: the bodies it names in `blobs/`, the change
     /// file, and a device file naming the change. Returns the change's sequence, or
@@ -181,7 +206,8 @@ impl KitDevice {
         for version in &change.versions {
             if let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) {
                 let body = journal::body(self.db.conn(), &hash).unwrap().unwrap();
-                files::write_file(&mut self.folder, &format!("blobs/{hash}"), &body).unwrap();
+                let name = crypto::blob_name(&NAMING, &hash);
+                files::write_file(&mut self.folder, &format!("blobs/{name}"), &body).unwrap();
             }
         }
         files::write_file(&mut self.folder, &signed.path, &signed.bytes).unwrap();

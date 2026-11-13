@@ -36,6 +36,7 @@ pub mod merge;
 pub mod pass;
 pub mod proof;
 pub mod prune;
+pub mod publish;
 pub mod read;
 pub mod record;
 pub mod recovery;
