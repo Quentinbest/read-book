@@ -2,6 +2,18 @@
 
 Every Linen release, newest first. Each entry is the summary that goes into the release's notes on GitHub; the release workflow copies it from here (see `.github/workflows/release.yml`).
 
+## v0.5.2 — 2026-11-13
+
+Linen 0.5.2 is a maintenance release. Nothing about reading changes.
+
+- **Security updates.** The libraries Linen is built on are updated to versions with their known security problems fixed: the ones that make network connections (an extension's lookups, and Linen's own updates), clean dictionary entries, open EPUB files and keep the library's database.
+- **The app icon** now sits on the macOS icon grid, so it is the same size as its neighbours in the Dock.
+- **Extensions:** a host you allow an extension to reach counts at once, so the extension doesn't need to ask again or be restarted. Two lookups whose names differ only in capitals are told apart the same way in every system language.
+
+**Your library is updated the first time 0.5.2 opens it.** Linen adds what it will need to sync between devices, which is not in this release: nothing is synced or sent anywhere, and your books, places, highlights and notes stay as they are. Linen 0.5.1 and earlier can't open the library afterwards, so copy the library folder first if you might go back.
+
+No text changed, so the translations are the same as in 0.5.1.
+
 ## v0.5.1 — 2026-10-13
 
 Linen 0.5.1 fixes one thing in 0.5.0.
