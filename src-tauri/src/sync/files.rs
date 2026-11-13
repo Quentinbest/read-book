@@ -154,6 +154,29 @@ pub fn read_file<F: Folder>(folder: &F, listed: &Listed<F::Token>) -> io::Result
     }
 }
 
+/// SP7, SY28: `read_file` held to a smaller limit than the slot's, such as a
+/// record type's for a blob, both before the read and during it.
+pub fn read_file_within<F: Folder>(
+    folder: &F,
+    listed: &Listed<F::Token>,
+    limit: u64,
+) -> io::Result<Read> {
+    match layout(&listed.name) {
+        Some(slot) => {
+            let limit = slot.limit.map_or(limit, |l| l.min(limit));
+            read_slot(
+                folder,
+                &listed.token,
+                Slot {
+                    limit: Some(limit),
+                    ..slot
+                },
+            )
+        }
+        None => read_file(folder, listed),
+    }
+}
+
 /// SP7: read only a recognised copy, with the copied file's size limit. The
 /// caller must check these bytes as that file's, never as a new independent file.
 pub fn read_candidate<F: Folder>(folder: &F, listed: &Listed<F::Token>) -> io::Result<Read> {
