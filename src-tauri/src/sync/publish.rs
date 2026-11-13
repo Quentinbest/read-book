@@ -808,11 +808,13 @@ fn device_file_step<F: Folder>(
     if !chain::pending(device.store, &lib.id)?.is_empty() {
         return Ok(());
     }
+    // SP15 (1), SP7: what storage has of this device's file, once: before a new
+    // file is signed, and before one signed on an earlier pass is uploaded again,
+    // which would otherwise overwrite a file that blocks publication (SY7).
+    if !settle_own(device, folder, devices, meter, report, false, &mut checked)? {
+        return Ok(());
+    }
     if device_file::pending(device.store, &lib.id)?.is_empty() {
-        // SP15 (1), SP7: what storage has of this device's file, once.
-        if !settle_own(device, folder, devices, meter, report, false, &mut checked)? {
-            return Ok(());
-        }
         let fields = device_fields(device, report)?;
         let same = checked
             .flatten()
@@ -1716,6 +1718,40 @@ mod tests {
         assert_eq!(report.published.device_file, Some(2));
         assert_eq!(get(&kit.devices[1], &path).unwrap(), kept[0].1);
         assert_eq!(device_file_of(&kit, 1).counter, 2, "no second counter");
+    }
+
+    #[test]
+    fn a_device_file_waiting_to_go_up_again_is_not_written_over_another_writers() {
+        // SP15 (1), SY7: a device file signed on an earlier pass is checked against
+        // storage like a new one. Its ID with another writer token blocks the retry.
+        let mut kit = testkit::library(2);
+        with_note(&mut kit.devices[1]);
+        let me = kit.devices[1].lib.device;
+        let path = device_file::device_path(&me);
+        kit.folder.fail_rename(&path);
+        let mut log = log_of(&kit, 1);
+        assert!(run_on(&mut kit.devices[1], &mut log, &Budgets::sy2(), &|| 0).is_err());
+        let kept = device_file::pending(&kit.devices[1].store, &kit.devices[1].lib.id).unwrap();
+        assert_eq!(kept.len(), 1, "the signed file waits");
+        let state = kit.devices[1]
+            .store
+            .library(&kit.devices[1].lib.id)
+            .unwrap();
+        let other = device_file::write(
+            &state.key().unwrap(),
+            &kit.devices[1].lib.id,
+            &crate::sync::ids::Id16([9; 16]),
+            1,
+            &device_file::Fields::default(),
+        )
+        .unwrap();
+        files::write_file(&mut kit.devices[1].folder, &path, &other.bytes).unwrap();
+        let report = go(&mut kit, 1);
+        assert_eq!(report.blocked, Some(Blocked::OtherWriter));
+        assert_eq!(report.published.device_file, None);
+        assert_eq!(get(&kit.devices[1], &path).unwrap(), other.bytes);
+        let still = device_file::pending(&kit.devices[1].store, &kit.devices[1].lib.id).unwrap();
+        assert_eq!(still, kept, "and stays signed, to go once storage is clear");
     }
 
     #[test]
