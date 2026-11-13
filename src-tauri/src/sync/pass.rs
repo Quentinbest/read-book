@@ -89,6 +89,27 @@ pub struct MembershipState {
     #[serde(with = "map")]
     pub heads: BTreeMap<DeviceId, Option<Hash32>>,
 }
+/// SP16: a peer's change with its own signature, which a `frontier` entry carries
+/// so that it proves itself.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedMark {
+    pub s: u64,
+    pub h: Hash32,
+    /// The signature, base64url.
+    pub sig: String,
+}
+/// What this device holds of a peer's signature: `candidate` is saved before the
+/// peer's changes are applied, `confirmed` once this device has applied that change.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct PeerSig {
+    pub confirmed: Option<SignedMark>,
+    pub candidate: Option<SignedMark>,
+}
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct Sigs {
+    #[serde(with = "map")]
+    pub peers: BTreeMap<DeviceId, PeerSig>,
+}
 #[derive(Debug)]
 pub struct State {
     pub ledger: hold::Ledger,
@@ -98,6 +119,8 @@ pub struct State {
     pub ages: retention::Ages,
     pub vouched: retention::Vouched,
     pub membership: MembershipState,
+    /// SP16: the signatures a frontier needs (PS5).
+    pub sigs: Sigs,
     /// PS5, SY17: whether `vouched` was loaded from a saved row. A clock that
     /// was never saved starts at the current readings in `resume`, rather than
     /// counting everything since the Unix epoch as elapsed.
@@ -113,6 +136,7 @@ impl Default for State {
             ages: Default::default(),
             vouched: retention::Vouched::new(0),
             membership: Default::default(),
+            sigs: Default::default(),
             started: false,
         }
     }
@@ -187,6 +211,7 @@ impl State {
                 .transpose()?
                 .unwrap_or_else(|| retention::Vouched::new(0)),
             membership: read(conn, lib, "membership")?,
+            sigs: read(conn, lib, "sigs")?,
         })
     }
     pub fn save(&self, tx: &Transaction<'_>, lib: &Id16) -> Result<(), Error> {
@@ -196,7 +221,8 @@ impl State {
         write(tx, lib, "marks", &self.marks)?;
         write(tx, lib, "ages", &self.ages)?;
         write(tx, lib, "vouched", &self.vouched)?;
-        write(tx, lib, "membership", &self.membership)
+        write(tx, lib, "membership", &self.membership)?;
+        write(tx, lib, "sigs", &self.sigs)
     }
     /// SY17: resume the same vouched clock used by ages and hearing history.
     pub fn resume(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool, same_boot: bool) {
@@ -227,6 +253,8 @@ pub struct Device<'a> {
     pub store: &'a mut super::device_store::DeviceStore,
     pub ks: &'a dyn super::device_store::Keystore,
     pub state: State,
+    /// SP16, SY7: the platform's name for this device (cut to 64 characters).
+    pub name: &'a str,
 }
 
 /// PS6: which budget stopped a pass.
@@ -280,6 +308,8 @@ pub struct Published {
     pub held: u64,
     /// SP9: blobs uploaded.
     pub blobs: u64,
+    /// SP16: the counter of the device file written this pass.
+    pub device_file: Option<u64>,
 }
 
 /// SP15 (1), SY7: storage shows this device's own files in a state it must not
@@ -417,7 +447,7 @@ pub(super) fn save_state(device: &Device<'_>) -> Result<(), Error> {
     Ok(())
 }
 
-/// SP37 (1)–(4) and (9), PS4–PS7: one pass. It reads membership before any
+/// SP37 (1)–(4) and (9)–(10), PS4–PS7: one pass. It reads membership before any
 /// device file (#122's crowding risk), saves `State` after each step that changed
 /// it (PS5), and stops where a budget runs out (PS6). What isn't built yet is named
 /// in the report's `not_built`.
@@ -456,7 +486,7 @@ fn steps<F: super::folder::Folder>(
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
-        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, step (4)'s views, steps (5)-(8) and (10)-(11); within step (9): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, and SY7's rotation when storage is ahead (SP27)",
+        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, step (4)'s views, steps (5)-(8) and (11); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's views, refused, repairs, quarantined and proofs lists, and the hour's re-upload of own and cached files (SP15)",
         ..Report::default()
     };
     let mut meter = Meter {
@@ -865,6 +895,7 @@ fn receive_changes<F: super::folder::Folder>(
             .min()
             .unwrap_or(0);
         let mut files = Vec::new();
+        let mut last_sig = None;
         let mut run_bytes = 0u64;
         // A budget that runs out mid-run still lets what was read be received: a
         // body not fetched waits for step 5 (SY28), so the pass moves on.
@@ -917,6 +948,11 @@ fn receive_changes<F: super::folder::Folder>(
                 }
                 stop = meter.check(report);
             }
+            last_sig = Some(SignedMark {
+                s: change.seq,
+                h: change.hash,
+                sig: super::ids::b64url_encode(&change.sig),
+            });
             files.push((bytes, bodies));
             if halted || stop.is_some() {
                 halted = true;
@@ -926,6 +962,12 @@ fn receive_changes<F: super::folder::Folder>(
             if run_bytes > meter.budgets.run_bytes && seq >= lowest {
                 break;
             }
+        }
+        // SP16: the signature of the last change of the run is kept before the run is
+        // applied, so a crash after it leaves the frontier entry to be made.
+        if let Some(mark) = last_sig {
+            device.state.sigs.peers.entry(peer).or_default().candidate = Some(mark);
+            save_state(device)?;
         }
         if !files.is_empty() {
             match chain::receive_run(device.conn, &device.lib, &peer, &key, &floor, files, now_ms) {
@@ -996,6 +1038,7 @@ mod tests {
             ages: serde_json::from_value(ages.clone()).unwrap(),
             vouched: serde_json::from_value(vouched.clone()).unwrap(),
             membership: serde_json::from_value(membership.clone()).unwrap(),
+            sigs: Default::default(),
             started: true,
         };
         save(&mut store, &lib, &state);
@@ -1094,6 +1137,7 @@ mod tests {
                 store: &mut kd.store,
                 ks: &kd.ks,
                 state,
+                name: "Test Mac",
             };
             let report = run(&mut device, &mut kd.folder, READ, budgets, &|| 0).unwrap();
             (report, device.state)
@@ -1163,6 +1207,7 @@ mod tests {
                 store: &mut kd.store,
                 ks: &kd.ks,
                 state,
+                name: "Test Mac",
             };
             let report = run(&mut device, &mut kd.folder, READ, &Budgets::sy2(), &clock).unwrap();
             assert_eq!(report.stopped, Some(Stopped::Time));
@@ -1390,6 +1435,7 @@ mod tests {
                 store: &mut kd.store,
                 ks: &kd.ks,
                 state,
+                name: "Test Mac",
             };
             assert!(run(&mut device, &mut kd.folder, READ, &Budgets::sy2(), &|| 0).is_err());
             let saved = State::load(kd.db.conn(), &kd.lib.id).unwrap();
@@ -1574,13 +1620,11 @@ mod tests {
             assert!(report.received.is_empty());
             assert_eq!(report.behind, vec![peer]);
             let trust: u64 = file_bytes(&kit.devices[0], "trust").iter().sum();
-            let device_file = file_bytes(&kit.devices[0], "devices")
-                .iter()
-                .copied()
-                .max()
-                .unwrap();
+            // The peer's device file, and this device's own, which step (10) reads to
+            // see whether it says anything new.
+            let device_files: u64 = file_bytes(&kit.devices[0], "devices").iter().sum();
             assert!(
-                report.bytes_read <= trust + device_file,
+                report.bytes_read <= trust + device_files,
                 "no change or blob was read"
             );
         }

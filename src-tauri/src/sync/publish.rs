@@ -24,7 +24,7 @@
 
 use super::chain::{self, Change};
 use super::crypto::blob_name;
-use super::device_file;
+use super::device_file::{self, DeviceFile, Fields};
 use super::files::{self, Read};
 use super::folder::{Folder, Listed};
 use super::frontier::{self, Held};
@@ -33,15 +33,17 @@ use super::ids::{identity_hash, DeviceId, Hash32};
 use super::journal;
 use super::pass::{list_all, save_state, Blocked, Device, Error, Meter, Report};
 use super::record::{version_hash, Content, Entry, Key, Kind, Version};
+use super::trust::Mark;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 type Blobs<T> = Option<BTreeMap<String, Listed<T>>>;
 
 /// SP15 (1): what this device's own files in storage allow.
 enum Own<T> {
-    /// Nothing newer than its marks; the copies of its device file that a
-    /// conflict made, which it may remove (SP7).
+    /// Nothing newer than its marks: its device file as storage has it, and the
+    /// copies of it that a conflict made, which it may remove (SP7).
     Clear {
+        file: Option<Box<DeviceFile>>,
         copies: Vec<T>,
     },
     /// A file that can't be read or checked now (half-synced): publish nothing
@@ -52,7 +54,8 @@ enum Own<T> {
     Stopped,
 }
 
-/// SP37 (9). Nothing happens, and nothing is read, when there is nothing to publish.
+/// SP37 (9)–(10). Nothing happens, and nothing is read, when there is nothing to
+/// publish and the device file says what it said.
 pub(super) fn publish<F: Folder>(
     device: &mut Device<'_>,
     folder: &mut F,
@@ -63,13 +66,27 @@ pub(super) fn publish<F: Folder>(
     devices: &[Listed<F::Token>],
 ) -> Result<(), Error> {
     let lib = device.lib;
-    if !anything_to_publish(device)? {
-        return Ok(());
+    // This device's own device file as storage has it, once checked this pass.
+    let mut checked = None;
+    if anything_to_publish(device)? {
+        let go = publish_waiting(
+            device,
+            folder,
+            naming,
+            meter,
+            report,
+            blobs,
+            devices,
+            &mut checked,
+        )?;
+        // Whatever stopped it, what is still waiting is said.
+        report.unsent = journal::unsent(device.conn, &lib)?.len() as u64;
+        if !go || report.stopped.is_some() {
+            return Ok(());
+        }
     }
-    publish_waiting(device, folder, naming, meter, report, blobs, devices)?;
-    // Whatever stopped it, what is still waiting is said.
-    report.unsent = journal::unsent(device.conn, &lib)?.len() as u64;
-    Ok(())
+    // SP37 (10): after the changes are in storage, never before.
+    device_file_step(device, folder, meter, report, devices, checked)
 }
 
 /// A change signed and not yet in storage, one numbered and never signed, or a
@@ -82,6 +99,9 @@ fn anything_to_publish(device: &Device<'_>) -> Result<bool, Error> {
         || !journal::unsent(device.conn, &lib)?.is_empty())
 }
 
+/// `false` when publication can't go on this pass: storage is ahead of this device,
+/// its own device file can't be read yet, or a budget ran out.
+#[allow(clippy::too_many_arguments)]
 fn publish_waiting<F: Folder>(
     device: &mut Device<'_>,
     folder: &mut F,
@@ -90,26 +110,12 @@ fn publish_waiting<F: Folder>(
     report: &mut Report,
     blobs: &mut Blobs<F::Token>,
     devices: &[Listed<F::Token>],
-) -> Result<(), Error> {
+    checked: &mut Option<Option<Box<DeviceFile>>>,
+) -> Result<bool, Error> {
     let lib = device.lib;
     // SP15 (1): this device's own files, as this pass found them, against its marks.
-    match own_files(device, folder, devices, meter, report)? {
-        Own::Clear { copies } => {
-            // SP7: a copy of this device's own file that a conflict made is its
-            // own, at or below its counter: nothing to merge, so it is removed.
-            for token in copies {
-                if let Some(stop) = meter.check(report) {
-                    report.stopped = Some(stop);
-                    return Ok(());
-                }
-                folder.remove(&token)?;
-            }
-        }
-        Own::Blocked(why) => {
-            report.blocked = Some(why);
-            return Ok(());
-        }
-        Own::Wait | Own::Stopped => return Ok(()),
+    if !settle_own(device, folder, devices, meter, report, true, checked)? {
+        return Ok(false);
     }
     // SP33, SP34: this device's own reservations that lapsed, and holds that ended,
     // leave the ledger, so they no longer count against its limits.
@@ -147,11 +153,47 @@ fn publish_waiting<F: Folder>(
             &path,
             &bytes,
         )? {
-            return Ok(());
+            return Ok(false);
         }
     }
     rounds(device, folder, naming, meter, report, blobs, &mut written)?;
-    Ok(())
+    Ok(report.stopped.is_none())
+}
+
+/// SP15 (1), SP7: checks this device's own files, and removes the copies of its
+/// device file that a conflict made, which are its own at or below its counter and
+/// have nothing to merge. `false` when nothing may be written this pass; what it
+/// found of the device file is kept in `checked`.
+fn settle_own<F: Folder>(
+    device: &Device<'_>,
+    folder: &mut F,
+    devices: &[Listed<F::Token>],
+    meter: &Meter<'_>,
+    report: &mut Report,
+    changes: bool,
+    checked: &mut Option<Option<Box<DeviceFile>>>,
+) -> Result<bool, Error> {
+    if checked.is_some() {
+        return Ok(true);
+    }
+    match own_files(device, folder, devices, meter, report, changes)? {
+        Own::Clear { file, copies } => {
+            for token in copies {
+                if let Some(stop) = meter.check(report) {
+                    report.stopped = Some(stop);
+                    return Ok(false);
+                }
+                folder.remove(&token)?;
+            }
+            *checked = Some(file);
+            Ok(true)
+        }
+        Own::Blocked(why) => {
+            report.blocked = Some(why);
+            Ok(false)
+        }
+        Own::Wait | Own::Stopped => Ok(false),
+    }
 }
 
 /// SP15 (1), SY7: lists this device's `changes/` and reads its device file (and any
@@ -165,6 +207,7 @@ fn own_files<F: Folder>(
     devices: &[Listed<F::Token>],
     meter: &Meter<'_>,
     report: &mut Report,
+    changes: bool,
 ) -> Result<Own<F::Token>, Error> {
     let me = device.lib.device;
     let state = device
@@ -177,27 +220,30 @@ fn own_files<F: Folder>(
         state.writer_id()?,
         state.key()?.public(),
     );
-    let Some(listing) = list_all(folder, &format!("changes/{me}"), meter, report)? else {
-        return Ok(Own::Stopped);
-    };
-    let newest = listing
-        .iter()
-        .filter(|e| files::layout(&e.name).is_some())
-        .filter_map(|e| {
-            e.name
-                .rsplit('/')
-                .next()?
-                .strip_suffix(".json")?
-                .parse::<u64>()
-                .ok()
-        })
-        .max()
-        .unwrap_or(0);
-    if newest > mark {
-        return Ok(Own::Blocked(Blocked::StorageAhead));
+    // Only a pass that numbers a change needs its own `changes/` listed.
+    if changes {
+        let Some(listing) = list_all(folder, &format!("changes/{me}"), meter, report)? else {
+            return Ok(Own::Stopped);
+        };
+        let newest = listing
+            .iter()
+            .filter(|e| files::layout(&e.name).is_some())
+            .filter_map(|e| {
+                e.name
+                    .rsplit('/')
+                    .next()?
+                    .strip_suffix(".json")?
+                    .parse::<u64>()
+                    .ok()
+            })
+            .max()
+            .unwrap_or(0);
+        if newest > mark {
+            return Ok(Own::Blocked(Blocked::StorageAhead));
+        }
     }
     let path = device_file::device_path(&me);
-    let mut copies = Vec::new();
+    let (mut file, mut copies) = (None, Vec::new());
     for entry in devices
         .iter()
         .filter(|e| e.name == path || files::candidate_of(&e.name).is_some_and(|of| of == path))
@@ -226,7 +272,7 @@ fn own_files<F: Folder>(
             Ok(f) if f.writer != writer => return Ok(Own::Blocked(Blocked::OtherWriter)),
             Ok(f) if f.counter > counter => return Ok(Own::Blocked(Blocked::StorageAhead)),
             Ok(_) if copy => copies.push(entry.token.clone()),
-            Ok(_) => {}
+            Ok(f) => file = Some(Box::new(f)),
             Err(e) => {
                 report.set_aside.push((entry.name.clone(), format!("{e}")));
                 if !copy {
@@ -235,7 +281,7 @@ fn own_files<F: Folder>(
             }
         }
     }
-    Ok(Own::Clear { copies })
+    Ok(Own::Clear { file, copies })
 }
 
 /// SP33: the ledger takes a change this device signed, once. A change it has
@@ -744,6 +790,131 @@ fn list_blobs<F: Folder>(
     Ok(true)
 }
 
+/// SP37 (10), SP16, SP15: this device's device file. A file signed on an earlier
+/// pass and not yet in storage goes up as it was (parts first, then the file that
+/// names them); otherwise a new one is signed, at the next counter and kept in
+/// the device store, only when it would say something other than the file in
+/// storage does, and uploaded. It names the newest change this device has in
+/// storage, so it comes after step (9) and never before it.
+fn device_file_step<F: Folder>(
+    device: &mut Device<'_>,
+    folder: &mut F,
+    meter: &Meter<'_>,
+    report: &mut Report,
+    devices: &[Listed<F::Token>],
+    mut checked: Option<Option<Box<DeviceFile>>>,
+) -> Result<(), Error> {
+    let lib = device.lib;
+    if !chain::pending(device.store, &lib.id)?.is_empty() {
+        return Ok(());
+    }
+    if device_file::pending(device.store, &lib.id)?.is_empty() {
+        // SP15 (1), SP7: what storage has of this device's file, once.
+        if !settle_own(device, folder, devices, meter, report, false, &mut checked)? {
+            return Ok(());
+        }
+        let fields = device_fields(device, report)?;
+        let same = checked
+            .flatten()
+            .is_some_and(|file| file.overflow.is_empty() && says_the_same(&fields, &file.fields));
+        if same {
+            // The ages and the signatures it promoted are kept all the same.
+            save_state(device)?;
+            return Ok(());
+        }
+        device_file::publish(device.ks, device.store, &lib.id, &fields)?;
+        // PS5: the pending marks `ages::lists` moved are saved with the file's number.
+        save_state(device)?;
+    }
+    for (path, bytes) in device_file::pending(device.store, &lib.id)? {
+        if !put(folder, &path, &bytes, meter, report)? {
+            return Ok(());
+        }
+        chain::uploaded(device.ks, device.store, &lib.id, &path)?;
+    }
+    report.published.device_file = device.store.library(&lib.id).map(|l| l.counter);
+    Ok(())
+}
+
+/// Whether two device files carry the same words: everything but the clock, which
+/// changes with every write, and the lists that are empty either way.
+fn says_the_same(a: &Fields, b: &Fields) -> bool {
+    let strip = |f: &Fields| {
+        let mut f = f.clone();
+        f.clock = (0, 0);
+        f.lists.retain(|_, items| !items.is_empty());
+        f
+    };
+    strip(a) == strip(b)
+}
+
+/// SP16: what this device's device file says now, from the pass's state.
+fn device_fields(device: &mut Device<'_>, report: &Report) -> Result<Fields, Error> {
+    use super::ids::b64url_decode;
+    let lib = device.lib;
+    let me = lib.device;
+    let state = device.store.library(&lib.id).ok_or(Error::NoIdentity)?;
+    // Its latest change is the newest it has in storage: all it signed are (the
+    // caller checked that none is waiting).
+    let own = state.last_hash()?.map(|h| (state.seq, h));
+    let head = state
+        .rest
+        .get("head")
+        .and_then(|v| v.as_str())
+        .and_then(Hash32::parse);
+    let marks = frontier::stored_marks(state)?;
+    let (ms, n) = journal::clock_of(device.conn, &lib)?;
+    // SP16: for every other device whose changes it has applied, the latest, with
+    // that device's own signature. A signature saved before the change was applied
+    // vouches for nothing until it has been.
+    let mut applied: BTreeMap<DeviceId, (Mark, [u8; 64])> = BTreeMap::new();
+    for peer in &report.trusted {
+        if *peer == me {
+            continue;
+        }
+        let seen = super::apply::seen(device.conn, &lib, *peer)?;
+        let held = chain::held_hash(device.conn, &lib, peer, seen)?;
+        let Some(sigs) = device.state.sigs.peers.get_mut(peer) else {
+            continue;
+        };
+        if let Some(c) = sigs.candidate.clone() {
+            if c.s == seen && Some(c.h) == held {
+                sigs.confirmed = Some(c);
+                sigs.candidate = None;
+            }
+        }
+        // It may vouch for less than it has applied, never for more.
+        if let Some(c) = &sigs.confirmed {
+            let still = chain::held_hash(device.conn, &lib, peer, c.s)?;
+            if c.s <= seen && still == Some(c.h) {
+                if let Some(sig) = b64url_decode(&c.sig).and_then(|b| b.try_into().ok()) {
+                    applied.insert(*peer, (Mark { s: c.s, h: c.h }, sig));
+                }
+            }
+        }
+    }
+    let mut lists = BTreeMap::new();
+    lists.insert("frontier".to_owned(), frontier::frontier_list(&applied));
+    lists.insert("inherited".to_owned(), frontier::inherited_list(&marks));
+    // SP35: ages and marks; an untrusted clock publishes none.
+    let retiring = device.state.ages.retiring();
+    lists.extend(super::ages::lists(
+        &device.state.ages,
+        &mut device.state.marks,
+        &retiring,
+        &device.state.vouched,
+    ));
+    Ok(Fields {
+        name: device.name.to_owned(),
+        clock: (ms as u64, n as u16),
+        ahead: device.state.vouched.untrusted_wall,
+        head,
+        own,
+        view: None,
+        lists,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -842,6 +1013,7 @@ mod tests {
             store: &mut kd.store,
             ks: &kd.ks,
             state,
+            name: "Test Mac",
         };
         pass::run(&mut device, folder, readings, budgets, now)
     }
@@ -944,10 +1116,12 @@ mod tests {
         assert_eq!(report.unsent, 0);
         // The order of the writes: the reservation, both bodies, the change naming them.
         let w = &log.writes;
-        assert_eq!(w.len(), 4, "{w:?}");
+        assert_eq!(w.len(), 5, "{w:?}");
         assert_eq!(w[0], chain::change_path(&me, 1));
         assert!(w[1].starts_with("blobs/") && w[2].starts_with("blobs/"));
         assert_eq!(w[3], chain::change_path(&me, 2));
+        // SP37 (10): the device file, after the changes it names.
+        assert_eq!(w[4], device_file::device_path(&me));
         let changes = assert_whole(&kit, a);
         assert!(changes[0].versions.is_empty() && changes[0].reserve.len() == 2);
         assert!(changes[1].versions.len() == 2 && changes[1].reserve.is_empty());
@@ -960,7 +1134,6 @@ mod tests {
         assert_eq!(state.ledger.reservation_count(me), 0);
         assert_eq!(state.ledger.last_seq(me), Some(2));
         // A peer reads them (SP37 (4)).
-        kit.devices[a].announce();
         let report = go(&mut kit, b);
         assert_eq!(report.received, vec![(me, 2)], "{report:?}");
         assert_eq!(
@@ -1009,7 +1182,7 @@ mod tests {
         // the publication with no gap and no repeat, and a peer that reads in
         // between applies nothing wrong.
         for after in [false, true] {
-            for at in 0..4 {
+            for at in 0..5 {
                 let mut kit = testkit::library(2);
                 let (a, b) = (1, 0);
                 with_note(&mut kit.devices[a]);
@@ -1019,21 +1192,39 @@ mod tests {
                 let first = run_on(&mut kit.devices[a], &mut log, &Budgets::sy2(), &|| 0);
                 assert!(first.is_err(), "write {at} (after: {after}) must fail");
                 // A peer reads whatever storage holds now.
-                kit.devices[a].announce();
                 go(&mut kit, b);
                 let named = get(&kit.devices[a], &chain::change_path(&me, 2)).is_some();
-                assert_eq!(
-                    note_of(&kit.devices[b].db, "book").is_some(),
-                    named,
-                    "a peer applies a note only when its change is in storage ({at}, {after})"
+                // It applies the note only when the change naming it is in storage (and
+                // the device file naming that change is too).
+                let applied = note_of(&kit.devices[b].db, "book").is_some();
+                assert!(
+                    !applied || named,
+                    "a peer applied a note whose change isn't in storage ({at}, {after})"
                 );
+                let device_file_there = get(&kit.devices[a], &device_file::device_path(&me))
+                    .and_then(|b| {
+                        device_file::open(
+                            &b,
+                            &kit.devices[a].lib.id,
+                            &me,
+                            &kit.devices[a].key.public(),
+                        )
+                        .ok()
+                    })
+                    .is_some_and(|f| f.fields.own.is_some_and(|(s, _)| s == 2));
+                assert_eq!(applied, named && device_file_there, "({at}, {after})");
                 // The next pass finishes it.
                 let report = go(&mut kit, a);
                 assert_eq!(report.unsent, 0, "({at}, {after}) {report:?}");
                 let changes = assert_whole(&kit, a);
                 let versions: usize = changes.iter().map(|c| c.versions.len()).sum();
                 assert_eq!(versions, 2, "({at}, {after})");
-                kit.devices[a].announce();
+                let file = device_file_of(&kit, a);
+                assert_eq!(file.counter, 2, "one counter, signed once ({at}, {after})");
+                assert_eq!(
+                    file.fields.own.map(|(s, _)| s),
+                    Some(changes.last().unwrap().seq)
+                );
                 go(&mut kit, b);
                 assert_eq!(
                     note_of(&kit.devices[b].db, "book"),
@@ -1289,9 +1480,10 @@ mod tests {
         let report = run_on(&mut kit.devices[1], &mut log, &Budgets::sy2(), &|| 0).unwrap();
         assert_eq!(report.published.changes, vec![1], "{report:?}");
         // Whatever numbered it, its body is in storage before the file that names it.
-        assert_eq!(log.writes.len(), 2, "{:?}", log.writes);
+        assert_eq!(log.writes.len(), 3, "{:?}", log.writes);
         assert!(log.writes[0].starts_with("blobs/"));
         assert_eq!(log.writes[1], chain::change_path(&me, 1));
+        assert_eq!(log.writes[2], device_file::device_path(&me));
         assert_eq!(assert_whole(&kit, 1)[0].versions.len(), 1);
     }
 
@@ -1415,6 +1607,184 @@ mod tests {
         assert!(get(&kit.devices[a], &path).is_some(), "sent again");
         assert_eq!(report.published.reserved, 1, "{report:?}");
         assert_whole(&kit, a);
+    }
+
+    /// Device `i`'s device file as storage has it.
+    fn device_file_of(kit: &Kit, i: usize) -> DeviceFile {
+        let kd = &kit.devices[i];
+        let bytes = get(kd, &device_file::device_path(&kd.lib.device)).unwrap();
+        device_file::open(&bytes, &kd.lib.id, &kd.lib.device, &kd.key.public()).unwrap()
+    }
+
+    #[test]
+    fn the_device_file_says_what_sp16_requires_and_a_peer_accepts_it() {
+        // SP37 (10), SP16, SP29: the latest change in storage, the head, the name,
+        // the frontier with each peer's own signature on it.
+        let mut kit = testkit::library(2);
+        let (a, b) = (1, 0);
+        let (da, db) = (kit.devices[a].lib.device, kit.devices[b].lib.device);
+        with_note(&mut kit.devices[a]);
+        let report = go(&mut kit, a);
+        assert_eq!(report.published.device_file, Some(2), "{report:?}");
+        let changes = assert_whole(&kit, a);
+        let file = device_file_of(&kit, a);
+        assert_eq!(file.counter, 2, "the kit wrote counter 1");
+        let last = changes.last().unwrap();
+        assert_eq!(file.fields.own, Some((last.seq, last.hash)));
+        assert_eq!(file.fields.name, "Test Mac");
+        assert_eq!(file.fields.view, None);
+        let head = kit.devices[a]
+            .store
+            .library(&kit.devices[a].lib.id)
+            .unwrap()
+            .rest["head"]
+            .as_str()
+            .and_then(Hash32::parse);
+        assert_eq!(file.fields.head, head);
+        // A peer accepts it (step (3)) and reads the changes it names (step (4)).
+        let report = go(&mut kit, b);
+        assert_eq!(report.accepted, vec![da], "{report:?}");
+        assert_eq!(report.received, vec![(da, 2)]);
+        // Its own file now vouches for A's change, with A's signature.
+        assert_eq!(go(&mut kit, b).published.device_file, None, "nothing new");
+        let mut again = go(&mut kit, b);
+        assert!(again.published.device_file.is_none(), "{again:?}");
+        let theirs = device_file_of(&kit, b);
+        let entries = frontier::entries(&theirs.fields.lists["frontier"], true);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            (entries[0].d, entries[0].s, entries[0].h),
+            (da, 2, last.hash)
+        );
+        let kd = &kit.devices[a];
+        let held = |d: &DeviceId, s: u64| {
+            (*d == da && s == last.seq).then_some(Held {
+                h: last.hash,
+                prev: last.prev,
+                vroot: last.vroot,
+            })
+        };
+        let resolved = frontier::resolve(&entries[0], &kd.lib.id, Some(&kd.key.public()), &held);
+        assert_eq!(resolved, frontier::Resolution::Resolved);
+        // And A accepts B's file.
+        again = go(&mut kit, a);
+        assert_eq!(again.accepted, vec![db], "{again:?}");
+    }
+
+    #[test]
+    fn a_signature_saved_before_its_change_is_applied_vouches_for_nothing() {
+        // SP16, SP29: a frontier entry never claims more than was applied.
+        let mut kit = testkit::library(2);
+        let (a, b) = (1, 0);
+        let (da, db) = (kit.devices[a].lib.device, kit.devices[b].lib.device);
+        with_note(&mut kit.devices[a]);
+        go(&mut kit, a);
+        let last_hash = changes_of(&kit, a).last().unwrap().hash;
+        // B has stopped receiving from A (SY28), so it applies none of it.
+        let kd = &kit.devices[b];
+        crate::sync::apply::stop(kd.db.conn(), &kd.lib, da, "test", 1).unwrap();
+        let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+        state.sigs.peers.entry(da).or_default().candidate = Some(pass::SignedMark {
+            s: 2,
+            h: last_hash,
+            sig: crate::sync::ids::b64url_encode(&[7u8; 64]),
+        });
+        let tx = kd.db.conn().unchecked_transaction().unwrap();
+        state.save(&tx, &kd.lib.id).unwrap();
+        tx.commit().unwrap();
+        go(&mut kit, b);
+        let file = device_file_of(&kit, b);
+        assert!(file.fields.lists["frontier"].is_empty(), "{file:?}");
+        assert_eq!(db, file.device);
+    }
+
+    #[test]
+    fn the_device_file_is_signed_once_and_uploaded_again_after_a_failed_rename() {
+        // PS2, SP15: counters follow the same order as change sequences: signed and
+        // kept in the device store, then uploaded; a failure leaves those bytes to go.
+        let mut kit = testkit::library(2);
+        with_note(&mut kit.devices[1]);
+        let me = kit.devices[1].lib.device;
+        let path = device_file::device_path(&me);
+        kit.folder.fail_rename(&path);
+        let mut log = log_of(&kit, 1);
+        assert!(run_on(&mut kit.devices[1], &mut log, &Budgets::sy2(), &|| 0).is_err());
+        let kept = device_file::pending(&kit.devices[1].store, &kit.devices[1].lib.id).unwrap();
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].0, path);
+        let report = go(&mut kit, 1);
+        assert_eq!(report.published.device_file, Some(2));
+        assert_eq!(get(&kit.devices[1], &path).unwrap(), kept[0].1);
+        assert_eq!(device_file_of(&kit, 1).counter, 2, "no second counter");
+    }
+
+    #[test]
+    fn a_half_synced_device_file_of_its_own_delays_the_next_one() {
+        // PS2, SP7: with nothing else to publish, the device file waits too.
+        let mut kit = testkit::library(2);
+        let me = kit.devices[1].lib.device;
+        let path = device_file::device_path(&me);
+        kit.folder.half_synced(&me.to_string(), &path, b"junk", 1);
+        let mut log = log_of(&kit, 1);
+        let report = run_on(&mut kit.devices[1], &mut log, &Budgets::sy2(), &|| 0).unwrap();
+        assert!(log.writes.is_empty(), "{:?}", log.writes);
+        assert_eq!(report.published.device_file, None);
+        assert!(!report.set_aside.is_empty());
+        let report = go(&mut kit, 1);
+        assert_eq!(report.published.device_file, Some(2));
+    }
+
+    #[test]
+    fn a_conflict_copy_of_its_own_device_file_is_removed_even_when_nothing_else_is_published() {
+        let mut kit = testkit::library(2);
+        own_device_file_copy(&mut kit, false);
+        let me = kit.devices[1].lib.device;
+        let copy = format!("devices/{me} 2.json");
+        go(&mut kit, 1);
+        let there = kit.devices[1]
+            .folder
+            .list("devices", None)
+            .unwrap()
+            .entries
+            .iter()
+            .any(|e| e.name == copy);
+        assert!(!there);
+    }
+
+    #[test]
+    fn ages_are_published_and_a_device_running_ahead_publishes_none() {
+        // SP35, SY17: a deletion's age goes in the device file; marked ahead, it says
+        // so and sends no ages.
+        let mut kit = testkit::library(2);
+        let kd = &mut kit.devices[1];
+        let mut state = State::load(kd.db.conn(), &kd.lib.id).unwrap();
+        let e = Entry {
+            device: Hash32([3; 32]).0[..16]
+                .try_into()
+                .map(crate::sync::ids::Id16)
+                .unwrap(),
+            seq: 4,
+            hash: Hash32([4; 32]),
+        };
+        state.ages.saw(e, 0);
+        let tx = kd.db.conn().unchecked_transaction().unwrap();
+        state.save(&tx, &kd.lib.id).unwrap();
+        tx.commit().unwrap();
+        go(&mut kit, 1);
+        let file = device_file_of(&kit, 1);
+        assert_eq!(file.fields.lists["ages"].len(), 1, "{file:?}");
+        assert!(!file.fields.ahead);
+        let ahead = Readings {
+            clock_ahead: true,
+            mono_ms: READ.mono_ms + 1_000,
+            wall_ms: READ.wall_ms + 1_000,
+            ..READ
+        };
+        let mut log = log_of(&kit, 1);
+        run_at(&mut kit.devices[1], &mut log, ahead, &Budgets::sy2(), &|| 0).unwrap();
+        let file = device_file_of(&kit, 1);
+        assert!(file.fields.ahead);
+        assert!(file.fields.lists.get("ages").is_none_or(|a| a.is_empty()));
     }
 
     #[test]

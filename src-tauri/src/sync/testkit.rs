@@ -168,31 +168,6 @@ pub(crate) fn library(n: usize) -> Kit {
 }
 
 impl KitDevice {
-    /// Writes a device file that names this device's newest signed change as its
-    /// latest: what a peer needs to read it (SP16), until the pass writes it.
-    pub(crate) fn announce(&mut self) {
-        let state = self.store.library(&LIB).unwrap();
-        let own = state.last_hash().unwrap().map(|h| (state.seq, h));
-        let head = state
-            .rest
-            .get("head")
-            .and_then(|v| v.as_str())
-            .and_then(Hash32::parse);
-        let written = device_file::publish(
-            &self.ks,
-            &mut self.store,
-            &LIB,
-            &Fields {
-                head,
-                own,
-                ..Fields::default()
-            },
-        )
-        .unwrap();
-        files::write_file(&mut self.folder, &written.path, &written.bytes).unwrap();
-        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.path).unwrap();
-    }
-
     /// SP15: signs what was written locally as this device's next change and
     /// publishes it as a device would: the bodies it names in `blobs/`, the change
     /// file, and a device file naming the change. Returns the change's sequence, or
