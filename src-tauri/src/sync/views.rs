@@ -35,7 +35,7 @@ use super::device_file;
 use super::files::{self, Read};
 use super::folder::{Folder, Listed};
 use super::ids::{b64url_decode, DeviceId, Hash32};
-use super::pass::{self, list_all, read_bytes, save_state, Device, Error, Meter, Report, Stopped};
+use super::pass::{self, list_all, read_bytes, save_state, Device, Error, Meter, Report};
 use super::read;
 use super::view::{self, View, ViewError};
 use serde::{Deserialize, Serialize};
@@ -96,6 +96,11 @@ pub(super) enum Got {
     Skip,
     /// A budget ran out; `report.stopped` says which.
     Halt,
+    /// #229 (2): the view fits a whole pass but not what is left of this one. Nothing
+    /// of it is read, no try is counted, and the pass goes on to the next peer: this
+    /// peer stays behind until a pass has the room. Its change files aren't read
+    /// either, since the chain a view stands in for is usually more than a pass.
+    Wait,
 }
 
 fn fail(note: &mut Noted, report: &mut Report, path: String, why: impl Display) -> Got {
@@ -231,8 +236,13 @@ fn fetch<F: Folder>(
         return Ok(Got::Skip);
     }
     if used + declared > meter.budgets().bytes {
-        report.stopped = Some(Stopped::Bytes);
-        return Ok(Got::Halt);
+        // #229 (2): not a budget that has run out, but a read that would run it out:
+        // it isn't made, and one peer's view doesn't stop the later peers or step 9.
+        report.set_aside.push((
+            dir,
+            "doesn't fit what is left of the pass's byte budget".into(),
+        ));
+        return Ok(Got::Wait);
     }
     // SY28: a part that storage hasn't synced yet is waited for, not read.
     let listed: HashMap<&str, &Listed<F::Token>> =
@@ -515,7 +525,7 @@ pub(super) fn finish_landings<F: Folder>(
                     .receive_view(device.conn, &lib, naming, peer, &opened.view)?;
                 device.state.views.landing.remove(&peer);
             }
-            Got::Skip => {
+            Got::Skip | Got::Wait => {
                 let gave_up = landing.tries + 1 >= MAX_TRIES;
                 if gave_up {
                     device.state.views.landing.remove(&peer);
@@ -542,7 +552,7 @@ mod tests {
     use crate::sync::device_store::{Keystore, Memory, StoreError};
     use crate::sync::folder::{self, Page};
     use crate::sync::frontier;
-    use crate::sync::pass::{Budgets, Readings, State};
+    use crate::sync::pass::{Budgets, Readings, State, Stopped};
     use crate::sync::testkit::{self, Kit, KitDevice, NAMING};
     use std::io;
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -949,7 +959,8 @@ mod tests {
         assert!(report.viewed.is_empty() && held(&kit) == 0);
         finish(&mut kit);
         // The byte budget: the parts' declared sizes don't fit in what is left, so
-        // none is read.
+        // none is read. #229 (2): that isn't a budget run out, so the pass goes on
+        // (it isn't stopped) and this peer waits for a pass with room.
         let mut kit = rig(2, 4, 6, "");
         let index = chain_free_index(&kit);
         let declared: u64 = {
@@ -971,8 +982,9 @@ mod tests {
         let mut b = Budgets::sy2();
         b.bytes = declared + before_view / 2;
         let (report, _) = pass_within(&mut kit, 0, &b);
-        assert_eq!(report.stopped, Some(Stopped::Bytes), "{report:?}");
+        assert_eq!(report.stopped, None, "{report:?}");
         assert!(report.viewed.is_empty() && held(&kit) == 0);
+        assert_eq!(report.behind, vec![peer_of(&kit)]);
         for part in parts(&kit) {
             assert_eq!(reads(&kit, &part), 0, "{part} was read past the budget");
         }
@@ -1243,16 +1255,170 @@ mod tests {
     #[test]
     fn bodies_past_the_run_cap_are_left_for_step_five() {
         // SP15 (the 32 MB cap): the view lands, and a body that would take it past
-        // the cap isn't read; its version waits.
+        // the cap isn't read with it; its version waits, and step 5 takes it in the
+        // same pass (B2b).
         let mut kit = rig(2, 4, 6, "");
         let mut b = Budgets::sy2();
         b.run_bytes = 1;
         let (report, _) = pass_within(&mut kit, 0, &b);
         assert_eq!(report.viewed, vec![peer_of(&kit)], "{report:?}");
-        assert_eq!(note(&kit), None);
-        // Only the bodies of the two later changes were read, not the view's 62.
+        // Only the bodies of the two later changes were read with the view, not the
+        // view's 62: every other body was read once, by step 5.
         let total: usize = files_in(&kit, "blobs").iter().map(|b| reads(&kit, b)).sum();
-        assert!(total <= 4, "{total} bodies read");
+        assert!(
+            total as u64 - report.late.fetched <= 4,
+            "{total} bodies read"
+        );
+        assert!(report.late.fetched > 0, "{report:?}");
+        assert_eq!(note(&kit), Some(Some("note 6".into())));
+    }
+
+    #[test]
+    fn a_body_that_arrives_after_its_view_is_fetched_and_applied() {
+        // SY28, SP37 (5): the view lands with its bodies missing from storage; once
+        // they are there, the next pass fetches and applies them, and doesn't read
+        // the view again.
+        let mut kit = rig(2, 4, 6, "");
+        let peer = peer_of(&kit);
+        let blobs: Vec<(String, Vec<u8>)> = files_in(&kit, "blobs")
+            .into_iter()
+            .map(|p| (p.clone(), get(&kit, &p)))
+            .collect();
+        for (path, _) in &blobs {
+            kit.folder.vanish(path);
+        }
+        let (report, _) = pass(&mut kit, 0);
+        assert_eq!(report.viewed, vec![peer], "{report:?}");
+        assert!(kit.devices[0].db.annotations("book").unwrap().is_empty());
+        for (path, bytes) in &blobs {
+            put(&mut kit, path, bytes);
+        }
+        let (report, _) = pass(&mut kit, 0);
+        assert!(report.viewed.is_empty() && report.received.is_empty());
+        assert!(
+            report.late.fetched > 0 && report.late.applied > 0,
+            "{report:?}"
+        );
+        assert_eq!(report.late.waiting, 0);
+        assert_eq!(note(&kit), Some(Some("note 6".into())));
+        assert_eq!(kit.devices[0].db.annotations("book").unwrap().len(), 31);
+        assert_eq!(reads(&kit, &format!("{}/index.json", view_dir(&kit))), 1);
+        for (path, _) in &blobs {
+            assert!(reads(&kit, path) <= 1, "{path}");
+        }
+    }
+
+    /// What a pass of the same rig reads apart from the bodies it fetches.
+    fn without_bodies(through: u64, total: u64) -> u64 {
+        let mut dry = rig(2, through, total, "");
+        let (report, _) = pass(&mut dry, 0);
+        let bodies: u64 = files_in(&dry, "blobs")
+            .iter()
+            .map(|b| dry.folder.bytes_read(&reader(&dry, 0), b))
+            .sum();
+        report.bytes_read - bodies
+    }
+
+    #[test]
+    fn a_budget_that_runs_out_after_the_view_is_opened_still_receives_the_view() {
+        // #229 (1), PS6: the view alone reaches the checkpoint (it is through the
+        // peer's latest change), and fetching its bodies uses up the byte budget. The
+        // view is received with the bodies fetched so far, the pass stops, and the
+        // next pass doesn't read the view again; the rest of the bodies wait for step 5.
+        let mut kit = rig(2, 6, 6, "");
+        let peer = peer_of(&kit);
+        let mut b = Budgets::sy2();
+        b.bytes = without_bodies(6, 6) + 1;
+        let (report, _) = pass_within(&mut kit, 0, &b);
+        assert_eq!(report.stopped, Some(Stopped::Bytes), "{report:?}");
+        assert_eq!(report.viewed, vec![peer], "{report:?}");
+        assert_eq!(held(&kit), 6);
+        let index = format!("{}/index.json", view_dir(&kit));
+        assert_eq!(reads(&kit, &index), 1);
+        let (report, _) = pass(&mut kit, 0);
+        assert!(report.viewed.is_empty() && report.stopped.is_none());
+        assert_eq!(note(&kit), Some(Some("note 6".into())));
+        assert_eq!(reads(&kit, &index), 1, "the view isn't read again");
+    }
+
+    /// Device 1 has a view; device 2 has one change, and is read after device 1
+    /// (peers are read in device ID order).
+    fn two_peers() -> Kit {
+        loop {
+            let mut kit = rig(3, 4, 6, "");
+            if kit.devices[1].lib.device > kit.devices[2].lib.device {
+                continue;
+            }
+            kit.devices[2]
+                .db
+                .save_annotation(&annotation(
+                    "3c4d5e6f-7a8b-4c1d-8e2f-5a6b7c8d9e0f",
+                    "epubcfi(/6/4!/4/90,/1:0,/1:4)",
+                    "from the third",
+                ))
+                .unwrap();
+            kit.devices[2].publish_pending().unwrap();
+            return kit;
+        }
+    }
+
+    /// What a pass reads before the view's parts: steps (1)–(3), then the view's
+    /// directory and index (on a rig like `kit`, which isn't read).
+    fn before_parts() -> u64 {
+        let mut dry = two_peers();
+        let mut b = Budgets::sy2();
+        b.names = count(&dry, "libraries") + count(&dry, "trust") + count(&dry, "devices");
+        let (report, _) = pass_within(&mut dry, 0, &b);
+        report.bytes_read + chain_free_index(&dry).len() as u64
+    }
+
+    fn declared_size(kit: &Kit) -> u64 {
+        let (idx, _, _) = view::open_index(
+            &chain_free_index(kit),
+            &kit.devices[0].lib.id,
+            &peer_of(kit),
+            &kit.devices[1].key.public(),
+        )
+        .unwrap();
+        idx.shards
+            .iter()
+            .map(|s| s.size)
+            .chain(idx.spine.iter().map(|s| s.size))
+            .sum::<u64>()
+            + idx.open.size
+    }
+
+    #[test]
+    fn a_view_that_doesnt_fit_what_is_left_leaves_that_peer_behind_and_the_pass_goes_on() {
+        // #229 (2), PS6: the view fits a whole pass's byte budget but not what steps
+        // (1)–(3) left of it. It isn't read and no budget has run out, so the pass
+        // reads the next peer and publishes this device's own change; the first peer
+        // waits for a pass with room (it isn't refused).
+        let mut kit = two_peers();
+        let (peer, other) = (peer_of(&kit), kit.devices[2].lib.device);
+        kit.devices[0]
+            .db
+            .save_annotation(&annotation(
+                "4d5e6f7a-8b9c-4d2e-9f3a-6b7c8d9e0f1a",
+                "epubcfi(/6/4!/4/92,/1:0,/1:4)",
+                "own",
+            ))
+            .unwrap();
+        let mut b = Budgets::sy2();
+        b.bytes = before_parts() + declared_size(&kit) - 1;
+        let (report, _) = pass_within(&mut kit, 0, &b);
+        assert_eq!(report.stopped, None, "{report:?}");
+        assert!(report.viewed.is_empty() && held(&kit) == 0);
+        assert!(report.received.contains(&(other, 1)), "{report:?}");
+        assert_eq!(report.behind, vec![peer]);
+        assert!(!report.published.changes.is_empty(), "{report:?}");
+        for part in parts(&kit) {
+            assert_eq!(reads(&kit, &part), 0);
+        }
+        // Not refused: a pass with room takes it.
+        let (report, _) = pass(&mut kit, 0);
+        assert_eq!(report.viewed, vec![peer], "{report:?}");
+        assert_eq!(held(&kit), 6);
     }
 
     /// A device-store keystore whose `n`th save fails, as a crash between two writes.

@@ -287,6 +287,8 @@ pub struct Report {
     /// SP18: peers whose view was taken this pass, so their changes up to its
     /// `through` were not read one by one.
     pub viewed: Vec<DeviceId>,
+    /// SP37 (5): the later fetches of bodies that received versions waited for.
+    pub late: super::bodies::Late,
     /// SP37 (4): peers still ahead of this device after the pass: a change file
     /// not in storage yet, a chain that waits, or one the pass left for a budget.
     pub behind: Vec<DeviceId>,
@@ -498,7 +500,7 @@ fn steps<F: super::folder::Folder>(
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
-        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, steps (5)-(8) and (11) (B2b: a body not in storage when its change or view was read waits, and nothing repairs a blob yet); within step (4): the open reservations and holds and the marks (SP35) a view carries, and a view found by listing when the device file names none (PS1 lists no directories); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's own view (compaction is P3b), views, refused, repairs, quarantined and proofs lists, and the hour's re-upload of own and cached files (SP15)",
+        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, steps (6)-(8) and (11); within step (5): the repair of blobs (SY23) and its quarantine (SP16), which are B2b's second part, and the repair of books (Stage 4); within step (4): the open reservations and holds and the marks (SP35) a view carries, and a view found by listing when the device file names none (PS1 lists no directories); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's own view (compaction is P3b), its views and proofs lists, its refused, repairs and quarantined lists (B2b's second part), and the hour's re-upload of own and cached files (SP15)",
         ..Report::default()
     };
     let mut meter = Meter {
@@ -818,6 +820,18 @@ fn steps<F: super::folder::Folder>(
             &mut blobs,
         )?;
     }
+    // SP37 (5): the bodies received versions waited for, once storage has them.
+    if report.stopped.is_none() {
+        super::bodies::fetch_waiting(
+            device,
+            folder,
+            &meter,
+            &mut report,
+            &mut blobs,
+            &naming,
+            readings.wall_ms as i64,
+        )?;
+    }
     // SP37 (9): a budget that ran out earlier stops the pass where it is.
     if report.stopped.is_none() {
         super::publish::publish(
@@ -916,14 +930,12 @@ fn receive_changes<F: super::folder::Folder>(
             )? {
                 views::Got::Ready(opened) => taken = Some(*opened),
                 views::Got::Skip => {}
+                // #229 (2): this peer waits for a pass with room; the next is read.
+                views::Got::Wait => continue,
                 views::Got::Halt => return Ok(()),
             }
         }
         let start = taken.as_ref().map_or(have, |o| o.view.through.s);
-        let Some(listing) = list_all(folder, &format!("changes/{peer}"), meter, report)? else {
-            return Ok(());
-        };
-        let listing: BTreeMap<_, _> = listing.into_iter().map(|e| (e.name.clone(), e)).collect();
         // SP18: a run reaches the lowest checkpoint it has not passed, however
         // long that takes, or `receive_run` would wait on it for ever.
         let lowest = floor
@@ -932,6 +944,36 @@ fn receive_changes<F: super::folder::Folder>(
             .filter(|s| *s > have)
             .min()
             .unwrap_or(0);
+        // #229 (1): a budget that ran out while the view was read stops the pass
+        // after the view is received, when it alone reaches the checkpoint: the
+        // bodies fetched so far come with it, and the rest wait for step 5 (SY28).
+        // Otherwise the next pass would read the same view again, for ever.
+        let stop = report.stopped.or_else(|| meter.check(report));
+        let listing = match stop {
+            Some(stop) => {
+                report.stopped = Some(stop);
+                None
+            }
+            None => list_all(folder, &format!("changes/{peer}"), meter, report)?,
+        };
+        let Some(listing) = listing else {
+            if let Some(opened) = taken.filter(|o| o.view.through.s >= lowest) {
+                keep_candidate(device, &peer, spine_mark(&opened))?;
+                views::receive(
+                    device,
+                    report,
+                    naming,
+                    &peer,
+                    &key,
+                    opened,
+                    Vec::new(),
+                    now_ms,
+                )?;
+                settle(device, report, peer, have)?;
+            }
+            return Ok(());
+        };
+        let listing: BTreeMap<_, _> = listing.into_iter().map(|e| (e.name.clone(), e)).collect();
         let mut files = Vec::new();
         let mut last_sig = None;
         let mut run_bytes = 0u64;
@@ -987,21 +1029,11 @@ fn receive_changes<F: super::folder::Folder>(
         }
         // SP16: a view alone is vouched for by its own last spine entry.
         if last_sig.is_none() {
-            last_sig = taken
-                .as_ref()
-                .and_then(|o| o.view.spine.last())
-                .map(|e| SignedMark {
-                    s: e.s,
-                    h: e.h,
-                    sig: super::ids::b64url_encode(&e.sig),
-                });
+            last_sig = taken.as_ref().and_then(spine_mark);
         }
         // SP16: the signature of the last change of the run is kept before the run is
         // applied, so a crash after it leaves the frontier entry to be made.
-        if let Some(mark) = last_sig {
-            device.state.sigs.peers.entry(peer).or_default().candidate = Some(mark);
-            save_state(device)?;
-        }
+        keep_candidate(device, &peer, last_sig)?;
         if let Some(opened) = taken {
             views::receive(device, report, naming, &peer, &key, opened, files, now_ms)?;
         } else if !files.is_empty() {
@@ -1012,14 +1044,49 @@ fn receive_changes<F: super::folder::Folder>(
                     .push((format!("changes/{peer}"), format!("{e}"))),
             }
         }
-        let now_held = apply::seen(device.conn, &device.lib, peer)?;
-        if now_held > have {
-            report.received.push((peer, now_held));
-            device_file::prune_floors(device.ks, device.store, &device.lib.id, &peer, now_held)?;
-        }
+        settle(device, report, peer, have)?;
         if halted {
             return Ok(());
         }
+    }
+    Ok(())
+}
+
+/// SP16: a view alone is vouched for by its own last spine entry.
+fn spine_mark(opened: &super::views::Opened) -> Option<SignedMark> {
+    opened.view.spine.last().map(|e| SignedMark {
+        s: e.s,
+        h: e.h,
+        sig: super::ids::b64url_encode(&e.sig),
+    })
+}
+
+/// SP16: the signature of the last change of what is about to be applied, kept
+/// before the apply so a crash after it leaves the frontier entry to be made.
+fn keep_candidate(
+    device: &mut Device<'_>,
+    peer: &DeviceId,
+    mark: Option<SignedMark>,
+) -> Result<(), Error> {
+    if let Some(mark) = mark {
+        device.state.sigs.peers.entry(*peer).or_default().candidate = Some(mark);
+        save_state(device)?;
+    }
+    Ok(())
+}
+
+/// SP37 (4): what a peer's receive came to: the report, and the floor's checkpoints
+/// that no later change need be kept for.
+fn settle(
+    device: &mut Device<'_>,
+    report: &mut Report,
+    peer: DeviceId,
+    have: u64,
+) -> Result<(), Error> {
+    let now_held = super::apply::seen(device.conn, &device.lib, peer)?;
+    if now_held > have {
+        report.received.push((peer, now_held));
+        super::device_file::prune_floors(device.ks, device.store, &device.lib.id, &peer, now_held)?;
     }
     Ok(())
 }
