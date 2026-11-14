@@ -880,6 +880,10 @@ fn receive_changes<F: super::folder::Folder>(
     // PS5: a removed device's note of a view isn't kept.
     let trusted = report.trusted.clone();
     device.state.views.peers.retain(|d, _| trusted.contains(d));
+    // PS5: a view an earlier pass was landing is finished first, ahead or not.
+    if views::finish_landings(device, folder, meter, report, membership, naming)? {
+        return Ok(());
+    }
     for peer in trusted {
         if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
             continue;
@@ -1107,7 +1111,7 @@ mod tests {
         let vouched =
             json!({"total_ms":100,"last_mono_ms":42,"last_wall_ms":300,"untrusted_wall":true});
         let membership = json!({"first_seen":[[h,-2]],"confirmed":[h],"checkpoint":[h],"quarantined":[[d,mark]],"heads":[[d,h]]});
-        let views = json!({"peers":[[d,{"hash":h,"through":7,"tries":2,"refused":false}]]});
+        let views = json!({"peers":[[d,{"hash":h,"through":7,"tries":2,"refused":false}]],"landing":[[d,{"hash":h,"gen":3,"through":7,"tries":1}]]});
         let state = State {
             ledger: serde_json::from_value(ledger.clone()).unwrap(),
             weeks: serde_json::from_value(weeks.clone()).unwrap(),

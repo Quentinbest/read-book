@@ -16,10 +16,12 @@
 //!    pass's byte budget before any is read (SP15), and each read is held to the size
 //!    the index declares and to the budget.
 //! 3. Bodies of the records newer than what is held are read, up to the run cap.
-//! 4. The claims of the view's `week` entries are saved (SP17), the signature of its
-//!    last change is kept as a candidate (SP16), and only then is the view applied.
-//!    A crash after the apply and before the floor's generation is raised only leaves
-//!    that generation where it was: the next pass has nothing to apply.
+//! 4. The claims of the view's `week` entries and a mark that the view is landing are
+//!    saved (SP17, PS5), the signature of its last change is kept as a candidate
+//!    (SP16), and only then is the view applied. Then the floor's generation is raised,
+//!    the claims proven, and the mark cleared in one save. A stop after the mark is
+//!    saved is finished by `finish_landings` at the start of a later pass, ahead or
+//!    not.
 //!
 //! A view that can't be used (a failed check, a part not as named, a floor it
 //! contradicts) is set aside, and the peer's change files are read as if it had none.
@@ -27,7 +29,7 @@
 //! the peer's device file names another (PROVISIONAL, `MAX_TRIES`), so a broken view
 //! costs a pass its reads once and not every pass.
 
-use super::apply::Received;
+use super::apply::{self, Received};
 use super::chain::ChainError;
 use super::device_file;
 use super::files::{self, Read};
@@ -60,11 +62,26 @@ pub struct Noted {
     pub refused: bool,
 }
 
-/// One note for each trusted peer at most.
+/// PS5, SP18: a view of a peer that this device is landing: saved before the view is
+/// applied and cleared only once the peer's floor has its generation and the view's
+/// claims are proven, so a stop anywhere in between is finished by a later pass.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Landing {
+    /// The view's index hash, which names its directory.
+    pub hash: Hash32,
+    pub gen: u64,
+    pub through: u64,
+    /// Passes in which the view couldn't be read again to prove its claims.
+    pub tries: u32,
+}
+
+/// One note for each trusted peer at most, and the views being landed.
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Notes {
     #[serde(with = "super::pass::map")]
     pub peers: BTreeMap<DeviceId, Noted>,
+    #[serde(default, with = "super::pass::map")]
+    pub landing: BTreeMap<DeviceId, Landing>,
 }
 
 /// A view that was opened and checked, with the bodies of its newer records.
@@ -114,7 +131,7 @@ pub(super) fn open<F: Folder>(
         },
     };
     let got = fetch(
-        device, folder, meter, report, blobs, naming, peer, key, &mut note, have,
+        device, folder, meter, report, blobs, naming, peer, key, &mut note, have, false,
     );
     device.state.views.peers.insert(*peer, note);
     save_state(device)?;
@@ -133,16 +150,17 @@ fn fetch<F: Folder>(
     key: &[u8; 32],
     note: &mut Noted,
     have: u64,
+    finish: bool,
 ) -> Result<Got, Error> {
     let dir = format!("state/{peer}/{}", note.hash);
-    if note.refused {
+    if note.refused && !finish {
         report
             .set_aside
             .push((dir, "refused on an earlier pass".into()));
         return Ok(Got::Skip);
     }
     // SP18: a view this device is past isn't read, and its index isn't read again.
-    if note.through.is_some_and(|through| through <= have) {
+    if !finish && note.through.is_some_and(|through| through <= have) {
         return Ok(Got::Skip);
     }
     let Some(entries) = list_all(folder, &dir, meter, report)? else {
@@ -178,7 +196,7 @@ fn fetch<F: Folder>(
         ));
     }
     note.through = Some(index.through.s);
-    if index.through.s <= have {
+    if !finish && index.through.s <= have {
         return Ok(Got::Skip);
     }
     // SP15, SY28: the declared sizes are added up and held to the budget before any
@@ -277,6 +295,13 @@ fn fetch<F: Folder>(
     };
     // SY28: the bodies of the records this device doesn't hold, within the run cap;
     // the rest wait for step 5.
+    // SP17: finishing a view that was applied needs its claims, not its bodies.
+    if finish {
+        return Ok(Got::Ready(Box::new(Opened {
+            view,
+            bodies: Vec::new(),
+        })));
+    }
     let fresh = newer_keys(&view, have);
     let mut seen = HashSet::new();
     let mut held = 0u64;
@@ -327,11 +352,13 @@ fn newer_keys(view: &View, have: u64) -> HashSet<[u8; 16]> {
         .collect()
 }
 
-/// SP18: apply an opened view with the change files after it. The claims of its
-/// `week` entries are taken and saved first (SP17: they only add protection), and
-/// again once it has landed, so that they are proven. A view that lands raises the
-/// peer's floor generation (SP18). One the floor or the chain refuses is set aside and
-/// isn't read again until the peer names another.
+/// SP18: apply an opened view with the change files after it. Before anything is
+/// applied the view's `week` claims are taken (SP17: they only add protection) and
+/// the view is marked as landing, both saved (PS5). Once it has applied, the peer's
+/// floor takes its generation (SP18), the claims are proven, and the mark is cleared
+/// in the same save. A stop anywhere between the first save and the last leaves the
+/// mark, and `finish_landings` finishes it on a later pass. One the floor or the chain
+/// refuses is set aside and isn't read again until the peer names another.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn receive(
     device: &mut Device<'_>,
@@ -349,6 +376,16 @@ pub(super) fn receive(
         .state
         .weeks
         .receive_view(device.conn, &lib, naming, *peer, &view)?;
+    // PS5: the mark is saved before the apply commits, never after.
+    device.state.views.landing.insert(
+        *peer,
+        Landing {
+            hash: view.hash,
+            gen: view.gen,
+            through: view.through.s,
+            tries: 0,
+        },
+    );
     save_state(device)?;
     let floor = device
         .store
@@ -381,16 +418,22 @@ pub(super) fn receive(
                     .state
                     .weeks
                     .receive_view(device.conn, &lib, naming, *peer, &view)?;
+                device.state.views.landing.remove(peer);
                 report.viewed.push(*peer);
-                save_state(device)?;
+            } else if apply::seen(device.conn, &lib, *peer)? < view.through.s {
+                // Nothing of it landed (it waits, or the reader is asked first).
+                device.state.views.landing.remove(peer);
             }
+            save_state(device)?;
         }
-        // This device's own database or store failed: not the peer's doing.
+        // This device's own database or store failed: not the peer's doing. The mark
+        // stays, and the next pass finishes whatever the apply did commit.
         Err(e @ (ChainError::Journal(_) | ChainError::Store(_))) => return Err(Error::Chain(e)),
         Err(e) => {
             if let Some(note) = device.state.views.peers.get_mut(peer) {
                 note.refused = true;
             }
+            device.state.views.landing.remove(peer);
             report
                 .set_aside
                 .push((format!("state/{peer}/{}", view.hash), e.to_string()));
@@ -398,6 +441,92 @@ pub(super) fn receive(
         }
     }
     Ok(())
+}
+
+/// PS5, SP18, SP17: finish the views an earlier pass was landing, whether or not the
+/// peer is ahead now, before anything is read of any peer. A view that hadn't applied
+/// (`have` below its `through`) loses its mark: the normal road takes it again. One
+/// that had has its generation raised on the peer's floor first, from what this device
+/// holds (no read), and then, for peers read at all, its claims are proven from the
+/// view read again within the budgets (no bodies, nothing applied). If it can't be
+/// read again (gone, damaged, a part not synced), the claims stay as they are, unproven,
+/// which only keeps content longer (SP17); the mark is dropped after `MAX_TRIES` such
+/// passes so that it costs a pass its reads at most that many times. `true` when a
+/// budget ran out.
+pub(super) fn finish_landings<F: Folder>(
+    device: &mut Device<'_>,
+    folder: &F,
+    meter: &Meter<'_>,
+    report: &mut Report,
+    membership: &super::membership::Membership,
+    naming: &[u8; 32],
+) -> Result<bool, Error> {
+    let lib = device.lib;
+    let marks: Vec<(DeviceId, Landing)> = device
+        .state
+        .views
+        .landing
+        .iter()
+        .map(|(p, l)| (*p, l.clone()))
+        .collect();
+    for (peer, landing) in marks {
+        let trusted = report.trusted.contains(&peer);
+        if !trusted || apply::seen(device.conn, &lib, peer)? < landing.through {
+            device.state.views.landing.remove(&peer);
+            save_state(device)?;
+            continue;
+        }
+        device_file::raise_view_generation(device.ks, device.store, &lib.id, &peer, landing.gen)?;
+        let key = membership.key(&peer);
+        // SP30: nothing is read of a quarantined peer, nor of one this device has
+        // stopped receiving from.
+        let skip = device.state.membership.quarantined.contains_key(&peer)
+            || apply::stopped(device.conn, &lib, peer)?;
+        let (Some(key), false) = (key, skip) else {
+            device.state.views.landing.remove(&peer);
+            save_state(device)?;
+            continue;
+        };
+        let mut note = Noted {
+            hash: landing.hash,
+            through: Some(landing.through),
+            tries: 0,
+            refused: false,
+        };
+        let got = fetch(
+            device,
+            folder,
+            meter,
+            report,
+            &mut None,
+            naming,
+            &peer,
+            &key,
+            &mut note,
+            landing.through,
+            true,
+        )?;
+        match got {
+            Got::Halt => return Ok(true),
+            Got::Ready(opened) => {
+                device
+                    .state
+                    .weeks
+                    .receive_view(device.conn, &lib, naming, peer, &opened.view)?;
+                device.state.views.landing.remove(&peer);
+            }
+            Got::Skip => {
+                let gave_up = landing.tries + 1 >= MAX_TRIES;
+                if gave_up {
+                    device.state.views.landing.remove(&peer);
+                } else if let Some(l) = device.state.views.landing.get_mut(&peer) {
+                    l.tries += 1;
+                }
+            }
+        }
+        save_state(device)?;
+    }
+    Ok(false)
 }
 
 #[cfg(test)]
@@ -1153,16 +1282,96 @@ mod tests {
             .unwrap()
     }
 
+    /// Device 0 holds changes 1 to 4; the view through 5 retires versions it holds,
+    /// so its claims can be proven; change 6 follows the view.
+    fn landing_rig() -> Kit {
+        let mut kit = rig(2, 0, 4, "");
+        pass(&mut kit, 0);
+        edit(&mut kit.devices[1], "note 5", 5);
+        kit.devices[1].publish_view(5);
+        edit(&mut kit.devices[1], "note 6", 6);
+        kit
+    }
+
+    /// What device 0's saved claims say, and which of them are proven.
+    fn proofs(kit: &Kit) -> Vec<(String, bool)> {
+        let state = State::load(kit.devices[0].db.conn(), &kit.devices[0].lib.id).unwrap();
+        let mut all: Vec<_> = state
+            .weeks
+            .weeks()
+            .iter()
+            .map(|w| {
+                (
+                    format!("{:?} at {}", w.name, w.retiring.seq),
+                    state.weeks.may_release(w.name, &w.retiring),
+                )
+            })
+            .collect();
+        all.sort();
+        all
+    }
+
+    fn landing_of(kit: &Kit) -> usize {
+        State::load(kit.devices[0].db.conn(), &kit.devices[0].lib.id)
+            .unwrap()
+            .views
+            .landing
+            .len()
+    }
+
+    /// The mark a pass saves before it applies a view, and (when `keep_claims` is
+    /// false) without the claims it had saved.
+    fn mark_landing(kit: &mut Kit, keep_claims: bool) {
+        let (peer, hash) = (peer_of(kit), kit.devices[1].view.unwrap());
+        let lib = kit.devices[0].lib.id;
+        let kd = &mut kit.devices[0];
+        let mut state = State::load(kd.db.conn(), &lib).unwrap();
+        if !keep_claims {
+            state.weeks = Default::default();
+        }
+        state.views.landing.insert(
+            peer,
+            Landing {
+                hash,
+                gen: 1,
+                through: 5,
+                tries: 0,
+            },
+        );
+        let tx = kd.db.conn().unchecked_transaction().unwrap();
+        state.save(&tx, &lib).unwrap();
+        tx.commit().unwrap();
+    }
+
+    /// A pass that stopped after the apply: the view is applied, the floor's generation
+    /// and the proofs are as they were before it, and the mark is saved.
+    fn interrupt_after_apply(kit: &mut Kit, keep_claims: bool) {
+        mark_landing(kit, keep_claims);
+        let (peer, lib) = (peer_of(kit), kit.devices[0].lib.id);
+        kit.devices[0]
+            .store
+            .library_mut(&lib)
+            .unwrap()
+            .floors
+            .get_mut(&peer.to_string())
+            .unwrap()
+            .gen = 0;
+    }
+
     #[test]
     fn a_failure_at_any_save_of_a_pass_that_takes_a_view_is_finished_by_the_next_pass() {
         // PS5: a failed save of the device store, wherever it falls, leaves what the
-        // next pass completes, with no version applied twice.
-        let mut reference = rig(2, 4, 6, "");
+        // next pass completes: no version applied twice, the floor at the view's
+        // generation, the claims proven as in a pass that wasn't interrupted.
+        let mut reference = landing_rig();
         pass(&mut reference, 0);
         let expected = versions(&reference);
+        let expected_proofs = proofs(&reference);
+        assert!(expected_proofs.iter().any(|(_, proven)| *proven));
+        assert_eq!(gen_of(&reference), 1);
         let mut n = 0;
         loop {
-            let mut kit = rig(2, 4, 6, "");
+            let mut kit = landing_rig();
             let flaky = Flaky {
                 inner: Memory::default(),
                 saves: AtomicUsize::new(0),
@@ -1185,10 +1394,13 @@ mod tests {
             assert_eq!(held(&kit), 6, "save {n}: {report:?}");
             assert_eq!(note(&kit), Some(Some("note 6".into())), "save {n}");
             assert_eq!(versions(&kit), expected, "save {n}: nothing applied twice");
-            // SP17: the claims are saved before the view is applied, so a crash
-            // after it doesn't lose them.
-            let saved = State::load(kit.devices[0].db.conn(), &kit.devices[0].lib.id).unwrap();
-            assert!(!saved.weeks.weeks().is_empty(), "save {n}: the week claims");
+            assert_eq!(
+                gen_of(&kit),
+                1,
+                "save {n}: the floor takes the view's generation"
+            );
+            assert_eq!(proofs(&kit), expected_proofs, "save {n}: the claims");
+            assert_eq!(landing_of(&kit), 0, "save {n}: nothing left landing");
             assert!(report.behind.is_empty(), "save {n}");
             if !reached {
                 break;
@@ -1200,5 +1412,84 @@ mod tests {
             n > 2,
             "a pass that takes a view saves the device store more than once: {n}"
         );
+    }
+
+    #[test]
+    fn a_view_applied_but_not_finished_is_finished_though_the_peer_is_not_ahead() {
+        // PS5, SP18, SP17: a stop right after the apply commits (or after the floor's
+        // generation was raised) leaves the peer with nothing ahead of this device, and
+        // the generation and the proofs are still made.
+        for keep_claims in [true, false] {
+            let mut kit = landing_rig();
+            pass(&mut kit, 0);
+            let expected = proofs(&kit);
+            interrupt_after_apply(&mut kit, keep_claims);
+            assert_eq!(gen_of(&kit), 0);
+            let (report, _) = pass(&mut kit, 0);
+            assert!(
+                report.viewed.is_empty() && report.received.is_empty(),
+                "{report:?}"
+            );
+            assert!(report.behind.is_empty());
+            assert_eq!(gen_of(&kit), 1, "the generation is raised");
+            assert_eq!(proofs(&kit), expected, "the claims are proven again");
+            assert_eq!(landing_of(&kit), 0);
+            assert_eq!(held(&kit), 6);
+        }
+    }
+
+    #[test]
+    fn a_mark_whose_view_never_applied_is_cleared_and_the_view_is_taken() {
+        // PS5: the stop came after the mark and before the apply.
+        let mut kit = landing_rig();
+        mark_landing(&mut kit, true);
+        let (report, _) = pass(&mut kit, 0);
+        assert_eq!(report.viewed, vec![peer_of(&kit)], "{report:?}");
+        assert_eq!(held(&kit), 6);
+        assert_eq!(gen_of(&kit), 1);
+        assert_eq!(landing_of(&kit), 0);
+    }
+
+    #[test]
+    fn a_view_that_did_not_land_leaves_no_mark_and_raises_no_generation() {
+        // PS5, SP18: the view waits (the change file that reaches the floor's
+        // checkpoint is missing), so nothing of it is applied; whether the mark was
+        // cleared by the receive or by the replay of one an earlier pass left, the
+        // floor keeps its generation.
+        let mut kit = landing_rig();
+        kit.folder.vanish(&change_at(&kit, 6));
+        let (report, _) = pass(&mut kit, 0);
+        assert!(report.viewed.is_empty(), "{report:?}");
+        assert_eq!((held(&kit), gen_of(&kit), landing_of(&kit)), (4, 0, 0));
+        mark_landing(&mut kit, true);
+        let (report, _) = pass(&mut kit, 0);
+        assert!(report.viewed.is_empty(), "{report:?}");
+        assert_eq!((held(&kit), gen_of(&kit), landing_of(&kit)), (4, 0, 0));
+    }
+
+    #[test]
+    fn a_view_that_cant_be_read_again_still_has_its_generation_and_costs_a_bounded_number_of_reads()
+    {
+        // SP18, SP17: the floor's generation comes from what this device holds; the
+        // proof needs the view, and gives up after MAX_TRIES passes (the claims stay,
+        // unproven, which only keeps content longer).
+        let mut kit = landing_rig();
+        pass(&mut kit, 0);
+        interrupt_after_apply(&mut kit, true);
+        let part = parts(&kit).remove(0);
+        kit.folder.vanish(&part);
+        let index_path = format!("{}/index.json", view_dir(&kit));
+        let before = reads(&kit, &index_path);
+        for n in 1..=MAX_TRIES + 2 {
+            let (report, _) = pass(&mut kit, 0);
+            assert!(
+                report.stopped.is_none() && report.behind.is_empty(),
+                "{report:?}"
+            );
+            assert_eq!(gen_of(&kit), 1, "pass {n}");
+            assert_eq!(landing_of(&kit), usize::from(n < MAX_TRIES), "pass {n}");
+        }
+        assert_eq!(reads(&kit, &index_path) - before, MAX_TRIES as usize);
+        assert!(!proofs(&kit).is_empty(), "the claims are kept");
     }
 }
