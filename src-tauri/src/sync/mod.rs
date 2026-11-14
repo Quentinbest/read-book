@@ -42,6 +42,7 @@ pub mod read;
 pub mod record;
 pub mod recovery;
 pub mod relay;
+pub mod repair;
 pub mod restore;
 pub mod retention;
 pub mod shared;

@@ -15,8 +15,10 @@
 //! 2. Each is fetched in turn (`pass::fetch_body`: `blobs/` listed once a pass, the
 //!    keyed name SP9, the size from `stat` against the type's limit before the read,
 //!    and again while reading). The bytes' plain hash must be the hash the version
-//!    names (SY23): bytes that aren't are set aside, never kept. Then `receive_body`
-//!    keeps it, in its own transaction.
+//!    names (SY23): bytes that aren't, or a body over its type's limit, are set
+//!    aside, never kept, listed in the device file's `refused` and not read again
+//!    until `stat` shows another size or an hour has passed (`repair`). Then
+//!    `receive_body` keeps it, in its own transaction.
 //! 3. What was kept is applied (`apply_pending`), also when a budget stopped step 2:
 //!    a stop leaves no body kept but unapplied. If a crash comes between 2 and 3, the
 //!    body is held and its version still pending, and the next pass applies it,
@@ -29,7 +31,7 @@
 use super::apply;
 use super::folder::{Folder, Listed};
 use super::guard;
-use super::ids::{identity_hash, Hash32};
+use super::ids::Hash32;
 use super::pass::{self, Device, Error, Meter, Report};
 use rusqlite::params;
 use serde_json::{json, Value};
@@ -50,7 +52,6 @@ pub struct Late {
 /// SY28: one body to fetch, with the oldest version that names it, which gives the
 /// limit it is read to (each version is held to its own type's limit when applied).
 struct Want {
-    hash: Hash32,
     version: Value,
 }
 
@@ -89,10 +90,7 @@ fn wanted(device: &Device<'_>) -> Result<Vec<Want>, Error> {
         {
             continue;
         }
-        wants.push(Want {
-            hash: parsed,
-            version,
-        });
+        wants.push(Want { version });
     }
     Ok(wants)
 }
@@ -123,21 +121,23 @@ pub(super) fn fetch_waiting<F: Folder>(
             report.stopped = Some(stop);
             break;
         }
-        let body = match pass::fetch_body(folder, meter, report, blobs, naming, &want.version)? {
+        let now = device.state.vouched.now() as i64;
+        // SP9, SY23: `fetch_body` checks the bytes against the hash the version
+        // names, so a damaged or swapped object is set aside there and never kept.
+        let body = match pass::fetch_body(
+            folder,
+            meter,
+            report,
+            blobs,
+            naming,
+            &mut device.state.objects,
+            now,
+            &want.version,
+        )? {
             pass::Body::Skip => continue,
             pass::Body::Halt => break,
             pass::Body::Got(body) => body,
         };
-        // SP9, SY23: the plain hash against the bytes. The keyed name was derived
-        // from the hash the version names, so bytes that don't hash to it are a
-        // damaged or swapped object: never kept, and the version keeps waiting.
-        if identity_hash(&body) != want.hash {
-            report.set_aside.push((
-                format!("blobs/{}", super::crypto::blob_name(naming, &want.hash)),
-                "its bytes aren't the body its name says".into(),
-            ));
-            continue;
-        }
         if apply::receive_body(conn, &lib, &body)? {
             kept += 1;
         }

@@ -123,6 +123,9 @@ pub struct State {
     pub sigs: Sigs,
     /// SP18: what this device knows of the view each peer's device file names.
     pub views: super::views::Notes,
+    /// SY23, SP16: the blobs found damaged, the repairs made, and the peers' reports
+    /// of damage waiting to be looked at.
+    pub objects: super::repair::Objects,
     /// PS5, SY17: whether `vouched` was loaded from a saved row. A clock that
     /// was never saved starts at the current readings in `resume`, rather than
     /// counting everything since the Unix epoch as elapsed.
@@ -140,6 +143,7 @@ impl Default for State {
             membership: Default::default(),
             sigs: Default::default(),
             views: Default::default(),
+            objects: Default::default(),
             started: false,
         }
     }
@@ -216,6 +220,7 @@ impl State {
             membership: read(conn, lib, "membership")?,
             sigs: read(conn, lib, "sigs")?,
             views: read(conn, lib, "views")?,
+            objects: read(conn, lib, "objects")?,
         })
     }
     pub fn save(&self, tx: &Transaction<'_>, lib: &Id16) -> Result<(), Error> {
@@ -227,7 +232,8 @@ impl State {
         write(tx, lib, "vouched", &self.vouched)?;
         write(tx, lib, "membership", &self.membership)?;
         write(tx, lib, "sigs", &self.sigs)?;
-        write(tx, lib, "views", &self.views)
+        write(tx, lib, "views", &self.views)?;
+        write(tx, lib, "objects", &self.objects)
     }
     /// SY17: resume the same vouched clock used by ages and hearing history.
     pub fn resume(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool, same_boot: bool) {
@@ -289,6 +295,8 @@ pub struct Report {
     pub viewed: Vec<DeviceId>,
     /// SP37 (5): the later fetches of bodies that received versions waited for.
     pub late: super::bodies::Late,
+    /// SP37 (5), SY23: the blobs found damaged and the ones written again.
+    pub objects: super::repair::Handled,
     /// SP37 (4): peers still ahead of this device after the pass: a change file
     /// not in storage yet, a chain that waits, or one the pass left for a budget.
     pub behind: Vec<DeviceId>,
@@ -500,7 +508,7 @@ fn steps<F: super::folder::Folder>(
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
-        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, steps (6)-(8) and (11); within step (5): the repair of blobs (SY23) and its quarantine (SP16), which are B2b's second part, and the repair of books (Stage 4); within step (4): the open reservations and holds and the marks (SP35) a view carries, and a view found by listing when the device file names none (PS1 lists no directories); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's own view (compaction is P3b), its views and proofs lists, its refused, repairs and quarantined lists (B2b's second part), and the hour's re-upload of own and cached files (SP15)",
+        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, steps (6)-(8) and (11); within step (5): the quarantine of an object damaged again within 24 hours of a repair and the reader's Try again (SP16, SP12), which are B2b's last part, and the repair of books (Stage 4); within step (4): the open reservations and holds and the marks (SP35) a view carries, and a view found by listing when the device file names none (PS1 lists no directories); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's own view (compaction is P3b), its views and proofs lists, its quarantined list (B2b's last part), and the hour's re-upload of own and cached files (SP15)",
         ..Report::default()
     };
     let mut meter = Meter {
@@ -766,7 +774,9 @@ fn steps<F: super::folder::Folder>(
             break;
         }
         match accepted {
-            Ok(Accepted::New(file, _)) => {
+            Ok(Accepted::New(file, lists)) => {
+                // SY23: what the peer found damaged is checked in step (5).
+                device.state.objects.hint(&naming, lists.get("refused"));
                 device
                     .state
                     .heard
@@ -778,6 +788,8 @@ fn steps<F: super::folder::Folder>(
             // PS5: a crash after `accept` saved the floor but before the state
             // was saved loses the head; the file at the floor's own counter is
             // the one accepted, so its head is taken again.
+            // Its `refused` entries are not: the file is seen every pass, and a
+            // report is taken only from a new counter (`repair::Objects::hint`).
             Ok(Accepted::Stale) => {
                 if floor == Some(opened.counter) {
                     device
@@ -832,6 +844,20 @@ fn steps<F: super::folder::Folder>(
             readings.wall_ms as i64,
         )?;
     }
+    // SP37 (5), SY23: blobs a live version names that storage lost or damaged.
+    if report.stopped.is_none() {
+        let now = device.state.vouched.now() as i64;
+        super::repair::repair(
+            device,
+            folder,
+            &meter,
+            &mut report,
+            &mut blobs,
+            &naming,
+            now,
+        )?;
+    }
+    save_state(device)?;
     // SP37 (9): a budget that ran out earlier stops the pass where it is.
     if report.stopped.is_none() {
         super::publish::publish(
@@ -1002,7 +1028,17 @@ fn receive_changes<F: super::folder::Folder>(
                 if stop.is_some() {
                     break;
                 }
-                match fetch_body(folder, meter, report, blobs, naming, version)? {
+                let now = device.state.vouched.now() as i64;
+                match fetch_body(
+                    folder,
+                    meter,
+                    report,
+                    blobs,
+                    naming,
+                    &mut device.state.objects,
+                    now,
+                    version,
+                )? {
                     Body::Skip => continue,
                     Body::Halt => {
                         halted = true;
@@ -1102,15 +1138,22 @@ pub(super) enum Body {
 
 /// SP9, SY28: the body a version names, from `blobs/` under its keyed name, read no
 /// further than its record type allows (whatever size the version declared). `blobs/`
-/// is listed once per pass, when a body is first wanted.
+/// is listed once per pass, when a body is first wanted. The bytes are checked
+/// against the plain hash the version names (SY23): a body that fails, or is over
+/// its limit, is set aside and kept in `objects` as refused, and is not read again
+/// until `stat` shows another size or the retry hour has passed (`repair::RETRY_MS`).
+#[allow(clippy::too_many_arguments)]
 pub(super) fn fetch_body<F: super::folder::Folder>(
     folder: &F,
     meter: &Meter<'_>,
     report: &mut Report,
     blobs: &mut Option<BTreeMap<String, super::folder::Listed<F::Token>>>,
     naming: &[u8; 32],
+    objects: &mut super::repair::Objects,
+    now: i64,
     version: &serde_json::Value,
 ) -> Result<Body, Error> {
+    use super::repair::{read_blob, Blob};
     let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) else {
         return Ok(Body::Skip);
     };
@@ -1125,14 +1168,37 @@ pub(super) fn fetch_body<F: super::folder::Folder>(
         *blobs = Some(listed.into_iter().map(|e| (e.name.clone(), e)).collect());
     }
     // SP9: a body is stored under its keyed name.
-    let name = format!("blobs/{}", super::crypto::blob_name(naming, &hash));
-    let Some(blob) = blobs.as_ref().and_then(|b| b.get(&name)) else {
+    let name = super::crypto::blob_name(naming, &hash);
+    let Some(blob) = blobs.as_ref().and_then(|b| b.get(&format!("blobs/{name}"))) else {
         return Ok(Body::Skip);
     };
+    // SY23: what stat says of a blob found damaged before decides whether it is read.
+    let Some(size) = folder.stat(&blob.token)? else {
+        return Ok(Body::Skip);
+    };
+    if objects.leave(&name, &hash, size, now) {
+        return Ok(Body::Skip);
+    }
     Ok(
-        match read_bytes_within(folder, blob, body_limit(version), report)? {
-            Some(body) => Body::Got(body),
-            None => Body::Skip,
+        match read_blob(
+            folder,
+            blob,
+            &hash,
+            body_limit(version).unwrap_or(u64::MAX),
+            report,
+        )? {
+            Blob::Good(body) => {
+                objects.good(&name, now);
+                Body::Got(body)
+            }
+            Blob::Damaged => {
+                objects.damaged(&name, &hash, size, now);
+                if !report.objects.refused.contains(&name) {
+                    report.objects.refused.push(name);
+                }
+                Body::Skip
+            }
+            Blob::Other => Body::Skip,
         },
     )
 }
@@ -1179,6 +1245,7 @@ mod tests {
             json!({"total_ms":100,"last_mono_ms":42,"last_wall_ms":300,"untrusted_wall":true});
         let membership = json!({"first_seen":[[h,-2]],"confirmed":[h],"checkpoint":[h],"quarantined":[[d,mark]],"heads":[[d,h]]});
         let views = json!({"peers":[[d,{"hash":h,"through":7,"tries":2,"refused":false}]],"landing":[[d,{"hash":h,"gen":3,"through":7,"tries":1}]]});
+        let objects = json!({"refused":{"aa":{"hash":"bb","size":9,"at":3}},"repaired":{"cc":{"hash":"dd","at":4,"done":false}},"hints":{"ee":"ff"},"checked":{"gg":5},"listed":6});
         let state = State {
             ledger: serde_json::from_value(ledger.clone()).unwrap(),
             weeks: serde_json::from_value(weeks.clone()).unwrap(),
@@ -1189,6 +1256,7 @@ mod tests {
             membership: serde_json::from_value(membership.clone()).unwrap(),
             sigs: Default::default(),
             views: serde_json::from_value(views.clone()).unwrap(),
+            objects: serde_json::from_value(objects.clone()).unwrap(),
             started: true,
         };
         save(&mut store, &lib, &state);
@@ -1202,6 +1270,7 @@ mod tests {
             (serde_json::to_value(loaded.vouched).unwrap(), vouched),
             (serde_json::to_value(loaded.membership).unwrap(), membership),
             (serde_json::to_value(loaded.views).unwrap(), views),
+            (serde_json::to_value(loaded.objects).unwrap(), objects),
         ] {
             assert_eq!(actual, expected);
         }

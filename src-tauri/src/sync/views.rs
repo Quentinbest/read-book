@@ -145,7 +145,7 @@ pub(super) fn open<F: Folder>(
 
 #[allow(clippy::too_many_arguments)]
 fn fetch<F: Folder>(
-    device: &Device<'_>,
+    device: &mut Device<'_>,
     folder: &F,
     meter: &Meter<'_>,
     report: &mut Report,
@@ -334,7 +334,17 @@ fn fetch<F: Folder>(
         if !seen.insert(body) || held.saturating_add(size) > meter.budgets().run_bytes {
             continue;
         }
-        match pass::fetch_body(folder, meter, report, blobs, naming, &record.version)? {
+        let now = device.state.vouched.now() as i64;
+        match pass::fetch_body(
+            folder,
+            meter,
+            report,
+            blobs,
+            naming,
+            &mut device.state.objects,
+            now,
+            &record.version,
+        )? {
             pass::Body::Skip => continue,
             pass::Body::Halt => break,
             pass::Body::Got(bytes) => {

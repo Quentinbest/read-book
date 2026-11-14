@@ -91,7 +91,7 @@ pub(super) fn publish<F: Folder>(
 
 /// A change signed and not yet in storage, one numbered and never signed, or a
 /// local version not numbered yet.
-fn anything_to_publish(device: &Device<'_>) -> Result<bool, Error> {
+pub(super) fn anything_to_publish(device: &Device<'_>) -> Result<bool, Error> {
     let lib = device.lib;
     let last = device.store.library(&lib.id).ok_or(Error::NoIdentity)?.seq;
     Ok(!chain::pending(device.store, &lib.id)?.is_empty()
@@ -334,7 +334,7 @@ fn note_own(device: &mut Device<'_>, bytes: &[u8], naming: &[u8; 32]) -> Result<
 
 /// PS6, SP7: one write through the folder's temporary name and rename, counted
 /// against the budgets. `false` when a budget had already run out, with nothing written.
-fn put<F: Folder>(
+pub(super) fn put<F: Folder>(
     folder: &mut F,
     path: &str,
     bytes: &[u8],
@@ -432,7 +432,7 @@ struct Item {
 
 /// SP33: whether some live version names the body: a head of a record that
 /// carries it. A deleted record's body, or one an edit replaced, is not live.
-fn live_named(device: &Device<'_>, hash: &Hash32) -> Result<bool, Error> {
+pub(super) fn live_named(device: &Device<'_>, hash: &Hash32) -> Result<bool, Error> {
     let keys: Vec<String> = device
         .conn
         .prepare(
@@ -775,7 +775,7 @@ fn is_there<T>(blobs: &Blobs<T>, written: &BTreeSet<String>, path: &str) -> bool
 }
 
 /// PS6: `blobs/` listed once a pass, shared with step (4).
-fn list_blobs<F: Folder>(
+pub(super) fn list_blobs<F: Folder>(
     folder: &F,
     meter: &Meter<'_>,
     report: &mut Report,
@@ -900,6 +900,9 @@ fn device_fields(device: &mut Device<'_>, report: &Report) -> Result<Fields, Err
     lists.insert("inherited".to_owned(), frontier::inherited_list(&marks));
     // SP35: ages and marks; an untrusted clock publishes none.
     let retiring = device.state.ages.retiring();
+    // SY23, SP16: the blobs found damaged and the ones written again.
+    lists.insert("refused".to_owned(), device.state.objects.refused_list());
+    lists.insert("repairs".to_owned(), device.state.objects.repairs_list());
     lists.extend(super::ages::lists(
         &device.state.ages,
         &mut device.state.marks,
