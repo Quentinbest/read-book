@@ -26,6 +26,9 @@ pub(crate) struct KitDevice {
     pub(crate) ks: Keystore,
     pub(crate) key: Keypair,
     pub(crate) folder: folder::View,
+    /// SP16: the index of the newest view this device published, which its device
+    /// file keeps naming.
+    pub(crate) view: Option<Hash32>,
 }
 
 pub(crate) struct Kit {
@@ -77,6 +80,7 @@ pub(crate) fn library(n: usize) -> Kit {
             ks,
             key,
             folder: view,
+            view: None,
         });
     }
     let first = &devices[0];
@@ -202,6 +206,7 @@ impl KitDevice {
             &Fields {
                 head,
                 own: Some((signed.seq, signed.hash)),
+                view: self.view,
                 ..Fields::default()
             },
         )
@@ -209,6 +214,93 @@ impl KitDevice {
         files::write_file(&mut self.folder, &written.path, &written.bytes).unwrap();
         super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.path).unwrap();
         Some(signed.seq)
+    }
+}
+
+impl KitDevice {
+    /// This device's own change files `1..=through`, read back from its folder.
+    pub(crate) fn own_changes(&self, through: u64) -> Vec<super::chain::Change> {
+        let me = self.lib.device;
+        (1..=through)
+            .map(|s| {
+                let path = super::chain::change_path(&me, s);
+                let entries = self.folder.list(&format!("changes/{me}"), None).unwrap();
+                let entry = entries.entries.iter().find(|e| e.name == path).unwrap();
+                let Read::Bytes(bytes) = files::read_file(&self.folder, entry).unwrap() else {
+                    panic!("missing change file")
+                };
+                super::chain::open_change(&bytes, &LIB, &me, &self.key.public()).unwrap()
+            })
+            .collect()
+    }
+
+    /// SP17: compacts this device's own changes `1..=through` into a view, writes its
+    /// parts and then its index as a device would, and a device file naming it (the
+    /// change files stay). Returns the index's hash.
+    pub(crate) fn publish_view(&mut self, through: u64) -> Hash32 {
+        use super::{ages::Marks, compact, hold::Ledger, view};
+        let me = self.lib.device;
+        let changes = self.own_changes(through);
+        let built = compact::build(
+            self.db.conn(),
+            &self.lib,
+            &NAMING,
+            None,
+            &changes,
+            &Ledger::default(),
+            &Marks::default(),
+            true,
+            &[],
+            &|_| false,
+        )
+        .unwrap()
+        .unwrap();
+        let written = compact::publish(
+            self.db.conn(),
+            &self.lib,
+            &self.ks,
+            &mut self.store,
+            Some(&built),
+            &mut Marks::default(),
+        )
+        .unwrap()
+        .unwrap();
+        for (path, bytes) in &written.parts {
+            files::write_file(&mut self.folder, path, bytes).unwrap();
+            super::chain::uploaded(&self.ks, &mut self.store, &LIB, path).unwrap();
+        }
+        files::write_file(&mut self.folder, &written.index_path, &written.index_bytes).unwrap();
+        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.index_path).unwrap();
+        let (_, hash, _) =
+            view::open_index(&written.index_bytes, &LIB, &me, &self.key.public()).unwrap();
+        self.view = Some(hash);
+        self.publish_device_file();
+        hash
+    }
+
+    /// A device file at the next counter naming the newest change and view.
+    pub(crate) fn publish_device_file(&mut self) {
+        let state = self.store.library(&LIB).unwrap();
+        let own = state.last_hash().unwrap().map(|h| (state.seq, h));
+        let head = state
+            .rest
+            .get("head")
+            .and_then(|v| v.as_str())
+            .and_then(Hash32::parse);
+        let written = device_file::publish(
+            &self.ks,
+            &mut self.store,
+            &LIB,
+            &Fields {
+                head,
+                own,
+                view: self.view,
+                ..Fields::default()
+            },
+        )
+        .unwrap();
+        files::write_file(&mut self.folder, &written.path, &written.bytes).unwrap();
+        super::chain::uploaded(&self.ks, &mut self.store, &LIB, &written.path).unwrap();
     }
 }
 
