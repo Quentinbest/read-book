@@ -68,6 +68,8 @@ B2 grew (SD9, 2026-11-14): B1 came to about 2,090 changed lines and B2 has more 
 
 B2b grew in turn (SD9, 2026-11-14): step (5)'s later fetches of bodies with #229's two budget points of view reading came to about 840 changed lines, and the repair of blobs with the device file's `refused`, `repairs` and `quarantined` lists (#225) needs saved state of its own and is about as much again, so B2b is built as two PRs: B2b-1, the later fetches and #229; B2b-2, repair and the three lists. B2 is done when B2a, B2b-1, B2b-2 and B2c are.
 
+B2b-2 grew in turn (SD9, 2026-11-14): the damaged blobs and the device file's `refused`, the repair of lost or damaged blobs from this device's copy with `repairs`, and the reading of peers' `refused` came to about 1,000 changed lines with their tests, and the quarantine (SP16) needs saved state and tests of its own (what a device saw first, in what order, and when), so B2b-2 is built as two PRs: B2b-2, repair, `refused` and `repairs`; B2b-3, the quarantine of an object damaged again within 24 hours of a repair, the `quarantined` list, the reading of peers' `repairs`, and the reader's Try again (`choice:obj.`, SP12). B2 is done when B2a, B2b-1, B2b-2, B2b-3 and B2c are.
+
 Books (steps (7)–(8)) and compaction and cleanup (step (11)) are not in the slice: the slice syncs no book file, and it runs for days, not weeks.
 
 #197 (P2) was closed on 2026-11-08, before P2b was built; B1 and B2 need it reopened or issues of their own (section 6).

@@ -280,6 +280,14 @@ impl KitDevice {
 
     /// A device file at the next counter naming the newest change and view.
     pub(crate) fn publish_device_file(&mut self) {
+        self.publish_device_file_with(BTreeMap::new());
+    }
+
+    /// `publish_device_file`, carrying these lists (SP16).
+    pub(crate) fn publish_device_file_with(
+        &mut self,
+        lists: BTreeMap<String, Vec<serde_json::Value>>,
+    ) {
         let state = self.store.library(&LIB).unwrap();
         let own = state.last_hash().unwrap().map(|h| (state.seq, h));
         let head = state
@@ -295,6 +303,7 @@ impl KitDevice {
                 head,
                 own,
                 view: self.view,
+                lists,
                 ..Fields::default()
             },
         )
