@@ -66,6 +66,8 @@ The owner's, except where it says agent.
 
 B2 grew (SD9, 2026-11-14): B1 came to about 2,090 changed lines and B2 has more in it, so it is built as three PRs. B2a: views in step (4), which answers #208. B2b: step (5), the later fetches of bodies and repair. B2c: step (3)'s unknown identities and removed devices' tails, with P2's whole-pass Done-when tests (two devices exchanging a note and a deletion, a restart keeping a deletion's age and a witness timeout). B2 is done when all three are.
 
+B2b grew in turn (SD9, 2026-11-14): step (5)'s later fetches of bodies with #229's two budget points of view reading came to about 840 changed lines, and the repair of blobs with the device file's `refused`, `repairs` and `quarantined` lists (#225) needs saved state of its own and is about as much again, so B2b is built as two PRs: B2b-1, the later fetches and #229; B2b-2, repair and the three lists. B2 is done when B2a, B2b-1, B2b-2 and B2c are.
+
 Books (steps (7)–(8)) and compaction and cleanup (step (11)) are not in the slice: the slice syncs no book file, and it runs for days, not weeks.
 
 #197 (P2) was closed on 2026-11-08, before P2b was built; B1 and B2 need it reopened or issues of their own (section 6).
