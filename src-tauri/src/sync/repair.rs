@@ -1012,6 +1012,37 @@ mod tests {
     }
 
     #[test]
+    fn while_sync_is_paused_nothing_is_repaired() {
+        // SY26: a paused library reads and writes nothing here; the repair is made
+        // once the reader resumes.
+        let (mut kit, lost) = lost_two();
+        let set = |kit: &Kit, state: &str| {
+            kit.devices[0]
+                .db
+                .conn()
+                .execute("UPDATE sync_libraries SET state = ?1", [state])
+                .unwrap();
+        };
+        let before: String = kit.devices[0]
+            .db
+            .conn()
+            .query_row("SELECT state FROM sync_libraries", [], |r| r.get(0))
+            .unwrap();
+        set(&kit, "paused");
+        let report = pass(&mut kit, 0, HOUR);
+        assert!(report.objects.repaired.is_empty(), "{report:?}");
+        for (path, _) in &lost {
+            assert!(get(&kit.devices[0], path).is_none());
+        }
+        set(&kit, &before);
+        let report = pass(&mut kit, 0, HOUR + 1_000);
+        assert_eq!(report.objects.repaired.len(), 2, "{report:?}");
+        for (path, body) in &lost {
+            assert_eq!(get(&kit.devices[0], path).as_ref(), Some(body));
+        }
+    }
+
+    #[test]
     fn what_is_kept_has_a_bound() {
         // PS5: a peer can't grow `State` or the device file without bound.
         let mut o = Objects::default();
