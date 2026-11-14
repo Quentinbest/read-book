@@ -107,7 +107,7 @@ pub struct Handled {
     pub refused: Vec<String>,
     /// Keyed names of the blobs this pass wrote again.
     pub repaired: Vec<String>,
-    /// Repairs left for a later pass at `MAX_REPAIRED`.
+    /// Objects left unlooked-at for a later pass at `MAX_REPAIRED`.
     pub deferred: u64,
 }
 
@@ -377,6 +377,13 @@ fn handle<F: Folder>(
     if !look.known && !look.pending && device.state.objects.throttled(name, now) {
         return Ok(true);
     }
+    // At the bound on repairs nothing more is begun: the object waits, a peer's
+    // report of it with it, for older entries to expire, and nothing is read for it.
+    let o = &device.state.objects;
+    if !look.pending && o.repaired.len() >= MAX_REPAIRED && !o.repaired.contains_key(name) {
+        report.objects.deferred += 1;
+        return Ok(true);
+    }
     // A peer's report is looked at once.
     device.state.objects.hints.remove(name);
     let o = &device.state.objects;
@@ -410,8 +417,12 @@ fn handle<F: Folder>(
             match read_blob(folder, listed, hash, copy.len() as u64, report)? {
                 Blob::Good(_) => {
                     device.state.objects.good(name, now);
-                    // A pending repair whose write got through before a crash.
+                    // A pending repair whose write got through before a crash: when
+                    // isn't known, so the 24 hours run from now.
                     if let Some(r) = device.state.objects.repaired.get_mut(name) {
+                        if !r.done {
+                            r.at = now;
+                        }
                         r.done = true;
                     }
                     false
@@ -427,10 +438,6 @@ fn handle<F: Folder>(
     // SY23: the intent is saved before the write; a stop after it leaves it pending.
     let objects = &mut device.state.objects;
     if !look.pending {
-        if objects.repaired.len() >= MAX_REPAIRED && !objects.repaired.contains_key(name) {
-            report.objects.deferred += 1;
-            return Ok(true);
-        }
         objects.repaired.insert(
             name.clone(),
             Repaired {
@@ -445,8 +452,10 @@ fn handle<F: Folder>(
         return Ok(false);
     }
     let objects = &mut device.state.objects;
+    // SP16: the 24 hours run from the write, not from an intent saved passes before.
     if let Some(r) = objects.repaired.get_mut(name) {
         r.done = true;
+        r.at = now;
     }
     objects.refused.remove(name);
     objects.checked.insert(name.clone(), now);
@@ -1040,6 +1049,63 @@ mod tests {
         for (path, body) in &lost {
             assert_eq!(get(&kit.devices[0], path).as_ref(), Some(body));
         }
+    }
+
+    #[test]
+    fn a_repair_finished_passes_later_counts_its_24_hours_from_the_write() {
+        // SP16: an intent saved at one hour whose write fails, finished at 26 hours,
+        // is a repair made at 26 hours: the object lost again isn't written at 28.
+        let (mut kit, lost) = lost_two();
+        let mut failing = probe(&kit, 0);
+        failing.crash = Some(false);
+        assert!(pass_on(&mut kit, 0, HOUR, &Budgets::sy2(), &mut failing, &|| 0).is_err());
+        assert!(failing.writes.iter().all(|p| !p.starts_with("blobs/")));
+        let report = pass(&mut kit, 0, 26 * HOUR);
+        assert_eq!(report.objects.repaired.len(), 2, "{report:?}");
+        for (path, _) in &lost {
+            kit.folder.vanish(path);
+        }
+        let report = pass(&mut kit, 0, 28 * HOUR);
+        assert!(report.objects.repaired.is_empty(), "{report:?}");
+        assert_eq!(list_of(&kit, 0, "repairs").len(), 2);
+    }
+
+    #[test]
+    fn a_peers_report_waits_with_its_object_while_the_repairs_are_at_their_bound() {
+        // PS5: at `MAX_REPAIRED` a reported object isn't read or repaired, and its
+        // report is kept; once older repairs expire it is repaired.
+        let mut kit = testkit::library(3);
+        let (path, body, hash) = publish(&mut kit, ANNO, 1);
+        pass(&mut kit, 0, 0);
+        put(&mut kit, &path, &vec![b'x'; body.len()]);
+        let mut state = state_of(&kit, 0);
+        let at = state.vouched.now() as i64;
+        for n in 0..MAX_REPAIRED {
+            let hash = "0".repeat(64);
+            let repaired = Repaired {
+                hash,
+                at,
+                done: true,
+            };
+            state.objects.repaired.insert(format!("{n:064}"), repaired);
+        }
+        let kd = &kit.devices[0];
+        let tx = kd.db.conn().unchecked_transaction().unwrap();
+        state.save(&tx, &kd.lib.id).unwrap();
+        tx.commit().unwrap();
+        let lists = BTreeMap::from([("refused".to_owned(), vec![entry(&hash)])]);
+        kit.devices[2].publish_device_file_with(lists);
+        let before = reads(&kit, 0, &path);
+        // (Past the hour since this device read the object good, so the report is due.)
+        let report = pass(&mut kit, 0, HOUR + HOUR / 6);
+        assert_eq!(report.objects.deferred, 1, "{report:?}");
+        assert!(report.objects.repaired.is_empty());
+        assert_eq!(reads(&kit, 0, &path), before);
+        assert_eq!(state_of(&kit, 0).objects.hints.len(), 1);
+        // The seeded repairs expire, and the report is still there to act on.
+        let report = pass(&mut kit, 0, REPAIRS_KEPT_MS as u64 + 2 * HOUR);
+        assert_eq!(report.objects.repaired, vec![name_of(&hash)], "{report:?}");
+        assert_eq!(get(&kit.devices[1], &path), Some(body));
     }
 
     #[test]
