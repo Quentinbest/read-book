@@ -589,6 +589,11 @@ impl Ledger {
                 .any(|h| h.item.kind == kind && h.item.name == name)
     }
 
+    /// SP33: the newest change of `device` this ledger has received, if any.
+    pub fn last_seq(&self, device: DeviceId) -> Option<u64> {
+        self.last.get(&device).map(|m| m.s)
+    }
+
     pub fn reservation_count(&self, device: DeviceId) -> usize {
         self.reservations
             .keys()

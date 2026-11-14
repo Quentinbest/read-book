@@ -445,7 +445,8 @@ pub fn observe(conn: &Connection, lib: &Library, remote: Hlc, wall_ms: u64) -> R
     Ok(())
 }
 
-fn clock_of(conn: &Connection, lib: &Library) -> Result<(i64, i64)> {
+/// This device's clock reading, `(ms, n)` (SP10).
+pub(crate) fn clock_of(conn: &Connection, lib: &Library) -> Result<(i64, i64)> {
     conn.query_row(
         "SELECT clock_ms, clock_n FROM sync_libraries WHERE library = ?1",
         [lib.id.to_string()],
@@ -767,6 +768,28 @@ pub fn take_unsent_within(
     .map(|n| (n.seq, n.versions)))
 }
 
+/// The highest sequence this device has numbered, signed or not (0 before the first).
+fn journalled_seq(conn: &Connection, lib: &Library) -> Result<u64> {
+    Ok(conn
+        .query_row(
+            "SELECT MAX(seq) FROM (
+                SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL
+                UNION ALL SELECT seq FROM sync_change_lists WHERE library = ?1
+             )",
+            params![lib.id.to_string(), lib.device.to_string()],
+            |r| r.get::<_, Option<i64>>(0),
+        )?
+        .unwrap_or(0) as u64)
+}
+
+/// SP15: whether a change was numbered but never signed and kept (a crash between
+/// the two): the next publication signs it again from the same rows, so a pass has
+/// something to publish even when no version is unsent. `last_seq` is the last
+/// sequence the device store holds.
+pub fn numbered_unsigned(conn: &Connection, lib: &Library, last_seq: u64) -> Result<bool> {
+    Ok(journalled_seq(conn, lib)? == last_seq + 1)
+}
+
 /// SP15: all inputs fixed by numbering, including a lists-only change.
 pub struct Numbered {
     pub seq: u64,
@@ -792,16 +815,7 @@ pub fn take_unsent_within_with(
     ledger: &Ledger,
 ) -> Result<Option<Numbered>> {
     let tx = conn.unchecked_transaction()?;
-    let journalled = tx
-        .query_row(
-            "SELECT MAX(seq) FROM (
-                SELECT seq FROM sync_versions WHERE library = ?1 AND device = ?2 AND seq IS NOT NULL
-                UNION ALL SELECT seq FROM sync_change_lists WHERE library = ?1
-             )",
-            params![lib.id.to_string(), lib.device.to_string()],
-            |r| r.get::<_, Option<i64>>(0),
-        )?
-        .unwrap_or(0) as u64;
+    let journalled = journalled_seq(&tx, lib)?;
     if journalled == last_seq + 1 {
         // Numbered before a crash, but never signed: the same change again, from the
         // same rows, before anything new is numbered.

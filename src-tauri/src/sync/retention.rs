@@ -107,6 +107,11 @@ impl Ages {
         self.first_seen.entry(retiring).or_insert(now);
     }
 
+    /// Every retiring version this device has an age for (SP35).
+    pub fn retiring(&self) -> Vec<Entry> {
+        self.first_seen.keys().copied().collect()
+    }
+
     pub fn own_age(&self, retiring: &Entry, now: u64) -> Option<u64> {
         self.first_seen.get(retiring).map(|t| now - t)
     }

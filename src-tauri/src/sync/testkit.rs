@@ -15,7 +15,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const LIB: Id16 = Id16([7; 16]);
 const NOW: i64 = 1_760_000_000_000;
-const NAMING: [u8; 32] = [42; 32];
+pub(crate) const NAMING: [u8; 32] = [42; 32];
 
 // These fields are the kit's interface for later pass tests.
 #[allow(dead_code)]
@@ -181,7 +181,8 @@ impl KitDevice {
         for version in &change.versions {
             if let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) {
                 let body = journal::body(self.db.conn(), &hash).unwrap().unwrap();
-                files::write_file(&mut self.folder, &format!("blobs/{hash}"), &body).unwrap();
+                let name = crypto::blob_name(&NAMING, &hash);
+                files::write_file(&mut self.folder, &format!("blobs/{name}"), &body).unwrap();
             }
         }
         files::write_file(&mut self.folder, &signed.path, &signed.bytes).unwrap();
