@@ -64,6 +64,8 @@ The owner's, except where it says agent.
 | B5 | The slice, test build only. Test commands set up a library on a folder, enrol a second by code (no screens), and run one pass. | In-app checks `SY-place-resume` and `SY-highlight-roundtrip` (Stage 3's, by the same names) pass with two library folders on one temporary folder. With no setup, no file under either root is opened (`SY-nothing-without-setup`). |
 | B6 | The real-folder run and its report (no product code). With the owner's agreement (SD3): the two test libraries on one Mac through `Linen-spike` in iCloud Drive, then Google Drive; on two Macs if a second is at hand. | `docs/spikes/sync-slice.md` records, for each storage: whether both checks pass, how long a change takes to arrive, and everything the folder did that `Memory` has no switch for. Each such thing is a new PS2 switch with a test, or an issue. |
 
+B2 grew (SD9, 2026-11-14): B1 came to about 2,090 changed lines and B2 has more in it, so it is built as three PRs. B2a: views in step (4), which answers #208. B2b: step (5), the later fetches of bodies and repair. B2c: step (3)'s unknown identities and removed devices' tails, with P2's whole-pass Done-when tests (two devices exchanging a note and a deletion, a restart keeping a deletion's age and a witness timeout). B2 is done when all three are.
+
 Books (steps (7)–(8)) and compaction and cleanup (step (11)) are not in the slice: the slice syncs no book file, and it runs for days, not weeks.
 
 #197 (P2) was closed on 2026-11-08, before P2b was built; B1 and B2 need it reopened or issues of their own (section 6).

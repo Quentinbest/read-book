@@ -121,6 +121,8 @@ pub struct State {
     pub membership: MembershipState,
     /// SP16: the signatures a frontier needs (PS5).
     pub sigs: Sigs,
+    /// SP18: what this device knows of the view each peer's device file names.
+    pub views: super::views::Notes,
     /// PS5, SY17: whether `vouched` was loaded from a saved row. A clock that
     /// was never saved starts at the current readings in `resume`, rather than
     /// counting everything since the Unix epoch as elapsed.
@@ -137,6 +139,7 @@ impl Default for State {
             vouched: retention::Vouched::new(0),
             membership: Default::default(),
             sigs: Default::default(),
+            views: Default::default(),
             started: false,
         }
     }
@@ -212,6 +215,7 @@ impl State {
                 .unwrap_or_else(|| retention::Vouched::new(0)),
             membership: read(conn, lib, "membership")?,
             sigs: read(conn, lib, "sigs")?,
+            views: read(conn, lib, "views")?,
         })
     }
     pub fn save(&self, tx: &Transaction<'_>, lib: &Id16) -> Result<(), Error> {
@@ -222,7 +226,8 @@ impl State {
         write(tx, lib, "ages", &self.ages)?;
         write(tx, lib, "vouched", &self.vouched)?;
         write(tx, lib, "membership", &self.membership)?;
-        write(tx, lib, "sigs", &self.sigs)
+        write(tx, lib, "sigs", &self.sigs)?;
+        write(tx, lib, "views", &self.views)
     }
     /// SY17: resume the same vouched clock used by ages and hearing history.
     pub fn resume(&mut self, mono_ms: u64, wall_ms: u64, clock_ahead: bool, same_boot: bool) {
@@ -279,6 +284,9 @@ pub struct Report {
     /// SP37 (4): peers whose change files were received this pass, with how many
     /// of their changes this device holds now.
     pub received: Vec<(DeviceId, u64)>,
+    /// SP18: peers whose view was taken this pass, so their changes up to its
+    /// `through` were not read one by one.
+    pub viewed: Vec<DeviceId>,
     /// SP37 (4): peers still ahead of this device after the pass: a change file
     /// not in storage yet, a chain that waits, or one the pass left for a budget.
     pub behind: Vec<DeviceId>,
@@ -344,8 +352,12 @@ impl Meter<'_> {
         }
     }
 
+    pub(super) fn budgets(&self) -> &Budgets {
+        self.budgets
+    }
+
     /// The budgets a read can use up: bytes and time.
-    fn reading(&self, bytes_read: u64) -> Option<Stopped> {
+    pub(super) fn reading(&self, bytes_read: u64) -> Option<Stopped> {
         if bytes_read > self.budgets.bytes {
             Some(Stopped::Bytes)
         } else if (self.now)().saturating_sub(self.start) > self.budgets.elapsed_ms {
@@ -382,7 +394,7 @@ pub(super) fn list_all<F: super::folder::Folder>(
 }
 
 /// SP7: a file's bytes through `files::read_file`, or why it was set aside.
-fn read_bytes<F: super::folder::Folder>(
+pub(super) fn read_bytes<F: super::folder::Folder>(
     folder: &F,
     entry: &super::folder::Listed<F::Token>,
     report: &mut Report,
@@ -391,7 +403,7 @@ fn read_bytes<F: super::folder::Folder>(
 }
 
 /// `read_bytes` held to `limit` as well as the slot's, when one is given (SY28).
-fn read_bytes_within<F: super::folder::Folder>(
+pub(super) fn read_bytes_within<F: super::folder::Folder>(
     folder: &F,
     entry: &super::folder::Listed<F::Token>,
     limit: Option<u64>,
@@ -486,7 +498,7 @@ fn steps<F: super::folder::Folder>(
     use super::device_file::{self, Accepted};
     use super::{membership, trust};
     let mut report = Report {
-        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, step (4)'s views, steps (5)-(8) and (11); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's views, refused, repairs, quarantined and proofs lists, and the hour's re-upload of own and cached files (SP15)",
+        not_built: "SP37 step (3)'s unknown identities and removed devices' tails, steps (5)-(8) and (11) (B2b: a body not in storage when its change or view was read waits, and nothing repairs a blob yet); within step (4): the open reservations and holds and the marks (SP35) a view carries, and a view found by listing when the device file names none (PS1 lists no directories); within steps (9)-(10): the accepted-by-all marks (SP29, so a hold's naming change waits), peers' reservations and holds in the ledger, books, SY7's rotation when storage is ahead (SP27), the device file's own view (compaction is P3b), views, refused, repairs, quarantined and proofs lists, and the hour's re-upload of own and cached files (SP15)",
         ..Report::default()
     };
     let mut meter = Meter {
@@ -669,6 +681,8 @@ fn steps<F: super::folder::Folder>(
     let Some(entries) = list_all(folder, "devices", &meter, &mut report)? else {
         return Ok(report);
     };
+    // SP18: the view each peer's accepted device file names, for step (4).
+    let mut named_views: BTreeMap<DeviceId, Hash32> = BTreeMap::new();
     for peer in report.trusted.clone() {
         // SP30: a quarantined device's head stays frozen, so no later file of
         // its is accepted.
@@ -756,6 +770,7 @@ fn steps<F: super::folder::Folder>(
                     .heard
                     .saw_counter(peer, file.counter, &device.state.vouched);
                 device.state.membership.heads.insert(peer, file.fields.head);
+                named_views.extend(file.fields.view.map(|v| (peer, v)));
                 report.accepted.push(peer);
             }
             // PS5: a crash after `accept` saved the floor but before the state
@@ -768,6 +783,7 @@ fn steps<F: super::folder::Folder>(
                         .membership
                         .heads
                         .insert(peer, opened.fields.head);
+                    named_views.extend(opened.fields.view.map(|v| (peer, v)));
                 }
             }
             Err(e) => report.set_aside.push((path, format!("{e}"))),
@@ -795,6 +811,7 @@ fn steps<F: super::folder::Folder>(
             folder,
             &membership,
             &naming,
+            &named_views,
             readings.wall_ms as i64,
             &meter,
             &mut report,
@@ -829,38 +846,41 @@ fn naming_key(library: &super::device_store::LibraryState) -> Result<[u8; 32], E
 
 /// SY28: a version's record type limit on its body, when its key says which; and
 /// whether the size it declares is past it, so the blob is never fetched.
-fn body_limit(version: &serde_json::Value) -> Option<u64> {
+pub(super) fn body_limit(version: &serde_json::Value) -> Option<u64> {
     version["key"]
         .as_str()
         .and_then(super::record::Key::parse)
         .map(|(key, _)| key.kind().body_limit())
 }
 
-fn body_over_limit(version: &serde_json::Value) -> bool {
+pub(super) fn body_over_limit(version: &serde_json::Value) -> bool {
     body_limit(version)
         .zip(version["body"]["size"].as_u64())
         .is_some_and(|(limit, size)| size > limit)
 }
 
 /// SP37 (4), SP18, PS6: for each trusted peer whose accepted device file names a
-/// change this device doesn't hold, its change files in order, each with the blobs
-/// its versions name that storage has now (a body not there yet waits for step 5).
-/// `chain::receive_run` checks the run against the peer's floor and applies it. The
-/// peer's views aren't read yet: a chain that starts before the files storage
-/// still holds waits.
+/// change this device doesn't hold: its view when it is needed (`views`), then its
+/// change files in order, each with the blobs its versions name that storage has
+/// now (a body not there yet waits for step 5). `chain::receive_run` checks the run
+/// against the peer's floor and applies it, after the view when there is one.
 #[allow(clippy::too_many_arguments)]
 fn receive_changes<F: super::folder::Folder>(
     device: &mut Device<'_>,
     folder: &F,
     membership: &super::membership::Membership,
     naming: &[u8; 32],
+    named_views: &BTreeMap<DeviceId, Hash32>,
     now_ms: i64,
     meter: &Meter<'_>,
     report: &mut Report,
     blobs: &mut Option<BTreeMap<String, super::folder::Listed<F::Token>>>,
 ) -> Result<(), Error> {
-    use super::{apply, chain, device_file};
-    for peer in report.trusted.clone() {
+    use super::{apply, chain, device_file, views};
+    // PS5: a removed device's note of a view isn't kept.
+    let trusted = report.trusted.clone();
+    device.state.views.peers.retain(|d, _| trusted.contains(d));
+    for peer in trusted {
         if peer == device.lib.device || device.state.membership.quarantined.contains_key(&peer) {
             continue;
         }
@@ -882,6 +902,20 @@ fn receive_changes<F: super::folder::Folder>(
             continue;
         }
         let floor = device_file::floor_of(device.store, &device.lib.id, &peer)?;
+        // SP18: the view, when what this device has applied is older than its
+        // `through`. One that can't be used is set aside and the change files are
+        // read as before.
+        let mut taken = None;
+        if let Some(named) = named_views.get(&peer) {
+            match views::open(
+                device, folder, meter, report, blobs, naming, &peer, &key, named, have,
+            )? {
+                views::Got::Ready(opened) => taken = Some(*opened),
+                views::Got::Skip => {}
+                views::Got::Halt => return Ok(()),
+            }
+        }
+        let start = taken.as_ref().map_or(have, |o| o.view.through.s);
         let Some(listing) = list_all(folder, &format!("changes/{peer}"), meter, report)? else {
             return Ok(());
         };
@@ -900,7 +934,7 @@ fn receive_changes<F: super::folder::Folder>(
         // A budget that runs out mid-run still lets what was read be received: a
         // body not fetched waits for step 5 (SY28), so the pass moves on.
         let mut halted = false;
-        'run: for seq in have + 1..=target {
+        'run: for seq in start + 1..=target {
             let path = chain::change_path(&peer, seq);
             let Some(entry) = listing.get(&path) else {
                 break;
@@ -922,29 +956,13 @@ fn receive_changes<F: super::folder::Folder>(
                 if stop.is_some() {
                     break;
                 }
-                let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) else {
-                    continue;
-                };
-                // SY28: a body past its record type's limit is never fetched.
-                if body_over_limit(version) {
-                    continue;
-                }
-                if blobs.is_none() {
-                    let Some(listed) = list_all(folder, "blobs", meter, report)? else {
+                match fetch_body(folder, meter, report, blobs, naming, version)? {
+                    Body::Skip => continue,
+                    Body::Halt => {
                         halted = true;
                         break;
-                    };
-                    *blobs = Some(listed.into_iter().map(|e| (e.name.clone(), e)).collect());
-                }
-                // SP9: a body is stored under its keyed name.
-                let name = format!("blobs/{}", super::crypto::blob_name(naming, &hash));
-                let Some(blob) = blobs.as_ref().and_then(|b| b.get(&name)) else {
-                    continue;
-                };
-                // SY28: and no more than the type allows is read, whatever size
-                // the version declared.
-                if let Some(body) = read_bytes_within(folder, blob, body_limit(version), report)? {
-                    bodies.push(body);
+                    }
+                    Body::Got(body) => bodies.push(body),
                 }
                 stop = meter.check(report);
             }
@@ -959,9 +977,20 @@ fn receive_changes<F: super::folder::Folder>(
                 report.stopped = report.stopped.or(stop);
                 break 'run;
             }
-            if run_bytes > meter.budgets.run_bytes && seq >= lowest {
+            if run_bytes > meter.budgets().run_bytes && seq >= lowest {
                 break;
             }
+        }
+        // SP16: a view alone is vouched for by its own last spine entry.
+        if last_sig.is_none() {
+            last_sig = taken
+                .as_ref()
+                .and_then(|o| o.view.spine.last())
+                .map(|e| SignedMark {
+                    s: e.s,
+                    h: e.h,
+                    sig: super::ids::b64url_encode(&e.sig),
+                });
         }
         // SP16: the signature of the last change of the run is kept before the run is
         // applied, so a crash after it leaves the frontier entry to be made.
@@ -969,7 +998,9 @@ fn receive_changes<F: super::folder::Folder>(
             device.state.sigs.peers.entry(peer).or_default().candidate = Some(mark);
             save_state(device)?;
         }
-        if !files.is_empty() {
+        if let Some(opened) = taken {
+            views::receive(device, report, naming, &peer, &key, opened, files, now_ms)?;
+        } else if !files.is_empty() {
             match chain::receive_run(device.conn, &device.lib, &peer, &key, &floor, files, now_ms) {
                 Ok(_) => {}
                 Err(e) => report
@@ -987,6 +1018,52 @@ fn receive_changes<F: super::folder::Folder>(
         }
     }
     Ok(())
+}
+
+/// SY28: what fetching one version's body came to.
+pub(super) enum Body {
+    /// Nothing to read: no body, past its type's limit, or not in storage yet.
+    Skip,
+    Got(Vec<u8>),
+    /// A budget ran out while listing `blobs/`.
+    Halt,
+}
+
+/// SP9, SY28: the body a version names, from `blobs/` under its keyed name, read no
+/// further than its record type allows (whatever size the version declared). `blobs/`
+/// is listed once per pass, when a body is first wanted.
+pub(super) fn fetch_body<F: super::folder::Folder>(
+    folder: &F,
+    meter: &Meter<'_>,
+    report: &mut Report,
+    blobs: &mut Option<BTreeMap<String, super::folder::Listed<F::Token>>>,
+    naming: &[u8; 32],
+    version: &serde_json::Value,
+) -> Result<Body, Error> {
+    let Some(hash) = version["body"]["hash"].as_str().and_then(Hash32::parse) else {
+        return Ok(Body::Skip);
+    };
+    // SY28: a body past its record type's limit is never fetched.
+    if body_over_limit(version) {
+        return Ok(Body::Skip);
+    }
+    if blobs.is_none() {
+        let Some(listed) = list_all(folder, "blobs", meter, report)? else {
+            return Ok(Body::Halt);
+        };
+        *blobs = Some(listed.into_iter().map(|e| (e.name.clone(), e)).collect());
+    }
+    // SP9: a body is stored under its keyed name.
+    let name = format!("blobs/{}", super::crypto::blob_name(naming, &hash));
+    let Some(blob) = blobs.as_ref().and_then(|b| b.get(&name)) else {
+        return Ok(Body::Skip);
+    };
+    Ok(
+        match read_bytes_within(folder, blob, body_limit(version), report)? {
+            Some(body) => Body::Got(body),
+            None => Body::Skip,
+        },
+    )
 }
 
 #[cfg(test)]
@@ -1030,6 +1107,7 @@ mod tests {
         let vouched =
             json!({"total_ms":100,"last_mono_ms":42,"last_wall_ms":300,"untrusted_wall":true});
         let membership = json!({"first_seen":[[h,-2]],"confirmed":[h],"checkpoint":[h],"quarantined":[[d,mark]],"heads":[[d,h]]});
+        let views = json!({"peers":[[d,{"hash":h,"through":7,"tries":2,"refused":false}]]});
         let state = State {
             ledger: serde_json::from_value(ledger.clone()).unwrap(),
             weeks: serde_json::from_value(weeks.clone()).unwrap(),
@@ -1039,6 +1117,7 @@ mod tests {
             vouched: serde_json::from_value(vouched.clone()).unwrap(),
             membership: serde_json::from_value(membership.clone()).unwrap(),
             sigs: Default::default(),
+            views: serde_json::from_value(views.clone()).unwrap(),
             started: true,
         };
         save(&mut store, &lib, &state);
@@ -1051,6 +1130,7 @@ mod tests {
             (serde_json::to_value(loaded.ages).unwrap(), ages),
             (serde_json::to_value(loaded.vouched).unwrap(), vouched),
             (serde_json::to_value(loaded.membership).unwrap(), membership),
+            (serde_json::to_value(loaded.views).unwrap(), views),
         ] {
             assert_eq!(actual, expected);
         }

@@ -46,6 +46,7 @@ pub mod retention;
 pub mod shared;
 pub mod trust;
 pub mod view;
+pub mod views;
 pub mod weeks;
 
 #[cfg(test)]

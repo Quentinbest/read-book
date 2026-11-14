@@ -15,7 +15,7 @@ Approved so far; the record is in `docs/decisions.md`:
 - items 102, 105, 106 and 108–112, on 2026-10-17 (sync; 111 and 112 as (a)).
 - items 113 (as (a)) and 114, on 2026-10-18 (the sync protocol).
 
-Waiting for the owner: none. Items 121–125 (the revised sync plan, `docs/sync-delivery-plan.md`) were approved on 2026-11-12, each as (a). Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) and 117 (Reading Lens) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
+Waiting for the owner: item 126 (what a device keeps of a backlog one pass can't read, #208). Items 121–125 (the revised sync plan, `docs/sync-delivery-plan.md`) were approved on 2026-11-12, each as (a). Item 98 was approved on 2026-10-25, and items 99–101, 103, 104 and 107 (sync) and 117 (Reading Lens) on 2026-10-26. Item 97 was approved on 2026-10-14. Items 53 and 54 were approved on 2026-10-06 (reader review). The items below are kept for their details.
 
 ## Review fixes (2026-09-26)
 
@@ -458,3 +458,9 @@ From the progress review of 2026-11-11. **Approved 2026-11-12, each as (a)** (�
     - **(b)** Releases as the owner calls them, as today.
     *Recommendation:* (a).
     **Approved 2026-11-12: (a).**
+
+126. **What a device keeps, across passes, of a chain or a view one pass's budget can't read (#208, SP18).** `pass::run` takes a peer from its view when what it has applied is older than the view's `through` (sync pass P2b-3 (1)), so a long backlog behind a usable view arrives. Two cases remain in which no single pass (256 MB, 60 s, bodies included) reaches the first floor checkpoint the device hasn't passed: a chain with no usable view (none published yet, or the view is broken) that is longer than a pass can read; and a view whose parts are together larger than a pass's byte budget. SP18 keeps a floor from counting as applied and has the device “keep reading until it reaches the floor”, and `chain::receive_run` applies nothing until the run reaches the lowest checkpoint, so each pass reads the same prefix again and keeps none of it. The view case is now refused once and set aside, and the change files are tried.
+    - **(a)** Keep nothing: the peer stays behind and the report names it, until it publishes a view (daily compaction, SP17) that a pass can read. No new state and no rule changes; a library whose peer is a month of heavy reading ahead without a view doesn't sync until it has one.
+    - **(b)** Keep a verified prefix: save, per peer, the metadata of the change files read so far (sequence, hash, `prev`, checked against the floor's checkpoints; no bodies), so that the next pass resumes where this one stopped and applies the run once it reaches the lowest checkpoint. A table of at most one row per change file read (about 100 bytes each) per peer; no on-disk format of the shared folder changes; SP18's rule that nothing is applied before the checkpoint is reached stands.
+    - **(c)** Apply the prefix as it is read, before the checkpoint is reached. This changes SP18 (a chain that doesn't lead to the floor would already be applied) and is not recommended.
+    *Recommendation:* (a) now, then (b) as its own stage after the slice (SD2) if the slice or a real folder shows a backlog that no view covers. A view is the protocol's answer for a long backlog, and a device that has been away a week has one (SP17, SP36). Nothing is lost meanwhile: the peer's files stay in storage.
