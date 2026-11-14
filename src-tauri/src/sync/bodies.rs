@@ -20,7 +20,8 @@
 //! 3. What was kept is applied (`apply_pending`), also when a budget stopped step 2:
 //!    a stop leaves no body kept but unapplied. If a crash comes between 2 and 3, the
 //!    body is held and its version still pending, and the next pass applies it,
-//!    because step 3 runs whenever a pending version's body is held.
+//!    because step 3 runs whenever `apply::can_move` says so: a pending version's body is held,
+//!    or a version kept for this clock to catch up (SY10) has been reached by it.
 //!
 //! Nothing is applied before its body is held and has passed `apply`'s own check of it
 //! against its record type, and a version is applied once (`apply_key` marks it).
@@ -96,19 +97,6 @@ fn wanted(device: &Device<'_>) -> Result<Vec<Want>, Error> {
     Ok(wants)
 }
 
-/// Whether a pending version's body is held: something for `apply_pending` to do
-/// though nothing was fetched this pass (a crash between the fetch and the apply, or
-/// a body that arrived with another change).
-fn ready(device: &Device<'_>) -> Result<bool, Error> {
-    Ok(device.conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM sync_versions v
-            JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
-            WHERE v.library = ?1 AND v.seq IS NOT NULL AND v.applied = 0)",
-        params![device.lib.id.to_string()],
-        |r| r.get(0),
-    )?)
-}
-
 /// SP37 (5): fetch the bodies received versions wait for that storage has now, and
 /// apply what that makes ready. A budget that runs out stops the pass after what was
 /// fetched is applied (SY2).
@@ -157,7 +145,7 @@ pub(super) fn fetch_waiting<F: Folder>(
     report.late.fetched = kept;
     report.late.waiting = wants.len() as u64 - kept;
     // A stop doesn't leave a kept body unapplied.
-    if kept > 0 || ready(device)? {
+    if kept > 0 || apply::can_move(conn, &lib, now_ms)? {
         report.late.applied = apply::apply_pending(conn, &lib, now_ms)?;
     }
     Ok(())
@@ -185,6 +173,7 @@ mod tests {
 
     fn pass_with<F: Folder>(
         kit: &mut Kit,
+        readings: Readings,
         folder: &mut F,
         budgets: &Budgets,
         now: &dyn Fn() -> u64,
@@ -199,12 +188,12 @@ mod tests {
             state,
             name: "Test Mac",
         };
-        run(&mut device, folder, READ, budgets, now)
+        run(&mut device, folder, readings, budgets, now)
     }
 
     fn pass_within(kit: &mut Kit, budgets: &Budgets) -> Report {
         let mut folder = kit.folder.view(&kit.devices[0].lib.device.to_string());
-        pass_with(kit, &mut folder, budgets, &|| 0).unwrap()
+        pass_with(kit, READ, &mut folder, budgets, &|| 0).unwrap()
     }
 
     fn pass(kit: &mut Kit) -> Report {
@@ -434,7 +423,7 @@ mod tests {
             inner: kit.folder.view(&kit.devices[0].lib.device.to_string()),
             clock: &clock,
         };
-        let report = pass_with(&mut kit, &mut spy, &Budgets::sy2(), &|| clock.get()).unwrap();
+        let report = pass_with(&mut kit, READ, &mut spy, &Budgets::sy2(), &|| clock.get()).unwrap();
         assert_eq!(report.stopped, Some(Stopped::Time), "{report:?}");
         assert_eq!((report.late.fetched, report.late.applied), (1, 1));
         assert_eq!(shown(&kit).len(), 1);
@@ -487,7 +476,7 @@ mod tests {
         )
         .unwrap();
         let mut folder = kit.folder.view(&kit.devices[0].lib.device.to_string());
-        let failed = pass_with(&mut kit, &mut folder, &Budgets::sy2(), &|| 0);
+        let failed = pass_with(&mut kit, READ, &mut folder, &Budgets::sy2(), &|| 0);
         assert!(failed.is_err());
         let held: i64 = kit.devices[0]
             .db
@@ -511,6 +500,57 @@ mod tests {
         for (name, _) in &all {
             assert_eq!(reads(&kit, name), 1);
         }
+    }
+
+    #[test]
+    fn a_body_for_a_version_kept_for_the_clock_is_applied_once_the_clock_catches_up() {
+        // SY10, SP37 (5): the version's clock is more than a day ahead of this
+        // device's, so it is kept (-2) without its body. The body arrives while the
+        // clock is still behind: fetched and kept, not applied. A later pass with
+        // nothing new in storage, once the clock has caught up, applies it, once.
+        let mut kit = testkit::library(2);
+        highlight_change(&mut kit, ANNO, 1);
+        let held = take_blobs(&kit);
+        let behind = Readings {
+            wall_ms: crate::store::now_ms() as u64 - 3 * 24 * 3_600_000,
+            ..READ
+        };
+        let at = |kit: &mut Kit, readings| {
+            let mut folder = kit.folder.view(&kit.devices[0].lib.device.to_string());
+            pass_with(kit, readings, &mut folder, &Budgets::sy2(), &|| 0).unwrap()
+        };
+        let report = at(&mut kit, behind);
+        assert_eq!(report.received.len(), 1, "{report:?}");
+        let waiting = |kit: &Kit| -> i64 {
+            kit.devices[0]
+                .db
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sync_versions WHERE applied = -2",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(waiting(&kit), 1);
+        put(&mut kit, &held[0].0, &held[0].1);
+        let report = at(&mut kit, behind);
+        assert_eq!(
+            (report.late.fetched, report.late.applied),
+            (1, 0),
+            "{report:?}"
+        );
+        assert!(shown(&kit).is_empty());
+        assert_eq!(waiting(&kit), 1);
+        // Nothing is new in storage, and the clock has caught up.
+        let report = at(&mut kit, READ);
+        assert_eq!(report.late.fetched, 0);
+        assert_eq!(report.late.applied, 1, "{report:?}");
+        assert_eq!(shown(&kit), vec![ANNO.to_string()]);
+        assert_eq!(waiting(&kit), 0);
+        let report = at(&mut kit, READ);
+        assert_eq!(report.late, Late::default(), "{report:?}");
+        assert_eq!(reads(&kit, &held[0].0), 1);
     }
 
     #[test]

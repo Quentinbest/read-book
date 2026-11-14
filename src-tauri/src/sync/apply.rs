@@ -1155,6 +1155,38 @@ fn in_dependency_order(keys: &mut Vec<Key>) {
     keys.dedup_by(|a, b| a.as_str() == b.as_str());
 }
 
+/// Whether `apply_pending` could move something now with no new change arriving, so
+/// a caller (the pass, step 5) knows it is worth calling: a pending version (applied 0)
+/// whose body is held, or a version kept for this clock to catch up (-2) that the clock
+/// has now reached (SY10). A version waiting for its ancestry (-1) is rechecked when a
+/// change arrives, and one held for freshness (-7) is released by `freshness`, so
+/// neither is a reason to run it.
+pub(crate) fn can_move(conn: &Connection, lib: &Library, now_ms: i64) -> Result<bool> {
+    let held: bool = conn.query_row(
+        "SELECT EXISTS (SELECT 1 FROM sync_versions v
+            JOIN sync_bodies b ON b.hash = json_extract(v.raw, '$.body.hash')
+            WHERE v.library = ?1 AND v.seq IS NOT NULL AND v.applied = 0)",
+        [lib.id.to_string()],
+        |r| r.get(0),
+    )?;
+    if held {
+        return Ok(true);
+    }
+    let ahead: Vec<(String, String)> = conn
+        .prepare("SELECT device, raw FROM sync_versions WHERE library = ?1 AND applied = -2")?
+        .query_map([lib.id.to_string()], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<std::result::Result<_, _>>()?;
+    Ok(ahead.into_iter().any(|(device, raw)| {
+        let (Some(device), Ok(value)) = (
+            super::ids::Id16::parse(&device),
+            serde_json::from_str::<Value>(&raw),
+        ) else {
+            return false;
+        };
+        matches!(check_version(value, device), Ok(Checked::Version(v)) if !too_far_ahead(&v, now_ms))
+    }))
+}
+
 /// Apply what still waits: bodies or books that have arrived since.
 pub fn apply_pending(conn: &Connection, lib: &Library, now_ms: i64) -> Result<usize> {
     // SY26, SY27: nothing is applied while sync is paused or the reader is asked.
